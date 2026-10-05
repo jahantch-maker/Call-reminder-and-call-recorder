@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.CallLog
-import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds.Phone as ContactPhone
 import android.provider.Settings
 import android.telecom.TelecomManager
 import androidx.core.app.NotificationManagerCompat
@@ -257,11 +257,10 @@ object ContactLookup {
         if (looksLikeNumber(n)) return n
         if (!hasPermission(ctx)) return ""
         return try {
-            val phone = ContactsContract.CommonDataKinds.Phone
             ctx.contentResolver.query(
-                phone.CONTENT_URI,
-                arrayOf(phone.NUMBER, phone.TYPE),
-                "${phone.DISPLAY_NAME} = ?",
+                ContactPhone.CONTENT_URI,
+                arrayOf(ContactPhone.NUMBER, ContactPhone.TYPE),
+                "${ContactPhone.DISPLAY_NAME} = ?",
                 arrayOf(n),
                 null
             )?.use { c ->
@@ -271,7 +270,7 @@ object ContactLookup {
                     val num = c.getString(0)?.trim().orEmpty()
                     if (num.isEmpty()) continue
                     if (first.isEmpty()) first = num
-                    if (mobile.isEmpty() && c.getInt(1) == phone.TYPE_MOBILE) mobile = num
+                    if (mobile.isEmpty() && c.getInt(1) == ContactPhone.TYPE_MOBILE) mobile = num
                 }
                 mobile.ifEmpty { first }
             } ?: ""
