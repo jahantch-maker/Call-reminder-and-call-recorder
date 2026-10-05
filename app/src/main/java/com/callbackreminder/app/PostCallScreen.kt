@@ -32,9 +32,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,62 +45,54 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
+/** Shows the popup for the first call in the queue, then the next one, until none are left. */
 @Composable
-fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
-    val ctx = LocalContext.current
+fun PostCallScreen(queue: SnapshotStateList<CallInfo>, onFinished: () -> Unit) {
+    var handled by remember { mutableIntStateOf(0) }
+    val current = queue.firstOrNull()
 
-    var info by remember {
-        mutableStateOf<CallInfo?>(
-            if (test) CallInfo("0300 1234567", "Test Caller", CallLog.Calls.OUTGOING_TYPE, 125L, System.currentTimeMillis())
-            else null
+    LaunchedEffect(current == null) {
+        if (current == null) onFinished()
+    }
+    if (current == null) return
+
+    val total = handled + queue.size
+    key(handled) {
+        PostCallSheet(
+            call = current,
+            positionLabel = if (total > 1) "Call ${handled + 1} of $total" else null,
+            onNext = {
+                if (queue.isNotEmpty()) queue.removeAt(0)
+                handled = handled + 1
+            }
         )
     }
-    var lookupDone by remember { mutableStateOf(test) }
+}
+
+@Composable
+private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> Unit) {
+    val ctx = LocalContext.current
+
     var typedName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }
 
-    // The phone writes the call into its log a moment after hang-up, so we retry briefly.
-    LaunchedEffect(Unit) {
-        if (!test) {
-            var tries = 0
-            while (info == null && tries < 6) {
-                delay(if (tries == 0) 600L else 700L)
-                info = withContext(Dispatchers.IO) { CallLookup.latest(ctx) }
-                tries++
-            }
-            lookupDone = true
-        }
-    }
+    val callerName = call.name.takeIf { it.isNotBlank() }
+    val callerNumber = call.number.takeIf { it.isNotBlank() }
+    val title = callerName ?: callerNumber ?: "Unknown caller"
+    val needsName = callerName == null && callerNumber == null
 
-    val known = info
-    val callerName = known?.name?.takeIf { it.isNotBlank() }
-    val callerNumber = known?.number?.takeIf { it.isNotBlank() }
-    val title = callerName ?: callerNumber ?: when {
-        !lookupDone -> "Looking up the call…"
-        else -> "Unknown caller"
-    }
-    val needsName = lookupDone && callerName == null && callerNumber == null
-
-    val typeLabel = when (known?.type) {
+    val typeLabel = when (call.type) {
         CallLog.Calls.INCOMING_TYPE -> "Incoming call"
         CallLog.Calls.OUTGOING_TYPE -> "Outgoing call"
         CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> "Missed call"
-        else -> when (kind) {
-            "incoming" -> "Incoming call"
-            "missed" -> "Missed call"
-            else -> "Outgoing call"
-        }
+        else -> "Call"
     }
     val subtitle = buildString {
         append(typeLabel)
         if (callerName != null && callerNumber != null) append(" · ").append(callerNumber)
-        val d = known?.durationSec ?: 0L
-        if (d > 0) append(" · ").append(Fmt.duration(d))
+        if (call.durationSec > 0) append(" · ").append(Fmt.duration(call.durationSec))
     }
 
     fun schedule(whenMs: Long) {
@@ -109,7 +104,7 @@ fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
             dueAt = whenMs
         )
         Toast.makeText(ctx, "Reminder set · ${Fmt.dueLabel(whenMs)}", Toast.LENGTH_SHORT).show()
-        onClose()
+        onNext()
     }
 
     val noRipple = remember { MutableInteractionSource() }
@@ -119,7 +114,7 @@ fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.45f))
-            .clickable(interactionSource = noRipple, indication = null) { onClose() },
+            .clickable(interactionSource = noRipple, indication = null) { onNext() },
         contentAlignment = Alignment.BottomCenter
     ) {
         Surface(
@@ -146,6 +141,16 @@ fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
                 )
                 Spacer(Modifier.height(14.dp))
 
+                if (positionLabel != null) {
+                    Text(
+                        text = positionLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
                     Spacer(Modifier.width(12.dp))
@@ -165,7 +170,7 @@ fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    IconButton(onClick = onClose) {
+                    IconButton(onClick = onNext) {
                         Icon(Icons.Rounded.Close, contentDescription = "Skip")
                     }
                 }
@@ -226,7 +231,7 @@ fun PostCallScreen(kind: String, test: Boolean, onClose: () -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         Text("Pick date & time")
                     }
-                    TextButton(onClick = onClose) { Text("Skip") }
+                    TextButton(onClick = onNext) { Text("Skip") }
                 }
             }
         }

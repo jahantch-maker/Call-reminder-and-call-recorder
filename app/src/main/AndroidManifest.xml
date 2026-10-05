@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Only needed to play a ringtone you picked from your own music/files -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <application
         android:name=".CallbackApp"
@@ -39,6 +47,23 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Callback.Popup"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- The full-screen ringing reminder: stays until you Call back, Snooze or mark Done -->
+        <activity
+            android:name=".ReminderAlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.Callback.Alert" />
+
+        <!-- Plays the ringtone while a reminder is ringing -->
+        <service
+            android:name=".ReminderRingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Detects when a call ends -->
         <receiver

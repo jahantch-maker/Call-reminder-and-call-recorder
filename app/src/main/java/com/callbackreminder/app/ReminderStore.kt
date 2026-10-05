@@ -91,6 +91,7 @@ object ReminderStore {
         get(id) ?: return
         Scheduler.cancel(appCtx, id)
         Notifier.cancel(appCtx, id)
+        RingController.dismiss(id)
         val now = System.currentTimeMillis()
         save(_items.value.map { if (it.id == id) it.copy(done = true, doneAt = now) else it })
     }
@@ -101,6 +102,7 @@ object ReminderStore {
         val cur = get(id) ?: return
         val updated = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L)
         Notifier.cancel(appCtx, id)
+        RingController.dismiss(id)
         save(_items.value.map { if (it.id == id) updated else it })
         Scheduler.schedule(appCtx, updated)
     }
@@ -109,6 +111,7 @@ object ReminderStore {
     fun delete(id: Long) {
         Scheduler.cancel(appCtx, id)
         Notifier.cancel(appCtx, id)
+        RingController.dismiss(id)
         save(_items.value.filter { it.id != id })
     }
 }

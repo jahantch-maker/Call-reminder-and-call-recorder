@@ -1,9 +1,11 @@
 package com.callbackreminder.app
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -19,15 +21,42 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
-/** Simple on/off switches saved on the phone. */
+/** Simple on/off switches and choices saved on the phone. */
 object AppSettings {
     const val INCOMING = "popup_incoming"
     const val OUTGOING = "popup_outgoing"
     const val MISSED = "popup_missed"
+    const val RINGTONE = "reminder_ringtone"
 
     private fun p(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
     fun get(c: Context, key: String, default: Boolean = true) = p(c).getBoolean(key, default)
     fun set(c: Context, key: String, value: Boolean) = p(c).edit().putBoolean(key, value).apply()
+    fun getString(c: Context, key: String, default: String = ""): String =
+        p(c).getString(key, default) ?: default
+
+    fun setString(c: Context, key: String, value: String) = p(c).edit().putString(key, value).apply()
+}
+
+/** The sound a reminder rings with. An empty choice means "whatever the phone's ringtone is". */
+object ReminderSound {
+    fun uri(ctx: Context): Uri? {
+        val saved = AppSettings.getString(ctx, AppSettings.RINGTONE)
+        return if (saved.isBlank()) {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        } else {
+            Uri.parse(saved)
+        }
+    }
+
+    fun title(ctx: Context): String {
+        val saved = AppSettings.getString(ctx, AppSettings.RINGTONE)
+        if (saved.isBlank()) return "Phone ringtone (default)"
+        return try {
+            RingtoneManager.getRingtone(ctx, Uri.parse(saved))?.getTitle(ctx) ?: "Custom ringtone"
+        } catch (e: Exception) {
+            "Custom ringtone"
+        }
+    }
 }
 
 /** Turns times into friendly text like "Tomorrow, 10:00 AM". */
@@ -96,8 +125,9 @@ fun dial(ctx: Context, number: String) {
     )
 }
 
-/** What we learned about the call that just ended. */
+/** One call from the phone's call log. [id] is -1 when we could not find the call in the log. */
 data class CallInfo(
+    val id: Long,
     val number: String,
     val name: String,
     val type: Int,
@@ -106,43 +136,64 @@ data class CallInfo(
 )
 
 object CallLookup {
+    private val COLUMNS = arrayOf(
+        CallLog.Calls._ID,
+        CallLog.Calls.NUMBER,
+        CallLog.Calls.CACHED_NAME,
+        CallLog.Calls.TYPE,
+        CallLog.Calls.DURATION,
+        CallLog.Calls.DATE,
+    )
+
     fun hasPermission(ctx: Context) =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** The most recent call in the phone's call log, if it ended in the last couple of minutes. */
-    fun latest(ctx: Context, maxAgeMs: Long = 120_000L): CallInfo? {
-        if (!hasPermission(ctx)) return null
+    /** The highest call-log row number right now (0 when the log is empty or unreadable). */
+    fun maxId(ctx: Context): Long {
+        if (!hasPermission(ctx)) return 0L
         return try {
             ctx.contentResolver.query(
                 CallLog.Calls.CONTENT_URI,
-                arrayOf(
-                    CallLog.Calls.NUMBER,
-                    CallLog.Calls.CACHED_NAME,
-                    CallLog.Calls.TYPE,
-                    CallLog.Calls.DURATION,
-                    CallLog.Calls.DATE,
-                ),
+                arrayOf(CallLog.Calls._ID),
                 null,
                 null,
-                "${CallLog.Calls.DATE} DESC"
-            )?.use { c ->
-                if (c.moveToFirst()) {
-                    val duration = c.getLong(3)
-                    val endedAt = c.getLong(4) + duration * 1000L
-                    if (System.currentTimeMillis() - endedAt <= maxAgeMs) {
-                        CallInfo(
-                            number = c.getString(0) ?: "",
-                            name = c.getString(1) ?: "",
-                            type = c.getInt(2),
-                            durationSec = duration,
-                            endedAt = endedAt,
-                        )
-                    } else null
-                } else null
-            }
+                "${CallLog.Calls._ID} DESC"
+            )?.use { c -> if (c.moveToFirst()) c.getLong(0) else 0L } ?: 0L
         } catch (e: Exception) {
-            null
+            0L
+        }
+    }
+
+    /** Every call logged after row [afterId] (and not older than [notBefore]), oldest first. */
+    fun since(ctx: Context, afterId: Long, notBefore: Long): List<CallInfo> {
+        if (!hasPermission(ctx)) return emptyList()
+        return try {
+            val out = mutableListOf<CallInfo>()
+            ctx.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                COLUMNS,
+                "${CallLog.Calls._ID} > ? AND ${CallLog.Calls.DATE} >= ?",
+                arrayOf(afterId.toString(), notBefore.toString()),
+                "${CallLog.Calls.DATE} ASC"
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val duration = c.getLong(4)
+                    out.add(
+                        CallInfo(
+                            id = c.getLong(0),
+                            number = c.getString(1) ?: "",
+                            name = c.getString(2) ?: "",
+                            type = c.getInt(3),
+                            durationSec = duration,
+                            endedAt = c.getLong(5) + duration * 1000L,
+                        )
+                    )
+                }
+            }
+            out
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }
@@ -154,6 +205,7 @@ data class SetupStatus(
     val notifications: Boolean,
     val overlay: Boolean,
     val battery: Boolean,
+    val fullScreen: Boolean = true,
 ) {
     val requiredOk: Boolean get() = phone && callLog && notifications && overlay
     val missingRequired: Int get() = listOf(phone, callLog, notifications, overlay).count { !it }
@@ -169,12 +221,15 @@ data class SetupStatus(
                 NotificationManagerCompat.from(ctx).areNotificationsEnabled()
             }
             val pm = ctx.getSystemService(PowerManager::class.java)
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            val fullScreen = if (Build.VERSION.SDK_INT >= 34) nm.canUseFullScreenIntent() else true
             return SetupStatus(
                 phone = granted(ctx, Manifest.permission.READ_PHONE_STATE),
                 callLog = granted(ctx, Manifest.permission.READ_CALL_LOG),
                 notifications = notif,
                 overlay = Settings.canDrawOverlays(ctx),
                 battery = pm.isIgnoringBatteryOptimizations(ctx.packageName),
+                fullScreen = fullScreen,
             )
         }
     }

@@ -1,7 +1,10 @@
 package com.callbackreminder.app
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Phone
@@ -50,6 +54,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 
 @Composable
 fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
@@ -60,6 +66,53 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { refresh++ }
+
+    var soundTitle by remember { mutableStateOf(ReminderSound.title(ctx)) }
+
+    // Needed only when the ringtone is a file from your own storage.
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { soundTitle = ReminderSound.title(ctx) }
+
+    val ringtoneLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val picked: Uri? = if (data == null) null else IntentCompat.getParcelableExtra(
+                data,
+                RingtoneManager.EXTRA_RINGTONE_PICKED_URI,
+                Uri::class.java
+            )
+            val isPhoneDefault = picked == null ||
+                picked == RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            AppSettings.setString(ctx, AppSettings.RINGTONE, if (isPhoneDefault) "" else picked.toString())
+            soundTitle = ReminderSound.title(ctx)
+
+            if (!isPhoneDefault && picked.toString().contains("/external/")) {
+                val perm = if (Build.VERSION.SDK_INT >= 33) {
+                    Manifest.permission.READ_MEDIA_AUDIO
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }
+                if (ContextCompat.checkSelfPermission(ctx, perm) != PackageManager.PERMISSION_GRANTED) {
+                    audioPermissionLauncher.launch(perm)
+                }
+            }
+        }
+    }
+
+    fun pickRingtone() {
+        ringtoneLauncher.launch(
+            Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Reminder ringtone")
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ReminderSound.uri(ctx))
+            }
+        )
+    }
 
     fun requestRuntime() {
         val list = mutableListOf(
@@ -135,6 +188,23 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                         )
                     }
                 )
+                if (Build.VERSION.SDK_INT >= 34) {
+                    HorizontalDivider()
+                    PermissionRow(
+                        icon = Icons.Rounded.Fullscreen,
+                        title = "Full-screen alerts",
+                        description = "Lets the ringing reminder open on a locked screen",
+                        ok = status.fullScreen,
+                        onAllow = {
+                            ctx.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                    Uri.parse("package:${ctx.packageName}")
+                                )
+                            )
+                        }
+                    )
+                }
                 HorizontalDivider()
                 PermissionRow(
                     icon = Icons.Rounded.BatteryFull,
@@ -174,6 +244,29 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                 }
             }
 
+            // ---- Reminder sound ----
+            SectionCard(
+                title = "Reminder ringtone",
+                subtitle = "How the phone rings when it is time to call back."
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(soundTitle, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Rings until you act. Follows your ringtone volume, and stays silent when the phone is on silent.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalButton(onClick = { pickRingtone() }) { Text("Change") }
+                }
+            }
+
             // ---- Test tools ----
             SectionCard(title = "Try it out", subtitle = "Test without making a real call.") {
                 Button(
@@ -181,7 +274,6 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                         ctx.startActivity(
                             Intent(ctx, PostCallActivity::class.java)
                                 .putExtra(PostCallActivity.EXTRA_TEST, true)
-                                .putExtra(PostCallActivity.EXTRA_KIND, "outgoing")
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -191,13 +283,13 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                     onClick = {
                         ReminderStore.add(
                             name = "Test reminder",
-                            number = "",
-                            note = "This is a test. You can delete it.",
+                            number = "0300 1234567",
+                            note = "This is a test. Mark it Done when you are finished.",
                             dueAt = System.currentTimeMillis() + 10_000L
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Send a test reminder in 10 seconds") }
+                ) { Text("Ring a test reminder in 10 seconds") }
             }
 
             Spacer(Modifier.height(24.dp))
