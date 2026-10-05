@@ -43,6 +43,22 @@ class WhatsAppCallListener : NotificationListenerService() {
         private val worker = Executors.newSingleThreadExecutor()
         private val callWord = Regex("\\bcalls?\\b", RegexOption.IGNORE_CASE)
         private val hiddenMarks = "\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069"
+
+        // Shared with CallEndReceiver (same file) so it can tell that a WhatsApp call just happened.
+        private const val STATE_PREFS = "callstate"
+        private const val KEY_LAST_ACTIVITY = "wa_last"
+
+        /** True if a WhatsApp call was ringing, running or ending at or after [sinceMs]. */
+        fun wasActiveSince(ctx: Context, sinceMs: Long): Boolean =
+            ctx.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                .getLong(KEY_LAST_ACTIVITY, 0L) >= sinceMs
+    }
+
+    /** Leaves a timestamp so the SIM-call detector does not add a second, blank popup. */
+    private fun markActivity() {
+        getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_LAST_ACTIVITY, System.currentTimeMillis())
+            .apply()
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -130,6 +146,7 @@ class WhatsAppCallListener : NotificationListenerService() {
 
     private fun onLiveCall(n: Notification, title: String, body: String) {
         handler.removeCallbacks(endCheck)
+        markActivity()
         val all = "$title $body".lowercase()
         val prev = live
         val now = System.currentTimeMillis()
@@ -169,6 +186,7 @@ class WhatsAppCallListener : NotificationListenerService() {
         }
         if (stillOn) return
         live = null
+        markActivity()
 
         val answered = call.connectedAt > 0L
         val type = when {

@@ -71,6 +71,8 @@ class CallEndReceiver : BroadcastReceiver() {
         private const val SETTLE_MS = 1_500L
         private const val POLL_MS = 600L
         private const val POLL_TRIES = 7
+        // A WhatsApp call counts as part of a phone session if it was seen this long before it began.
+        private const val WHATSAPP_OVERLAP_MS = 2 * 60_000L
         private val lock = Any()
         private val worker = Executors.newSingleThreadExecutor()
 
@@ -162,6 +164,15 @@ class CallEndReceiver : BroadcastReceiver() {
             if (entries.size >= needed && entries.size == previousCount) break
             previousCount = entries.size
             Thread.sleep(POLL_MS)
+        }
+
+        // A WhatsApp call never shows up in the call log, so the lookup above comes back empty.
+        // WhatsAppCallListener already shows the proper popup for it; a blank "Unknown caller"
+        // popup from here would only be a duplicate.
+        if (entries.isEmpty() &&
+            WhatsAppCallListener.wasActiveSince(ctx, session.start - WHATSAPP_OVERLAP_MS)
+        ) {
+            return
         }
 
         val queue = CallSession.buildQueue(ctx, entries, session.sawOffhook, session.rings)

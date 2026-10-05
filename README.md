@@ -7,6 +7,10 @@ Pick a time in one tap and the phone reminds you then.
 - Built in the cloud by GitHub Actions: every push to `main` produces `CallbackReminder.apk`
   on the **Releases → Latest build** page
 
+## What's new in 0.3.1
+
+- Fixed a second, blank "Unknown caller" popup appearing after WhatsApp calls.
+
 ## What's new in 0.3.0
 
 - **Call directly.** "Call back" on the reminder now places the call straight away. No dialer screen,
