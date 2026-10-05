@@ -83,12 +83,13 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     val title = callerName ?: callerNumber ?: "Unknown caller"
     val needsName = callerName == null && callerNumber == null
 
-    val typeLabel = when (call.type) {
+    val baseLabel = when (call.type) {
         CallLog.Calls.INCOMING_TYPE -> "Incoming call"
         CallLog.Calls.OUTGOING_TYPE -> "Outgoing call"
         CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> "Missed call"
         else -> "Call"
     }
+    val typeLabel = if (call.viaWhatsApp) "WhatsApp ${baseLabel.lowercase()}" else baseLabel
     val subtitle = buildString {
         append(typeLabel)
         if (callerName != null && callerNumber != null) append(" · ").append(callerNumber)

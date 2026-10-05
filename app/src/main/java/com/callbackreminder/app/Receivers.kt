@@ -3,7 +3,6 @@ package com.callbackreminder.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import android.telephony.TelephonyManager
 import java.util.concurrent.Executors
 
@@ -166,17 +165,6 @@ class CallEndReceiver : BroadcastReceiver() {
         }
 
         val queue = CallSession.buildQueue(ctx, entries, session.sawOffhook, session.rings)
-        if (queue.isEmpty()) return
-
-        val popup = PostCallActivity.intentFor(ctx, queue)
-        // Backup prompt first; the popup removes it as soon as it opens.
-        Notifier.showPostCallPrompt(ctx, popup)
-        if (Settings.canDrawOverlays(ctx)) {
-            try {
-                ctx.startActivity(popup)
-            } catch (e: Exception) {
-                // The backup notification is already showing.
-            }
-        }
+        showPostCallPopup(ctx, queue)
     }
 }

@@ -108,8 +108,9 @@ class ReminderAlertActivity : ComponentActivity() {
     private fun handleCallBack(id: Long) {
         if (id < 0) return
         val r = ReminderStore.get(id)
-        RingController.dismiss(id)
+        // Place the call first, then stop the ringing (which closes this screen).
         if (r != null) dial(this, r.number)
+        RingController.dismiss(id)
     }
 }
 
@@ -156,8 +157,9 @@ private fun AlertScreen(onAllDone: () -> Unit) {
                 AlertCard(
                     r = r,
                     onCallBack = {
-                        RingController.dismiss(r.id)
+                        // Calls directly (even on the lock screen), then stops the ringing.
                         dial(ctx, r.number)
+                        RingController.dismiss(r.id)
                     },
                     onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
                     onPickTime = { pickFor = r },

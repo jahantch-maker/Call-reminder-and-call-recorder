@@ -175,6 +175,37 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit) {
                 }
             }
 
+            if (status.requiredOk && (!status.callPhone || !status.notificationAccess)) {
+                item(key = "setup_new") {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "New: call directly + WhatsApp calls",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                listOfNotNull(
+                                    "Allow \"Call directly\" so Call back dials without opening the dialer."
+                                        .takeIf { !status.callPhone },
+                                    "Turn on Notification access to get the popup after WhatsApp calls."
+                                        .takeIf { !status.notificationAccess },
+                                ).joinToString(" "),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = onOpenSettings) { Text("Open settings") }
+                        }
+                    }
+                }
+            }
+
             item(key = "tabs") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(

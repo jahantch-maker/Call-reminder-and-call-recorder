@@ -8,9 +8,12 @@ import android.content.pm.PackageManager
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.CallLog
+import android.provider.ContactsContract
 import android.provider.Settings
+import android.telecom.TelecomManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import java.time.DayOfWeek
@@ -26,6 +29,7 @@ object AppSettings {
     const val INCOMING = "popup_incoming"
     const val OUTGOING = "popup_outgoing"
     const val MISSED = "popup_missed"
+    const val WHATSAPP = "popup_whatsapp"
     const val RINGTONE = "reminder_ringtone"
 
     private fun p(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -117,12 +121,34 @@ fun quickOptions(now: Long = System.currentTimeMillis()): List<QuickOption> {
     )
 }
 
+fun hasCallPhonePermission(ctx: Context) =
+    ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) ==
+        PackageManager.PERMISSION_GRANTED
+
+/**
+ * Calls [number] right away on the SIM, with no dialer screen in between. This also works from the
+ * lock screen: the call is placed and the phone's in-call screen shows over the lock screen.
+ * If the Call permission has not been given yet, it falls back to opening the dialer.
+ */
 fun dial(ctx: Context, number: String) {
     if (number.isBlank()) return
-    ctx.startActivity(
-        Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
+    val uri = Uri.fromParts("tel", number.trim(), null)
+
+    if (hasCallPhonePermission(ctx)) {
+        try {
+            ctx.getSystemService(TelecomManager::class.java).placeCall(uri, Bundle())
+            return
+        } catch (e: Exception) {
+            // Try the plain call intent next.
+        }
+        try {
+            ctx.startActivity(Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (e: Exception) {
+            // Fall back to the dialer below.
+        }
+    }
+    ctx.startActivity(Intent(Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 /** One call from the phone's call log. [id] is -1 when we could not find the call in the log. */
@@ -133,6 +159,7 @@ data class CallInfo(
     val type: Int,
     val durationSec: Long,
     val endedAt: Long,
+    val viaWhatsApp: Boolean = false,
 )
 
 object CallLookup {
@@ -198,6 +225,62 @@ object CallLookup {
     }
 }
 
+/** Opens the after-call popup (and a backup notification in case the phone blocks the popup). */
+fun showPostCallPopup(ctx: Context, queue: List<CallInfo>) {
+    if (queue.isEmpty()) return
+    val popup = PostCallActivity.intentFor(ctx, queue)
+    // Backup prompt first; the popup removes it as soon as it opens.
+    Notifier.showPostCallPrompt(ctx, popup)
+    if (Settings.canDrawOverlays(ctx)) {
+        try {
+            ctx.startActivity(popup)
+        } catch (e: Exception) {
+            // The backup notification is already showing.
+        }
+    }
+}
+
+/** Finds a phone number for a contact name (WhatsApp shows the name, not the number). */
+object ContactLookup {
+    fun hasPermission(ctx: Context) =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** WhatsApp shows the number itself for people who are not in your contacts. */
+    private fun looksLikeNumber(s: String): Boolean =
+        s.count { it.isDigit() } >= 6 && s.all { it.isDigit() || it in "+-() \u00A0" }
+
+    /** The number for [name], or "" when it cannot be found (or contacts are not allowed). */
+    fun numberFor(ctx: Context, name: String): String {
+        val n = name.trim()
+        if (n.isEmpty()) return ""
+        if (looksLikeNumber(n)) return n
+        if (!hasPermission(ctx)) return ""
+        return try {
+            val phone = ContactsContract.CommonDataKinds.Phone
+            ctx.contentResolver.query(
+                phone.CONTENT_URI,
+                arrayOf(phone.NUMBER, phone.TYPE),
+                "${phone.DISPLAY_NAME} = ?",
+                arrayOf(n),
+                null
+            )?.use { c ->
+                var first = ""
+                var mobile = ""
+                while (c.moveToNext()) {
+                    val num = c.getString(0)?.trim().orEmpty()
+                    if (num.isEmpty()) continue
+                    if (first.isEmpty()) first = num
+                    if (mobile.isEmpty() && c.getInt(1) == phone.TYPE_MOBILE) mobile = num
+                }
+                mobile.ifEmpty { first }
+            } ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+}
+
 /** Which permissions are already given. */
 data class SetupStatus(
     val phone: Boolean,
@@ -206,6 +289,9 @@ data class SetupStatus(
     val overlay: Boolean,
     val battery: Boolean,
     val fullScreen: Boolean = true,
+    val callPhone: Boolean = true,
+    val contacts: Boolean = true,
+    val notificationAccess: Boolean = true,
 ) {
     val requiredOk: Boolean get() = phone && callLog && notifications && overlay
     val missingRequired: Int get() = listOf(phone, callLog, notifications, overlay).count { !it }
@@ -230,6 +316,10 @@ data class SetupStatus(
                 overlay = Settings.canDrawOverlays(ctx),
                 battery = pm.isIgnoringBatteryOptimizations(ctx.packageName),
                 fullScreen = fullScreen,
+                callPhone = granted(ctx, Manifest.permission.CALL_PHONE),
+                contacts = granted(ctx, Manifest.permission.READ_CONTACTS),
+                notificationAccess = NotificationManagerCompat.getEnabledListenerPackages(ctx)
+                    .contains(ctx.packageName),
             )
         }
     }

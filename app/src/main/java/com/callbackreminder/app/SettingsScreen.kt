@@ -25,7 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BatteryFull
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Notifications
@@ -118,6 +120,8 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
         val list = mutableListOf(
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_CONTACTS,
         )
         if (Build.VERSION.SDK_INT >= 33) list += Manifest.permission.POST_NOTIFICATIONS
         permissionLauncher.launch(list.toTypedArray())
@@ -207,6 +211,32 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                 }
                 HorizontalDivider()
                 PermissionRow(
+                    icon = Icons.Rounded.Call,
+                    title = "Call directly",
+                    description = "\"Call back\" dials straight away, even on the lock screen (no dialer, no unlocking)",
+                    ok = status.callPhone,
+                    onAllow = { requestRuntime() }
+                )
+                HorizontalDivider()
+                PermissionRow(
+                    icon = Icons.Rounded.Chat,
+                    title = "Notification access",
+                    description = "Needed for the popup after WhatsApp calls. Find Callback Reminder in the list and switch it on.",
+                    ok = status.notificationAccess,
+                    onAllow = {
+                        ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }
+                )
+                HorizontalDivider()
+                PermissionRow(
+                    icon = Icons.Rounded.Contacts,
+                    title = "Contacts",
+                    description = "Finds the phone number of a WhatsApp contact, so you can call back on your SIM",
+                    ok = status.contacts,
+                    onAllow = { requestRuntime() }
+                )
+                HorizontalDivider()
+                PermissionRow(
                     icon = Icons.Rounded.BatteryFull,
                     title = "Battery: Unrestricted",
                     description = "Stops Samsung from putting the app to sleep. Open App info → Battery → Unrestricted.",
@@ -229,6 +259,7 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
             var incoming by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.INCOMING)) }
             var outgoing by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.OUTGOING)) }
             var missed by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.MISSED)) }
+            var whatsapp by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.WHATSAPP)) }
 
             SectionCard(title = "After-call popup", subtitle = "Choose which calls show the popup.") {
                 SwitchRow("Outgoing calls", outgoing) {
@@ -242,6 +273,15 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                 SwitchRow("Missed calls", missed) {
                     missed = it; AppSettings.set(ctx, AppSettings.MISSED, it)
                 }
+                HorizontalDivider()
+                SwitchRow("WhatsApp calls", whatsapp) {
+                    whatsapp = it; AppSettings.set(ctx, AppSettings.WHATSAPP, it)
+                }
+                Text(
+                    "WhatsApp calls follow the same Outgoing / Incoming / Missed switches above.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // ---- Reminder sound ----

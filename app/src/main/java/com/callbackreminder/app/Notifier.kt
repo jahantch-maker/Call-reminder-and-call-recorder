@@ -99,10 +99,12 @@ object Notifier {
             .setShowWhen(true)
 
         if (r.number.isNotBlank()) {
+            // Straight to the call when the Call permission is given, otherwise the dialer.
+            val callAction = if (hasCallPhonePermission(ctx)) Intent.ACTION_CALL else Intent.ACTION_DIAL
             val dial = PendingIntent.getActivity(
                 ctx,
                 r.id.toInt() + 500_000,
-                Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(r.number))),
+                Intent(callAction, Uri.fromParts("tel", r.number.trim(), null)),
                 FLAGS
             )
             b.addAction(0, "Call", dial)
