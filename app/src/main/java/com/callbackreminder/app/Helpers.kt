@@ -32,6 +32,14 @@ object AppSettings {
     const val WHATSAPP = "popup_whatsapp"
     const val RINGTONE = "reminder_ringtone"
 
+    // Call recording
+    const val REC_PHONE = "rec_phone"
+    const val REC_WHATSAPP = "rec_whatsapp"
+    const val REC_SOURCE = "rec_source"
+    const val REC_AUTO_INDEX = "rec_auto_index"
+    const val REC_KEEP_DAYS = "rec_keep_days"
+    const val REC_STATUS = "rec_status"
+
     private fun p(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
     fun get(c: Context, key: String, default: Boolean = true) = p(c).getBoolean(key, default)
     fun set(c: Context, key: String, value: Boolean) = p(c).edit().putBoolean(key, value).apply()
@@ -332,7 +340,12 @@ data class SetupStatus(
     val callPhone: Boolean = true,
     val contacts: Boolean = true,
     val notificationAccess: Boolean = true,
+    val microphone: Boolean = true,
+    val accessibility: Boolean = true,
 ) {
+    /** True when everything call recording needs is switched on. */
+    val recordingReady: Boolean get() = microphone && accessibility
+
     val requiredOk: Boolean get() = phone && callLog && notifications && overlay
     val missingRequired: Int get() = listOf(phone, callLog, notifications, overlay).count { !it }
 
@@ -360,6 +373,8 @@ data class SetupStatus(
                 contacts = granted(ctx, Manifest.permission.READ_CONTACTS),
                 notificationAccess = NotificationManagerCompat.getEnabledListenerPackages(ctx)
                     .contains(ctx.packageName),
+                microphone = granted(ctx, Manifest.permission.RECORD_AUDIO),
+                accessibility = RecorderAccessibilityService.isEnabled(ctx),
             )
         }
     }

@@ -158,7 +158,7 @@ class WhatsAppCallListener : NotificationListenerService() {
             "calling" in all -> CallLog.Calls.OUTGOING_TYPE
             else -> prev?.type ?: UNKNOWN_TYPE
         }
-        live = LiveCall(
+        val updated = LiveCall(
             name = pickName(title, body).ifBlank { prev?.name.orEmpty() },
             type = type,
             connectedAt = when {
@@ -167,6 +167,19 @@ class WhatsAppCallListener : NotificationListenerService() {
                 else -> 0L
             },
         )
+        live = updated
+
+        // The call was just answered: start recording it.
+        if (updated.connectedAt > 0L && (prev == null || prev.connectedAt == 0L)) {
+            CallRecorder.startAsync(
+                ctx = applicationContext,
+                sessionKey = updated.connectedAt,
+                whatsApp = true,
+                type = updated.type,
+                name = updated.name,
+                number = ""
+            )
+        }
     }
 
     /** Runs a moment after a WhatsApp notification disappeared. */
@@ -187,6 +200,8 @@ class WhatsAppCallListener : NotificationListenerService() {
         if (stillOn) return
         live = null
         markActivity()
+        // The WhatsApp call is over (a phone-call recording, if any, keeps going).
+        CallRecorder.stopAsync(applicationContext, finalName = call.name, onlyWhatsApp = true)
 
         val answered = call.connectedAt > 0L
         val type = when {

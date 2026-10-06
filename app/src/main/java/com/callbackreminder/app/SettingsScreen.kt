@@ -10,7 +10,9 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,12 +31,16 @@ import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -60,7 +66,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 
 @Composable
-fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
+fun SettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings: () -> Unit) {
     val ctx = LocalContext.current
     var refresh by remember { mutableStateOf(0) }
     val status = remember(resumeKey, refresh) { SetupStatus.read(ctx) }
@@ -122,6 +128,7 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
             Manifest.permission.READ_CALL_LOG,
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_CONTACTS,
+            Manifest.permission.RECORD_AUDIO,
         )
         if (Build.VERSION.SDK_INT >= 33) list += Manifest.permission.POST_NOTIFICATIONS
         permissionLauncher.launch(list.toTypedArray())
@@ -282,6 +289,173 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // ---- Call recording ----
+            var recPhone by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_PHONE)) }
+            var recWhatsApp by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_WHATSAPP)) }
+            var recSource by remember { mutableStateOf(RecSource.chosen(ctx)) }
+            var keepDays by remember { mutableStateOf(AppSettings.getString(ctx, AppSettings.REC_KEEP_DAYS, "0")) }
+            var recStatus by remember(resumeKey, refresh) {
+                mutableStateOf(AppSettings.getString(ctx, AppSettings.REC_STATUS))
+            }
+            var sourceMenu by remember { mutableStateOf(false) }
+            var keepMenu by remember { mutableStateOf(false) }
+            var testing by remember { mutableStateOf(false) }
+            val keepOptions = listOf(
+                "0" to "Forever",
+                "30" to "30 days",
+                "60" to "60 days",
+                "90" to "90 days",
+                "180" to "6 months",
+            )
+
+            SectionCard(
+                title = "Call recording",
+                subtitle = "Records your calls and keeps them in the Recordings screen."
+            ) {
+                PermissionRow(
+                    icon = Icons.Rounded.Mic,
+                    title = "Microphone",
+                    description = "Needed to record",
+                    ok = status.microphone,
+                    onAllow = { requestRuntime() }
+                )
+                HorizontalDivider()
+                PermissionRow(
+                    icon = Icons.Rounded.Accessibility,
+                    title = "Accessibility service",
+                    description = "Open Accessibility → Installed apps → Callback Reminder call recording, and switch it on. " +
+                        "Without it Android silences the microphone during calls. It does not read your screen.",
+                    ok = status.accessibility,
+                    actionLabel = "Turn on",
+                    onAllow = {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                )
+                if (!status.accessibility) {
+                    Text(
+                        "If the switch is greyed out: open App info, tap the ⋮ menu (top right), choose " +
+                            "\"Allow restricted settings\", then try again.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = { openAppInfo() }) { Text("Open App info") }
+                }
+                HorizontalDivider()
+                SwitchRow("Record phone calls", recPhone) {
+                    recPhone = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it)
+                }
+                HorizontalDivider()
+                SwitchRow("Record WhatsApp calls", recWhatsApp) {
+                    recWhatsApp = it; AppSettings.set(ctx, AppSettings.REC_WHATSAPP, it)
+                }
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Recording source", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            RecSource.label(recSource),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            RecSource.options.firstOrNull { it.key == recSource }?.hint.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        FilledTonalButton(onClick = { sourceMenu = true }) { Text("Change") }
+                        DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
+                            RecSource.options.forEach { o ->
+                                DropdownMenuItem(
+                                    text = { Text(o.label) },
+                                    onClick = {
+                                        recSource = o.key
+                                        AppSettings.setString(ctx, AppSettings.REC_SOURCE, o.key)
+                                        sourceMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Keep recordings", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            keepOptions.firstOrNull { it.first == keepDays }?.second ?: "Forever",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        FilledTonalButton(onClick = { keepMenu = true }) { Text("Change") }
+                        DropdownMenu(expanded = keepMenu, onDismissRequest = { keepMenu = false }) {
+                            keepOptions.forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        keepDays = value
+                                        AppSettings.setString(ctx, AppSettings.REC_KEEP_DAYS, value)
+                                        keepMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Tip: phones usually only let apps record through the microphone, so turn on the " +
+                        "speaker during a call to capture the other person clearly.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (recStatus.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Last recording status: $recStatus",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        testing = true
+                        Toast.makeText(ctx, "Recording 5 seconds. Say something.", Toast.LENGTH_SHORT).show()
+                        CallRecorder.testAsync(ctx, 5) { message ->
+                            testing = false
+                            recStatus = AppSettings.getString(ctx, AppSettings.REC_STATUS)
+                            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !testing && status.microphone,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (testing) "Testing…" else "Test the microphone (5 s)") }
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = onOpenRecordings, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open recordings")
+                }
             }
 
             // ---- Reminder sound ----

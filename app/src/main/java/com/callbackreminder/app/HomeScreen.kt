@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
@@ -65,7 +66,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
-fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit) {
+fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () -> Unit) {
     val ctx = LocalContext.current
     val items by ReminderStore.items.collectAsState()
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -143,8 +144,13 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit) {
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                    Row {
+                        IconButton(onClick = onOpenRecordings) {
+                            Icon(Icons.Rounded.Mic, contentDescription = "Recordings")
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                        }
                     }
                 }
             }
@@ -201,6 +207,35 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit) {
                             )
                             Spacer(Modifier.height(12.dp))
                             Button(onClick = onOpenSettings) { Text("Open settings") }
+                        }
+                    }
+                }
+            }
+
+            if (status.requiredOk && !status.recordingReady &&
+                AppSettings.get(ctx, AppSettings.REC_PHONE)
+            ) {
+                item(key = "setup_recording") {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "New: call recording",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Allow the Microphone and switch on the call-recording Accessibility service " +
+                                    "to record your calls.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = onOpenSettings) { Text("Set up recording") }
                         }
                     }
                 }

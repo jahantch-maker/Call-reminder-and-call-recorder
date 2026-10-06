@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Call recording -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Only needed to play a ringtone you picked from your own music/files -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission
@@ -68,6 +71,28 @@
             android:name=".ReminderRingService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Call recording. Switching this Accessibility service on is what lets Android keep the
+             microphone working during a call. It does not read the screen. -->
+        <service
+            android:name=".RecorderAccessibilityService"
+            android:exported="true"
+            android:foregroundServiceType="microphone"
+            android:label="@string/rec_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_recorder" />
+        </service>
+
+        <!-- Fallback: keeps the app running while a call is recorded -->
+        <service
+            android:name=".CallRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- Detects when a call ends -->
         <receiver

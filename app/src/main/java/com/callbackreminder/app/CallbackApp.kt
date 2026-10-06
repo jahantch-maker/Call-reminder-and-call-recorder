@@ -6,6 +6,7 @@ class CallbackApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ReminderStore.init(this)
+        RecordingStore.init(this)
         Notifier.createChannels(this)
     }
 }

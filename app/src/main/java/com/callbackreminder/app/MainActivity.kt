@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ReminderStore.init(this)
+        RecordingStore.init(this)
         setContent {
             CallbackTheme {
                 AppRoot(resumeKey = resumeTick.intValue)
@@ -37,13 +38,26 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppRoot(resumeKey: Int) {
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    // 0 = home, 1 = settings, 2 = recordings
+    var screen by rememberSaveable { mutableIntStateOf(0) }
 
-    BackHandler(enabled = showSettings) { showSettings = false }
+    BackHandler(enabled = screen != 0) { screen = 0 }
 
-    if (showSettings) {
-        SettingsScreen(resumeKey = resumeKey, onBack = { showSettings = false })
-    } else {
-        HomeScreen(resumeKey = resumeKey, onOpenSettings = { showSettings = true })
+    when (screen) {
+        1 -> SettingsScreen(
+            resumeKey = resumeKey,
+            onBack = { screen = 0 },
+            onOpenRecordings = { screen = 2 }
+        )
+        2 -> RecordingsScreen(
+            resumeKey = resumeKey,
+            onBack = { screen = 0 },
+            onOpenSettings = { screen = 1 }
+        )
+        else -> HomeScreen(
+            resumeKey = resumeKey,
+            onOpenSettings = { screen = 1 },
+            onOpenRecordings = { screen = 2 }
+        )
     }
 }

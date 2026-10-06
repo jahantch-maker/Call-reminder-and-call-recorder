@@ -19,6 +19,7 @@ object Notifier {
     const val CH_REMINDER = "reminders"
     const val CH_POSTCALL = "postcall"
     const val CH_RINGING = "ringing"
+    const val CH_RECORDING = "recording"
     const val NOTIF_RING = 42
     private const val NOTIF_POSTCALL = 1
 
@@ -36,6 +37,13 @@ object Notifier {
         nm.createNotificationChannel(
             NotificationChannel(CH_POSTCALL, "After-call prompt", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Backup prompt if the popup after a call cannot open by itself"
+                setSound(null, null)
+                enableVibration(false)
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_RECORDING, "Call recording", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shown while a call is being recorded"
                 setSound(null, null)
                 enableVibration(false)
             }

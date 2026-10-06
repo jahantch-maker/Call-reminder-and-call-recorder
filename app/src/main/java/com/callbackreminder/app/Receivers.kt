@@ -85,6 +85,7 @@ class CallEndReceiver : BroadcastReceiver() {
         val p = prefs(context)
 
         var sessionOpen = false
+        var recordKey = -1L
         synchronized(lock) {
             val last = p.getString("last", TelephonyManager.EXTRA_STATE_IDLE)
             // Android (especially on dual-SIM phones) can send the same state twice.
@@ -112,9 +113,29 @@ class CallEndReceiver : BroadcastReceiver() {
                 }
                 if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
                     e.putBoolean("offhook", true)
+                    // The call is connected (or being dialled): this is when recording starts.
+                    recordKey = if (fresh) now else p.getLong("start", now)
                 }
             }
             e.apply()
+        }
+
+        val recCtx = context.applicationContext
+        if (state == TelephonyManager.EXTRA_STATE_IDLE) {
+            // Every call is over: stop recording straight away.
+            CallRecorder.stopAsync(recCtx)
+        }
+        if (recordKey > 0L && AppSettings.get(recCtx, AppSettings.REC_PHONE)) {
+            val pendingRec = goAsync()
+            CallRecorder.startAsync(
+                ctx = recCtx,
+                sessionKey = recordKey,
+                whatsApp = false,
+                type = 0,
+                name = "",
+                number = "",
+                done = { pendingRec.finish() }
+            )
         }
 
         if (sessionOpen) {
@@ -160,6 +181,9 @@ class CallEndReceiver : BroadcastReceiver() {
             if (entries.size >= needed) break
             Thread.sleep(POLL_MS)
         }
+
+        // Put the real name and number on the recording made during this call.
+        RecordingStore.attachCalls(session.start, entries)
 
         // A WhatsApp call never shows up in the call log, so the lookup above comes back empty.
         // WhatsAppCallListener already shows the proper popup for it; a blank "Unknown caller"

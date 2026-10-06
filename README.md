@@ -7,6 +7,20 @@ Pick a time in one tap and the phone reminds you then.
 - Built in the cloud by GitHub Actions: every push to `main` produces `CallbackReminder.apk`
   on the **Releases → Latest build** page
 
+## What's new in 0.4.0
+
+- **Call recording.** Phone calls (and, optionally, WhatsApp calls) are recorded automatically and listed
+  on the new **Recordings** screen (microphone icon on the home screen): play, rename, share, delete.
+  Files are saved as `.m4a` in the phone's **Recordings / Call Recorder** folder (visible in the Files app).
+  - Android does not let normal apps record the phone line itself, so recording goes through the
+    microphone. To stop Android silencing the microphone during calls, switch on the
+    **Callback Reminder call recording** Accessibility service once (Settings → Call recording).
+    It does not read the screen.
+  - For the other person to be heard clearly, use the speaker during the call.
+  - **Recording source** is "Automatic" by default: if a call comes out silent, the next call tries the next
+    source. You can also pick one yourself in Settings. "Test the microphone" records 5 seconds as a check.
+  - Recordings can be deleted automatically after 30 / 60 / 90 days / 6 months (Settings → Keep recordings).
+
 ## What's new in 0.3.1
 
 - Fixed a second, blank "Unknown caller" popup appearing after WhatsApp calls.
