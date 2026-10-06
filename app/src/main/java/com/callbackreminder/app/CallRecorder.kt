@@ -131,7 +131,7 @@ object CallRecorder {
         var peak: Int = 0
     }
 
-    class Outcome(val ok: Boolean, val peak: Int, val seconds: Long, val silent: Boolean)
+    class Outcome(val ok: Boolean, val peak: Int, val seconds: Long, val silent: Boolean, val source: String)
 
     private var active: Active? = null
     private var sampler: ScheduledFuture<*>? = null
@@ -175,27 +175,36 @@ object CallRecorder {
     /** Records a few seconds with the chosen source so the user can check that it works. */
     fun testAsync(ctx: Context, seconds: Int, onResult: (String) -> Unit) {
         val app = ctx.applicationContext
+        fun report(message: String) {
+            mainHandler.post { onResult(message) }
+        }
         exec.execute {
-            val message = try {
+            try {
                 if (active != null) {
-                    "A recording is already running."
+                    report("A recording is already running.")
                 } else if (!startNow(app, System.currentTimeMillis(), false, 0, "Test", "", test = true)) {
-                    "The test could not start. " + AppSettings.getString(app, AppSettings.REC_STATUS)
+                    report("The test could not start. " + AppSettings.getString(app, AppSettings.REC_STATUS))
                 } else {
-                    Thread.sleep(seconds * 1000L)
-                    val o = stopNow(app, null)
-                    when {
-                        o == null || !o.ok -> "The test recording failed. " +
-                            AppSettings.getString(app, AppSettings.REC_STATUS)
-                        o.silent -> "The microphone heard nothing (level ${o.peak}). Try speaking while testing."
-                        else -> "Microphone works. Sound level ${o.peak}. " +
-                            "Phone calls can behave differently, so make a short real call too."
-                    }
+                    // Do not sleep here: the level meter runs on this same thread.
+                    exec.schedule({
+                        val message = try {
+                            val o = stopNow(app, null)
+                            when {
+                                o == null || !o.ok -> "The test recording failed. " +
+                                    AppSettings.getString(app, AppSettings.REC_STATUS)
+                                o.silent -> "Heard nothing (level ${o.peak}) using ${RecSource.label(o.source)}."
+                                else -> "Microphone works (level ${o.peak}, ${RecSource.label(o.source)}). " +
+                                    "Phone calls can behave differently, so make a short real call too."
+                            }
+                        } catch (e: Throwable) {
+                            "Test failed: ${e.message ?: e.javaClass.simpleName}"
+                        }
+                        report(message)
+                    }, seconds.toLong(), TimeUnit.SECONDS)
                 }
             } catch (e: Throwable) {
-                "Test failed: ${e.message ?: e.javaClass.simpleName}"
+                report("Test failed: ${e.message ?: e.javaClass.simpleName}")
             }
-            mainHandler.post { onResult(message) }
         }
     }
 
@@ -251,6 +260,11 @@ object CallRecorder {
                 }
                 recorder.prepare()
                 recorder.start()
+                try {
+                    recorder.maxAmplitude // the first reading is always 0; this primes the meter
+                } catch (x: Exception) {
+                    // ignore
+                }
             } catch (e: Exception) {
                 lastError = "${RecSource.label(key)}: ${e.message ?: e.javaClass.simpleName}"
                 try {
@@ -339,7 +353,7 @@ object CallRecorder {
         if (a.test || !ok || elapsedMs < MIN_KEEP_MS) {
             RecordingFiles.delete(app, a.out.uri.toString())
             RecordingStore.remove(a.id)
-            return Outcome(ok, a.peak, seconds, silent)
+            return Outcome(ok, a.peak, seconds, silent, a.sourceKey)
         }
 
         RecordingFiles.publish(app, a.out)
@@ -358,7 +372,7 @@ object CallRecorder {
             }
         )
         RecordingStore.purgeOld(app)
-        return Outcome(true, a.peak, seconds, silent)
+        return Outcome(true, a.peak, seconds, silent, a.sourceKey)
     }
 
     @Suppress("DEPRECATION")
