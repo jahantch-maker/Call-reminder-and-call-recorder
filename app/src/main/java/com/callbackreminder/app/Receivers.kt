@@ -68,9 +68,9 @@ class CallEndReceiver : BroadcastReceiver() {
 
     companion object {
         private const val STALE_MS = 6 * 60 * 60 * 1000L
-        private const val SETTLE_MS = 1_500L
-        private const val POLL_MS = 600L
-        private const val POLL_TRIES = 7
+        // No settle wait: the popup should appear the moment the call ends.
+        private const val POLL_MS = 100L
+        private const val POLL_TRIES = 30
         // A WhatsApp call counts as part of a phone session if it was seen this long before it began.
         private const val WHATSAPP_OVERLAP_MS = 2 * 60_000L
         private val lock = Any()
@@ -134,10 +134,6 @@ class CallEndReceiver : BroadcastReceiver() {
 
     /** Runs a moment after the phone went idle. */
     private fun finishSession(ctx: Context) {
-        // Give the phone a moment: if another call starts right away (call waiting hand-over),
-        // the session simply carries on, and the popups wait until the very end.
-        Thread.sleep(SETTLE_MS)
-
         val p = prefs(ctx)
         val session: Session = synchronized(lock) {
             if (!p.getBoolean("active", false)) return
@@ -157,12 +153,11 @@ class CallEndReceiver : BroadcastReceiver() {
         // entry per ringing call (plus the call we dialled, if any), so we wait until they appear.
         val needed = (session.rings + if (session.outgoingStart) 1 else 0).coerceAtLeast(1)
         val notBefore = session.start - 2 * 60_000L
+        // The first check runs immediately; we only keep polling (every 100 ms) if the log is not ready yet.
         var entries: List<CallInfo> = emptyList()
-        var previousCount = -1
         for (i in 0 until POLL_TRIES) {
             entries = CallLookup.since(ctx, session.baseline, notBefore)
-            if (entries.size >= needed && entries.size == previousCount) break
-            previousCount = entries.size
+            if (entries.size >= needed) break
             Thread.sleep(POLL_MS)
         }
 

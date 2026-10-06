@@ -99,8 +99,49 @@ object Fmt {
     }
 }
 
-data class QuickOption(val title: String, val whenMs: Long) {
-    val subtitle: String get() = Fmt.dueLabel(whenMs)
+data class QuickOption(val title: String, val whenMs: Long, val subtitleText: String? = null) {
+    val subtitle: String get() = subtitleText ?: Fmt.dueLabel(whenMs)
+}
+
+/** The 12 one-tap choices in the after-call popup, laid out 3 per row (4 rows). */
+fun postCallOptions(now: Long = System.currentTimeMillis()): List<QuickOption> {
+    val zone = ZoneId.systemDefault()
+    val nowZ = Instant.ofEpochMilli(now).atZone(zone).withSecond(0).withNano(0)
+    val today = nowZ.toLocalDate()
+    val clock = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    val dayClock = DateTimeFormatter.ofPattern("EEE, h:mm a", Locale.getDefault())
+
+    fun inMinutes(label: String, minutes: Long): QuickOption {
+        val ms = now + minutes * 60_000L
+        val dt = Instant.ofEpochMilli(ms).atZone(zone)
+        val text = if (dt.toLocalDate() == today) dt.format(clock) else "Tmrw, ${dt.format(clock)}"
+        return QuickOption(label, ms, text)
+    }
+
+    fun tomorrow(hour: Int?): QuickOption {
+        val dt = if (hour == null) nowZ.plusDays(1) else today.plusDays(1).atTime(hour, 0).atZone(zone)
+        return QuickOption("Tomorrow", dt.toInstant().toEpochMilli(), dt.format(clock))
+    }
+
+    fun inTwoDays(hour: Int?): QuickOption {
+        val dt = if (hour == null) nowZ.plusDays(2) else today.plusDays(2).atTime(hour, 0).atZone(zone)
+        return QuickOption("In 2 days", dt.toInstant().toEpochMilli(), dt.format(dayClock))
+    }
+
+    return listOf(
+        inMinutes("15 min", 15),
+        inMinutes("30 min", 30),
+        inMinutes("45 min", 45),
+        inMinutes("1 hour", 60),
+        inMinutes("2 hours", 120),
+        inMinutes("3 hours", 180),
+        tomorrow(10),     // index 6: also the starting point of "Pick date & time"
+        tomorrow(16),
+        tomorrow(null),   // same time as now
+        inTwoDays(10),
+        inTwoDays(16),
+        inTwoDays(null),  // same time as now
+    )
 }
 
 /** The one-tap choices shown in the popup. */

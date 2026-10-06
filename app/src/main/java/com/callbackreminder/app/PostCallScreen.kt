@@ -109,7 +109,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     }
 
     val noRipple = remember { MutableInteractionSource() }
-    val options = remember { quickOptions() }
+    val options = remember { postCallOptions() }
 
     Box(
         modifier = Modifier
@@ -207,10 +207,10 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 )
                 Spacer(Modifier.height(10.dp))
 
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    options.chunked(2).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            pair.forEach { o ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.chunked(3).forEach { rowOptions ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowOptions.forEach { o ->
                                 OptionTile(
                                     title = o.title,
                                     subtitle = o.subtitle,
@@ -240,7 +240,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
 
     if (showPicker) {
         DateTimePickerFlow(
-            initialMs = options[2].whenMs,
+            initialMs = options[6].whenMs, // Tomorrow 10 am
             onPicked = { showPicker = false; schedule(it) },
             onDismiss = { showPicker = false }
         )
@@ -256,11 +256,17 @@ private fun OptionTile(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.height(46.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
@@ -268,10 +274,9 @@ private fun OptionTile(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 maxLines = 1
             )
-            Spacer(Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
