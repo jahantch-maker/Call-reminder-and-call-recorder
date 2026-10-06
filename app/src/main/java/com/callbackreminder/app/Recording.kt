@@ -311,6 +311,35 @@ object RecordingPlayer {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** Playback speed (1.0, 1.25 or 1.5). Remembered between visits. */
+    private val _speed = MutableStateFlow(1f)
+    val speed: StateFlow<Float> = _speed.asStateFlow()
+
+    fun loadSpeed(ctx: Context) {
+        _speed.value = AppSettings.getString(ctx, AppSettings.REC_SPEED, "1.0").toFloatOrNull() ?: 1f
+    }
+
+    @Synchronized
+    fun setSpeed(ctx: Context, value: Float) {
+        _speed.value = value
+        AppSettings.setString(ctx, AppSettings.REC_SPEED, value.toString())
+        val p = player ?: return
+        try {
+            // Only change the speed while playing: on some phones, setting it while paused starts playback.
+            if (p.isPlaying) applySpeed(p)
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    private fun applySpeed(p: MediaPlayer) {
+        try {
+            p.playbackParams = p.playbackParams.setSpeed(_speed.value)
+        } catch (e: Exception) {
+            // This phone cannot change speed for this file: it keeps playing at normal speed.
+        }
+    }
+
     /** Play, or pause if this recording is already playing. Returns an error text, or null. */
     @Synchronized
     fun toggle(ctx: Context, r: Recording): String? {
@@ -321,6 +350,7 @@ object RecordingPlayer {
                     p.pause()
                 } else {
                     p.start()
+                    applySpeed(p)
                 }
                 _state.value = _state.value.copy(playing = p.isPlaying, positionMs = p.currentPosition)
                 null
@@ -349,6 +379,7 @@ object RecordingPlayer {
                 }
             }
             mp.start()
+            applySpeed(mp)
             player = mp
             _state.value = State(id = r.id, playing = true, positionMs = 0, durationMs = mp.duration)
             null

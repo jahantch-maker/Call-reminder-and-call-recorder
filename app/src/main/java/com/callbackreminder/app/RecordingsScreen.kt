@@ -32,6 +32,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +82,7 @@ fun RecordingsScreen(
     val ctx = LocalContext.current
     val items by RecordingStore.items.collectAsState()
     val player by RecordingPlayer.state.collectAsState()
+    val speed by RecordingPlayer.speed.collectAsState()
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
 
     var renameFor by remember { mutableStateOf<Recording?>(null) }
@@ -88,6 +90,7 @@ fun RecordingsScreen(
 
     // Move the playback bar while a recording plays; stop playing when leaving the screen.
     LaunchedEffect(Unit) {
+        RecordingPlayer.loadSpeed(ctx)
         while (true) {
             delay(250L)
             RecordingPlayer.tick()
@@ -186,6 +189,8 @@ fun RecordingsScreen(
                 RecordingCard(
                     r = r,
                     player = player,
+                    speed = speed,
+                    onSpeed = { RecordingPlayer.setSpeed(ctx, it) },
                     onPlay = {
                         val err = RecordingPlayer.toggle(ctx, r)
                         if (err != null) Toast.makeText(ctx, err, Toast.LENGTH_SHORT).show()
@@ -256,6 +261,8 @@ fun RecordingsScreen(
 private fun RecordingCard(
     r: Recording,
     player: RecordingPlayer.State,
+    speed: Float,
+    onSpeed: (Float) -> Unit,
     onPlay: () -> Unit,
     onSeek: (Int) -> Unit,
     onRename: () -> Unit,
@@ -355,6 +362,24 @@ private fun RecordingCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Speed",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    listOf(1f to "1x", 1.25f to "1.25x", 1.5f to "1.5x").forEach { (value, label) ->
+                        FilterChip(
+                            selected = speed == value,
+                            onClick = { onSpeed(value) },
+                            label = { Text(label) }
+                        )
+                    }
                 }
             }
         }

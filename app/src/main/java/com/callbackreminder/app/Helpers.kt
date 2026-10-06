@@ -39,6 +39,7 @@ object AppSettings {
     const val REC_AUTO_INDEX = "rec_auto_index"
     const val REC_KEEP_DAYS = "rec_keep_days"
     const val REC_STATUS = "rec_status"
+    const val REC_SPEED = "rec_speed"
 
     private fun p(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
     fun get(c: Context, key: String, default: Boolean = true) = p(c).getBoolean(key, default)
