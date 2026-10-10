@@ -127,7 +127,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         val shown = remember { MutableTransitionState(false).apply { targetState = true } }
         AnimatedVisibility(
             visibleState = shown,
-            enter = slideInVertically(tween(300)) { it } + fadeIn(tween(200)),
+            enter = slideInVertically(tween(170)) { it } + fadeIn(tween(115)),
         ) {
             Surface(
                 modifier = Modifier
