@@ -5,7 +5,7 @@
 **Never forget to call someone back.**
 
 An Android app that asks *"When should I remind you to call back?"* the moment a call ends, rings like a real
-call when the time comes, and can record your calls too. Everything stays on your phone.
+call when the time comes, sends follow-up text messages for you, and can record your calls too. Everything stays on your phone.
 
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
@@ -15,7 +15,7 @@ call when the time comes, and can record your calls too. Everything stays on you
 <img src="docs/screenshots/01-never-forget.jpg" width="200" alt="Call-backs list" />
 <img src="docs/screenshots/02-after-call-popup.jpg" width="200" alt="After-call popup" />
 <img src="docs/screenshots/03-rings-like-a-call.jpg" width="200" alt="Ringing reminder" />
-<img src="docs/screenshots/07-call-recording.jpg" width="200" alt="Call recordings" />
+<img src="docs/screenshots/10-text-messages.jpg" width="200" alt="Scheduled text messages" />
 
 </div>
 
@@ -88,12 +88,12 @@ call when the time comes, and can record your calls too. Everything stays on you
 - If the phone was off at send time, it sends when the phone is back on if less than 12 hours late; otherwise it
   skips to the next repeat.
 - **Bursts**: turn on Burst and pick one of your templates (Settings › Text messages, up to 20, e.g.
-  "5 texts, 5 min apart"). Each text starts with its number: "Reminder 1: …", "Reminder 2: …". Combine it with a
+  "5 texts, 5 min apart", at least 5 minutes apart). Each text starts with its number: "Reminder 1: …", "Reminder 2: …". Combine it with a
   repeat, e.g. daily for 10 days, so one reminder replaces many. Burst texts are not retried; a missed one is skipped.
 - New messages start at **8:00 AM**; you pick the date.
 - Three tabs: **Scheduled**, **To review** and **Done**.
-  - If the person texts back exactly **Done** (switch in Settings › Text messages), their reminders stop and move to
-    To review with a banner. **Mark done** moves it to Done; **Not done** carries on sending.
+  - When the person replies **Done** to close the task (switch in Settings › Text messages), sending stops and the
+    task moves to To review with a banner. **Mark done** moves it to Done; **Not done** carries on sending.
   - When a burst or repeat ends with no reply, it also goes to To review ("No reply"); **Not done** lets you set new days.
   - Tap **Done** on a card when you already know the work is done.
 - Each message keeps a **History** (every text sent, delivered, failed or skipped, replies and your decisions).
@@ -113,6 +113,18 @@ call when the time comes, and can record your calls too. Everything stays on you
 - **Auto-delete** after 30 / 60 / 90 days or 6 months, or keep forever.
 - Accidental recordings shorter than 3 seconds are discarded.
 
+### ⚙️ Settings
+Settings is a short menu; each row opens its own page:
+
+| Page | What's there |
+|---|---|
+| **Setup** | Every permission with a green tick or an **Allow** button |
+| **After-call popup** | Which calls show the popup (outgoing, incoming, missed, WhatsApp) and a preview |
+| **Quick times** | Your 1 to 12 one-tap times: add, remove, drag to reorder, reset to default |
+| **Call recording** | Microphone and Accessibility setup, what to record, recording source, auto-delete, microphone test |
+| **Reminder style & ringtone** | Full screen / full screen then notification / banner, how many seconds, ringtone, test reminder |
+| **Text messages** | Burst templates (up to 20, with a "What is a burst?" guide) and the stop-on-"Done"-reply switch |
+
 ### 🧪 Try it out
 Settings has **Preview the after-call popup** and **Ring a test reminder in 10 seconds**, so you can test everything
 without making a real call.
@@ -122,11 +134,13 @@ without making a real call.
 | | | |
 |:-:|:-:|:-:|
 | <img src="docs/screenshots/01-never-forget.jpg" width="250"/> | <img src="docs/screenshots/02-after-call-popup.jpg" width="250"/> | <img src="docs/screenshots/03-rings-like-a-call.jpg" width="250"/> |
-| <img src="docs/screenshots/04-call-back-snooze.jpg" width="250"/> | <img src="docs/screenshots/05-whatsapp-calls.jpg" width="250"/> | <img src="docs/screenshots/06-call-waiting.jpg" width="250"/> |
-| <img src="docs/screenshots/07-call-recording.jpg" width="250"/> | <img src="docs/screenshots/08-recording-settings.jpg" width="250"/> | <img src="docs/screenshots/09-new-reminder.jpg" width="250"/> |
-| <img src="docs/screenshots/10-snooze-reschedule.jpg" width="250"/> | <img src="docs/screenshots/11-your-rules.jpg" width="250"/> | <img src="docs/screenshots/12-private-setup.jpg" width="250"/> |
+| <img src="docs/screenshots/04-reminder-style.jpg" width="250"/> | <img src="docs/screenshots/05-new-reminder.jpg" width="250"/> | <img src="docs/screenshots/06-recent-calls.jpg" width="250"/> |
+| <img src="docs/screenshots/07-date-and-time.jpg" width="250"/> | <img src="docs/screenshots/08-repeating-reminders.jpg" width="250"/> | <img src="docs/screenshots/09-quick-times.jpg" width="250"/> |
+| <img src="docs/screenshots/10-text-messages.jpg" width="250"/> | <img src="docs/screenshots/11-sms-bursts.jpg" width="250"/> | <img src="docs/screenshots/12-burst-templates.jpg" width="250"/> |
+| <img src="docs/screenshots/13-done-reply.jpg" width="250"/> | <img src="docs/screenshots/14-whatsapp-call-waiting.jpg" width="250"/> | <img src="docs/screenshots/15-call-recording.jpg" width="250"/> |
+| <img src="docs/screenshots/16-settings.jpg" width="250"/> | <img src="docs/screenshots/17-private-setup.jpg" width="250"/> |  |
 
-<sub>Screens are recreated from the app's UI code with sample names and numbers.</sub>
+<sub>Screens are recreated from the app's UI code (v0.7.0) with sample names and numbers.</sub>
 
 ## Install
 
@@ -191,8 +205,8 @@ Android does not let normal apps record the phone line itself, so the app record
 Requirements: JDK 17, Gradle 8.10.2, Android SDK 35.
 
 ```bash
-gradle assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+gradle assembleRelease
+# APK: app/build/outputs/apk/release/app-release.apk  (about 2 MB, R8-minified)
 ```
 
 GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) does the same on every push to `main`
@@ -231,7 +245,8 @@ app/src/main/java/com/callbackreminder/app/
   CallRecorder.kt / Recording.kt            recording engine, storage, playback
   RecordingsScreen.kt                       recordings list and player
   HomeScreen.kt / SettingsScreen.kt         main screens
-  AddReminderDialog.kt / Components.kt      new-reminder dialog, date & time picker, avatars
+  AddReminderDialog.kt / Components.kt      new-reminder dialog, contact card, recent calls, avatars
+  QuickTimes.kt / QuickTimesSettings.kt     your one-tap times and the Quick times page
   Helpers.kt / Theme.kt                     settings, formatting, permissions status, colours
 ```
 
@@ -244,6 +259,14 @@ app/src/main/java/com/callbackreminder/app/
 ### 0.6.0
 - **Scheduled text messages**: automatic SMS from your SIM at a set time, once or repeating, with retries,
   a sent/delivered history, and a tap-to-send fallback when SMS permission is off.
+
+### 0.5.3
+- The published APK is now an optimized release build (about 2 MB instead of 16 MB) with smoother animations.
+  It is signed with the same key, so it installs as an update.
+
+### 0.5.2
+- Settings split into section pages: Setup, After-call popup, Quick times, Call recording, and Reminder style &
+  ringtone, each sliding in as its own page. Home banners open the right page directly.
 
 ### 0.5.1
 - Redesigned **New reminder**: Contacts / Recent calls instead of typing, a contact card with the name, and one
