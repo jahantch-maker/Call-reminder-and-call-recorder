@@ -869,9 +869,37 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
     SettingsPage(title = "Text messages", onBack = onBack) {
         SectionCard(
             title = "Burst templates",
-            subtitle = "Pick one when you turn on Burst for a message. Each text starts with \"Reminder 1:\", " +
-                "\"Reminder 2:\" and so on. Up to ${BurstTemplate.MAX_TEMPLATES}."
+            subtitle = "Up to ${BurstTemplate.MAX_TEMPLATES} templates."
         ) {
+            // A short guide, so a first-time user knows what a burst is and how to use it.
+            androidx.compose.material3.Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        "What is a burst?",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "A burst sends the same message several times in a row, a few minutes apart, so it is " +
+                            "hard to miss. Each text starts with its number:\n" +
+                            "8:00  Reminder 1: Please fix the gate today.\n" +
+                            "8:05  Reminder 2: Please fix the gate today.\n" +
+                            "8:10  Reminder 3: …\n\n" +
+                            "How to use it:\n" +
+                            "1. Make a template here, e.g. 5 texts, 5 min apart.\n" +
+                            "2. In Text messages › New message, turn on Burst and pick the template.\n" +
+                            "3. Add a repeat (e.g. daily for 10 days) to send the burst every day until the work is done.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
             if (templates.isEmpty()) {
                 Text(
                     "No templates yet.",
