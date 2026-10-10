@@ -37,6 +37,9 @@ Everything stays on the phone: no account, no server, and the app has no interne
   months/years, chosen weekdays), ending never, on a date, or after a number of times. Done moves a repeating
   reminder to its next date; a forgotten one moves on by itself when the next date arrives.
 - **Call back dials immediately** on your SIM, with no dialer screen (needs the "Call directly" permission).
+- **New reminder**: pick who to call from **Contacts** or **Recent calls** (shown as a contact card with name
+  and number), add a note, and set the date & time in a Google Tasks style window (calendar, Set time,
+  Repeat). The same window is used for Change time and Snooze → Pick date & time.
 - Home screen lists what is overdue, later today and upcoming, plus a Done tab.
 
 ### Call recording
@@ -125,7 +128,8 @@ app/src/main/java/com/callbackreminder/app/
   WhatsAppCallListener.kt                   WhatsApp call detection
   RingService.kt / ReminderAlertActivity.kt ringing full-screen reminder
   ReminderStore.kt / Scheduler.kt           reminders and their alarms
-  Repeat.kt / RepeatPicker.kt               repeat rules and the Repeat picker
+  Repeat.kt / RepeatPicker.kt               repeat rules and the full-screen Repeat page
+  AddReminderDialog.kt / DateTimeDialog.kt  New reminder popup, Google Tasks style date & time window
   ReminderStyle.kt                          full screen, timed full screen, or banner
   CallRecorder.kt / Recording.kt            call recording engine, storage, playback
   RecordingsScreen.kt                       recordings list and player
@@ -133,6 +137,10 @@ app/src/main/java/com/callbackreminder/app/
 ```
 
 ## Changelog
+
+### 0.5.1
+- Redesigned **New reminder**: Contacts / Recent calls instead of typing, a contact card with the name, and one
+  Date & time button that opens a Google Tasks style calendar with Set time and a full-screen Repeat page.
 
 ### 0.5.0
 - **Reminder style** setting: full screen until you react, full screen then notification, or banner only.
