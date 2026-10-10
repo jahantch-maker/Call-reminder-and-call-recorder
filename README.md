@@ -52,7 +52,7 @@ Everything stays on the phone: no account, no server, and the app has no interne
 - If the phone was off at send time, it sends when the phone is back on if less than 12 hours late; otherwise it
   skips to the next repeat.
 - Each message keeps a short **History** (sent, delivered, failed, skipped).
-- Needs the SMS permission. On Android 13+ an app installed outside Play Store must first get
+- Needs the SMS permission. On Android 15+ an app installed outside Play Store must first get
   App info › ⋮ › **Allow restricted settings**; the app walks you through it. Without the permission you get a
   notification at the time and send it yourself from Messages.
 

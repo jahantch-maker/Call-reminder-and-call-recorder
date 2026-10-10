@@ -308,7 +308,7 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit) {
             title = { Text("Turn on SMS for this app") },
             text = {
                 Text(
-                    if (Build.VERSION.SDK_INT >= 33) {
+                    if (Build.VERSION.SDK_INT >= 35) {
                         "Android locks SMS for apps installed outside Play Store. One time only:\n\n" +
                             "1. Tap Open app info below.\n" +
                             "2. Tap ⋮ (top right) › Allow restricted settings, and confirm.\n" +
