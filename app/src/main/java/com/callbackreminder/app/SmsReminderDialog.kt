@@ -35,6 +35,11 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Switch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,20 +55,26 @@ import androidx.compose.ui.unit.dp
 fun SmsReminderDialog(
     initial: SmsReminder? = null,
     onDismiss: () -> Unit,
-    onSave: (name: String, number: String, message: String, dueAt: Long, repeat: Repeat?) -> Unit,
+    onSave: (name: String, number: String, message: String, dueAt: Long, repeat: Repeat?, burst: BurstTemplate?) -> Unit,
 ) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var number by remember { mutableStateOf(initial?.number.orEmpty()) }
     var message by remember { mutableStateOf(initial?.message.orEmpty()) }
+    // New messages start at 8:00 AM (opening time); you pick the date.
     var due by remember {
-        mutableLongStateOf(
-            initial?.dueAt?.takeIf { it > System.currentTimeMillis() }
-                ?: QuickTimes.options(ctx).getOrNull(1)?.whenMs
-                ?: (System.currentTimeMillis() + 3_600_000L)
+        mutableLongStateOf(initial?.dueAt?.takeIf { it > System.currentTimeMillis() } ?: nextEightAm())
+    }
+    var dateChosen by remember { mutableStateOf(initial != null) }
+    var repeat by remember { mutableStateOf(initial?.repeat) }
+    val templates = remember { BurstTemplates.load(ctx) }
+    var burstOn by remember { mutableStateOf(initial?.isBurst == true) }
+    var burst by remember {
+        mutableStateOf(
+            initial?.takeIf { it.isBurst }?.let { BurstTemplate(it.burstCount, it.burstGapMin) } ?: templates.firstOrNull()
         )
     }
-    var repeat by remember { mutableStateOf(initial?.repeat) }
+    var templateMenu by remember { mutableStateOf(false) }
     var showDateTime by remember { mutableStateOf(false) }
     var showRecent by remember { mutableStateOf(false) }
 
@@ -174,7 +185,10 @@ fun SmsReminderDialog(
                     Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(Fmt.dueLabel(due), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (dateChosen) Fmt.dueLabel(due) else "Pick a date · ${timeLabel(ctx, due)}",
+                            fontWeight = FontWeight.SemiBold
+                        )
                         repeat?.let { r ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Repeat, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -189,12 +203,54 @@ fun SmsReminderDialog(
                         }
                     }
                 }
+
+                // Burst: off sends one text each time; on sends a template's burst ("Reminder 1: …").
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Burst", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (burstOn) "Several texts each time, numbered Reminder 1, 2, 3…"
+                            else "One text each time",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = burstOn, onCheckedChange = { burstOn = it })
+                }
+                if (burstOn) {
+                    if (burst == null) {
+                        Text(
+                            "No burst templates yet. Add them in Settings › Text messages.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Box {
+                            OutlinedButton(
+                                onClick = { templateMenu = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text(burst?.label.orEmpty(), modifier = Modifier.weight(1f))
+                                Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Choose template")
+                            }
+                            DropdownMenu(expanded = templateMenu, onDismissRequest = { templateMenu = false }) {
+                                templates.forEach { t ->
+                                    DropdownMenuItem(
+                                        text = { Text(t.label) },
+                                        onClick = { burst = t; templateMenu = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = number.isNotBlank() && message.isNotBlank(),
-                onClick = { onSave(name, number, message, due, repeat) }
+                enabled = number.isNotBlank() && message.isNotBlank() && dateChosen && (!burstOn || burst != null),
+                onClick = { onSave(name, number, message, due, repeat, if (burstOn) burst else null) }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -208,6 +264,7 @@ fun SmsReminderDialog(
             onDone = { ms, r ->
                 due = ms
                 repeat = r
+                dateChosen = true
                 showDateTime = false
             },
             onDismiss = { showDateTime = false }
@@ -224,4 +281,19 @@ fun SmsReminderDialog(
             onDismiss = { showRecent = false }
         )
     }
+}
+
+/** 8:00 AM today if it's still ahead, otherwise tomorrow. */
+private fun nextEightAm(): Long {
+    val zone = java.time.ZoneId.systemDefault()
+    val now = java.time.ZonedDateTime.now(zone)
+    var t = now.toLocalDate().atTime(8, 0).atZone(zone)
+    if (!t.isAfter(now)) t = t.plusDays(1)
+    return t.toInstant().toEpochMilli()
+}
+
+private fun timeLabel(ctx: android.content.Context, ms: Long): String {
+    val pattern = if (android.text.format.DateFormat.is24HourFormat(ctx)) "HH:mm" else "h:mm a"
+    return java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.getDefault()))
 }

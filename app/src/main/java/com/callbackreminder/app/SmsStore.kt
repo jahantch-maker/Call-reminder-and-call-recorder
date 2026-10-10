@@ -10,9 +10,12 @@ import org.json.JSONObject
 /**
  * Keeps the scheduled text messages on the phone, next to (but separate from) the call-backs.
  * Every change is saved straight away and the matching alarm is set or cancelled.
+ *
+ * A reminder is in one of three places: Scheduled (still sending), To review (the person replied
+ * Done, or every text went out without a reply) or Done.
  */
 object SmsStore {
-    const val LOG_LIMIT = 30
+    const val LOG_LIMIT = 60
 
     private lateinit var appCtx: Context
     private val _items = MutableStateFlow<List<SmsReminder>>(emptyList())
@@ -56,6 +59,11 @@ object SmsStore {
                     attempts = o.optInt("attempts"),
                     retryAt = o.optLong("retryAt"),
                     log = log,
+                    burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
+                    burstGapMin = o.optInt("burstGap"),
+                    burstIndex = o.optInt("burstIndex"),
+                    review = SmsReminder.Review.values().firstOrNull { it.code == o.optString("review") },
+                    reviewAt = o.optLong("reviewAt"),
                 )
             }
         } catch (e: Exception) {
@@ -87,6 +95,11 @@ object SmsStore {
                     .put("attempts", r.attempts)
                     .put("retryAt", r.retryAt)
                     .put("log", log)
+                    .put("burstCount", r.burstCount)
+                    .put("burstGap", r.burstGapMin)
+                    .put("burstIndex", r.burstIndex)
+                    .put("review", r.review?.code ?: "")
+                    .put("reviewAt", r.reviewAt)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -114,11 +127,21 @@ object SmsStore {
             doneAt = 0L,
             attempts = 0,
             retryAt = 0L,
+            burstIndex = 0,
+            review = null,
+            reviewAt = 0L,
         )
     }
 
     @Synchronized
-    fun add(name: String, number: String, message: String, dueAt: Long, repeat: Repeat?): SmsReminder {
+    fun add(
+        name: String,
+        number: String,
+        message: String,
+        dueAt: Long,
+        repeat: Repeat?,
+        burst: BurstTemplate?,
+    ): SmsReminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
         val r = series(
@@ -129,6 +152,8 @@ object SmsStore {
                 message = message.trim(),
                 dueAt = dueAt,
                 createdAt = System.currentTimeMillis(),
+                burstCount = burst?.count ?: 1,
+                burstGapMin = burst?.gapMin ?: 0,
             ),
             dueAt,
             repeat
@@ -138,12 +163,27 @@ object SmsStore {
         return r
     }
 
-    /** Edit who, what, when and the repeat. The history is kept. */
+    /** Edit who, what, when, the repeat and the burst. Starts the series again; the history is kept. */
     @Synchronized
-    fun edit(id: Long, name: String, number: String, message: String, dueAt: Long, repeat: Repeat?) {
+    fun edit(
+        id: Long,
+        name: String,
+        number: String,
+        message: String,
+        dueAt: Long,
+        repeat: Repeat?,
+        burst: BurstTemplate?,
+    ) {
         val cur = get(id) ?: return
+        SmsNotifier.cancel(appCtx, id)
         val r = series(
-            cur.copy(name = name.trim(), number = number.trim(), message = message.trim()),
+            cur.copy(
+                name = name.trim(),
+                number = number.trim(),
+                message = message.trim(),
+                burstCount = burst?.count ?: 1,
+                burstGapMin = burst?.gapMin ?: 0,
+            ),
             dueAt,
             repeat
         )
@@ -151,11 +191,20 @@ object SmsStore {
         SmsScheduler.schedule(appCtx, r)
     }
 
-    /** Move the next message to a new time (also brings a finished one back). */
+    /** Move the current message (or burst) to a new time; also brings a finished one back to Scheduled. */
     @Synchronized
     fun reschedule(id: Long, newDueAt: Long) {
         val cur = get(id) ?: return
-        val r = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L, attempts = 0, retryAt = 0L)
+        val r = cur.copy(
+            dueAt = newDueAt,
+            done = false,
+            doneAt = 0L,
+            attempts = 0,
+            retryAt = 0L,
+            burstIndex = 0,
+            review = null,
+            reviewAt = 0L,
+        )
         replace(r)
         SmsScheduler.schedule(appCtx, r)
     }
@@ -165,7 +214,7 @@ object SmsStore {
         val cur = get(id) ?: return
         val r = cur.copy(repeat = null)
         replace(r)
-        if (!r.done) SmsScheduler.schedule(appCtx, r)
+        if (r.active) SmsScheduler.schedule(appCtx, r)
     }
 
     @Synchronized
@@ -181,16 +230,97 @@ object SmsStore {
         replace(withLog(cur, entry))
     }
 
+    /** You confirmed the work is done (from Scheduled or To review): stop everything, move to Done. */
+    @Synchronized
+    fun markDone(id: Long) {
+        val cur = get(id)?.takeIf { !it.done } ?: return
+        val now = System.currentTimeMillis()
+        SmsScheduler.cancel(appCtx, id)
+        SmsNotifier.cancel(appCtx, id)
+        SmsSender.InFlight.clear(appCtx, id)
+        replace(
+            withLog(cur, SmsLogEntry(now, SmsLogEntry.Status.MARKED_DONE))
+                .copy(done = true, doneAt = now, review = null, reviewAt = 0L, retryAt = 0L, attempts = 0)
+        )
+    }
+
     /**
-     * The current message is finished (sent, given up on, skipped or handed to you to send):
-     * note it in the history, then move a repeat on to its next time still ahead, or mark a
-     * one-off as done.
+     * "Not done" after the person replied Done: back to Scheduled, carrying on from the next text still
+     * ahead. (After "No reply" the screen opens Edit instead, to set new days.)
      */
     @Synchronized
-    fun finishOccurrence(id: Long, entry: SmsLogEntry) {
-        val cur = get(id) ?: return
+    fun resume(id: Long) {
+        val cur = get(id)?.takeIf { it.review == SmsReminder.Review.REPLIED } ?: return
         val now = System.currentTimeMillis()
-        var r = withLog(cur, entry).copy(attempts = 0, retryAt = 0L)
+        SmsNotifier.cancel(appCtx, id)
+        val r = withLog(cur, SmsLogEntry(now, SmsLogEntry.Status.MARKED_NOT_DONE))
+            .copy(review = null, reviewAt = 0L)
+        replace(r)
+        // Texts whose time passed while it waited are skipped (see SmsSender.sendDue).
+        SmsScheduler.schedule(appCtx, r)
+    }
+
+    /** "Not done" after No reply: note it before Edit sets new days. */
+    @Synchronized
+    fun noteNotDone(id: Long) {
+        addLog(id, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MARKED_NOT_DONE))
+    }
+
+    /**
+     * The person texted back "Done": every scheduled reminder to that number stops and waits in
+     * To review. Returns the reminders that moved.
+     */
+    @Synchronized
+    fun markReplied(fromNumber: String): List<SmsReminder> {
+        val now = System.currentTimeMillis()
+        val moved = mutableListOf<SmsReminder>()
+        val list = _items.value.map { r ->
+            if (r.active && sameNumber(r.number, fromNumber)) {
+                SmsScheduler.cancel(appCtx, r.id)
+                SmsSender.InFlight.clear(appCtx, r.id)
+                val m = withLog(r, SmsLogEntry(now, SmsLogEntry.Status.REPLIED_DONE))
+                    .copy(review = SmsReminder.Review.REPLIED, reviewAt = now, retryAt = 0L, attempts = 0)
+                moved += m
+                m
+            } else {
+                r
+            }
+        }
+        if (moved.isNotEmpty()) save(list)
+        return moved
+    }
+
+    /** Compares the last 10 digits, so "+92 300 1234567" and "0300-1234567" are the same person. */
+    fun sameNumber(a: String, b: String): Boolean {
+        val da = a.filter { it.isDigit() }.takeLast(10)
+        val db = b.filter { it.isDigit() }.takeLast(10)
+        return da.length >= 7 && da == db
+    }
+
+    /** One text of a burst is handled (sent, failed or skipped): move on to the next, or finish the burst. */
+    @Synchronized
+    fun advanceBurst(id: Long, entry: SmsLogEntry?, handled: Int = 1) {
+        val cur = get(id)?.takeIf { it.active } ?: return
+        val r = (if (entry != null) withLog(cur, entry) else cur).copy(burstIndex = cur.burstIndex + handled)
+        if (r.burstIndex >= r.burstCount) {
+            replace(r)
+            finishOccurrence(id, null)
+        } else {
+            replace(r)
+            SmsScheduler.schedule(appCtx, r)
+        }
+    }
+
+    /**
+     * The current message or burst is finished: note it in the history ([entry], if any), then move a
+     * repeat on to its next time still ahead. When nothing is left, a one-off single text goes to Done;
+     * a burst or a repeat that ran out without a "Done" reply goes to To review.
+     */
+    @Synchronized
+    fun finishOccurrence(id: Long, entry: SmsLogEntry?) {
+        val cur = get(id)?.takeIf { it.active } ?: return
+        val now = System.currentTimeMillis()
+        var r = (if (entry != null) withLog(cur, entry) else cur).copy(attempts = 0, retryAt = 0L, burstIndex = 0)
         if (r.repeat != null) {
             while (true) {
                 val at = r.nextOccurrence() ?: break
@@ -203,15 +333,67 @@ object SmsStore {
             }
         }
         SmsScheduler.cancel(appCtx, id)
-        replace(r.copy(done = true, doneAt = now))
+        if (r.repeat != null || r.isBurst) {
+            val reviewed = withLog(r, SmsLogEntry(now, SmsLogEntry.Status.NO_REPLY))
+                .copy(review = SmsReminder.Review.NO_REPLY, reviewAt = now)
+            replace(reviewed)
+            SmsNotifier.showReview(appCtx, reviewed)
+        } else {
+            replace(r.copy(done = true, doneAt = now))
+        }
     }
 
-    /** Sending failed: try again at [retryAt]. */
+    /** A single text failed: try again at [retryAt]. */
     @Synchronized
     fun setRetry(id: Long, attempts: Int, retryAt: Long, entry: SmsLogEntry) {
-        val cur = get(id) ?: return
+        val cur = get(id)?.takeIf { it.active } ?: return
         val r = withLog(cur, entry).copy(attempts = attempts, retryAt = retryAt)
         replace(r)
         SmsScheduler.schedule(appCtx, r)
     }
+
+    /** Send now on a burst: start the whole burst of the current day right now. */
+    @Synchronized
+    fun restartBurstNow(id: Long): SmsReminder? {
+        val cur = get(id)?.takeIf { it.active } ?: return null
+        val r = cur.copy(dueAt = System.currentTimeMillis(), burstIndex = 0, retryAt = 0L, attempts = 0)
+        replace(r)
+        return r
+    }
+}
+
+/** Screen requests that come from a notification, e.g. "Not done" opening a reminder's Edit window. */
+object SmsUi {
+    val editRequest = MutableStateFlow<Long?>(null)
+}
+
+/** Your burst templates (up to 20), kept on the phone. */
+object BurstTemplates {
+    private val DEFAULTS = listOf(BurstTemplate(3, 5), BurstTemplate(5, 5), BurstTemplate(10, 10))
+
+    private fun p(c: Context) = c.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+
+    fun load(c: Context): List<BurstTemplate> {
+        val raw = p(c).getString("templates", null) ?: return DEFAULTS
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                BurstTemplate(o.getInt("n"), o.getInt("gap"))
+            }
+        } catch (e: Exception) {
+            DEFAULTS
+        }
+    }
+
+    fun save(c: Context, list: List<BurstTemplate>) {
+        val arr = JSONArray()
+        list.take(BurstTemplate.MAX_TEMPLATES).forEach { arr.put(JSONObject().put("n", it.count).put("gap", it.gapMin)) }
+        p(c).edit().putString("templates", arr.toString()).apply()
+    }
+
+    /** "Stop when the person replies Done". Off until you turn it on. */
+    fun stopOnReply(c: Context): Boolean = p(c).getBoolean("stop_on_reply", false)
+
+    fun setStopOnReply(c: Context, on: Boolean) = p(c).edit().putBoolean("stop_on_reply", on).apply()
 }

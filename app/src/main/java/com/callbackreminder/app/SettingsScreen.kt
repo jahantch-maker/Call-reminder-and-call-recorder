@@ -31,11 +31,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Accessibility
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Contacts
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Mic
@@ -43,6 +46,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -87,6 +91,7 @@ fun SettingsScreen(
     onOpenQuickTimes: () -> Unit,
     onOpenRecording: () -> Unit,
     onOpenReminder: () -> Unit,
+    onOpenTextMessages: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -145,6 +150,13 @@ fun SettingsScreen(
             title = "Reminder style & ringtone",
             summary = reminderSummary,
             onClick = onOpenReminder
+        )
+        NavRow(
+            icon = Icons.Rounded.Sms,
+            title = "Text messages",
+            summary = "${BurstTemplates.load(ctx).size} burst templates · " +
+                if (BurstTemplates.stopOnReply(ctx)) "stops on a \"Done\" reply" else "reply check off",
+            onClick = onOpenTextMessages
         )
     }
 }
@@ -820,4 +832,188 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
         Text(label, style = MaterialTheme.typography.bodyLarge)
         Switch(checked = checked, onCheckedChange = onChange)
     }
+}
+
+// ---------------------------------------------------------------- Text messages
+
+/** Burst templates (up to 20) and the "stop when the person replies Done" switch. */
+@Composable
+fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var templates by remember { mutableStateOf(BurstTemplates.load(ctx)) }
+    var editIndex by remember { mutableStateOf<Int?>(null) } // -1 = new template
+    var stopOnReply by remember { mutableStateOf(BurstTemplates.stopOnReply(ctx)) }
+    var refresh by remember { mutableStateOf(0) }
+    var showHelp by remember { mutableStateOf(false) }
+    val canReceive = remember(resumeKey, refresh) {
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    val receivePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        refresh++
+        if (granted) {
+            stopOnReply = true
+            BurstTemplates.setStopOnReply(ctx, true)
+        } else {
+            showHelp = true
+        }
+    }
+
+    fun saveTemplates(list: List<BurstTemplate>) {
+        templates = list
+        BurstTemplates.save(ctx, list)
+    }
+
+    SettingsPage(title = "Text messages", onBack = onBack) {
+        SectionCard(
+            title = "Burst templates",
+            subtitle = "Pick one when you turn on Burst for a message. Each text starts with \"Reminder 1:\", " +
+                "\"Reminder 2:\" and so on. Up to ${BurstTemplate.MAX_TEMPLATES}."
+        ) {
+            if (templates.isEmpty()) {
+                Text(
+                    "No templates yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            templates.forEachIndexed { i, t ->
+                if (i > 0) HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(t.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { editIndex = i }) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+                    }
+                    IconButton(onClick = { saveTemplates(templates.filterIndexed { j, _ -> j != i }) }) {
+                        Icon(Icons.Rounded.Delete, contentDescription = "Delete")
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { editIndex = -1 },
+                enabled = templates.size < BurstTemplate.MAX_TEMPLATES
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Add template")
+            }
+        }
+
+        SectionCard(
+            title = "Stop when the person replies Done",
+            subtitle = "If they text back exactly Done (capital D), their reminders stop and move to To review " +
+                "so you can check the work. \"done\", \"DONE\" or \"Done.\" don't count. The app only checks " +
+                "for this word; it doesn't keep or show anyone's messages."
+        ) {
+            SwitchRow("Stop on a \"Done\" reply", stopOnReply && canReceive) { on ->
+                if (on && !canReceive) {
+                    receivePermission.launch(Manifest.permission.RECEIVE_SMS)
+                } else {
+                    stopOnReply = on
+                    BurstTemplates.setStopOnReply(ctx, on)
+                }
+            }
+            if (stopOnReply && !canReceive) {
+                Text(
+                    "Permission to receive SMS is off, so replies can't be checked.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+
+    editIndex?.let { idx ->
+        BurstTemplateDialog(
+            initial = templates.getOrNull(idx),
+            onDismiss = { editIndex = null },
+            onSave = { t ->
+                saveTemplates(if (idx < 0) templates + t else templates.mapIndexed { j, old -> if (j == idx) t else old })
+                editIndex = null
+            }
+        )
+    }
+
+    if (showHelp) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("Turn on SMS for this app") },
+            text = {
+                Text(
+                    if (Build.VERSION.SDK_INT >= 35) {
+                        "Android locks SMS for apps installed outside Play Store. One time only:\n\n" +
+                            "1. Tap Open app info below.\n" +
+                            "2. Tap ⋮ (top right) › Allow restricted settings, and confirm.\n" +
+                            "3. Tap Permissions › SMS › Allow.\n\n" +
+                            "Then come back and turn the switch on."
+                    } else {
+                        "Tap Open app info below, then Permissions › SMS › Allow. Then come back and turn the switch on."
+                    }
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showHelp = false
+                    openAppInfo(ctx)
+                }) { Text("Open app info") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showHelp = false }) { Text("Close") }
+            }
+        )
+    }
+}
+
+/** Add or edit one burst template: how many texts, how many minutes apart. */
+@Composable
+private fun BurstTemplateDialog(initial: BurstTemplate?, onDismiss: () -> Unit, onSave: (BurstTemplate) -> Unit) {
+    var countText by remember { mutableStateOf((initial?.count ?: 5).toString()) }
+    var gapText by remember { mutableStateOf((initial?.gapMin ?: 5).toString()) }
+    val count = countText.toIntOrNull()?.takeIf { it in BurstTemplate.COUNT_RANGE }
+    val gap = gapText.toIntOrNull()?.takeIf { it in BurstTemplate.GAP_RANGE }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "New burst template" else "Edit burst template") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = countText,
+                    onValueChange = { countText = it.filter { c -> c.isDigit() }.take(2) },
+                    label = { Text("Number of texts") },
+                    supportingText = { Text("${BurstTemplate.COUNT_RANGE.first} to ${BurstTemplate.COUNT_RANGE.last}") },
+                    isError = count == null,
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = gapText,
+                    onValueChange = { gapText = it.filter { c -> c.isDigit() }.take(3) },
+                    label = { Text("Minutes apart") },
+                    supportingText = { Text("${BurstTemplate.GAP_RANGE.first} to ${BurstTemplate.GAP_RANGE.last}") },
+                    isError = gap == null,
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                enabled = count != null && gap != null,
+                onClick = { onSave(BurstTemplate(count ?: 5, gap ?: 5)) }
+            ) { Text("Save") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

@@ -10,7 +10,7 @@ call when the time comes, and can record your calls too. Everything stays on you
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
 ![No internet permission](https://img.shields.io/badge/privacy-no%20internet%20permission-0FA68E)
-![Version](https://img.shields.io/badge/version-0.6.0-2F5BEA)
+![Version](https://img.shields.io/badge/version-0.7.0-2F5BEA)
 
 <img src="docs/screenshots/01-never-forget.jpg" width="200" alt="Call-backs list" />
 <img src="docs/screenshots/02-after-call-popup.jpg" width="200" alt="After-call popup" />
@@ -87,7 +87,16 @@ call when the time comes, and can record your calls too. Everything stays on you
   **Try again** and **Open in Messages**.
 - If the phone was off at send time, it sends when the phone is back on if less than 12 hours late; otherwise it
   skips to the next repeat.
-- Each message keeps a short **History** (sent, delivered, failed, skipped).
+- **Bursts**: turn on Burst and pick one of your templates (Settings › Text messages, up to 20, e.g.
+  "5 texts, 5 min apart"). Each text starts with its number: "Reminder 1: …", "Reminder 2: …". Combine it with a
+  repeat, e.g. daily for 10 days, so one reminder replaces many. Burst texts are not retried; a missed one is skipped.
+- New messages start at **8:00 AM**; you pick the date.
+- Three tabs: **Scheduled**, **To review** and **Done**.
+  - If the person texts back exactly **Done** (switch in Settings › Text messages), their reminders stop and move to
+    To review with a banner. **Mark done** moves it to Done; **Not done** carries on sending.
+  - When a burst or repeat ends with no reply, it also goes to To review ("No reply"); **Not done** lets you set new days.
+  - Tap **Done** on a card when you already know the work is done.
+- Each message keeps a **History** (every text sent, delivered, failed or skipped, replies and your decisions).
 - Needs the SMS permission. On Android 15+ an app installed outside Play Store must first get
   App info › ⋮ › **Allow restricted settings**; the app walks you through it. Without the permission you get a
   notification at the time and send it yourself from Messages.
@@ -147,6 +156,7 @@ Open the app and go to **⚙ Settings → Setup**. It shows a green tick for eve
 | Microphone | Record calls |
 | Accessibility service | Keep the microphone working during calls |
 | SMS (on the Text messages screen) | Send your scheduled text messages |
+| Receive SMS (optional) | Notice a "Done" reply so a reminder can stop |
 
 > **If a permission or the Accessibility switch is greyed out:** open **App info**, tap the **⋮** menu
 > (top right), choose **Allow restricted settings**, then try again. Android does this for apps installed
@@ -216,7 +226,7 @@ app/src/main/java/com/callbackreminder/app/
   DateTimeDialog.kt                         Google Tasks style date & time window
   ReminderStyle.kt                          full screen, timed full screen, or banner
   SmsStore.kt / SmsSender.kt                scheduled text messages, sending, retries
-  MessagesScreen.kt / SmsReminderDialog.kt  Text messages screen and New message popup
+  MessagesScreen.kt / SmsReminderDialog.kt  Text messages screen (Scheduled / To review / Done), New message popup
   Notifier.kt                               notification channels and backup notifications
   CallRecorder.kt / Recording.kt            recording engine, storage, playback
   RecordingsScreen.kt                       recordings list and player
@@ -226,6 +236,10 @@ app/src/main/java/com/callbackreminder/app/
 ```
 
 ## Changelog
+
+### 0.7.0
+- **Bursts** for text messages with your own templates, "Reminder N:" numbering, 8:00 AM default time,
+  **To review** tab, stop on a "Done" reply, and Mark done / Not done.
 
 ### 0.6.0
 - **Scheduled text messages**: automatic SMS from your SIM at a set time, once or repeating, with retries,

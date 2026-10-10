@@ -32,6 +32,8 @@ class MainActivity : ComponentActivity() {
         /** Which screen a notification wants open, e.g. [OPEN_MESSAGES]. */
         const val EXTRA_OPEN = "open_screen"
         const val OPEN_MESSAGES = "messages"
+        /** A text message reminder to open in Edit (from the "Not done" button after no reply). */
+        const val EXTRA_EDIT_SMS = "edit_sms"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -62,6 +64,12 @@ class MainActivity : ComponentActivity() {
 
     private fun handleOpen(intent: Intent?) {
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSAGES) {
+            val editId = intent.getLongExtra(EXTRA_EDIT_SMS, -1L)
+            if (editId >= 0) {
+                SmsStore.noteNotDone(editId)
+                SmsUi.editRequest.value = editId
+                SmsNotifier.cancel(this, editId)
+            }
             openMessagesTick.intValue = openMessagesTick.intValue + 1
         }
     }
@@ -83,6 +91,7 @@ private object Screen {
     const val RECORDING_SETTINGS = 6
     const val REMINDER_SETTINGS = 7
     const val MESSAGES = 8
+    const val TEXT_SETTINGS = 9
 }
 
 @Composable
@@ -135,7 +144,8 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
                     onOpenPopup = { open(Screen.POPUP_SETTINGS) },
                     onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
                     onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
-                    onOpenReminder = { open(Screen.REMINDER_SETTINGS) }
+                    onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
+                    onOpenTextMessages = { open(Screen.TEXT_SETTINGS) }
                 )
                 Screen.RECORDINGS -> RecordingsScreen(
                     resumeKey = resumeKey,
@@ -151,7 +161,12 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
                     onOpenRecordings = { open(Screen.RECORDINGS) }
                 )
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
-                Screen.MESSAGES -> MessagesScreen(resumeKey = resumeKey, onBack = { back() })
+                Screen.MESSAGES -> MessagesScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenSettings = { open(Screen.TEXT_SETTINGS) }
+                )
+                Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 else -> HomeScreen(
                     resumeKey = resumeKey,
                     onOpenSettings = { open(Screen.SETTINGS) },
