@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Finds the phone number of a WhatsApp contact so you can call back on your SIM -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Sends your scheduled text messages from your own SIM -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -122,6 +124,21 @@
         <!-- Snooze / Done buttons on the reminder notification -->
         <receiver
             android:name=".ActionReceiver"
+            android:exported="false" />
+
+        <!-- Sends a scheduled text message when it is due -->
+        <receiver
+            android:name=".SmsAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Hears whether a text went out and was delivered -->
+        <receiver
+            android:name=".SmsResultReceiver"
+            android:exported="false" />
+
+        <!-- Try again on the "couldn't send" notification -->
+        <receiver
+            android:name=".SmsActionReceiver"
             android:exported="false" />
 
         <!-- Re-arms reminders after a phone restart or app update -->

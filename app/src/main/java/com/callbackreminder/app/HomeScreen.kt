@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,6 +74,7 @@ fun HomeScreen(
     onOpenSetup: () -> Unit,
     onOpenRecordingSettings: () -> Unit,
     onOpenRecordings: () -> Unit,
+    onOpenMessages: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val items by ReminderStore.items.collectAsState()
@@ -152,6 +154,9 @@ fun HomeScreen(
                         )
                     }
                     Row {
+                        IconButton(onClick = onOpenMessages) {
+                            Icon(Icons.Rounded.Sms, contentDescription = "Text messages")
+                        }
                         IconButton(onClick = onOpenRecordings) {
                             Icon(Icons.Rounded.Mic, contentDescription = "Recordings")
                         }

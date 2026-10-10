@@ -42,6 +42,20 @@ Everything stays on the phone: no account, no server, and the app has no interne
   Repeat). The same window is used for Change time and Snooze → Pick date & time.
 - Home screen lists what is overdue, later today and upcoming, plus a Done tab.
 
+### Scheduled text messages (SMS)
+- **Text messages** screen (message icon on the home screen): schedule an SMS to someone, once or on a repeat
+  (same Google Tasks style repeats), e.g. a weekly "please wash the solar panels".
+- Sent **automatically** at the set time from your SIM (the phone's default SMS SIM), even when the phone is locked.
+  It shows up in your normal Messages app. A quiet "Sent to … ✓" notification follows.
+- If it can't go out (no signal, no balance) it retries every 15 minutes up to 3 times, then alerts you with
+  **Try again** and **Open in Messages**.
+- If the phone was off at send time, it sends when the phone is back on if less than 12 hours late; otherwise it
+  skips to the next repeat.
+- Each message keeps a short **History** (sent, delivered, failed, skipped).
+- Needs the SMS permission. On Android 15+ an app installed outside Play Store must first get
+  App info › ⋮ › **Allow restricted settings**; the app walks you through it. Without the permission you get a
+  notification at the time and send it yourself from Messages.
+
 ### Call recording
 - Records phone calls automatically, and optionally WhatsApp calls.
 - **Recordings screen** (microphone icon on the home screen): play, seek, **playback speed 1x / 1.25x / 1.5x**,
@@ -137,6 +151,10 @@ app/src/main/java/com/callbackreminder/app/
 ```
 
 ## Changelog
+
+### 0.6.0
+- **Scheduled text messages**: automatic SMS from your SIM at a set time, once or repeating, with retries,
+  a sent/delivered history, and a tap-to-send fallback when SMS permission is off.
 
 ### 0.5.1
 - Redesigned **New reminder**: Contacts / Recent calls instead of typing, a contact card with the name, and one

@@ -225,7 +225,7 @@ fun AddReminderDialog(
 
 /** The person you picked: avatar, name and number, with ✕ to pick someone else. */
 @Composable
-private fun ContactCard(name: String, number: String, onClear: () -> Unit) {
+internal fun ContactCard(name: String, number: String, onClear: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -262,7 +262,7 @@ private fun ContactCard(name: String, number: String, onClear: () -> Unit) {
 
 /** The phone's last 100 calls; tap one to pick that person. Repeated calls in a row show once with a count. */
 @Composable
-private fun RecentCallsDialog(onPick: (CallInfo) -> Unit, onDismiss: () -> Unit) {
+internal fun RecentCallsDialog(onPick: (CallInfo) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val groups = remember {
         val out = mutableListOf<Pair<CallInfo, Int>>()
