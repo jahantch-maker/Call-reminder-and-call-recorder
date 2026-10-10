@@ -67,7 +67,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
-fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () -> Unit) {
+fun HomeScreen(
+    resumeKey: Int,
+    onOpenSettings: () -> Unit,
+    onOpenSetup: () -> Unit,
+    onOpenRecordingSettings: () -> Unit,
+    onOpenRecordings: () -> Unit,
+) {
     val ctx = LocalContext.current
     val items by ReminderStore.items.collectAsState()
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -176,7 +182,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Set up now") }
+                            Button(onClick = onOpenSetup) { Text("Set up now") }
                         }
                     }
                 }
@@ -207,7 +213,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Open settings") }
+                            Button(onClick = onOpenSetup) { Text("Open setup") }
                         }
                     }
                 }
@@ -236,7 +242,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Set up recording") }
+                            Button(onClick = onOpenRecordingSettings) { Text("Set up recording") }
                         }
                     }
                 }

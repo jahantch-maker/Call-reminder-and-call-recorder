@@ -54,6 +54,10 @@ private object Screen {
     const val SETTINGS = 1
     const val RECORDINGS = 2
     const val QUICK_TIMES = 3
+    const val SETUP = 4
+    const val POPUP_SETTINGS = 5
+    const val RECORDING_SETTINGS = 6
+    const val REMINDER_SETTINGS = 7
 }
 
 @Composable
@@ -97,18 +101,31 @@ private fun AppRoot(resumeKey: Int) {
                 Screen.SETTINGS -> SettingsScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },
-                    onOpenRecordings = { open(Screen.RECORDINGS) },
-                    onOpenQuickTimes = { open(Screen.QUICK_TIMES) }
+                    onOpenSetup = { open(Screen.SETUP) },
+                    onOpenPopup = { open(Screen.POPUP_SETTINGS) },
+                    onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
+                    onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
+                    onOpenReminder = { open(Screen.REMINDER_SETTINGS) }
                 )
                 Screen.RECORDINGS -> RecordingsScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },
-                    onOpenSettings = { open(Screen.SETTINGS) }
+                    onOpenSettings = { open(Screen.RECORDING_SETTINGS) }
                 )
                 Screen.QUICK_TIMES -> QuickTimesScreen(onBack = { back() })
+                Screen.SETUP -> SetupSettingsScreen(resumeKey = resumeKey, onBack = { back() })
+                Screen.POPUP_SETTINGS -> PopupSettingsScreen(onBack = { back() })
+                Screen.RECORDING_SETTINGS -> RecordingSettingsScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenRecordings = { open(Screen.RECORDINGS) }
+                )
+                Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
                 else -> HomeScreen(
                     resumeKey = resumeKey,
                     onOpenSettings = { open(Screen.SETTINGS) },
+                    onOpenSetup = { open(Screen.SETUP) },
+                    onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
                     onOpenRecordings = { open(Screen.RECORDINGS) }
                 )
             }

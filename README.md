@@ -31,7 +31,7 @@ Everything stays on the phone: no account, no server, and the app has no interne
 - At the due time a **full-screen ringing reminder** opens, even on the lock screen. It rings at your phone's
   ringtone volume (silent when the phone is silent), loops until you act, and you can choose the ringtone.
 - Buttons: **Call back**, **Snooze**, **Done**.
-- **Reminder style** (Settings): full screen until you react, full screen for 10/15/30/60 seconds and then a
+- **Reminder style** (Settings → Reminder style & ringtone): full screen until you react, full screen for 10/15/30/60 seconds and then a
   notification you can find later, or a plain banner notification.
 - **Repeating reminders**, like Google Tasks: daily, weekly, monthly, yearly or custom (every N days/weeks/
   months/years, chosen weekdays), ending never, on a date, or after a number of times. Done moves a repeating
@@ -58,7 +58,7 @@ Android does not let normal apps record the phone line itself. This app records 
   once (*Settings → Call recording → Accessibility service*). The service does nothing else: it ignores all
   events and cannot read the screen.
 - The other person is only heard clearly if you use the **speaker** during the call.
-- **Recording source** (Settings) is *Automatic* by default. If a call comes out silent, the next call tries the
+- **Recording source** (Settings → Call recording) is *Automatic* by default. If a call comes out silent, the next call tries the
   next source. You can also choose one yourself. *Test the microphone* records 5 seconds as a quick check.
 - Results depend on the phone and Android version. Recording laws differ between countries, so make sure
   recording is allowed where you are.
@@ -72,7 +72,7 @@ Android does not let normal apps record the phone line itself. This app records 
 
 ## First-time setup
 
-Open the app and go to **Settings**. The setup list shows what is still needed:
+Open the app and go to **Settings → Setup**. The list shows what is still needed:
 
 | Permission | Why |
 |---|---|
