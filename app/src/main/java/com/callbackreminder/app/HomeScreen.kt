@@ -23,8 +23,10 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,7 +68,14 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
-fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () -> Unit) {
+fun HomeScreen(
+    resumeKey: Int,
+    onOpenSettings: () -> Unit,
+    onOpenSetup: () -> Unit,
+    onOpenRecordingSettings: () -> Unit,
+    onOpenRecordings: () -> Unit,
+    onOpenMessages: () -> Unit,
+) {
     val ctx = LocalContext.current
     val items by ReminderStore.items.collectAsState()
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -145,6 +154,9 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                         )
                     }
                     Row {
+                        IconButton(onClick = onOpenMessages) {
+                            Icon(Icons.Rounded.Sms, contentDescription = "Text messages")
+                        }
                         IconButton(onClick = onOpenRecordings) {
                             Icon(Icons.Rounded.Mic, contentDescription = "Recordings")
                         }
@@ -175,7 +187,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Set up now") }
+                            Button(onClick = onOpenSetup) { Text("Set up now") }
                         }
                     }
                 }
@@ -206,7 +218,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Open settings") }
+                            Button(onClick = onOpenSetup) { Text("Open setup") }
                         }
                     }
                 }
@@ -235,7 +247,7 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = onOpenSettings) { Text("Set up recording") }
+                            Button(onClick = onOpenRecordingSettings) { Text("Set up recording") }
                         }
                     }
                 }
@@ -293,11 +305,13 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                     }
                 }
                 items(finished, key = { it.id }) { r ->
-                    ReminderCard(r, now, done = true, ctx = ctx,
-                        onDone = {},
-                        onSnooze = {},
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r })
+                    Box(Modifier.animateItem()) {
+                        ReminderCard(r, now, done = true, ctx = ctx,
+                            onDone = {},
+                            onSnooze = {},
+                            onPickTime = { rescheduleFor = r },
+                            onDelete = { deleteFor = r })
+                    }
                 }
             }
         }
@@ -306,8 +320,8 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
     if (showAdd) {
         AddReminderDialog(
             onDismiss = { showAdd = false },
-            onSave = { name, number, note, dueAt ->
-                ReminderStore.add(name, number, note, dueAt)
+            onSave = { name, number, note, dueAt, repeat ->
+                ReminderStore.add(name, number, note, dueAt, repeat)
                 showAdd = false
             }
         )
@@ -356,7 +370,7 @@ private fun LazyListScope.reminderGroup(
             modifier = Modifier.padding(top = 4.dp)
         )
     }
-    items(list, key = { it.id }) { r -> card(r) }
+    items(list, key = { it.id }) { r -> Box(Modifier.animateItem()) { card(r) } }
 }
 
 @Composable
@@ -445,6 +459,12 @@ private fun ReminderCard(
                             text = { Text(if (done) "Reschedule" else "Change time") },
                             onClick = { menuOpen = false; onPickTime() }
                         )
+                        if (r.repeat != null && !done) {
+                            DropdownMenuItem(
+                                text = { Text("Stop repeating") },
+                                onClick = { menuOpen = false; ReminderStore.stopRepeating(r.id) }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                             onClick = { menuOpen = false; onDelete() }
@@ -472,6 +492,25 @@ private fun ReminderCard(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal
                 )
+            }
+
+            val repeatLabel = r.repeatLabel
+            if (repeatLabel != null && !done) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Repeat,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        repeatLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             if (r.note.isNotBlank()) {
@@ -513,7 +552,7 @@ private fun ReminderCard(
                             Text("Snooze")
                         }
                         DropdownMenu(expanded = snoozeOpen, onDismissRequest = { snoozeOpen = false }) {
-                            quickOptions().take(5).forEach { o ->
+                            QuickTimes.options(ctx).forEach { o ->
                                 DropdownMenuItem(
                                     text = { Text("${o.title} · ${o.subtitle}") },
                                     onClick = { snoozeOpen = false; onSnooze(o.whenMs) }

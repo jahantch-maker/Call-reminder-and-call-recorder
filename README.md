@@ -10,7 +10,7 @@ call when the time comes, and can record your calls too. Everything stays on you
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
 ![No internet permission](https://img.shields.io/badge/privacy-no%20internet%20permission-0FA68E)
-![Version](https://img.shields.io/badge/version-0.4.0-2F5BEA)
+![Version](https://img.shields.io/badge/version-0.6.0-2F5BEA)
 
 <img src="docs/screenshots/01-never-forget.jpg" width="200" alt="Call-backs list" />
 <img src="docs/screenshots/02-after-call-popup.jpg" width="200" alt="After-call popup" />
@@ -37,7 +37,8 @@ call when the time comes, and can record your calls too. Everything stays on you
 
 ### 📞 After-call popup
 - Slides up **the moment a call ends**: phone calls *and* WhatsApp voice/video calls.
-- **12 one-tap reminder times** in a 3 × 4 grid, each showing the exact time it will ring:
+- **One-tap reminder times**, each showing the exact time it will ring. These are the defaults; change, reorder
+  or reset them in Settings → Quick times (1 to 12):
 
   | | | |
   |---|---|---|
@@ -57,9 +58,14 @@ call when the time comes, and can record your calls too. Everything stays on you
 - At the due time a **full-screen reminder** opens and the phone rings, **even on the lock screen**.
 - It rings at your **ringtone volume**, vibrates in vibrate mode and stays quiet in silent mode. It keeps ringing until
   you act (with a 30-minute safety stop), and stays quiet if you are already on a call.
+- **Reminder style** (Settings → Reminder style & ringtone): full screen until you react, full screen for
+  10/15/30/60 seconds and then a notification, or a plain banner notification.
 - **Call back** dials immediately on your SIM, with no dialer screen and no unlocking (needs the "Call directly"
   permission; otherwise the dialer opens).
-- **Snooze** for 10 min, 30 min, 1 h, 3 h, tomorrow morning, or any date and time. **Done** files it away.
+- **Snooze** to one of your quick times or any date and time. **Done** files it away.
+- **Repeating reminders**, like Google Tasks: daily, weekly, monthly, yearly or custom (every N days/weeks/
+  months/years, chosen weekdays), ending never, on a date, or after a number of times. Done moves a repeating
+  reminder to its next date; a forgotten one moves on by itself when the next date arrives.
 - Several reminders due at once are shown together on one screen.
 - Pick your own **reminder ringtone**.
 
@@ -67,8 +73,24 @@ call when the time comes, and can record your calls too. Everything stays on you
 - Grouped into **Overdue**, **Later today** and **Upcoming**, with live "In 1 h" / "Overdue by 45 min" labels.
 - Call, Snooze or Done right from each card; change the time or delete from the ⋮ menu.
 - **Done** tab with your finished call-backs, and "Call again" / "Reschedule".
-- **New reminder** button to add a follow-up by hand, with a contact picker.
+- **New reminder**: pick who to call from **Contacts** or **Recent calls** (shown as a contact card with name
+  and number), add a note, and set the date & time in a Google Tasks style window (calendar, Set time,
+  Repeat).
 - Reminders survive a phone restart or app update.
+
+### 💬 Scheduled text messages (SMS)
+- **Text messages** screen (message icon on the home screen): schedule an SMS to someone, once or on a repeat
+  (same Google Tasks style repeats), e.g. a weekly "please wash the solar panels".
+- Sent **automatically** at the set time from your SIM (the phone's default SMS SIM), even when the phone is locked.
+  It shows up in your normal Messages app. A quiet "Sent to … ✓" notification follows.
+- If it can't go out (no signal, no balance) it retries every 15 minutes up to 3 times, then alerts you with
+  **Try again** and **Open in Messages**.
+- If the phone was off at send time, it sends when the phone is back on if less than 12 hours late; otherwise it
+  skips to the next repeat.
+- Each message keeps a short **History** (sent, delivered, failed, skipped).
+- Needs the SMS permission. On Android 15+ an app installed outside Play Store must first get
+  App info › ⋮ › **Allow restricted settings**; the app walks you through it. Without the permission you get a
+  notification at the time and send it yourself from Messages.
 
 ### 🎙️ Call recording
 - Records **phone calls automatically**, and optionally **WhatsApp calls**.
@@ -108,7 +130,7 @@ Built and tested on a Samsung Galaxy S25 Ultra (One UI 8.5, Android 16). Works o
 
 ## First-time setup
 
-Open the app and tap **⚙ Settings**. The **Setup** checklist shows a green tick for everything that is done and an
+Open the app and go to **⚙ Settings → Setup**. It shows a green tick for everything that is done and an
 **Allow** button for everything that is not:
 
 | Permission | Why |
@@ -124,6 +146,7 @@ Open the app and tap **⚙ Settings**. The **Setup** checklist shows a green tic
 | Battery: Unrestricted | Stop Samsung from putting the app to sleep |
 | Microphone | Record calls |
 | Accessibility service | Keep the microphone working during calls |
+| SMS (on the Text messages screen) | Send your scheduled text messages |
 
 > **If a permission or the Accessibility switch is greyed out:** open **App info**, tap the **⋮** menu
 > (top right), choose **Allow restricted settings**, then try again. Android does this for apps installed
@@ -147,7 +170,8 @@ Android does not let normal apps record the phone line itself, so the app record
 ## Privacy
 
 - All data (reminders, notes, the recordings list) is stored on the phone.
-- The app has **no internet permission**, so it cannot upload anything.
+- The app has **no internet permission**, so it cannot upload anything. The only thing it sends is the text
+  messages you schedule, from your own SIM.
 - No account, no ads, no analytics.
 - Recordings are normal audio files in the shared Recordings folder. Apps you have given "Music and audio" access
   can read them.
@@ -188,6 +212,11 @@ app/src/main/java/com/callbackreminder/app/
   WhatsAppCallListener.kt                   WhatsApp call detection
   RingService.kt / ReminderAlertActivity.kt ringing full-screen reminder
   ReminderStore.kt / Scheduler.kt           reminders and their alarms
+  Repeat.kt / RepeatPicker.kt               repeat rules and the full-screen Repeat page
+  DateTimeDialog.kt                         Google Tasks style date & time window
+  ReminderStyle.kt                          full screen, timed full screen, or banner
+  SmsStore.kt / SmsSender.kt                scheduled text messages, sending, retries
+  MessagesScreen.kt / SmsReminderDialog.kt  Text messages screen and New message popup
   Notifier.kt                               notification channels and backup notifications
   CallRecorder.kt / Recording.kt            recording engine, storage, playback
   RecordingsScreen.kt                       recordings list and player
@@ -197,6 +226,19 @@ app/src/main/java/com/callbackreminder/app/
 ```
 
 ## Changelog
+
+### 0.6.0
+- **Scheduled text messages**: automatic SMS from your SIM at a set time, once or repeating, with retries,
+  a sent/delivered history, and a tap-to-send fallback when SMS permission is off.
+
+### 0.5.1
+- Redesigned **New reminder**: Contacts / Recent calls instead of typing, a contact card with the name, and one
+  Date & time button that opens a Google Tasks style calendar with Set time and a full-screen Repeat page.
+
+### 0.5.0
+- **Reminder style** setting: full screen until you react, full screen then notification, or banner only.
+- **Repeating reminders** (daily, weekly, monthly, yearly, custom) with an end date or a number of times.
+- Choose your own quick times for the popup and Snooze menu, and reorder them by dragging.
 
 ### 0.4.0
 - **Call recording**, Recordings screen with playback speed (1x / 1.25x / 1.5x), recording settings and

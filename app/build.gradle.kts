@@ -12,8 +12,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 10
+        versionName = "0.6.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.
@@ -31,8 +31,11 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("shared")
         }
+        // The build people install. Release (not debug) so animations run at full speed:
+        // debug builds skip Android's and R8's optimizations and visibly stutter.
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.getByName("shared")
         }
     }

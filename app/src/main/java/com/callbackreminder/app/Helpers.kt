@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.CallLog
+import android.provider.ContactsContract
 import android.provider.ContactsContract.CommonDataKinds.Phone as ContactPhone
 import android.provider.Settings
 import android.telecom.TelecomManager
@@ -31,6 +32,8 @@ object AppSettings {
     const val MISSED = "popup_missed"
     const val WHATSAPP = "popup_whatsapp"
     const val RINGTONE = "reminder_ringtone"
+    const val REMINDER_STYLE = "reminder_style"
+    const val POPUP_SECONDS = "reminder_popup_seconds"
 
     // Call recording
     const val REC_PHONE = "rec_phone"
@@ -110,47 +113,6 @@ object Fmt {
 
 data class QuickOption(val title: String, val whenMs: Long, val subtitleText: String? = null) {
     val subtitle: String get() = subtitleText ?: Fmt.dueLabel(whenMs)
-}
-
-/** The 12 one-tap choices in the after-call popup, laid out 3 per row (4 rows). */
-fun postCallOptions(now: Long = System.currentTimeMillis()): List<QuickOption> {
-    val zone = ZoneId.systemDefault()
-    val nowZ = Instant.ofEpochMilli(now).atZone(zone).withSecond(0).withNano(0)
-    val today = nowZ.toLocalDate()
-    val clock = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
-    val dayClock = DateTimeFormatter.ofPattern("EEE, h:mm a", Locale.getDefault())
-
-    fun inMinutes(label: String, minutes: Long): QuickOption {
-        val ms = now + minutes * 60_000L
-        val dt = Instant.ofEpochMilli(ms).atZone(zone)
-        val text = if (dt.toLocalDate() == today) dt.format(clock) else "Tmrw, ${dt.format(clock)}"
-        return QuickOption(label, ms, text)
-    }
-
-    fun tomorrow(hour: Int?): QuickOption {
-        val dt = if (hour == null) nowZ.plusDays(1) else today.plusDays(1).atTime(hour, 0).atZone(zone)
-        return QuickOption("Tomorrow", dt.toInstant().toEpochMilli(), dt.format(clock))
-    }
-
-    fun inTwoDays(hour: Int?): QuickOption {
-        val dt = if (hour == null) nowZ.plusDays(2) else today.plusDays(2).atTime(hour, 0).atZone(zone)
-        return QuickOption("In 2 days", dt.toInstant().toEpochMilli(), dt.format(dayClock))
-    }
-
-    return listOf(
-        inMinutes("15 min", 15),
-        inMinutes("30 min", 30),
-        inMinutes("45 min", 45),
-        inMinutes("1 hour", 60),
-        inMinutes("2 hours", 120),
-        inMinutes("3 hours", 180),
-        tomorrow(10),     // index 6: also the starting point of "Pick date & time"
-        tomorrow(16),
-        tomorrow(null),   // same time as now
-        inTwoDays(10),
-        inTwoDays(16),
-        inTwoDays(null),  // same time as now
-    )
 }
 
 /** The one-tap choices shown in the popup. */
@@ -275,6 +237,44 @@ object CallLookup {
     }
 }
 
+/** The newest [limit] calls in the phone's call log, newest first (empty without permission). */
+fun CallLookup.recent(ctx: Context, limit: Int): List<CallInfo> {
+    if (!hasPermission(ctx)) return emptyList()
+    return try {
+        val out = mutableListOf<CallInfo>()
+        ctx.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(
+                CallLog.Calls._ID,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.DATE,
+            ),
+            null,
+            null,
+            "${CallLog.Calls.DATE} DESC"
+        )?.use { c ->
+            while (c.moveToNext() && out.size < limit) {
+                out.add(
+                    CallInfo(
+                        id = c.getLong(0),
+                        number = c.getString(1) ?: "",
+                        name = c.getString(2) ?: "",
+                        type = c.getInt(3),
+                        durationSec = c.getLong(4),
+                        endedAt = c.getLong(5),
+                    )
+                )
+            }
+        }
+        out
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
 /** Opens the after-call popup (and a backup notification in case the phone blocks the popup). */
 fun showPostCallPopup(ctx: Context, queue: List<CallInfo>) {
     if (queue.isEmpty()) return
@@ -327,6 +327,22 @@ object ContactLookup {
         } catch (e: Exception) {
             ""
         }
+    }
+}
+
+/** The saved contact name for [number], or "" when it is not in your contacts (or contacts are not allowed). */
+fun ContactLookup.nameFor(ctx: Context, number: String): String {
+    if (number.isBlank() || !hasPermission(ctx)) return ""
+    return try {
+        ctx.contentResolver.query(
+            Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number.trim())),
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { c -> if (c.moveToFirst()) c.getString(0).orEmpty() else "" } ?: ""
+    } catch (e: Exception) {
+        ""
     }
 }
 

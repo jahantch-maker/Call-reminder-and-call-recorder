@@ -6,14 +6,26 @@ import android.content.Intent
 import android.telephony.TelephonyManager
 import java.util.concurrent.Executors
 
-/** Fires when a reminder's time arrives and starts the ringing screen. */
+/** Fires when a reminder's time arrives and alerts the user in the style they chose. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ReminderStore.init(context)
         val id = intent.getLongExtra(Scheduler.EXTRA_ID, -1L)
         if (id < 0) return
         val r = ReminderStore.get(id)?.takeIf { !it.done } ?: return
-        RingController.start(context, r)
+        if (r.repeat == null) {
+            ReminderStyle.alert(context, r)
+            return
+        }
+        // Repeating: if the next repeat has arrived, move on to it. Then set the alarm for the one after.
+        val next = r.nextOccurrence()
+        val current = if (next != null && next <= System.currentTimeMillis() + 1_000L) {
+            ReminderStore.rollOver(id) ?: return
+        } else {
+            r
+        }
+        Scheduler.schedule(context, current)
+        ReminderStyle.alert(context, current)
     }
 }
 
@@ -45,6 +57,8 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ReminderStore.init(context)
         Scheduler.rescheduleAll(context)
+        SmsStore.init(context)
+        SmsScheduler.rescheduleAll(context)
     }
 }
 
