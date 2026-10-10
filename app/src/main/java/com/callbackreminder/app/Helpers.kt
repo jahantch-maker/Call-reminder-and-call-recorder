@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.CallLog
+import android.provider.ContactsContract
 import android.provider.ContactsContract.CommonDataKinds.Phone as ContactPhone
 import android.provider.Settings
 import android.telecom.TelecomManager
@@ -236,6 +237,44 @@ object CallLookup {
     }
 }
 
+/** The newest [limit] calls in the phone's call log, newest first (empty without permission). */
+fun CallLookup.recent(ctx: Context, limit: Int): List<CallInfo> {
+    if (!hasPermission(ctx)) return emptyList()
+    return try {
+        val out = mutableListOf<CallInfo>()
+        ctx.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(
+                CallLog.Calls._ID,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.DATE,
+            ),
+            null,
+            null,
+            "${CallLog.Calls.DATE} DESC"
+        )?.use { c ->
+            while (c.moveToNext() && out.size < limit) {
+                out.add(
+                    CallInfo(
+                        id = c.getLong(0),
+                        number = c.getString(1) ?: "",
+                        name = c.getString(2) ?: "",
+                        type = c.getInt(3),
+                        durationSec = c.getLong(4),
+                        endedAt = c.getLong(5),
+                    )
+                )
+            }
+        }
+        out
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
 /** Opens the after-call popup (and a backup notification in case the phone blocks the popup). */
 fun showPostCallPopup(ctx: Context, queue: List<CallInfo>) {
     if (queue.isEmpty()) return
@@ -288,6 +327,22 @@ object ContactLookup {
         } catch (e: Exception) {
             ""
         }
+    }
+}
+
+/** The saved contact name for [number], or "" when it is not in your contacts (or contacts are not allowed). */
+fun ContactLookup.nameFor(ctx: Context, number: String): String {
+    if (number.isBlank() || !hasPermission(ctx)) return ""
+    return try {
+        ctx.contentResolver.query(
+            Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number.trim())),
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { c -> if (c.moveToFirst()) c.getString(0).orEmpty() else "" } ?: ""
+    } catch (e: Exception) {
+        ""
     }
 }
 
