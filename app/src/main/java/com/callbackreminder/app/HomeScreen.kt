@@ -293,11 +293,13 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
                     }
                 }
                 items(finished, key = { it.id }) { r ->
-                    ReminderCard(r, now, done = true, ctx = ctx,
-                        onDone = {},
-                        onSnooze = {},
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r })
+                    Box(Modifier.animateItem()) {
+                        ReminderCard(r, now, done = true, ctx = ctx,
+                            onDone = {},
+                            onSnooze = {},
+                            onPickTime = { rescheduleFor = r },
+                            onDelete = { deleteFor = r })
+                    }
                 }
             }
         }
@@ -356,7 +358,7 @@ private fun LazyListScope.reminderGroup(
             modifier = Modifier.padding(top = 4.dp)
         )
     }
-    items(list, key = { it.id }) { r -> card(r) }
+    items(list, key = { it.id }) { r -> Box(Modifier.animateItem()) { card(r) } }
 }
 
 @Composable

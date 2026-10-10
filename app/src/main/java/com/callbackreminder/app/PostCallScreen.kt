@@ -2,6 +2,11 @@ package com.callbackreminder.app
 
 import android.provider.CallLog
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -118,123 +123,130 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             .clickable(interactionSource = noRipple, indication = null) { onNext() },
         contentAlignment = Alignment.BottomCenter
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+        // Slides up from the bottom when it appears (and again for the next call in the queue).
+        val shown = remember { MutableTransitionState(false).apply { targetState = true } }
+        AnimatedVisibility(
+            visibleState = shown,
+            enter = slideInVertically(tween(300)) { it } + fadeIn(tween(200)),
         ) {
-            Column(
+            Surface(
                 modifier = Modifier
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 12.dp, bottom = 16.dp)
+                    .fillMaxWidth()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
             ) {
-                Box(
+                Column(
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .width(40.dp)
-                        .height(4.dp)
-                        .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
-                )
-                Spacer(Modifier.height(14.dp))
-
-                if (positionLabel != null) {
-                    Text(
-                        text = positionLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 12.dp, bottom = 16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(40.dp)
+                            .height(4.dp)
+                            .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
                     )
-                    Spacer(Modifier.height(8.dp))
-                }
+                    Spacer(Modifier.height(14.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
+                    if (positionLabel != null) {
                         Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = positionLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Spacer(Modifier.height(8.dp))
                     }
-                    IconButton(onClick = onNext) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Skip")
-                    }
-                }
 
-                Spacer(Modifier.height(16.dp))
-
-                if (needsName) {
-                    OutlinedTextField(
-                        value = typedName,
-                        onValueChange = { typedName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("Who was this? (optional)") },
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                }
-
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("What did they promise? (optional)") },
-                    shape = RoundedCornerShape(14.dp)
-                )
-
-                Spacer(Modifier.height(18.dp))
-                Text(
-                    text = "Remind me to call back",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.chunked(3).forEach { rowOptions ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            rowOptions.forEach { o ->
-                                OptionTile(
-                                    title = o.title,
-                                    subtitle = o.subtitle,
-                                    modifier = Modifier.weight(1f)
-                                ) { schedule(o.whenMs) }
-                            }
-                            // Keeps tiles the same width when the last row isn't full.
-                            repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = onNext) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Skip")
                         }
                     }
-                }
 
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = { showPicker = true }) {
-                        Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Pick date & time")
+                    Spacer(Modifier.height(16.dp))
+
+                    if (needsName) {
+                        OutlinedTextField(
+                            value = typedName,
+                            onValueChange = { typedName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Who was this? (optional)") },
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(Modifier.height(10.dp))
                     }
-                    TextButton(onClick = onNext) { Text("Skip") }
+
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("What did they promise? (optional)") },
+                        shape = RoundedCornerShape(14.dp)
+                    )
+
+                    Spacer(Modifier.height(18.dp))
+                    Text(
+                        text = "Remind me to call back",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        options.chunked(3).forEach { rowOptions ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowOptions.forEach { o ->
+                                    OptionTile(
+                                        title = o.title,
+                                        subtitle = o.subtitle,
+                                        modifier = Modifier.weight(1f)
+                                    ) { schedule(o.whenMs) }
+                                }
+                                // Keeps tiles the same width when the last row isn't full.
+                                repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showPicker = true }) {
+                            Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Pick date & time")
+                        }
+                        TextButton(onClick = onNext) { Text("Skip") }
+                    }
                 }
             }
         }

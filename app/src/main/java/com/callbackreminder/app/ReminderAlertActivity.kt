@@ -154,17 +154,19 @@ private fun AlertScreen(onAllDone: () -> Unit) {
                 )
             }
             items(ringing, key = { it.id }) { r ->
-                AlertCard(
-                    r = r,
-                    onCallBack = {
-                        // Calls directly (even on the lock screen), then stops the ringing.
-                        dial(ctx, r.number)
-                        RingController.dismiss(r.id)
-                    },
-                    onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
-                    onPickTime = { pickFor = r },
-                    onDone = { ReminderStore.markDone(r.id) },
-                )
+                Box(Modifier.animateItem()) {
+                    AlertCard(
+                        r = r,
+                        onCallBack = {
+                            // Calls directly (even on the lock screen), then stops the ringing.
+                            dial(ctx, r.number)
+                            RingController.dismiss(r.id)
+                        },
+                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
+                        onPickTime = { pickFor = r },
+                        onDone = { ReminderStore.markDone(r.id) },
+                    )
+                }
             }
         }
     }
