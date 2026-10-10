@@ -41,6 +41,10 @@ object ReminderStore {
                     createdAt = o.optLong("createdAt"),
                     done = o.optBoolean("done"),
                     doneAt = o.optLong("doneAt"),
+                    repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+                    seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
+                    occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
+                    occurrenceCount = o.optInt("occurrenceCount", 1),
                 )
             }
         } catch (e: Exception) {
@@ -61,6 +65,10 @@ object ReminderStore {
                     .put("createdAt", r.createdAt)
                     .put("done", r.done)
                     .put("doneAt", r.doneAt)
+                    .put("repeat", r.repeat?.toJson())
+                    .put("seriesStart", r.seriesStart)
+                    .put("occurrenceAt", r.occurrenceAt)
+                    .put("occurrenceCount", r.occurrenceCount)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -70,16 +78,21 @@ object ReminderStore {
     fun get(id: Long): Reminder? = _items.value.firstOrNull { it.id == id }
 
     @Synchronized
-    fun add(name: String, number: String, note: String, dueAt: Long): Reminder {
+    fun add(name: String, number: String, note: String, dueAt: Long, repeat: Repeat? = null): Reminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
+        // A weekly repeat on chosen days starts on the first of those days.
+        val first = repeat?.first(Repeat.at(dueAt))?.toInstant()?.toEpochMilli() ?: dueAt
         val r = Reminder(
             id = id,
             name = name.trim(),
             number = number.trim(),
             note = note.trim(),
-            dueAt = dueAt,
+            dueAt = first,
             createdAt = System.currentTimeMillis(),
+            repeat = repeat,
+            seriesStart = dueAt,
+            occurrenceAt = first,
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)
@@ -88,12 +101,56 @@ object ReminderStore {
 
     @Synchronized
     fun markDone(id: Long) {
-        get(id) ?: return
+        val cur = get(id) ?: return
         Scheduler.cancel(appCtx, id)
         Notifier.cancel(appCtx, id)
         RingController.dismiss(id)
         val now = System.currentTimeMillis()
+
+        // A repeating reminder moves on to its next time that is still ahead (missed ones count too).
+        if (cur.repeat != null && !cur.done) {
+            var next = cur
+            while (true) {
+                val at = next.nextOccurrence() ?: break
+                next = next.copy(dueAt = at, occurrenceAt = at, occurrenceCount = next.occurrenceCount + 1)
+                if (at > now) {
+                    save(_items.value.map { if (it.id == id) next else it })
+                    Scheduler.schedule(appCtx, next)
+                    return
+                }
+            }
+        }
         save(_items.value.map { if (it.id == id) it.copy(done = true, doneAt = now) else it })
+    }
+
+    /**
+     * The next repeat arrived while the previous one was still waiting: move on to the latest
+     * repeat that is due now, so a forgotten reminder does not stop the series.
+     */
+    @Synchronized
+    fun rollOver(id: Long): Reminder? {
+        val cur = get(id)?.takeIf { !it.done && it.repeat != null } ?: return null
+        val now = System.currentTimeMillis()
+        var r = cur
+        while (true) {
+            val at = r.nextOccurrence() ?: break
+            if (at > now + 1_000L) break
+            r = r.copy(dueAt = at, occurrenceAt = at, occurrenceCount = r.occurrenceCount + 1)
+        }
+        if (r === cur) return cur
+        Notifier.cancel(appCtx, id)
+        save(_items.value.map { if (it.id == id) r else it })
+        return r
+    }
+
+    /** Keep the reminder but stop it repeating. */
+    @Synchronized
+    fun stopRepeating(id: Long) {
+        val cur = get(id) ?: return
+        val updated = cur.copy(repeat = null)
+        save(_items.value.map { if (it.id == id) updated else it })
+        Scheduler.cancel(appCtx, id)
+        if (!updated.done && updated.dueAt > System.currentTimeMillis()) Scheduler.schedule(appCtx, updated)
     }
 
     /** Move a reminder to a new time (also brings a finished one back to the to-call list). */

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Snooze
@@ -308,8 +309,8 @@ fun HomeScreen(resumeKey: Int, onOpenSettings: () -> Unit, onOpenRecordings: () 
     if (showAdd) {
         AddReminderDialog(
             onDismiss = { showAdd = false },
-            onSave = { name, number, note, dueAt ->
-                ReminderStore.add(name, number, note, dueAt)
+            onSave = { name, number, note, dueAt, repeat ->
+                ReminderStore.add(name, number, note, dueAt, repeat)
                 showAdd = false
             }
         )
@@ -447,6 +448,12 @@ private fun ReminderCard(
                             text = { Text(if (done) "Reschedule" else "Change time") },
                             onClick = { menuOpen = false; onPickTime() }
                         )
+                        if (r.repeat != null && !done) {
+                            DropdownMenuItem(
+                                text = { Text("Stop repeating") },
+                                onClick = { menuOpen = false; ReminderStore.stopRepeating(r.id) }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                             onClick = { menuOpen = false; onDelete() }
@@ -474,6 +481,25 @@ private fun ReminderCard(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal
                 )
+            }
+
+            val repeatLabel = r.repeatLabel
+            if (repeatLabel != null && !done) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Repeat,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        repeatLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             if (r.note.isNotBlank()) {

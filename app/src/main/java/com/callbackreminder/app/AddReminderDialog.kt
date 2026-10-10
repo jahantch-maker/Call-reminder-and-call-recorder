@@ -5,6 +5,8 @@ import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,7 +41,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AddReminderDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, number: String, note: String, dueAt: Long) -> Unit,
+    onSave: (name: String, number: String, note: String, dueAt: Long, repeat: Repeat?) -> Unit,
 ) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -47,6 +49,7 @@ fun AddReminderDialog(
     var note by remember { mutableStateOf("") }
     var due by remember { mutableLongStateOf(quickOptions()[2].whenMs) }
     var showPicker by remember { mutableStateOf(false) }
+    var repeat by remember { mutableStateOf<Repeat?>(null) }
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -76,7 +79,10 @@ fun AddReminderDialog(
         onDismissRequest = onDismiss,
         title = { Text("New reminder") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -120,12 +126,13 @@ fun AddReminderDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(Fmt.dueLabel(due))
                 }
+                RepeatButton(repeat = repeat, startMs = due, onChange = { repeat = it })
             }
         },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() || number.isNotBlank(),
-                onClick = { onSave(name, number, note, due) }
+                onClick = { onSave(name, number, note, due, repeat) }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

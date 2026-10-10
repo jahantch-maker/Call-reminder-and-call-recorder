@@ -20,6 +20,7 @@ object Notifier {
     const val CH_POSTCALL = "postcall"
     const val CH_RINGING = "ringing"
     const val CH_RECORDING = "recording"
+    const val CH_MISSED = "missed_reminders"
     const val NOTIF_RING = 42
     private const val NOTIF_POSTCALL = 1
 
@@ -29,8 +30,16 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CH_REMINDER, "Call-back reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Banner used only if the ringing reminder cannot start"
+                description = "Banner reminders, and the backup if the ringing reminder cannot start"
                 enableVibration(true)
+                setShowBadge(true)
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_MISSED, "Unanswered reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "A quiet notification left behind when a full-screen reminder times out"
+                setSound(null, null)
+                enableVibration(false)
                 setShowBadge(true)
             }
         )
@@ -75,9 +84,13 @@ object Notifier {
         return PendingIntent.getBroadcast(ctx, id.toInt(), i, FLAGS)
     }
 
-    /** Plain banner. Only used as a fallback when the ringing reminder cannot start. */
+    /**
+     * Plain banner with Call, Snooze and Done. Used for the "Banner" reminder style, as the
+     * fallback when the ringing reminder cannot start, and ([quiet], no sound) when a timed
+     * full-screen reminder moves to the notifications.
+     */
     @SuppressLint("MissingPermission")
-    fun showReminder(ctx: Context, r: Reminder) {
+    fun showReminder(ctx: Context, r: Reminder, quiet: Boolean = false) {
         if (!canNotify(ctx)) return
 
         val open = PendingIntent.getActivity(
@@ -93,14 +106,15 @@ object Notifier {
             r.number.takeIf { it.isNotBlank() && r.name.isNotBlank() }
         ).joinToString(" · ").ifBlank { "Time for your follow-up call" }
 
-        val b = NotificationCompat.Builder(ctx, CH_REMINDER)
+        val b = NotificationCompat.Builder(ctx, if (quiet) CH_MISSED else CH_REMINDER)
             .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle("Call back ${r.title}")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setPriority(if (quiet) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(if (quiet) 0 else NotificationCompat.DEFAULT_ALL)
+            .setSilent(quiet)
             .setContentIntent(open)
             .setAutoCancel(true)
             .setWhen(r.dueAt)

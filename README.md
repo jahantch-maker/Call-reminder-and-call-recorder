@@ -31,6 +31,11 @@ Everything stays on the phone: no account, no server, and the app has no interne
 - At the due time a **full-screen ringing reminder** opens, even on the lock screen. It rings at your phone's
   ringtone volume (silent when the phone is silent), loops until you act, and you can choose the ringtone.
 - Buttons: **Call back**, **Snooze**, **Done**.
+- **Reminder style** (Settings): full screen until you react, full screen for 10/15/30/60 seconds and then a
+  notification you can find later, or a plain banner notification.
+- **Repeating reminders**, like Google Tasks: daily, weekly, monthly, yearly or custom (every N days/weeks/
+  months/years, chosen weekdays), ending never, on a date, or after a number of times. Done moves a repeating
+  reminder to its next date; a forgotten one moves on by itself when the next date arrives.
 - **Call back dials immediately** on your SIM, with no dialer screen (needs the "Call directly" permission).
 - Home screen lists what is overdue, later today and upcoming, plus a Done tab.
 
@@ -120,12 +125,19 @@ app/src/main/java/com/callbackreminder/app/
   WhatsAppCallListener.kt                   WhatsApp call detection
   RingService.kt / ReminderAlertActivity.kt ringing full-screen reminder
   ReminderStore.kt / Scheduler.kt           reminders and their alarms
+  Repeat.kt / RepeatPicker.kt               repeat rules and the Repeat picker
+  ReminderStyle.kt                          full screen, timed full screen, or banner
   CallRecorder.kt / Recording.kt            call recording engine, storage, playback
   RecordingsScreen.kt                       recordings list and player
   HomeScreen.kt / SettingsScreen.kt         main screens
 ```
 
 ## Changelog
+
+### 0.5.0
+- **Reminder style** setting: full screen until you react, full screen then notification, or banner only.
+- **Repeating reminders** (daily, weekly, monthly, yearly, custom) with an end date or a number of times.
+- Choose your own quick times for the popup and Snooze menu, and reorder them by dragging.
 
 ### 0.4.0
 - **Call recording**, Recordings screen with playback speed (1x / 1.25x / 1.5x), recording settings and
