@@ -6,9 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -23,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
 
 class MainActivity : ComponentActivity() {
 
@@ -82,14 +82,14 @@ private fun AppRoot(resumeKey: Int) {
         contentKey = { it.last() },
         transitionSpec = {
             val forward = targetState.size >= initialState.size
-            val duration = 320
+            // 1.75x faster than the first version (320 ms). No fade: fading a whole screen
+            // forces an extra offscreen pass every frame, which caused stutter on some phones.
+            val spec = tween<IntOffset>(durationMillis = 180, easing = FastOutSlowInEasing)
             if (forward) {
-                (slideInHorizontally(tween(duration)) { it } togetherWith
-                    slideOutHorizontally(tween(duration)) { -it / 4 } + fadeOut(tween(duration), 0.6f))
+                (slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it / 4 })
                     .apply { targetContentZIndex = 1f }
             } else {
-                (slideInHorizontally(tween(duration)) { -it / 4 } + fadeIn(tween(duration), 0.6f) togetherWith
-                    slideOutHorizontally(tween(duration)) { it })
+                (slideInHorizontally(spec) { -it / 4 } togetherWith slideOutHorizontally(spec) { it })
                     .apply { targetContentZIndex = -1f }
             }
         },
