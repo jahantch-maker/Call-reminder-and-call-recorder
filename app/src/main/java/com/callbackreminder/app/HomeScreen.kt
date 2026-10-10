@@ -513,7 +513,7 @@ private fun ReminderCard(
                             Text("Snooze")
                         }
                         DropdownMenu(expanded = snoozeOpen, onDismissRequest = { snoozeOpen = false }) {
-                            quickOptions().take(5).forEach { o ->
+                            QuickTimes.options(ctx).forEach { o ->
                                 DropdownMenuItem(
                                     text = { Text("${o.title} · ${o.subtitle}") },
                                     onClick = { snoozeOpen = false; onSnooze(o.whenMs) }

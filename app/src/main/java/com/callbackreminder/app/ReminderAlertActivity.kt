@@ -189,6 +189,7 @@ private fun AlertCard(
     onPickTime: () -> Unit,
     onDone: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     var snoozeOpen by remember { mutableStateOf(false) }
 
     Column(
@@ -279,27 +280,23 @@ private fun AlertCard(
                     Text("Snooze", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
                 DropdownMenu(expanded = snoozeOpen, onDismissRequest = { snoozeOpen = false }) {
-                    listOf(
-                        "10 minutes" to 10,
-                        "30 minutes" to 30,
-                        "1 hour" to 60,
-                        "3 hours" to 180,
-                    ).forEach { (label, minutes) ->
+                    // Built when the menu opens, so "15 min" counts from the moment you tap.
+                    QuickTimes.options(ctx).forEach { o ->
                         DropdownMenuItem(
-                            text = { Text(label) },
+                            text = { Text(o.title) },
+                            trailingIcon = {
+                                Text(
+                                    o.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             onClick = {
                                 snoozeOpen = false
-                                onSnooze(System.currentTimeMillis() + minutes * 60_000L)
+                                onSnooze(o.whenMs)
                             }
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text("Tomorrow morning") },
-                        onClick = {
-                            snoozeOpen = false
-                            onSnooze(quickOptions()[2].whenMs)
-                        }
-                    )
                     DropdownMenuItem(
                         text = { Text("Pick date & time…") },
                         onClick = {

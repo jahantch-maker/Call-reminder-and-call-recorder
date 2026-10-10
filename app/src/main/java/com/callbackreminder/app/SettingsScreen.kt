@@ -291,6 +291,14 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings: () -> U
                 )
             }
 
+            // ---- Quick times ----
+            SectionCard(
+                title = "Quick times",
+                subtitle = "The one-tap times on the after-call popup and the Snooze menu. Add up to 12, in any order."
+            ) {
+                QuickTimesEditor()
+            }
+
             // ---- Call recording ----
             var recPhone by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_PHONE)) }
             var recWhatsApp by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_WHATSAPP)) }

@@ -109,7 +109,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     }
 
     val noRipple = remember { MutableInteractionSource() }
-    val options = remember { postCallOptions() }
+    val options = remember { QuickTimes.options(ctx) }
 
     Box(
         modifier = Modifier
@@ -217,6 +217,8 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                                     modifier = Modifier.weight(1f)
                                 ) { schedule(o.whenMs) }
                             }
+                            // Keeps tiles the same width when the last row isn't full.
+                            repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -240,7 +242,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
 
     if (showPicker) {
         DateTimePickerFlow(
-            initialMs = options[6].whenMs, // Tomorrow 10 am
+            initialMs = QuickTime.OnDay(1, 10).toOption().whenMs, // Tomorrow 10 am
             onPicked = { showPicker = false; schedule(it) },
             onDismiss = { showPicker = false }
         )
