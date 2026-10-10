@@ -186,34 +186,36 @@ fun RecordingsScreen(
             }
 
             items(sorted, key = { it.id }) { r ->
-                RecordingCard(
-                    r = r,
-                    player = player,
-                    speed = speed,
-                    onSpeed = { RecordingPlayer.setSpeed(ctx, it) },
-                    onPlay = {
-                        val err = RecordingPlayer.toggle(ctx, r)
-                        if (err != null) Toast.makeText(ctx, err, Toast.LENGTH_SHORT).show()
-                    },
-                    onSeek = { RecordingPlayer.seek(it) },
-                    onRename = { renameFor = r },
-                    onShare = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "audio/mp4"
-                            putExtra(Intent.EXTRA_STREAM, Uri.parse(r.uri))
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        try {
-                            ctx.startActivity(
-                                Intent.createChooser(send, "Share recording")
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        } catch (e: Exception) {
-                            Toast.makeText(ctx, "Could not share this recording.", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onDelete = { deleteFor = r },
-                )
+                Box(Modifier.animateItem()) {
+                    RecordingCard(
+                        r = r,
+                        player = player,
+                        speed = speed,
+                        onSpeed = { RecordingPlayer.setSpeed(ctx, it) },
+                        onPlay = {
+                            val err = RecordingPlayer.toggle(ctx, r)
+                            if (err != null) Toast.makeText(ctx, err, Toast.LENGTH_SHORT).show()
+                        },
+                        onSeek = { RecordingPlayer.seek(it) },
+                        onRename = { renameFor = r },
+                        onShare = {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "audio/mp4"
+                                putExtra(Intent.EXTRA_STREAM, Uri.parse(r.uri))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            try {
+                                ctx.startActivity(
+                                    Intent.createChooser(send, "Share recording")
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(ctx, "Could not share this recording.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onDelete = { deleteFor = r },
+                    )
+                }
             }
         }
     }

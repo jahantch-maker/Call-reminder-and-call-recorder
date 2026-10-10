@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -66,7 +68,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 
 @Composable
-fun SettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings: () -> Unit) {
+fun SettingsScreen(
+    resumeKey: Int,
+    onBack: () -> Unit,
+    onOpenRecordings: () -> Unit,
+    onOpenQuickTimes: () -> Unit,
+) {
     val ctx = LocalContext.current
     var refresh by remember { mutableStateOf(0) }
     val status = remember(resumeKey, refresh) { SetupStatus.read(ctx) }
@@ -292,11 +299,30 @@ fun SettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings: () -> U
             }
 
             // ---- Quick times ----
-            SectionCard(
-                title = "Quick times",
-                subtitle = "The one-tap times on the after-call popup and the Snooze menu. Add up to 12, in any order."
+            val quickCount = remember { QuickTimes.load(ctx).size }
+            Card(
+                onClick = onOpenQuickTimes,
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                QuickTimesEditor()
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Quick times", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "$quickCount of ${QuickTime.MAX} set · shown on the popup and Snooze menu",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // ---- Call recording ----
