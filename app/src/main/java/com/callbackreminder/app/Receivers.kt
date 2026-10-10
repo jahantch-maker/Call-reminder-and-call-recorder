@@ -57,6 +57,8 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ReminderStore.init(context)
         Scheduler.rescheduleAll(context)
+        SmsStore.init(context)
+        SmsScheduler.rescheduleAll(context)
     }
 }
 

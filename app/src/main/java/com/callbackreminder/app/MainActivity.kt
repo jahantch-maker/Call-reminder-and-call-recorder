@@ -1,5 +1,6 @@
 package com.callbackreminder.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +28,15 @@ import androidx.compose.ui.unit.IntOffset
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** Which screen a notification wants open, e.g. [OPEN_MESSAGES]. */
+        const val EXTRA_OPEN = "open_screen"
+        const val OPEN_MESSAGES = "messages"
+    }
+
+    // Bumped each time a notification asks for the Messages screen.
+    private val openMessagesTick = mutableIntStateOf(0)
+
     // Bumped every time the app comes back to the front, so permission status refreshes
     // right after the user returns from a system settings page.
     private val resumeTick = mutableIntStateOf(0)
@@ -35,10 +46,23 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         ReminderStore.init(this)
         RecordingStore.init(this)
+        SmsStore.init(this)
+        handleOpen(intent)
         setContent {
             CallbackTheme {
-                AppRoot(resumeKey = resumeTick.intValue)
+                AppRoot(resumeKey = resumeTick.intValue, openMessagesKey = openMessagesTick.intValue)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleOpen(intent)
+    }
+
+    private fun handleOpen(intent: Intent?) {
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSAGES) {
+            openMessagesTick.intValue = openMessagesTick.intValue + 1
         }
     }
 
@@ -58,10 +82,11 @@ private object Screen {
     const val POPUP_SETTINGS = 5
     const val RECORDING_SETTINGS = 6
     const val REMINDER_SETTINGS = 7
+    const val MESSAGES = 8
 }
 
 @Composable
-private fun AppRoot(resumeKey: Int) {
+private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
 
@@ -76,6 +101,11 @@ private fun AppRoot(resumeKey: Int) {
     }
 
     BackHandler(enabled = stack.size > 1) { back() }
+
+    // A text-message notification was tapped: show the Messages screen.
+    LaunchedEffect(openMessagesKey) {
+        if (openMessagesKey > 0) stack = listOf(Screen.HOME, Screen.MESSAGES)
+    }
 
     AnimatedContent(
         targetState = stack,
@@ -121,12 +151,14 @@ private fun AppRoot(resumeKey: Int) {
                     onOpenRecordings = { open(Screen.RECORDINGS) }
                 )
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
+                Screen.MESSAGES -> MessagesScreen(resumeKey = resumeKey, onBack = { back() })
                 else -> HomeScreen(
                     resumeKey = resumeKey,
                     onOpenSettings = { open(Screen.SETTINGS) },
                     onOpenSetup = { open(Screen.SETUP) },
                     onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
-                    onOpenRecordings = { open(Screen.RECORDINGS) }
+                    onOpenRecordings = { open(Screen.RECORDINGS) },
+                    onOpenMessages = { open(Screen.MESSAGES) }
                 )
             }
         }
