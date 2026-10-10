@@ -92,8 +92,8 @@ call when the time comes, sends follow-up text messages for you, and can record 
   repeat, e.g. daily for 10 days, so one reminder replaces many. Burst texts are not retried; a missed one is skipped.
 - New messages start at **8:00 AM**; you pick the date.
 - Three tabs: **Scheduled**, **To review** and **Done**.
-  - If the person texts back exactly **Done** (switch in Settings › Text messages), their reminders stop and move to
-    To review with a banner. **Mark done** moves it to Done; **Not done** carries on sending.
+  - When the person replies **Done** to close the task (switch in Settings › Text messages), sending stops and the
+    task moves to To review with a banner. **Mark done** moves it to Done; **Not done** carries on sending.
   - When a burst or repeat ends with no reply, it also goes to To review ("No reply"); **Not done** lets you set new days.
   - Tap **Done** on a card when you already know the work is done.
 - Each message keeps a **History** (every text sent, delivered, failed or skipped, replies and your decisions).
