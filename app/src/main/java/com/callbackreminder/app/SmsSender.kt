@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.SmsMessage
+import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -39,7 +40,7 @@ object SmsScheduler {
     }
 
     fun schedule(ctx: Context, r: SmsReminder, notBefore: Long = 0L) {
-        if (r.done) {
+        if (!r.active) {
             cancel(ctx, r.id)
             return
         }
@@ -64,7 +65,7 @@ object SmsScheduler {
      */
     fun rescheduleAll(ctx: Context) {
         val soon = System.currentTimeMillis() + 5_000L
-        SmsStore.items.value.filter { !it.done }.forEach { schedule(ctx, it, notBefore = soon) }
+        SmsStore.items.value.filter { it.active }.forEach { schedule(ctx, it, notBefore = soon) }
     }
 }
 
@@ -82,6 +83,7 @@ object SmsSender {
     const val EXTRA_ID = "sms_id"
     const val EXTRA_TOKEN = "token"
     const val EXTRA_PARTS = "parts"
+    const val EXTRA_INDEX = "index"
 
     fun hasPermission(ctx: Context) =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
@@ -93,43 +95,64 @@ object SmsSender {
         1
     }
 
+    /** A burst text this much past its time (the phone was off) is skipped. */
+    private const val BURST_GRACE_MS = 2 * 60_000L
+
     /**
-     * The alarm fired, or you tapped Send now ([manual]). Sends the current message, or hands it to
-     * you to send from Messages when the SMS permission is off.
+     * The alarm fired, or you tapped Send now ([manual]). Sends the current text, or hands it to you to
+     * send from Messages when the SMS permission is off. Send now on a burst starts the whole burst now.
      */
     fun sendDue(ctx: Context, id: Long, manual: Boolean = false) {
         SmsStore.init(ctx)
-        val r = SmsStore.get(id)?.takeIf { !it.done } ?: return
+        var r = SmsStore.get(id)?.takeIf { it.active } ?: return
         val now = System.currentTimeMillis()
 
-        if (!manual && r.retryAt == 0L && now - r.dueAt > LATE_LIMIT_MS) {
+        if (r.isBurst) {
+            if (manual) {
+                r = SmsStore.restartBurstNow(id) ?: return
+            } else {
+                // Texts whose time passed while the phone was off are skipped; carry on from the next one.
+                val gap = r.burstGapMin * 60_000L
+                val late = (r.burstIndex until r.burstCount).count { i -> r.dueAt + i * gap < now - BURST_GRACE_MS }
+                if (late > 0) {
+                    val first = r.burstIndex + 1
+                    val last = r.burstIndex + late
+                    val which = if (late == 1) "Reminder $first" else "Reminder $first to $last"
+                    SmsStore.advanceBurst(id, SmsLogEntry(now, SmsLogEntry.Status.SKIPPED, which), handled = late)
+                    return
+                }
+            }
+        } else if (!manual && r.retryAt == 0L && now - r.dueAt > LATE_LIMIT_MS) {
             SmsStore.finishOccurrence(id, SmsLogEntry(now, SmsLogEntry.Status.SKIPPED, "Was due ${Fmt.dueLabel(r.dueAt)}"))
             return
         }
 
+        val index = r.burstIndex
+        val text = r.textFor(index)
         if (!hasPermission(ctx)) {
-            if (manual) {
-                openComposer(ctx, r)
-            } else {
-                SmsNotifier.showTapToSend(ctx, r)
-            }
-            SmsStore.finishOccurrence(id, SmsLogEntry(now, SmsLogEntry.Status.TAP_TO_SEND))
+            if (manual) openComposer(ctx, r, text) else SmsNotifier.showTapToSend(ctx, r, text)
+            val entry = SmsLogEntry(now, SmsLogEntry.Status.TAP_TO_SEND, if (r.isBurst) "Reminder ${index + 1}" else "")
+            if (r.isBurst) SmsStore.advanceBurst(id, entry) else SmsStore.finishOccurrence(id, entry)
             return
         }
 
-        // A send for this message is still waiting for its result: don't send it twice.
-        if (InFlight.busy(ctx, id, now)) return
+        // A single text still waiting for its result: don't send it twice.
+        if (!r.isBurst && InFlight.busy(ctx, id, now)) return
 
-        send(ctx, r)
+        send(ctx, r, text, if (r.isBurst) index else -1)
+        // A burst moves on as soon as a text is handed to the phone; its result is only logged, so a lost
+        // result can never hold up the rest of the burst.
+        if (r.isBurst) SmsStore.advanceBurst(id, null)
     }
 
+    /** [index] is the burst text's number from 0, or -1 for a single text. */
     @SuppressLint("MissingPermission")
-    private fun send(ctx: Context, r: SmsReminder) {
+    private fun send(ctx: Context, r: SmsReminder, text: String, index: Int) {
         val token = System.currentTimeMillis()
         try {
             val (manager, sim) = managerForDefaultSim(ctx)
-            val parts = manager.divideMessage(r.message)
-            InFlight.start(ctx, r.id, token, parts.size, sim)
+            val parts = manager.divideMessage(text)
+            InFlight.start(ctx, r.id, token, parts.size, sim, index)
             val flags = PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             val sent = ArrayList<PendingIntent>()
             parts.indices.forEach { i ->
@@ -146,13 +169,14 @@ object SmsSender {
                 .setData(Uri.parse("callback://sms-delivered/${r.id}/$token"))
                 .putExtra(EXTRA_ID, r.id)
                 .putExtra(EXTRA_TOKEN, token)
+                .putExtra(EXTRA_INDEX, index)
             // Only the last part asks for a delivery report: one "Delivered" per message is enough.
             val delivered = ArrayList<PendingIntent?>(parts.map { null })
             delivered[delivered.size - 1] = PendingIntent.getBroadcast(ctx, 0, deliveredIntent, flags)
             manager.sendMultipartTextMessage(r.number, null, parts, sent, delivered)
         } catch (e: Exception) {
             InFlight.clear(ctx, r.id)
-            onFailed(ctx, r.id, e.message?.takeIf { it.isNotBlank() } ?: "Could not send")
+            onFailed(ctx, r.id, e.message?.takeIf { it.isNotBlank() } ?: "Could not send", index)
         }
     }
 
@@ -192,18 +216,31 @@ object SmsSender {
         return manager to label
     }
 
-    fun onSent(ctx: Context, id: Long, sim: String) {
+    /** [index] is the burst text's number from 0, or -1 for a single text. */
+    fun onSent(ctx: Context, id: Long, sim: String, index: Int) {
         SmsStore.init(ctx)
         val now = System.currentTimeMillis()
+        if (index >= 0) {
+            SmsStore.addLog(id, SmsLogEntry(now, SmsLogEntry.Status.SENT, listOf("Reminder ${index + 1}", sim).filter { it.isNotBlank() }.joinToString(" · ")))
+            SmsStore.get(id)?.takeIf { it.review == null }?.let { SmsNotifier.showSent(ctx, it, index) }
+            return
+        }
         SmsStore.finishOccurrence(id, SmsLogEntry(now, SmsLogEntry.Status.SENT, sim))
-        SmsStore.get(id)?.let { SmsNotifier.showSent(ctx, it) }
+        SmsStore.get(id)?.takeIf { it.review == null }?.let { SmsNotifier.showSent(ctx, it, -1) }
     }
 
-    /** Try again in 15 minutes, up to [MAX_RETRIES] times, then give up on this one and alert you. */
-    fun onFailed(ctx: Context, id: Long, reason: String) {
+    /**
+     * A single text tries again in 15 minutes, up to [MAX_RETRIES] times, then gives up and alerts you.
+     * A burst text is not retried: it is logged and the burst carries on.
+     */
+    fun onFailed(ctx: Context, id: Long, reason: String, index: Int) {
         SmsStore.init(ctx)
-        val r = SmsStore.get(id)?.takeIf { !it.done } ?: return
         val now = System.currentTimeMillis()
+        if (index >= 0) {
+            SmsStore.addLog(id, SmsLogEntry(now, SmsLogEntry.Status.FAILED, "Reminder ${index + 1} · $reason"))
+            return
+        }
+        val r = SmsStore.get(id)?.takeIf { it.active } ?: return
         val attempts = r.attempts + 1
         if (attempts <= MAX_RETRIES) {
             SmsStore.setRetry(
@@ -230,21 +267,22 @@ object SmsSender {
     }
 
     /** Opens your Messages app with the number and text filled in; you tap Send. */
-    fun openComposer(ctx: Context, r: SmsReminder) {
-        ctx.startActivity(composerIntent(r).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    fun openComposer(ctx: Context, r: SmsReminder, text: String = r.message) {
+        ctx.startActivity(composerIntent(r, text).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    fun composerIntent(r: SmsReminder): Intent =
+    fun composerIntent(r: SmsReminder, text: String = r.message): Intent =
         Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", r.number, null))
-            .putExtra("sms_body", r.message)
+            .putExtra("sms_body", text)
 
     /** Remembers a send that is waiting for its result, so parts can be counted and repeats ignored. */
     object InFlight {
         private fun p(c: Context) = c.getSharedPreferences("sms_inflight", Context.MODE_PRIVATE)
 
-        fun start(c: Context, id: Long, token: Long, parts: Int, sim: String) {
+        fun start(c: Context, id: Long, token: Long, parts: Int, sim: String, index: Int) {
             p(c).edit()
                 .putLong("$id.token", token)
+                .putInt("$id.index", index)
                 .putInt("$id.parts", parts)
                 .putInt("$id.ok", 0)
                 .putString("$id.sim", sim)
@@ -258,8 +296,11 @@ object SmsSender {
         }
 
         fun clear(c: Context, id: Long) {
-            p(c).edit().remove("$id.token").remove("$id.parts").remove("$id.ok").remove("$id.sim").apply()
+            p(c).edit().remove("$id.token").remove("$id.parts").remove("$id.ok").remove("$id.sim").remove("$id.index").apply()
         }
+
+        /** Which burst text the waiting send is (-1 for a single text). Read before [partSent] clears it. */
+        fun index(c: Context, id: Long): Int = p(c).getInt("$id.index", -1)
 
         /**
          * One part went out. Returns the SIM label once every part of this send is out, else null.
@@ -308,16 +349,25 @@ class SmsResultReceiver : BroadcastReceiver() {
         if (id < 0) return
         when (intent.action) {
             SmsSender.ACTION_SENT -> {
+                val index = SmsSender.InFlight.index(context, id)
                 if (resultCode == Activity.RESULT_OK) {
                     val sim = SmsSender.InFlight.partSent(context, id, token) ?: return
-                    SmsSender.onSent(context, id, sim)
+                    SmsSender.onSent(context, id, sim, index)
                 } else if (SmsSender.InFlight.partFailed(context, id, token)) {
-                    SmsSender.onFailed(context, id, SmsSender.reasonFor(resultCode))
+                    SmsSender.onFailed(context, id, SmsSender.reasonFor(resultCode), index)
                 }
             }
             SmsSender.ACTION_DELIVERED -> {
                 if (delivered(intent)) {
-                    SmsStore.addLog(id, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.DELIVERED))
+                    val index = intent.getIntExtra(SmsSender.EXTRA_INDEX, -1)
+                    SmsStore.addLog(
+                        id,
+                        SmsLogEntry(
+                            System.currentTimeMillis(),
+                            SmsLogEntry.Status.DELIVERED,
+                            if (index >= 0) "Reminder ${index + 1}" else ""
+                        )
+                    )
                 }
             }
         }
@@ -337,17 +387,47 @@ class SmsResultReceiver : BroadcastReceiver() {
 }
 
 /** Buttons on the "couldn't send" notification. */
+/** Buttons on the text-message notifications: Try again, Mark done, Not done. */
 class SmsActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_SEND_NOW = "com.callbackreminder.app.SMS_SEND_NOW"
+        const val ACTION_MARK_DONE = "com.callbackreminder.app.SMS_MARK_DONE"
+        const val ACTION_NOT_DONE = "com.callbackreminder.app.SMS_NOT_DONE"
         const val EXTRA_ID = "sms_id"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getLongExtra(EXTRA_ID, -1L)
         if (id < 0) return
+        SmsStore.init(context)
         SmsNotifier.cancel(context, id)
-        if (intent.action == ACTION_SEND_NOW) SmsSender.sendDue(context, id, manual = true)
+        when (intent.action) {
+            ACTION_SEND_NOW -> SmsSender.sendDue(context, id, manual = true)
+            ACTION_MARK_DONE -> SmsStore.markDone(id)
+            ACTION_NOT_DONE -> SmsStore.resume(id)
+        }
+    }
+}
+
+/**
+ * Hears incoming texts, only when "Stop when the person replies Done" is on. A text that is exactly
+ * "Done" (capital D; spaces around it ignored) moves that person's scheduled reminders to To review.
+ * Nothing else about incoming texts is read or kept.
+ */
+class SmsReplyReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        if (!BurstTemplates.stopOnReply(context)) return
+        val parts = try {
+            Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        } catch (e: Exception) {
+            null
+        } ?: return
+        val from = parts.firstOrNull()?.originatingAddress ?: return
+        val body = parts.joinToString("") { it.messageBody.orEmpty() }
+        if (body.trim() != "Done") return
+        SmsStore.init(context)
+        SmsStore.markReplied(from).forEach { SmsNotifier.showReview(context, it) }
     }
 }
 
@@ -366,33 +446,48 @@ object SmsNotifier {
         )
     }
 
-    private fun openMessages(ctx: Context, id: Long): PendingIntent = PendingIntent.getActivity(
+    /** Opens the Text messages screen; with [editId], opens that reminder's Edit window too. */
+    private fun openMessages(ctx: Context, id: Long, editId: Long = -1L): PendingIntent = PendingIntent.getActivity(
         ctx,
-        ID_BASE + id.toInt(),
+        ID_BASE + id.toInt() + if (editId >= 0) 200_000 else 0,
         Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MESSAGES)
+            .putExtra(MainActivity.EXTRA_EDIT_SMS, editId)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         FLAGS
     )
 
-    private fun composer(ctx: Context, r: SmsReminder): PendingIntent = PendingIntent.getActivity(
+    private fun composer(ctx: Context, r: SmsReminder, text: String = r.message): PendingIntent = PendingIntent.getActivity(
         ctx,
         ID_BASE + 100_000 + r.id.toInt(),
-        SmsSender.composerIntent(r),
+        SmsSender.composerIntent(r, text),
         FLAGS
     )
 
-    /** "Sent to Ali ✓", no sound. */
+    private fun action(ctx: Context, r: SmsReminder, action: String, code: Int): PendingIntent = PendingIntent.getBroadcast(
+        ctx,
+        ID_BASE + code + r.id.toInt(),
+        Intent(ctx, SmsActionReceiver::class.java)
+            .setAction(action)
+            .setData(Uri.parse("callback://sms-action/$action/${r.id}"))
+            .putExtra(SmsActionReceiver.EXTRA_ID, r.id),
+        FLAGS
+    )
+
+    /** "Sent to Ali ✓" (or "Sent to Ali · 3 of 5 today" in a burst), no sound, updated in place. */
     @SuppressLint("MissingPermission")
-    fun showSent(ctx: Context, r: SmsReminder) {
+    fun showSent(ctx: Context, r: SmsReminder, index: Int) {
         if (!Notifier.canNotify(ctx)) return
+        val title = if (index >= 0) "Sent to ${r.title} · ${index + 1} of ${r.burstCount} today"
+        else "Sent to ${r.title} ✓"
         val b = NotificationCompat.Builder(ctx, CH_SMS_SENT)
             .setSmallIcon(R.drawable.ic_stat_sms)
-            .setContentTitle("Sent to ${r.title} ✓")
+            .setContentTitle(title)
             .setContentText(r.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(r.message))
             .setContentIntent(openMessages(ctx, r.id))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setSilent(true)
         NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
     }
@@ -401,15 +496,6 @@ object SmsNotifier {
     @SuppressLint("MissingPermission")
     fun showFailed(ctx: Context, r: SmsReminder, reason: String) {
         if (!Notifier.canNotify(ctx)) return
-        val retry = PendingIntent.getBroadcast(
-            ctx,
-            ID_BASE + r.id.toInt(),
-            Intent(ctx, SmsActionReceiver::class.java)
-                .setAction(SmsActionReceiver.ACTION_SEND_NOW)
-                .setData(Uri.parse("callback://sms-action/${r.id}"))
-                .putExtra(SmsActionReceiver.EXTRA_ID, r.id),
-            FLAGS
-        )
         val text = "$reason. \"${r.message}\""
         val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
             .setSmallIcon(R.drawable.ic_stat_sms)
@@ -421,26 +507,54 @@ object SmsNotifier {
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(openMessages(ctx, r.id))
             .setAutoCancel(true)
-            .addAction(0, "Try again", retry)
+            .addAction(0, "Try again", action(ctx, r, SmsActionReceiver.ACTION_SEND_NOW, 0))
             .addAction(0, "Open in Messages", composer(ctx, r))
         NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
     }
 
     /** SMS permission is off: tap to send it yourself from your Messages app. */
     @SuppressLint("MissingPermission")
-    fun showTapToSend(ctx: Context, r: SmsReminder) {
+    fun showTapToSend(ctx: Context, r: SmsReminder, text: String) {
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle("Text ${r.title} now")
-            .setContentText(r.message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(r.message))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setContentIntent(composer(ctx, r))
+            .setContentIntent(composer(ctx, r, text))
             .setAutoCancel(true)
-            .addAction(0, "Open in Messages", composer(ctx, r))
+            .addAction(0, "Open in Messages", composer(ctx, r, text))
+        NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
+    }
+
+    /**
+     * Banner with sound when a reminder lands in To review: the person replied Done, or every text went
+     * out with no reply. Mark done moves it to Done. Not done carries on (after a reply) or opens Edit
+     * to set new days (after no reply).
+     */
+    @SuppressLint("MissingPermission")
+    fun showReview(ctx: Context, r: SmsReminder) {
+        if (!Notifier.canNotify(ctx)) return
+        val replied = r.review == SmsReminder.Review.REPLIED
+        val title = if (replied) "${r.title} replied Done" else "No reply from ${r.title}"
+        val text = (if (replied) "Check the work: " else "All texts sent. Check the work: ") + r.message
+        val notDone = if (replied) action(ctx, r, SmsActionReceiver.ACTION_NOT_DONE, 300_000)
+        else openMessages(ctx, r.id, editId = r.id)
+        val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(openMessages(ctx, r.id))
+            .setAutoCancel(true)
+            .addAction(0, "Mark done", action(ctx, r, SmsActionReceiver.ACTION_MARK_DONE, 400_000))
+            .addAction(0, "Not done", notDone)
         NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
     }
 
