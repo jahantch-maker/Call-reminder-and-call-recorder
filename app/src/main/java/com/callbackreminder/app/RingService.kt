@@ -12,7 +12,9 @@ import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -34,27 +36,52 @@ import kotlinx.coroutines.launch
 
 /**
  * Keeps track of which reminders are ringing right now.
- * A reminder rings from the moment it is due until you Call back, Snooze, mark it Done or delete it.
+ * A reminder rings from the moment it is due until you Call back, Snooze, mark it Done or delete it,
+ * or, with the "Full screen, then notification" style, until its few seconds are up.
  */
 object RingController {
     private val _active = MutableStateFlow<List<Long>>(emptyList())
     val active: StateFlow<List<Long>> = _active.asStateFlow()
 
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** One token per ring, so a timer left over from an earlier ring cannot end a newer one. */
+    private val ringTokens = mutableMapOf<Long, Any>()
+
+    /**
+     * Start ringing for [r]. With a [timeoutMs], the ringing and full-screen reminder stop after
+     * that long if nobody reacts, and a quiet notification stays behind so it can be found later.
+     */
     @Synchronized
-    fun start(ctx: Context, r: Reminder) {
+    fun start(ctx: Context, r: Reminder, timeoutMs: Long = 0L) {
         val app = ctx.applicationContext
         if (r.id !in _active.value) _active.value = _active.value + r.id
+        val token = Any()
+        ringTokens[r.id] = token
         try {
             ContextCompat.startForegroundService(app, Intent(app, ReminderRingService::class.java))
         } catch (e: Exception) {
             // The phone refused to start the ringing service: fall back to a normal banner.
             _active.value = _active.value - r.id
+            ringTokens.remove(r.id)
             Notifier.showReminder(app, r)
+            return
+        }
+        if (timeoutMs > 0) {
+            handler.postDelayed({ timeOut(app, r.id, token) }, timeoutMs)
         }
     }
 
     @Synchronized
+    private fun timeOut(ctx: Context, id: Long, token: Any) {
+        if (ringTokens[id] !== token || id !in _active.value) return
+        dismiss(id)
+        ReminderStore.get(id)?.takeIf { !it.done }?.let { Notifier.showReminder(ctx, it, quiet = true) }
+    }
+
+    @Synchronized
     fun dismiss(id: Long) {
+        ringTokens.remove(id)
         if (id in _active.value) _active.value = _active.value - id
     }
 }

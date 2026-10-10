@@ -28,7 +28,23 @@ object Scheduler {
         )
     }
 
+    /**
+     * When the alarm should go off. A one-off rings at its due time. A repeating reminder rings at
+     * its due time, or at its next repeat if that comes first or the due time has already passed.
+     */
+    private fun alarmAt(r: Reminder, now: Long): Long? {
+        if (r.repeat == null) return r.dueAt
+        val next = r.nextOccurrence()
+        val due = r.dueAt.takeIf { it > now }
+        return listOfNotNull(due, next).minOrNull()
+    }
+
     fun schedule(ctx: Context, r: Reminder) {
+        val at = alarmAt(r, System.currentTimeMillis())
+        if (at == null) {
+            cancel(ctx, r.id)
+            return
+        }
         val am = ctx.getSystemService(AlarmManager::class.java)
         val open = PendingIntent.getActivity(
             ctx,
@@ -36,7 +52,7 @@ object Scheduler {
             Intent(ctx, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(r.dueAt, open), pending(ctx, r.id))
+        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, open), pending(ctx, r.id))
     }
 
     fun cancel(ctx: Context, id: Long) {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -50,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -62,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -83,6 +86,9 @@ fun SettingsScreen(
     ) { refresh++ }
 
     var soundTitle by remember { mutableStateOf(ReminderSound.title(ctx)) }
+    var reminderStyle by remember { mutableStateOf(ReminderStyle.mode(ctx)) }
+    var popupSeconds by remember { mutableStateOf(ReminderStyle.seconds(ctx)) }
+    var secondsMenu by remember { mutableStateOf(false) }
 
     // Needed only when the ringtone is a file from your own storage.
     val audioPermissionLauncher = rememberLauncherForActivityResult(
@@ -492,6 +498,64 @@ fun SettingsScreen(
                 }
             }
 
+            // ---- Reminder style ----
+            SectionCard(
+                title = "Reminder style",
+                subtitle = "What happens when it is time to call back."
+            ) {
+                ReminderStyle.Mode.values().forEach { mode ->
+                    StyleRow(
+                        title = mode.title,
+                        description = when (mode) {
+                            ReminderStyle.Mode.FULL_SCREEN ->
+                                "Rings and stays on screen until you tap Call back, Snooze or Done."
+                            ReminderStyle.Mode.FULL_SCREEN_THEN_NOTIFY ->
+                                "Rings on full screen for $popupSeconds seconds, then moves to your notifications so you can find it later."
+                            ReminderStyle.Mode.BANNER ->
+                                "A normal notification with a sound and vibration. No full-screen popup."
+                        },
+                        selected = reminderStyle == mode,
+                        onSelect = {
+                            reminderStyle = mode
+                            ReminderStyle.setMode(ctx, mode)
+                        }
+                    )
+                }
+                if (reminderStyle == ReminderStyle.Mode.FULL_SCREEN_THEN_NOTIFY) {
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Full screen for", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "$popupSeconds seconds",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Box {
+                            FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") }
+                            DropdownMenu(expanded = secondsMenu, onDismissRequest = { secondsMenu = false }) {
+                                ReminderStyle.SECONDS_CHOICES.forEach { sec ->
+                                    DropdownMenuItem(
+                                        text = { Text("$sec seconds") },
+                                        onClick = {
+                                            popupSeconds = sec
+                                            ReminderStyle.setSeconds(ctx, sec)
+                                            secondsMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---- Reminder sound ----
             SectionCard(
                 title = "Reminder ringtone",
@@ -505,7 +569,7 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text(soundTitle, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Rings until you act. Follows your ringtone volume, and stays silent when the phone is on silent.",
+                            "Used by the full-screen reminder. Follows your ringtone volume, and stays silent when the phone is on silent.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -537,7 +601,7 @@ fun SettingsScreen(
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Ring a test reminder in 10 seconds") }
+                ) { Text("Test a reminder in 10 seconds") }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -598,6 +662,28 @@ private fun PermissionRow(
             )
         } else {
             FilledTonalButton(onClick = onAllow) { Text(actionLabel) }
+        }
+    }
+}
+
+@Composable
+private fun StyleRow(title: String, description: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

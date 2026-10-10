@@ -31,6 +31,8 @@ object AppSettings {
     const val MISSED = "popup_missed"
     const val WHATSAPP = "popup_whatsapp"
     const val RINGTONE = "reminder_ringtone"
+    const val REMINDER_STYLE = "reminder_style"
+    const val POPUP_SECONDS = "reminder_popup_seconds"
 
     // Call recording
     const val REC_PHONE = "rec_phone"
