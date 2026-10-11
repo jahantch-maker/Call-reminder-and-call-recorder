@@ -340,8 +340,9 @@ object SmsStore {
 
     /**
      * The current message or burst is finished: note it in the history ([entry], if any), then move a
-     * repeat on to its next time still ahead. When nothing is left, a one-off single text goes to Done;
-     * a burst or a repeat that ran out without a "Done" reply goes to To review.
+     * repeat on to its next time still ahead. When nothing is left, it goes to To review for you to check
+     * (single text, burst or repeat alike), marked "Not sent" when its last text failed or was skipped.
+     * Only your own Mark done moves it to Done.
      */
     @Synchronized
     fun finishOccurrence(id: Long, entry: SmsLogEntry?) {
@@ -360,14 +361,12 @@ object SmsStore {
             }
         }
         SmsScheduler.cancel(appCtx, id)
-        if (r.repeat != null || r.isBurst) {
-            val reviewed = withLog(r, SmsLogEntry(now, SmsLogEntry.Status.NO_REPLY))
-                .copy(review = SmsReminder.Review.NO_REPLY, reviewAt = now)
-            replace(reviewed)
-            SmsNotifier.showReview(appCtx, reviewed)
-        } else {
-            replace(r.copy(done = true, doneAt = now))
-        }
+        val notSent = !r.isBurst &&
+            (entry?.status == SmsLogEntry.Status.FAILED || entry?.status == SmsLogEntry.Status.SKIPPED)
+        val reviewed = (if (notSent) r else withLog(r, SmsLogEntry(now, SmsLogEntry.Status.NO_REPLY)))
+            .copy(review = if (notSent) SmsReminder.Review.NOT_SENT else SmsReminder.Review.NO_REPLY, reviewAt = now)
+        replace(reviewed)
+        SmsNotifier.showReview(appCtx, reviewed)
     }
 
     /** A single text failed: try again at [retryAt]. */
