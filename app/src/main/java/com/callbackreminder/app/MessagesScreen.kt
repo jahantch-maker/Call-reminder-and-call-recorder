@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -118,6 +120,32 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
     val finished = items.filter { it.done }.sortedByDescending { it.doneAt }
 
     // "Not done" on a no-reply notification: open that reminder in Edit to set new days.
+    val listState = rememberLazyListState()
+    var highlightId by remember { mutableStateOf<Long?>(null) }
+
+    // A tapped notification: switch to the reminder's tab, scroll to it and highlight it for a moment.
+    val showRequest by SmsUi.showRequest.collectAsState()
+    LaunchedEffect(showRequest) {
+        val id = showRequest ?: return@LaunchedEffect
+        SmsUi.showRequest.value = null
+        val r = SmsStore.get(id) ?: return@LaunchedEffect
+        val (t, list) = when {
+            r.done -> 2 to finished
+            r.review != null -> 1 to toReview
+            else -> 0 to pending
+        }
+        tab = t
+        highlightId = id
+        val pos = list.indexOfFirst { it.id == id }
+        if (pos >= 0) {
+            delay(150L)
+            // Header, the permission card when it shows, then the tabs come before the cards.
+            listState.animateScrollToItem((if (canSend) 2 else 3) + pos)
+        }
+        delay(3_000L)
+        if (highlightId == id) highlightId = null
+    }
+
     val editRequest by SmsUi.editRequest.collectAsState()
     LaunchedEffect(editRequest, items) {
         val id = editRequest ?: return@LaunchedEffect
@@ -138,6 +166,7 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -241,6 +270,7 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
                     SmsCard(
                         r = r,
                         now = now,
+                        highlighted = r.id == highlightId,
                         onSendNow = { sendNowFor = r },
                         onHistory = { historyFor = r },
                         onEdit = { editFor = r },
@@ -421,6 +451,7 @@ private fun EmptyMessages(tab: Int) {
 private fun SmsCard(
     r: SmsReminder,
     now: Long,
+    highlighted: Boolean,
     onSendNow: () -> Unit,
     onHistory: () -> Unit,
     onEdit: () -> Unit,
@@ -434,7 +465,8 @@ private fun SmsCard(
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

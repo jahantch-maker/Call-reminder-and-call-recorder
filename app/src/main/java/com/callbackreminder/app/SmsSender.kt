@@ -460,6 +460,7 @@ object SmsNotifier {
         Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MESSAGES)
             .putExtra(MainActivity.EXTRA_EDIT_SMS, editId)
+            .putExtra(MainActivity.EXTRA_SHOW_SMS, id)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         FLAGS
     )
