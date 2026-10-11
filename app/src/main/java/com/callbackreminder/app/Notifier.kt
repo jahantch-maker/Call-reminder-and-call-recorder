@@ -9,6 +9,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -16,7 +17,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 object Notifier {
-    const val CH_REMINDER = "reminders"
+    /** The old fixed banner channel; replaced by [bannerChannel], which carries the chosen sound. */
+    private const val CH_REMINDER_OLD = "reminders"
+    private const val BANNER_PREFIX = "banner_"
     const val CH_POSTCALL = "postcall"
     const val CH_RINGING = "ringing"
     const val CH_RECORDING = "recording"
@@ -29,13 +32,7 @@ object Notifier {
 
     fun createChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(CH_REMINDER, "Call-back reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Banner reminders, and the backup if the ringing reminder cannot start"
-                enableVibration(true)
-                setShowBadge(true)
-            }
-        )
+        bannerChannel(ctx)
         nm.createNotificationChannel(
             NotificationChannel(CH_MISSED, "Unanswered reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "A quiet notification left behind when a full-screen reminder times out"
@@ -71,6 +68,38 @@ object Notifier {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
         )
+    }
+
+    /**
+     * The channel for banners with sound (call-back banners and text-message alerts). Android fixes a
+     * channel's sound once it is made, so each sound choice gets its own channel and the old one goes.
+     */
+    fun bannerChannel(ctx: Context): String {
+        val saved = ReminderSound.BANNER.saved(ctx)
+        val id = BANNER_PREFIX + Integer.toHexString(saved.hashCode())
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(id) != null) return id
+
+        nm.createNotificationChannel(
+            NotificationChannel(id, "Call-back reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Banner reminders and text-message alerts, with the notification sound you chose"
+                enableVibration(true)
+                setShowBadge(true)
+                if (!ReminderSound.BANNER.isPhoneDefault(ctx)) {
+                    setSound(
+                        ReminderSound.BANNER.uri(ctx),
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                }
+            }
+        )
+        nm.notificationChannels
+            .filter { it.id == CH_REMINDER_OLD || (it.id.startsWith(BANNER_PREFIX) && it.id != id) }
+            .forEach { nm.deleteNotificationChannel(it.id) }
+        return id
     }
 
     fun canNotify(ctx: Context): Boolean =
@@ -112,7 +141,7 @@ object Notifier {
             r.number.takeIf { it.isNotBlank() && r.name.isNotBlank() }
         ).joinToString(" · ").ifBlank { "Time for your follow-up call" }
 
-        val b = NotificationCompat.Builder(ctx, if (quiet) CH_MISSED else CH_REMINDER)
+        val b = NotificationCompat.Builder(ctx, if (quiet) CH_MISSED else bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle("Call back ${r.title}")
             .setContentText(text)

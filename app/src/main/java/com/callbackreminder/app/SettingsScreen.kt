@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
@@ -63,7 +65,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -570,20 +574,39 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
 @Composable
 fun ReminderSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
-    var soundTitle by remember { mutableStateOf(ReminderSound.title(ctx)) }
+    var popupTitle by remember { mutableStateOf(ReminderSound.POPUP.title(ctx)) }
+    var bannerTitle by remember { mutableStateOf(ReminderSound.BANNER.title(ctx)) }
+    var repeatSound by remember { mutableStateOf(ReminderSound.repeats(ctx)) }
     var reminderStyle by remember { mutableStateOf(ReminderStyle.mode(ctx)) }
     var popupSeconds by remember { mutableStateOf(ReminderStyle.seconds(ctx)) }
     var secondsMenu by remember { mutableStateOf(false) }
+    // Which sound the chooser window is open for, if any.
+    var choosing by remember { mutableStateOf<SoundSetting?>(null) }
+    // Which sound the phone's own picker was opened for.
+    var pickingFromPhone by remember { mutableStateOf<SoundSetting?>(null) }
 
-    // Needed only when the ringtone is a file from your own storage.
+    fun refreshTitles() {
+        popupTitle = ReminderSound.POPUP.title(ctx)
+        bannerTitle = ReminderSound.BANNER.title(ctx)
+    }
+
+    fun choose(setting: SoundSetting, value: String) {
+        setting.set(ctx, value)
+        if (setting === ReminderSound.BANNER) Notifier.bannerChannel(ctx)
+        refreshTitles()
+    }
+
+    // Needed only when the sound is a file from your own storage.
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { soundTitle = ReminderSound.title(ctx) }
+    ) { refreshTitles() }
 
     val ringtoneLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
+        val setting = pickingFromPhone
+        pickingFromPhone = null
+        if (result.resultCode == Activity.RESULT_OK && setting != null) {
             val data = result.data
             val picked: Uri? = if (data == null) null else IntentCompat.getParcelableExtra(
                 data,
@@ -591,9 +614,8 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                 Uri::class.java
             )
             val isPhoneDefault = picked == null ||
-                picked == RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            AppSettings.setString(ctx, AppSettings.RINGTONE, if (isPhoneDefault) "" else picked.toString())
-            soundTitle = ReminderSound.title(ctx)
+                picked == RingtoneManager.getDefaultUri(setting.phoneType)
+            choose(setting, if (isPhoneDefault) "" else picked.toString())
 
             if (!isPhoneDefault && picked.toString().contains("/external/")) {
                 val perm = if (Build.VERSION.SDK_INT >= 33) {
@@ -608,14 +630,37 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    fun pickRingtone() {
+    fun pickFromPhone(setting: SoundSetting) {
+        pickingFromPhone = setting
         ringtoneLauncher.launch(
             Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Reminder ringtone")
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, setting.phoneType)
+                putExtra(
+                    RingtoneManager.EXTRA_RINGTONE_TITLE,
+                    if (setting === ReminderSound.POPUP) "Popup ringtone" else "Notification ringtone"
+                )
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ReminderSound.uri(ctx))
+                putExtra(
+                    RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                    if (setting.builtIn(ctx) != null) null else setting.uri(ctx)
+                )
+            }
+        )
+    }
+
+    choosing?.let { setting ->
+        SoundChooserDialog(
+            title = if (setting === ReminderSound.POPUP) "Popup ringtone" else "Notification ringtone",
+            setting = setting,
+            onDismiss = { choosing = null },
+            onChoose = { value ->
+                choose(setting, value)
+                choosing = null
+            },
+            onPickFromPhone = {
+                choosing = null
+                pickFromPhone(setting)
             }
         )
     }
@@ -679,25 +724,44 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
         }
 
         SectionCard(
-            title = "Reminder ringtone",
-            subtitle = "How the phone rings when it is time to call back."
+            title = "Popup ringtone",
+            subtitle = "For the large full-screen reminder."
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(soundTitle, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Used by the full-screen reminder. Follows your ringtone volume, and stays silent when the phone is on silent.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            SoundRow(
+                title = popupTitle,
+                description = "Follows your ringtone volume, and stays silent when the phone is on silent.",
+                onChange = { choosing = ReminderSound.POPUP }
+            )
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            StyleRow(
+                title = "Repeat until I react",
+                description = "Keeps playing until you tap Call back, Snooze or Done.",
+                selected = repeatSound,
+                onSelect = {
+                    repeatSound = true
+                    ReminderSound.setRepeats(ctx, true)
                 }
-                Spacer(Modifier.width(8.dp))
-                FilledTonalButton(onClick = { pickRingtone() }) { Text("Change") }
-            }
+            )
+            StyleRow(
+                title = "Play once",
+                description = "Plays one time. The reminder stays on screen.",
+                selected = !repeatSound,
+                onSelect = {
+                    repeatSound = false
+                    ReminderSound.setRepeats(ctx, false)
+                }
+            )
+        }
+
+        SectionCard(
+            title = "Notification ringtone",
+            subtitle = "For banner notifications: call-back banners and text-message alerts."
+        ) {
+            SoundRow(
+                title = bannerTitle,
+                description = "Plays once with each banner, at your notification volume.",
+                onChange = { choosing = ReminderSound.BANNER }
+            )
         }
 
         SectionCard(title = "Try it out", subtitle = "Hear your reminder without waiting for a real one.") {
@@ -717,6 +781,136 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
 }
 
 // ---------------------------------------------------------------- Shared pieces
+
+@Composable
+private fun SoundRow(title: String, description: String, onChange: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        FilledTonalButton(onClick = onChange) { Text("Change") }
+    }
+}
+
+/** Plays a sound once so you can hear it before choosing. Only one plays at a time. */
+private object SoundPreview {
+    private var player: MediaPlayer? = null
+
+    fun play(ctx: Context, uri: Uri?) {
+        stop()
+        if (uri == null) return
+        val mp = MediaPlayer()
+        try {
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            mp.setDataSource(ctx, uri)
+            mp.setOnCompletionListener { if (player === it) stop() }
+            mp.prepare()
+            mp.start()
+            player = mp
+        } catch (e: Exception) {
+            try {
+                mp.release()
+            } catch (e2: Exception) {
+                // Ignore.
+            }
+        }
+    }
+
+    fun stop() {
+        val mp = player ?: return
+        player = null
+        try {
+            mp.stop()
+        } catch (e: Exception) {
+            // Already stopped.
+        }
+        try {
+            mp.release()
+        } catch (e: Exception) {
+            // Already released.
+        }
+    }
+}
+
+@Composable
+private fun SoundChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * The sound list: the phone's own sound, the 10 built-in pings, and "Pick from phone".
+ * Tapping a row plays it; Save keeps it.
+ */
+@Composable
+private fun SoundChooserDialog(
+    title: String,
+    setting: SoundSetting,
+    onDismiss: () -> Unit,
+    onChoose: (String) -> Unit,
+    onPickFromPhone: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val current = remember { setting.saved(ctx) }
+    val currentTitle = remember { setting.title(ctx) }
+    var selected by remember { mutableStateOf(current) }
+    DisposableEffect(Unit) { onDispose { SoundPreview.stop() } }
+
+    fun pick(value: String, uri: Uri?) {
+        selected = value
+        SoundPreview.play(ctx, uri)
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SoundChoiceRow(setting.phoneTitle, selected == "") {
+                    pick("", RingtoneManager.getDefaultUri(setting.phoneType))
+                }
+                AppSounds.ALL.forEach { s ->
+                    val value = AppSounds.value(s)
+                    SoundChoiceRow(s.title, selected == value) { pick(value, AppSounds.uri(ctx, s)) }
+                }
+                // A sound picked from the phone earlier stays in the list so it can be kept.
+                if (current.isNotBlank() && AppSounds.find(current) == null) {
+                    SoundChoiceRow(currentTitle, selected == current) { pick(current, Uri.parse(current)) }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                TextButton(onClick = onPickFromPhone, modifier = Modifier.fillMaxWidth()) {
+                    Text("Pick from phone…")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onChoose(selected) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
 
 /** A settings page: back arrow and title, then its cards in a scrolling column. */
 @Composable
