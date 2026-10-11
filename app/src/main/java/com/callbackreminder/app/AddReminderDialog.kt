@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,7 @@ fun AddReminderDialog(
     var repeat by remember { mutableStateOf<Repeat?>(null) }
     var showDateTime by remember { mutableStateOf(false) }
     var showRecent by remember { mutableStateOf(false) }
+    var showUsed by remember { mutableStateOf(false) }
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -149,6 +151,16 @@ fun AddReminderDialog(
                             Text("Recent calls", maxLines = 1)
                         }
                     }
+                    OutlinedButton(
+                        onClick = { showUsed = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Used recently", maxLines = 1)
+                    }
                 } else {
                     ContactCard(name = name, number = number, onClear = { name = ""; number = "" })
                 }
@@ -208,6 +220,17 @@ fun AddReminderDialog(
                 showDateTime = false
             },
             onDismiss = { showDateTime = false }
+        )
+    }
+
+    if (showUsed) {
+        UsedRecentlyDialog(
+            onPick = { person ->
+                number = person.number
+                name = person.name.ifBlank { ContactLookup.nameFor(ctx, person.number) }
+                showUsed = false
+            },
+            onDismiss = { showUsed = false }
         )
     }
 
@@ -336,4 +359,56 @@ private fun RecentCallRow(call: CallInfo, count: Int, onClick: () -> Unit) {
             }
         }
     }
+}
+
+/** The last few people you set a reminder for (calls and texts together); tap one to pick them. */
+@Composable
+internal fun UsedRecentlyDialog(onPick: (RecentPeople.Person) -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val people = remember { RecentPeople.load(ctx) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Used recently") },
+        text = {
+            if (people.isEmpty()) {
+                Text("No one yet. The last ${RecentPeople.MAX} people you set a reminder for will show here.")
+            } else {
+                Column {
+                    people.forEach { person ->
+                        val title = person.name.ifBlank { person.number }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(person) }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Avatar(text = title, size = 40.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (person.name.isNotBlank()) {
+                                    Text(
+                                        person.number,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

@@ -243,6 +243,8 @@ data class CallInfo(
     val durationSec: Long,
     val endedAt: Long,
     val viaWhatsApp: Boolean = false,
+    /** The task this call followed up on (Call back on a due reminder), or -1. */
+    val followUpId: Long = -1L,
 )
 
 object CallLookup {

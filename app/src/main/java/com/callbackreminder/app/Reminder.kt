@@ -18,6 +18,10 @@ data class Reminder(
     val occurrenceAt: Long = dueAt,
     /** Which repeat this is, counting from 1 (for "end after N times"). */
     val occurrenceCount: Int = 1,
+    /** Done, but waiting for you to check it (the To review chip on Calls). */
+    val review: Boolean = false,
+    /** Every time this task was moved to a new time after a follow-up call, oldest first. */
+    val delays: List<Delay> = emptyList(),
 ) {
     /** What we show as the headline: the name, else the number, else a placeholder. */
     val title: String
@@ -32,3 +36,6 @@ data class Reminder(
     val repeatLabel: String?
         get() = repeat?.label(Repeat.at(seriesStart))
 }
+
+/** One "Why not done?" entry: the task was due at [wasDue], and on [at] it was moved to [newDue]. */
+data class Delay(val at: Long, val wasDue: Long, val newDue: Long, val reason: String)

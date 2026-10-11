@@ -70,6 +70,17 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.Callback.Alert" />
 
+        <!-- The twice-a-day review reminder popup: Review now, Snooze or Later -->
+        <activity
+            android:name=".ReviewAlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.Callback.Alert" />
+
         <!-- Plays the ringtone while a reminder is ringing -->
         <service
             android:name=".ReminderRingService"
@@ -121,6 +132,11 @@
         <!-- Fires when a reminder is due -->
         <receiver
             android:name=".ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Fires at the review times (and when a review reminder is snoozed) -->
+        <receiver
+            android:name=".ReviewReceiver"
             android:exported="false" />
 
         <!-- Snooze / Done buttons on the reminder notification -->

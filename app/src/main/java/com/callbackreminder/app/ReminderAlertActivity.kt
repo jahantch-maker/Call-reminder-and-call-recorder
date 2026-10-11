@@ -109,7 +109,11 @@ class ReminderAlertActivity : ComponentActivity() {
         if (id < 0) return
         val r = ReminderStore.get(id)
         // Place the call first, then stop the ringing (which closes this screen).
-        if (r != null) dial(this, r.number)
+        if (r != null) {
+            FollowUp.mark(this, r)
+            dial(this, r.number)
+        }
+        Notifier.cancel(this, id)
         RingController.dismiss(id)
     }
 }
@@ -159,6 +163,8 @@ private fun AlertScreen(onAllDone: () -> Unit) {
                         r = r,
                         onCallBack = {
                             // Calls directly (even on the lock screen), then stops the ringing.
+                            // The after-call popup will then ask how this task went.
+                            FollowUp.mark(ctx, r)
                             dial(ctx, r.number)
                             RingController.dismiss(r.id)
                         },

@@ -12,6 +12,7 @@ object CallBatch {
     private const val TYPES = "call_types"
     private const val DURATIONS = "call_durations"
     private const val WHATSAPP = "call_whatsapp"
+    private const val FOLLOW_UPS = "call_follow_ups"
 
     fun putInto(intent: Intent, calls: List<CallInfo>): Intent {
         intent.putExtra(IDS, calls.map { it.id }.toLongArray())
@@ -20,6 +21,7 @@ object CallBatch {
         intent.putExtra(TYPES, calls.map { it.type }.toIntArray())
         intent.putExtra(DURATIONS, calls.map { it.durationSec }.toLongArray())
         intent.putExtra(WHATSAPP, calls.map { it.viaWhatsApp }.toBooleanArray())
+        intent.putExtra(FOLLOW_UPS, calls.map { it.followUpId }.toLongArray())
         return intent
     }
 
@@ -30,6 +32,7 @@ object CallBatch {
         val types = intent.getIntArrayExtra(TYPES) ?: return emptyList()
         val durations = intent.getLongArrayExtra(DURATIONS) ?: return emptyList()
         val whatsApp = intent.getBooleanArrayExtra(WHATSAPP)
+        val followUps = intent.getLongArrayExtra(FOLLOW_UPS)
         val now = System.currentTimeMillis()
         val count = minOf(ids.size, numbers.size, names.size, types.size, durations.size)
         return (0 until count).map { i ->
@@ -41,6 +44,7 @@ object CallBatch {
                 durationSec = durations[i],
                 endedAt = now,
                 viaWhatsApp = whatsApp?.getOrNull(i) ?: false,
+                followUpId = followUps?.getOrNull(i) ?: -1L,
             )
         }
     }
