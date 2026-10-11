@@ -505,7 +505,7 @@ object SmsNotifier {
     fun showFailed(ctx: Context, r: SmsReminder, reason: String) {
         if (!Notifier.canNotify(ctx)) return
         val text = "$reason. \"${r.message}\""
-        val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle("Couldn't send text to ${r.title}")
             .setContentText(text)
@@ -524,7 +524,7 @@ object SmsNotifier {
     @SuppressLint("MissingPermission")
     fun showTapToSend(ctx: Context, r: SmsReminder, text: String) {
         if (!Notifier.canNotify(ctx)) return
-        val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle("Text ${r.title} now")
             .setContentText(text)
@@ -561,7 +561,7 @@ object SmsNotifier {
         } + r.message
         val notDone = if (replied) action(ctx, r, SmsActionReceiver.ACTION_NOT_DONE, 300_000)
         else openMessages(ctx, r.id, editId = r.id)
-        val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle(title)
             .setContentText(text)

@@ -32,6 +32,8 @@ object AppSettings {
     const val MISSED = "popup_missed"
     const val WHATSAPP = "popup_whatsapp"
     const val RINGTONE = "reminder_ringtone"
+    const val RINGTONE_REPEAT = "reminder_ringtone_repeat"
+    const val BANNER_SOUND = "banner_sound"
     const val REMINDER_STYLE = "reminder_style"
     const val POPUP_SECONDS = "reminder_popup_seconds"
 
@@ -53,26 +55,92 @@ object AppSettings {
     fun setString(c: Context, key: String, value: String) = p(c).edit().putString(key, value).apply()
 }
 
-/** The sound a reminder rings with. An empty choice means "whatever the phone's ringtone is". */
-object ReminderSound {
+/** The short ping sounds built into the app (res/raw). Saved as "app:<key>". */
+object AppSounds {
+    class Sound(val key: String, val title: String, val res: Int)
+
+    val ALL = listOf(
+        Sound("ding_dong", "Ding Dong", R.raw.ping_ding_dong),
+        Sound("electronic", "Electronic Ping", R.raw.ping_electronic),
+        Sound("new_notification", "New Notification", R.raw.ping_new_notification),
+        Sound("bright", "Bright", R.raw.ping_bright),
+        Sound("message", "Message Ping", R.raw.ping_message),
+        Sound("sleek_chime", "Sleek Chime", R.raw.ping_sleek_chime),
+        Sound("ui_ding", "UI Ding", R.raw.ping_ui_ding),
+        Sound("metallic_echo", "Metallic Echo", R.raw.ping_metallic_echo),
+        Sound("classic_ding", "Classic Ding", R.raw.ping_classic_ding),
+        Sound("quick_ding", "Quick Ding", R.raw.ping_quick_ding),
+    )
+
+    private const val PREFIX = "app:"
+
+    fun value(s: Sound) = PREFIX + s.key
+
+    fun find(saved: String): Sound? =
+        if (saved.startsWith(PREFIX)) ALL.firstOrNull { it.key == saved.removePrefix(PREFIX) } else null
+
+    /** By name, not number, so the link stays right after an app update (notification channels keep it). */
+    fun uri(ctx: Context, s: Sound): Uri =
+        Uri.parse("android.resource://${ctx.packageName}/raw/${ctx.resources.getResourceEntryName(s.res)}")
+}
+
+/**
+ * One sound choice. Saved as "" (the phone's own sound), "app:<key>" (a built-in ping) or the
+ * content link of a sound picked from the phone.
+ */
+class SoundSetting(
+    private val key: String,
+    private val default: String,
+    val phoneTitle: String,
+    val phoneType: Int,
+) {
+    fun saved(ctx: Context): String = AppSettings.getString(ctx, key, default)
+
+    fun set(ctx: Context, value: String) = AppSettings.setString(ctx, key, value)
+
+    fun builtIn(ctx: Context): AppSounds.Sound? = AppSounds.find(saved(ctx))
+
+    fun isPhoneDefault(ctx: Context) = saved(ctx).isBlank()
+
     fun uri(ctx: Context): Uri? {
-        val saved = AppSettings.getString(ctx, AppSettings.RINGTONE)
-        return if (saved.isBlank()) {
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        } else {
-            Uri.parse(saved)
-        }
+        val saved = saved(ctx)
+        AppSounds.find(saved)?.let { return AppSounds.uri(ctx, it) }
+        return if (saved.isBlank()) RingtoneManager.getDefaultUri(phoneType) else Uri.parse(saved)
     }
 
     fun title(ctx: Context): String {
-        val saved = AppSettings.getString(ctx, AppSettings.RINGTONE)
-        if (saved.isBlank()) return "Phone ringtone (default)"
+        val saved = saved(ctx)
+        AppSounds.find(saved)?.let { return it.title }
+        if (saved.isBlank()) return phoneTitle
         return try {
-            RingtoneManager.getRingtone(ctx, Uri.parse(saved))?.getTitle(ctx) ?: "Custom ringtone"
+            RingtoneManager.getRingtone(ctx, Uri.parse(saved))?.getTitle(ctx) ?: "Custom sound"
         } catch (e: Exception) {
-            "Custom ringtone"
+            "Custom sound"
         }
     }
+}
+
+/**
+ * The sounds reminders use. [POPUP] rings the full-screen reminder (the phone's ringtone unless
+ * changed). [BANNER] is for notification banners: call-back banners and text-message alerts.
+ */
+object ReminderSound {
+    val POPUP = SoundSetting(AppSettings.RINGTONE, "", "Phone ringtone (default)", RingtoneManager.TYPE_RINGTONE)
+    val BANNER = SoundSetting(
+        AppSettings.BANNER_SOUND,
+        "app:message",
+        "Phone notification sound",
+        RingtoneManager.TYPE_NOTIFICATION
+    )
+
+    fun uri(ctx: Context): Uri? = POPUP.uri(ctx)
+
+    fun title(ctx: Context): String = POPUP.title(ctx)
+
+    /** Popup sound plays again and again until you react (on), or just once (off). */
+    fun repeats(ctx: Context): Boolean = AppSettings.get(ctx, AppSettings.RINGTONE_REPEAT, true)
+
+    fun setRepeats(ctx: Context, on: Boolean) = AppSettings.set(ctx, AppSettings.RINGTONE_REPEAT, on)
 }
 
 /** Turns times into friendly text like "Tomorrow, 10:00 AM". */

@@ -87,7 +87,7 @@ object RingController {
 }
 
 /**
- * Plays the chosen ringtone (looping, at the phone's ringer volume) and vibrates, and opens the
+ * Plays the chosen popup sound (once, or again and again, at the phone's ringer volume) and vibrates, and opens the
  * full-screen reminder. It keeps going until every ringing reminder has been dealt with.
  */
 class ReminderRingService : Service() {
@@ -95,9 +95,13 @@ class ReminderRingService : Service() {
     companion object {
         // Safety net: stop the noise (not the reminder) if nobody reacts for half an hour.
         private const val MAX_RING_MS = 30 * 60_000L
+
+        // A short built-in ping repeats with this pause in between, so it does not run together.
+        private const val PING_GAP_MS = 1_200L
     }
 
     private var player: MediaPlayer? = null
+    private val handler = Handler(Looper.getMainLooper())
     private var vibrator: Vibrator? = null
     private var focusRequest: AudioFocusRequest? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -222,6 +226,7 @@ class ReminderRingService : Service() {
         ringing = false
         silenceTimer?.cancel()
         silenceTimer = null
+        handler.removeCallbacksAndMessages(null)
         try {
             player?.stop()
         } catch (e: Exception) {
@@ -272,24 +277,42 @@ class ReminderRingService : Service() {
             focusRequest = null
         }
 
+        val repeat = ReminderSound.repeats(this)
+        val isPing = ReminderSound.POPUP.builtIn(this) != null
         val choices = listOf(
             ReminderSound.uri(this),
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
         )
-        for (uri in choices) {
-            player = tryPlay(uri, attrs)
+        for ((i, uri) in choices.withIndex()) {
+            val gap = if (i == 0 && isPing) PING_GAP_MS else 0L
+            player = tryPlay(uri, attrs, repeat, gap)
             if (player != null) break
         }
     }
 
-    private fun tryPlay(uri: Uri?, attrs: AudioAttributes): MediaPlayer? {
+    /** [repeat] off plays the sound once. On, it loops, with a [gapMs] pause between plays when set. */
+    private fun tryPlay(uri: Uri?, attrs: AudioAttributes, repeat: Boolean, gapMs: Long): MediaPlayer? {
         if (uri == null) return null
         val mp = MediaPlayer()
         return try {
             mp.setAudioAttributes(attrs)
             mp.setDataSource(this, uri)
-            mp.isLooping = true
+            mp.isLooping = repeat && gapMs == 0L
+            if (repeat && gapMs > 0L) {
+                mp.setOnCompletionListener { done ->
+                    handler.postDelayed({
+                        if (player === done) {
+                            try {
+                                done.seekTo(0)
+                                done.start()
+                            } catch (e: Exception) {
+                                // Stopped meanwhile.
+                            }
+                        }
+                    }, gapMs)
+                }
+            }
             mp.prepare()
             mp.start()
             mp
