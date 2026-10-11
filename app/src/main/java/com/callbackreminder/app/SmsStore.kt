@@ -64,6 +64,8 @@ object SmsStore {
                     burstIndex = o.optInt("burstIndex"),
                     review = SmsReminder.Review.values().firstOrNull { it.code == o.optString("review") },
                     reviewAt = o.optLong("reviewAt"),
+                    code = o.optString("code"),
+                    tracked = o.optBoolean("tracked", true),
                 )
             }
         } catch (e: Exception) {
@@ -100,6 +102,8 @@ object SmsStore {
                     .put("burstIndex", r.burstIndex)
                     .put("review", r.review?.code ?: "")
                     .put("reviewAt", r.reviewAt)
+                    .put("code", r.code)
+                    .put("tracked", r.tracked)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -141,6 +145,7 @@ object SmsStore {
         dueAt: Long,
         repeat: Repeat?,
         burst: BurstTemplate?,
+        tracked: Boolean,
     ): SmsReminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -154,6 +159,7 @@ object SmsStore {
                 createdAt = System.currentTimeMillis(),
                 burstCount = burst?.count ?: 1,
                 burstGapMin = burst?.gapMin ?: 0,
+                tracked = tracked,
             ),
             dueAt,
             repeat
@@ -163,7 +169,10 @@ object SmsStore {
         return r
     }
 
-    /** Edit who, what, when, the repeat and the burst. Starts the series again; the history is kept. */
+    /**
+     * Edit who, what, when, the repeat, the burst and tracking. Starts the series again; the history and
+     * the task number are kept.
+     */
     @Synchronized
     fun edit(
         id: Long,
@@ -173,6 +182,7 @@ object SmsStore {
         dueAt: Long,
         repeat: Repeat?,
         burst: BurstTemplate?,
+        tracked: Boolean,
     ) {
         val cur = get(id) ?: return
         SmsNotifier.cancel(appCtx, id)
@@ -183,6 +193,7 @@ object SmsStore {
                 message = message.trim(),
                 burstCount = burst?.count ?: 1,
                 burstGapMin = burst?.gapMin ?: 0,
+                tracked = tracked,
             ),
             dueAt,
             repeat
@@ -267,27 +278,43 @@ object SmsStore {
     }
 
     /**
-     * The person texted back "Done": every scheduled reminder to that number stops and waits in
-     * To review. Returns the reminders that moved.
+     * The person texted back "Done <number>": only the tracked reminder with that number, sent to that
+     * person, stops and waits in To review. Returns it, or null when nothing matches.
      */
     @Synchronized
-    fun markReplied(fromNumber: String): List<SmsReminder> {
+    fun markReplied(fromNumber: String, code: String): SmsReminder? {
+        val r = _items.value.firstOrNull {
+            it.active && it.tracked && it.code == code && sameNumber(it.number, fromNumber)
+        } ?: return null
         val now = System.currentTimeMillis()
-        val moved = mutableListOf<SmsReminder>()
-        val list = _items.value.map { r ->
-            if (r.active && sameNumber(r.number, fromNumber)) {
-                SmsScheduler.cancel(appCtx, r.id)
-                SmsSender.InFlight.clear(appCtx, r.id)
-                val m = withLog(r, SmsLogEntry(now, SmsLogEntry.Status.REPLIED_DONE))
-                    .copy(review = SmsReminder.Review.REPLIED, reviewAt = now, retryAt = 0L, attempts = 0)
-                moved += m
-                m
-            } else {
-                r
-            }
-        }
-        if (moved.isNotEmpty()) save(list)
-        return moved
+        SmsScheduler.cancel(appCtx, r.id)
+        SmsSender.InFlight.clear(appCtx, r.id)
+        val m = withLog(r, SmsLogEntry(now, SmsLogEntry.Status.REPLIED_DONE, r.doneReply))
+            .copy(review = SmsReminder.Review.REPLIED, reviewAt = now, retryAt = 0L, attempts = 0)
+        replace(m)
+        return m
+    }
+
+    /**
+     * Gives [id] its task number when its first text goes out: today's date ("261011") and the next
+     * serial for that day ("-01", "-02", …). Reminders due in the same minute that were saved earlier get
+     * theirs first, so the order follows saving. A number, once given, never changes or comes back.
+     */
+    @Synchronized
+    fun ensureCode(id: Long): SmsReminder? {
+        val cur = get(id) ?: return null
+        if (cur.code.isNotEmpty()) return cur
+        val minute = cur.nextTextAt / 60_000L
+        val first = _items.value
+            .filter { it.active && it.code.isEmpty() && it.id < id && it.nextTextAt / 60_000L == minute }
+            .sortedBy { it.id }
+        val day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"))
+        val key = "serial_$day"
+        var serial = prefs().getInt(key, 0)
+        val codes = (first.map { it.id } + id).associateWith { "$day-${"%02d".format(++serial)}" }
+        prefs().edit().putInt(key, serial).apply()
+        save(_items.value.map { r -> codes[r.id]?.let { r.copy(code = it) } ?: r })
+        return get(id)
     }
 
     /** Compares the last 10 digits, so "+92 300 1234567" and "0300-1234567" are the same person. */

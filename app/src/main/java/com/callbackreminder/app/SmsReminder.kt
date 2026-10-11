@@ -50,6 +50,13 @@ data class SmsReminder(
     /** Waiting in the To review tab, and why; null while scheduled or done. */
     val review: Review? = null,
     val reviewAt: Long = 0L,
+    /**
+     * Task number like "261011-01" (date of the first text, then that day's serial). Given when the first
+     * text goes out and never changed after that; empty until then.
+     */
+    val code: String = "",
+    /** Put the task number (and "Reminder N") in the texts, so a "Done <number>" reply can stop it. */
+    val tracked: Boolean = true,
 ) {
     enum class Review(val code: String) {
         /** The person texted back "Done". */
@@ -88,8 +95,19 @@ data class SmsReminder(
     val alarmAt: Long
         get() = if (retryAt > 0L) retryAt else nextTextAt
 
-    /** The text that actually goes out: bursts start with "Reminder N: ". */
-    fun textFor(index: Int): String = if (isBurst) "Reminder ${index + 1}: $message" else message
+    /**
+     * The text that actually goes out. Tracked: "Reminder 2 (261011-01): …" for a burst, "(261011-01) …"
+     * for a single text. Not tracked: just the message, as typed.
+     */
+    fun textFor(index: Int): String = when {
+        !tracked || code.isEmpty() -> message
+        isBurst -> "Reminder ${index + 1} ($code): $message"
+        else -> "($code) $message"
+    }
+
+    /** The exact reply that stops this reminder, e.g. "Done 261011-01". */
+    val doneReply: String
+        get() = "Done $code"
 
     val lastLog: SmsLogEntry?
         get() = log.lastOrNull()

@@ -127,6 +127,8 @@ object SmsSender {
             return
         }
 
+        // The first text going out gives the reminder its task number.
+        r = SmsStore.ensureCode(id) ?: return
         val index = r.burstIndex
         val text = r.textFor(index)
         if (!hasPermission(ctx)) {
@@ -411,8 +413,9 @@ class SmsActionReceiver : BroadcastReceiver() {
 
 /**
  * Hears incoming texts, only when "Stop when the person replies Done" is on. A text that is exactly
- * "Done" (capital D; spaces around it ignored) moves that person's scheduled reminders to To review.
- * Nothing else about incoming texts is read or kept.
+ * "Done 261011-01" (capital D, one space, the task number; spaces around it ignored) moves only that
+ * person's reminder with that number to To review. A plain "Done" or anything else is ignored, and
+ * nothing else about incoming texts is read or kept.
  */
 class SmsReplyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -425,9 +428,13 @@ class SmsReplyReceiver : BroadcastReceiver() {
         } ?: return
         val from = parts.firstOrNull()?.originatingAddress ?: return
         val body = parts.joinToString("") { it.messageBody.orEmpty() }
-        if (body.trim() != "Done") return
+        val code = DONE_REPLY.matchEntire(body.trim())?.groupValues?.get(1) ?: return
         SmsStore.init(context)
-        SmsStore.markReplied(from).forEach { SmsNotifier.showReview(context, it) }
+        SmsStore.markReplied(from, code)?.let { SmsNotifier.showReview(context, it) }
+    }
+
+    private companion object {
+        val DONE_REPLY = Regex("""Done (\d{6}-\d{2,})""")
     }
 }
 
@@ -539,7 +546,7 @@ object SmsNotifier {
     fun showReview(ctx: Context, r: SmsReminder) {
         if (!Notifier.canNotify(ctx)) return
         val replied = r.review == SmsReminder.Review.REPLIED
-        val title = if (replied) "${r.title} replied Done" else "No reply from ${r.title}"
+        val title = if (replied) "${r.title} replied ${r.doneReply}" else "No reply from ${r.title}"
         val text = (if (replied) "Check the work: " else "All texts sent. Check the work: ") + r.message
         val notDone = if (replied) action(ctx, r, SmsActionReceiver.ACTION_NOT_DONE, 300_000)
         else openMessages(ctx, r.id, editId = r.id)
