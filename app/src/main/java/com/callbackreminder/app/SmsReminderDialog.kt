@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
@@ -83,6 +84,7 @@ fun SmsReminderDialog(
     var help by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showDateTime by remember { mutableStateOf(false) }
     var showRecent by remember { mutableStateOf(false) }
+    var showUsed by remember { mutableStateOf(false) }
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -157,6 +159,16 @@ fun SmsReminderDialog(
                             Spacer(Modifier.width(6.dp))
                             Text("Recent calls", maxLines = 1)
                         }
+                    }
+                    OutlinedButton(
+                        onClick = { showUsed = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Used recently", maxLines = 1)
                     }
                 } else {
                     ContactCard(name = name, number = number, onClear = { name = ""; number = "" })
@@ -283,6 +295,17 @@ fun SmsReminderDialog(
                 showDateTime = false
             },
             onDismiss = { showDateTime = false }
+        )
+    }
+
+    if (showUsed) {
+        UsedRecentlyDialog(
+            onPick = { person ->
+                number = person.number
+                name = person.name.ifBlank { ContactLookup.nameFor(ctx, person.number) }
+                showUsed = false
+            },
+            onDismiss = { showUsed = false }
         )
     }
 

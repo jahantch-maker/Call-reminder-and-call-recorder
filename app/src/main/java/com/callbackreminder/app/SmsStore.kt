@@ -166,6 +166,7 @@ object SmsStore {
         )
         save(_items.value + r)
         SmsScheduler.schedule(appCtx, r)
+        RecentPeople.record(appCtx, r.name, r.number)
         return r
     }
 

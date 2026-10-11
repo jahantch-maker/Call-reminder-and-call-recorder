@@ -1,6 +1,10 @@
 package com.callbackreminder.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
@@ -59,16 +64,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+
+/** Requests from outside the Calls tab (the review reminder) for which chip to show. */
+object CallsUi {
+    const val TO_CALL = 0
+    const val OVERDUE = 1
+    const val TO_REVIEW = 2
+    const val DONE = 3
+
+    val tabRequest = MutableStateFlow<Int?>(null)
+}
 
 /** The Calls tab: every call-back, grouped by when it's due, with Created and Due filters. */
 @Composable
 fun CallsScreen(resumeKey: Int) {
     val ctx = LocalContext.current
     val all by ReminderStore.items.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableStateOf(CallsUi.TO_CALL) }
+    var historyFor by remember { mutableStateOf<Reminder?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     var rescheduleFor by remember { mutableStateOf<Reminder?>(null) }
     var deleteFor by remember { mutableStateOf<Reminder?>(null) }
@@ -91,12 +108,21 @@ fun CallsScreen(resumeKey: Int) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
 
+    // The review reminder's "Review now" asked for a chip.
+    val tabRequest by CallsUi.tabRequest.collectAsState()
+    LaunchedEffect(tabRequest) {
+        val t = tabRequest ?: return@LaunchedEffect
+        CallsUi.tabRequest.value = null
+        tab = t
+    }
+
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     fun dayOf(ms: Long): LocalDate = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
 
     val pending = items.filter { !it.done }.sortedBy { it.dueAt }
-    val finished = items.filter { it.done }.sortedByDescending { it.doneAt }
+    val toReview = items.filter { it.done && it.review }.sortedByDescending { it.doneAt }
+    val finished = items.filter { it.done && !it.review }.sortedByDescending { it.doneAt }
     val overdue = pending.filter { it.dueAt <= now }
     val laterToday = pending.filter { it.dueAt > now && dayOf(it.dueAt) == today }
     val upcoming = pending.filter { it.dueAt > now && dayOf(it.dueAt) != today }
@@ -151,15 +177,28 @@ fun CallsScreen(resumeKey: Int) {
 
             item(key = "tabs") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         FilterChip(
-                            selected = tab == 0,
-                            onClick = { tab = 0 },
+                            selected = tab == CallsUi.TO_CALL,
+                            onClick = { tab = CallsUi.TO_CALL },
                             label = { Text("To call (${pending.size})") }
                         )
                         FilterChip(
-                            selected = tab == 1,
-                            onClick = { tab = 1 },
+                            selected = tab == CallsUi.OVERDUE,
+                            onClick = { tab = CallsUi.OVERDUE },
+                            label = { Text("Overdue (${overdue.size})") }
+                        )
+                        FilterChip(
+                            selected = tab == CallsUi.TO_REVIEW,
+                            onClick = { tab = CallsUi.TO_REVIEW },
+                            label = { Text("To review (${toReview.size})") }
+                        )
+                        FilterChip(
+                            selected = tab == CallsUi.DONE,
+                            onClick = { tab = CallsUi.DONE },
                             label = { Text("Done (${finished.size})") }
                         )
                     }
@@ -172,50 +211,77 @@ fun CallsScreen(resumeKey: Int) {
                 }
             }
 
-            if (tab == 0) {
-                if (pending.isEmpty()) {
-                    item(key = "empty") { if (filtering) NoMatches() else EmptyState() }
-                }
-                reminderGroup("Overdue", overdue, errorColor) { r ->
-                    ReminderCard(r, now, done = false, ctx = ctx,
-                        onDone = { ReminderStore.markDone(r.id) },
-                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r })
-                }
-                reminderGroup("Later today", laterToday, primaryColor) { r ->
-                    ReminderCard(r, now, done = false, ctx = ctx,
-                        onDone = { ReminderStore.markDone(r.id) },
-                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r })
-                }
-                reminderGroup("Upcoming", upcoming, mutedColor) { r ->
-                    ReminderCard(r, now, done = false, ctx = ctx,
-                        onDone = { ReminderStore.markDone(r.id) },
-                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r })
-                }
-            } else {
-                if (finished.isEmpty()) {
-                    item(key = "empty-done") {
-                        Text(
-                            if (filtering) "No finished call-backs match these filters."
-                            else "Finished call-backs will show up here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 24.dp)
+            when (tab) {
+                CallsUi.TO_CALL, CallsUi.OVERDUE -> {
+                    val shown = if (tab == CallsUi.OVERDUE) overdue else pending
+                    if (shown.isEmpty()) {
+                        item(key = "empty") {
+                            when {
+                                filtering -> NoMatches()
+                                tab == CallsUi.OVERDUE -> EmptyText("Nothing overdue. Well done!")
+                                else -> EmptyState()
+                            }
+                        }
+                    }
+                    val groups = if (tab == CallsUi.OVERDUE) {
+                        listOf(Triple("Overdue", overdue, errorColor))
+                    } else {
+                        listOf(
+                            Triple("Overdue", overdue, errorColor),
+                            Triple("Later today", laterToday, primaryColor),
+                            Triple("Upcoming", upcoming, mutedColor),
                         )
                     }
+                    groups.forEach { (title, list, color) ->
+                        reminderGroup(title, list, color) { r ->
+                            ReminderCard(r, now, done = false, ctx = ctx,
+                                onDone = { ReminderStore.markDone(r.id) },
+                                onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
+                                onPickTime = { rescheduleFor = r },
+                                onDelete = { deleteFor = r },
+                                onHistory = { historyFor = r })
+                        }
+                    }
                 }
-                items(finished, key = { it.id }) { r ->
-                    Box(Modifier.animateItem()) {
-                        ReminderCard(r, now, done = true, ctx = ctx,
-                            onDone = {},
-                            onSnooze = {},
-                            onPickTime = { rescheduleFor = r },
-                            onDelete = { deleteFor = r })
+                CallsUi.TO_REVIEW -> {
+                    if (toReview.isEmpty()) {
+                        item(key = "empty-review") {
+                            EmptyText(
+                                if (filtering) "No call-backs to review match these filters."
+                                else "Tasks you mark \"Done, review it\" after a follow-up call wait here for your check."
+                            )
+                        }
+                    }
+                    items(toReview, key = { it.id }) { r ->
+                        Box(Modifier.animateItem()) {
+                            ReminderCard(r, now, done = true, ctx = ctx,
+                                onDone = { ReminderStore.reviewed(r.id) },
+                                onSnooze = {},
+                                onPickTime = { rescheduleFor = r },
+                                onDelete = { deleteFor = r },
+                                onHistory = { historyFor = r },
+                                review = true)
+                        }
+                    }
+                }
+                else -> {
+                    if (finished.isEmpty()) {
+                        item(key = "empty-done") {
+                            EmptyText(
+                                if (filtering) "No finished call-backs match these filters."
+                                else "Finished call-backs will show up here."
+                            )
+                        }
+                    }
+                    items(finished, key = { it.id }) { r ->
+                        Box(Modifier.animateItem()) {
+                            ReminderCard(r, now, done = true, ctx = ctx,
+                                onDone = {},
+                                onSnooze = {},
+                                onPickTime = { rescheduleFor = r },
+                                onDelete = { deleteFor = r },
+                                onHistory = { historyFor = r })
+                        }
                     }
                 }
             }
@@ -241,6 +307,10 @@ fun CallsScreen(resumeKey: Int) {
             },
             onDismiss = { rescheduleFor = null }
         )
+    }
+
+    historyFor?.let { r ->
+        DelayHistoryDialog(r = r, onDismiss = { historyFor = null })
     }
 
     deleteFor?.let { r ->
@@ -276,6 +346,51 @@ private fun LazyListScope.reminderGroup(
         )
     }
     items(list, key = { it.id }) { r -> Box(Modifier.animateItem()) { card(r) } }
+}
+
+@Composable
+private fun EmptyText(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 24.dp)
+    )
+}
+
+/** Every time a task was moved after a follow-up call, and why. */
+@Composable
+private fun DelayHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Why not done · ${r.title}") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (r.note.isNotBlank()) {
+                    Text(r.note, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+                r.delays.asReversed().forEach { d ->
+                    Column {
+                        Text(
+                            d.reason.ifBlank { "No reason given" },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (d.reason.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "Was due ${Fmt.dueLabel(d.wasDue)} · moved to ${Fmt.dueLabel(d.newDue)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 @Composable
@@ -335,6 +450,8 @@ private fun ReminderCard(
     onSnooze: (Long) -> Unit,
     onPickTime: () -> Unit,
     onDelete: () -> Unit,
+    onHistory: () -> Unit,
+    review: Boolean = false,
 ) {
     val isOverdue = !done && r.dueAt <= now
     var menuOpen by remember { mutableStateOf(false) }
@@ -398,7 +515,8 @@ private fun ReminderCard(
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(6.dp))
-                val text = if (done) "Done · ${Fmt.dueLabel(r.doneAt)}"
+                val text = if (review) "Done, to review · ${Fmt.dueLabel(r.doneAt)}"
+                else if (done) "Done · ${Fmt.dueLabel(r.doneAt)}"
                 else "${Fmt.dueLabel(r.dueAt)} · ${Fmt.relative(r.dueAt, now)}"
                 Text(
                     text,
@@ -424,6 +542,29 @@ private fun ReminderCard(
                         repeatLabel,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (r.delays.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.clickable(onClick = onHistory),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    val times = if (r.delays.size == 1) "once" else "${r.delays.size} times"
+                    Text(
+                        "Delayed $times · see why",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -454,6 +595,26 @@ private fun ReminderCard(
                     Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(if (done) "Call again" else "Call")
+                }
+                if (review) {
+                    OutlinedButton(
+                        onClick = onPickTime,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("New time", maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = onDone,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Mark done", maxLines = 1)
+                    }
                 }
                 if (!done) {
                     Column(Modifier.weight(1f)) {

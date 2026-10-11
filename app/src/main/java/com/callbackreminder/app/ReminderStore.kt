@@ -45,6 +45,13 @@ object ReminderStore {
                     seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
                     occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
                     occurrenceCount = o.optInt("occurrenceCount", 1),
+                    review = o.optBoolean("review"),
+                    delays = o.optJSONArray("delays")?.let { d ->
+                        (0 until d.length()).map { j ->
+                            val e = d.getJSONObject(j)
+                            Delay(e.optLong("at"), e.optLong("wasDue"), e.optLong("newDue"), e.optString("reason"))
+                        }
+                    } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -69,6 +76,18 @@ object ReminderStore {
                     .put("seriesStart", r.seriesStart)
                     .put("occurrenceAt", r.occurrenceAt)
                     .put("occurrenceCount", r.occurrenceCount)
+                    .put("review", r.review)
+                    .put("delays", JSONArray().apply {
+                        r.delays.forEach { d ->
+                            put(
+                                JSONObject()
+                                    .put("at", d.at)
+                                    .put("wasDue", d.wasDue)
+                                    .put("newDue", d.newDue)
+                                    .put("reason", d.reason)
+                            )
+                        }
+                    })
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -96,12 +115,31 @@ object ReminderStore {
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)
+        RecentPeople.record(appCtx, r.name, r.number)
         return r
     }
 
+    /**
+     * Mark a task done. With [review], it waits on the To review chip until you check it.
+     * A repeating task leaves a finished copy there and carries on with its next time.
+     */
     @Synchronized
-    fun markDone(id: Long) {
+    fun markDone(id: Long, review: Boolean = false) {
         val cur = get(id) ?: return
+        if (review && cur.repeat != null && !cur.done) {
+            val copyId = prefs().getLong("nextId", 1L)
+            prefs().edit().putLong("nextId", copyId + 1).apply()
+            val now = System.currentTimeMillis()
+            save(_items.value + cur.copy(id = copyId, repeat = null, done = true, doneAt = now, review = true))
+        } else if (review) {
+            Scheduler.cancel(appCtx, id)
+            Notifier.cancel(appCtx, id)
+            RingController.dismiss(id)
+            save(_items.value.map {
+                if (it.id == id) it.copy(done = true, doneAt = System.currentTimeMillis(), review = true) else it
+            })
+            return
+        }
         Scheduler.cancel(appCtx, id)
         Notifier.cancel(appCtx, id)
         RingController.dismiss(id)
@@ -120,7 +158,22 @@ object ReminderStore {
                 }
             }
         }
-        save(_items.value.map { if (it.id == id) it.copy(done = true, doneAt = now) else it })
+        save(_items.value.map { if (it.id == id) it.copy(done = true, doneAt = now, review = false) else it })
+    }
+
+    /** You checked a task on the To review chip: it is finished for good. */
+    @Synchronized
+    fun reviewed(id: Long) {
+        save(_items.value.map { if (it.id == id) it.copy(review = false) else it })
+    }
+
+    /** After a follow-up call: the task is not done yet, so keep why and move it to [newDueAt]. */
+    @Synchronized
+    fun postpone(id: Long, newDueAt: Long, reason: String) {
+        val cur = get(id) ?: return
+        val entry = Delay(System.currentTimeMillis(), cur.dueAt, newDueAt, reason.trim())
+        save(_items.value.map { if (it.id == id) it.copy(delays = it.delays + entry) else it })
+        reschedule(id, newDueAt)
     }
 
     /**
@@ -157,7 +210,7 @@ object ReminderStore {
     @Synchronized
     fun reschedule(id: Long, newDueAt: Long) {
         val cur = get(id) ?: return
-        val updated = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L)
+        val updated = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L, review = false)
         Notifier.cancel(appCtx, id)
         RingController.dismiss(id)
         save(_items.value.map { if (it.id == id) updated else it })

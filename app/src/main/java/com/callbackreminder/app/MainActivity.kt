@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
         /** Which screen a notification wants open, e.g. [OPEN_MESSAGES]. */
         const val EXTRA_OPEN = "open_screen"
         const val OPEN_MESSAGES = "messages"
+        /** "Review now" on the review reminder: open whatever is waiting. */
+        const val OPEN_REVIEW = "review"
         /** A text message reminder to open in Edit (from the "Not done" button after no reply). */
         const val EXTRA_EDIT_SMS = "edit_sms"
 
@@ -62,6 +64,10 @@ class MainActivity : ComponentActivity() {
 
     // Bumped each time a notification asks for the Messages screen.
     private val openMessagesTick = mutableIntStateOf(0)
+
+    // A notification asked for a bottom-bar tab (bumped each time, with the tab to show).
+    private val openTabTick = mutableIntStateOf(0)
+    private var openTab = Tab.HOME
 
     // Bumped every time the app comes back to the front, so permission status refreshes
     // right after the user returns from a system settings page.
@@ -73,10 +79,16 @@ class MainActivity : ComponentActivity() {
         ReminderStore.init(this)
         RecordingStore.init(this)
         SmsStore.init(this)
+        ReviewReminder.schedule(this)
         handleOpen(intent)
         setContent {
             CallbackTheme {
-                AppRoot(resumeKey = resumeTick.intValue, openMessagesKey = openMessagesTick.intValue)
+                AppRoot(
+                    resumeKey = resumeTick.intValue,
+                    openMessagesKey = openMessagesTick.intValue,
+                    openTabKey = openTabTick.intValue,
+                    openTab = { openTab },
+                )
             }
         }
     }
@@ -87,6 +99,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleOpen(intent: Intent?) {
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REVIEW) {
+            intent.removeExtra(EXTRA_OPEN)
+            ReviewReminder.cancelNotification(this)
+            val c = ReviewReminder.counts(this)
+            val calls = c.overdueCalls + c.callsToReview
+            openTab = when {
+                calls > 0 && c.textsToReview > 0 -> Tab.HOME
+                c.textsToReview > 0 -> {
+                    SmsUi.tabRequest.value = 1
+                    Tab.TEXTS
+                }
+                calls > 0 -> {
+                    CallsUi.tabRequest.value = if (c.callsToReview > 0) CallsUi.TO_REVIEW else CallsUi.OVERDUE
+                    Tab.CALLS
+                }
+                else -> Tab.HOME
+            }
+            openTabTick.intValue = openTabTick.intValue + 1
+            return
+        }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSAGES) {
             val showId = intent.getLongExtra(EXTRA_SHOW_SMS, -1L)
             if (showId >= 0) SmsUi.showRequest.value = showId
@@ -118,6 +150,7 @@ private object Screen {
     const val RECORDING_SETTINGS = 6
     const val REMINDER_SETTINGS = 7
     const val TEXT_SETTINGS = 9
+    const val REVIEW_SETTINGS = 10
 }
 
 /** The bottom bar's tabs. */
@@ -130,7 +163,7 @@ private object Tab {
 }
 
 @Composable
-private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
+private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openTab: () -> Int) {
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
     var tab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
@@ -158,6 +191,11 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
     // A text-message notification was tapped: show the Texts tab.
     LaunchedEffect(openMessagesKey) {
         if (openMessagesKey > 0) showTab(Tab.TEXTS)
+    }
+
+    // "Review now" on the review reminder.
+    LaunchedEffect(openTabKey) {
+        if (openTabKey > 0) showTab(openTab())
     }
 
     AnimatedContent(
@@ -191,6 +229,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int) {
                 )
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
+                Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
                 else -> MainTabs(
                     tab = tab,
                     onTab = { tab = it },
@@ -252,7 +291,8 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                     onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
                     onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
                     onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
-                    onOpenTextMessages = { open(Screen.TEXT_SETTINGS) }
+                    onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
+                    onOpenReview = { open(Screen.REVIEW_SETTINGS) }
                 )
                 else -> HomeScreen(
                     resumeKey = resumeKey,

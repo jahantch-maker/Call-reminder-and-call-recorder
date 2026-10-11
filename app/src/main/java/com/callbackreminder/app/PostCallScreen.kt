@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +24,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Event
@@ -63,15 +66,73 @@ fun PostCallScreen(queue: SnapshotStateList<CallInfo>, onFinished: () -> Unit) {
     if (current == null) return
 
     val total = handled + queue.size
-    key(handled) {
-        PostCallSheet(
-            call = current,
-            positionLabel = if (total > 1) "Call ${handled + 1} of $total" else null,
-            onNext = {
-                if (queue.isNotEmpty()) queue.removeAt(0)
-                handled = handled + 1
+    val positionLabel = if (total > 1) "Call ${handled + 1} of $total" else null
+    val onNext = {
+        if (queue.isNotEmpty()) queue.removeAt(0)
+        handled = handled + 1
+    }
+    val task = current.followUpId.takeIf { it > 0 }?.let { ReminderStore.get(it) }?.takeIf { !it.done }
+    key(handled, task?.id) {
+        if (task != null) {
+            FollowUpSheet(
+                call = current,
+                task = task,
+                positionLabel = positionLabel,
+                onNext = onNext,
+                // A new task came up in the same call: ask about it next, with the same person.
+                onNewTask = { if (queue.isNotEmpty()) queue[0] = current.copy(followUpId = -1L) },
+            )
+        } else {
+            PostCallSheet(call = current, positionLabel = positionLabel, onNext = onNext)
+        }
+    }
+}
+
+/** The dimmed backdrop (tap to skip) and the sheet that slides up from the bottom. */
+@Composable
+internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val noRipple = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(interactionSource = noRipple, indication = null) { onDismiss() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        // Slides up from the bottom when it appears (and again for the next call in the queue).
+        val shown = remember { MutableTransitionState(false).apply { targetState = true } }
+        AnimatedVisibility(
+            visibleState = shown,
+            enter = slideInVertically(tween(170)) { it } + fadeIn(tween(115)),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 12.dp, bottom = 16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(40.dp)
+                            .height(4.dp)
+                            .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    content()
+                }
             }
-        )
+        }
     }
 }
 
@@ -113,142 +174,102 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         onNext()
     }
 
-    val noRipple = remember { MutableInteractionSource() }
     val options = remember { QuickTimes.options(ctx) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.45f))
-            .clickable(interactionSource = noRipple, indication = null) { onNext() },
-        contentAlignment = Alignment.BottomCenter
-    ) {
-        // Slides up from the bottom when it appears (and again for the next call in the queue).
-        val shown = remember { MutableTransitionState(false).apply { targetState = true } }
-        AnimatedVisibility(
-            visibleState = shown,
-            enter = slideInVertically(tween(170)) { it } + fadeIn(tween(115)),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .navigationBarsPadding()
-                        .imePadding()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 12.dp, bottom = 16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(40.dp)
-                            .height(4.dp)
-                            .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
-                    )
-                    Spacer(Modifier.height(14.dp))
+    PopupSheetFrame(onDismiss = onNext) {
+        if (positionLabel != null) {
+            Text(
+                text = positionLabel,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(8.dp))
+        }
 
-                    if (positionLabel != null) {
-                        Text(
-                            text = positionLabel,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Rounded.Close, contentDescription = "Skip")
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (needsName) {
+            OutlinedTextField(
+                value = typedName,
+                onValueChange = { typedName = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Who was this? (optional)") },
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("What did they promise? (optional)") },
+            shape = RoundedCornerShape(14.dp)
+        )
+
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = "Remind me to call back",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.chunked(3).forEach { rowOptions ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowOptions.forEach { o ->
+                        OptionTile(
+                            title = o.title,
+                            subtitle = o.subtitle,
+                            modifier = Modifier.weight(1f)
+                        ) { schedule(o.whenMs) }
                     }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(onClick = onNext) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Skip")
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    if (needsName) {
-                        OutlinedTextField(
-                            value = typedName,
-                            onValueChange = { typedName = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Who was this? (optional)") },
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        Spacer(Modifier.height(10.dp))
-                    }
-
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("What did they promise? (optional)") },
-                        shape = RoundedCornerShape(14.dp)
-                    )
-
-                    Spacer(Modifier.height(18.dp))
-                    Text(
-                        text = "Remind me to call back",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        options.chunked(3).forEach { rowOptions ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                rowOptions.forEach { o ->
-                                    OptionTile(
-                                        title = o.title,
-                                        subtitle = o.subtitle,
-                                        modifier = Modifier.weight(1f)
-                                    ) { schedule(o.whenMs) }
-                                }
-                                // Keeps tiles the same width when the last row isn't full.
-                                repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = { showPicker = true }) {
-                            Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Pick date & time")
-                        }
-                        TextButton(onClick = onNext) { Text("Skip") }
-                    }
+                    // Keeps tiles the same width when the last row isn't full.
+                    repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { showPicker = true }) {
+                Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Pick date & time")
+            }
+            TextButton(onClick = onNext) { Text("Skip") }
         }
     }
 
@@ -262,7 +283,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
 }
 
 @Composable
-private fun OptionTile(
+internal fun OptionTile(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,

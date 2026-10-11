@@ -103,7 +103,9 @@ fun HomeScreen(
 
     val callsDue = calls.filter { !it.done && it.dueAt < endOfToday }
     val textsToday = texts.filter { it.active && it.alarmAt < endOfToday }
-    val toReview = texts.count { !it.done && it.review != null }
+    val textsToReview = texts.count { !it.done && it.review != null }
+    val callsToReview = calls.count { it.done && it.review }
+    val toReview = textsToReview + callsToReview
 
     val nextUp = (
         callsDue.map { r ->
@@ -195,7 +197,14 @@ fun HomeScreen(
                         container = Color(0xFFFFF1C9),
                         content = Color(0xFF6A4A00),
                         modifier = Modifier.weight(1f),
-                        onClick = { onOpenTexts(1, null) },
+                        onClick = {
+                            if (textsToReview == 0 && callsToReview > 0) {
+                                CallsUi.tabRequest.value = CallsUi.TO_REVIEW
+                                onOpenCalls()
+                            } else {
+                                onOpenTexts(1, null)
+                            }
+                        },
                     )
                 }
             }

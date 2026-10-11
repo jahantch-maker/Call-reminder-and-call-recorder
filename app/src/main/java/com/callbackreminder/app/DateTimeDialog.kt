@@ -297,7 +297,7 @@ private fun OptionRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ClockDialog(
+internal fun ClockDialog(
     initial: LocalTime,
     is24h: Boolean,
     onPicked: (LocalTime) -> Unit,

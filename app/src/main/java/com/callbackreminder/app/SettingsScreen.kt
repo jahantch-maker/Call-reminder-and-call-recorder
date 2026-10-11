@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Schedule
@@ -63,6 +65,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,6 +84,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import java.time.DayOfWeek
+import java.time.LocalTime
 
 /**
  * The Settings menu: one row per section. Each row opens its own page, which slides in like
@@ -96,6 +101,7 @@ fun SettingsScreen(
     onOpenRecording: () -> Unit,
     onOpenReminder: () -> Unit,
     onOpenTextMessages: () -> Unit,
+    onOpenReview: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -161,6 +167,12 @@ fun SettingsScreen(
             summary = "${BurstTemplates.load(ctx).size} burst templates · " +
                 if (BurstTemplates.stopOnReply(ctx)) "stops on a \"Done <number>\" reply" else "reply check off",
             onClick = onOpenTextMessages
+        )
+        NavRow(
+            icon = Icons.Rounded.PendingActions,
+            title = "Review reminder",
+            summary = remember { ReviewReminder.summary(ctx) },
+            onClick = onOpenReview
         )
     }
 }
@@ -777,6 +789,103 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Test a reminder in 10 seconds") }
         }
+    }
+}
+
+// ---------------------------------------------------------------- Review reminder
+
+/** Twice a day: a popup with what is waiting (calls overdue or to review, texts to review). */
+@Composable
+fun ReviewSettingsScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var on by remember { mutableStateOf(ReviewReminder.enabled(ctx)) }
+    var times by remember { mutableStateOf(ReviewReminder.times(ctx)) }
+    var days by remember { mutableStateOf(ReviewReminder.days(ctx)) }
+    var editTime by remember { mutableStateOf<Int?>(null) }
+
+    SettingsPage(title = "Review reminder", onBack = onBack) {
+        SectionCard(
+            title = "Review reminder",
+            subtitle = "At these times a popup shows how many calls are overdue or waiting for review, " +
+                "and how many texts are waiting for review. When nothing is waiting, it stays quiet."
+        ) {
+            SwitchRow(label = "Remind me to review", checked = on, onChange = {
+                on = it
+                ReviewReminder.setEnabled(ctx, it)
+            })
+        }
+
+        if (on) {
+            SectionCard(title = "Times", subtitle = "Two times a day.") {
+                times.forEachIndexed { i, minutes ->
+                    if (i > 0) HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (i == 0) "First review" else "Second review", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                ReviewReminder.timeLabel(minutes),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        FilledTonalButton(onClick = { editTime = i }) { Text("Change") }
+                    }
+                }
+            }
+
+            SectionCard(title = "Days", subtitle = "Runs on ${ReviewReminder.daysLabel(days)}.") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DayOfWeek.values().forEach { day ->
+                        val selected = ReviewReminder.isDayOn(days, day)
+                        Surface(
+                            onClick = {
+                                days = days xor (1 shl (day.value - 1))
+                                ReviewReminder.setDays(ctx, days)
+                            },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(day.name.take(1), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionCard(
+                title = "How it shows",
+                subtitle = "Uses your Reminder style: ${ReminderStyle.mode(ctx).title.lowercase()}. " +
+                    "Snooze gives 15 min, 30 min, 1 hour or 2 hours."
+            ) {
+                FilledTonalButton(
+                    onClick = { ReviewReminder.show(ctx, ReviewReminder.counts(ctx)) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Show the review popup now") }
+            }
+        }
+    }
+
+    editTime?.let { i ->
+        val m = times[i]
+        ClockDialog(
+            initial = LocalTime.of(m / 60, m % 60),
+            is24h = DateFormat.is24HourFormat(ctx),
+            onPicked = { t ->
+                val minutes = t.hour * 60 + t.minute
+                ReviewReminder.setTime(ctx, i, minutes)
+                times = ReviewReminder.times(ctx)
+                editTime = null
+            },
+            onDismiss = { editTime = null }
+        )
     }
 }
 

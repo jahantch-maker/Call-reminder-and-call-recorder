@@ -156,12 +156,14 @@ object Notifier {
             .setShowWhen(true)
 
         if (r.number.isNotBlank()) {
-            // Straight to the call when the Call permission is given, otherwise the dialer.
-            val callAction = if (hasCallPhonePermission(ctx)) Intent.ACTION_CALL else Intent.ACTION_DIAL
+            // Goes through the reminder screen, which places the call and remembers which task it
+            // is for, so the after-call popup can ask how the task went.
             val dial = PendingIntent.getActivity(
                 ctx,
                 r.id.toInt() + 500_000,
-                Intent(callAction, Uri.fromParts("tel", r.number.trim(), null)),
+                Intent(ctx, ReminderAlertActivity::class.java)
+                    .putExtra(ReminderAlertActivity.EXTRA_CALLBACK_ID, r.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 FLAGS
             )
             b.addAction(0, "Call", dial)

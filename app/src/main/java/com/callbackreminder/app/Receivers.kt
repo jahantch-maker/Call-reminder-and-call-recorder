@@ -61,6 +61,7 @@ class BootReceiver : BroadcastReceiver() {
         SmsStore.init(context)
         SmsScheduler.rescheduleAll(context)
         BankingPause.resume(context)
+        ReviewReminder.schedule(context)
     }
 }
 
@@ -209,16 +210,20 @@ class CallEndReceiver : BroadcastReceiver() {
             CallRecorder.trimRingingAsync(ctx, session.start, only.durationSec)
         }
 
+        // You tapped Call back on a due reminder: this popup asks how that task went.
+        ReminderStore.init(ctx)
+        val task = FollowUp.take(ctx, session.start)
+
         // A WhatsApp call never shows up in the call log, so the lookup above comes back empty.
         // WhatsAppCallListener already shows the proper popup for it; a blank "Unknown caller"
         // popup from here would only be a duplicate.
-        if (entries.isEmpty() &&
+        if (task == null && entries.isEmpty() &&
             WhatsAppCallListener.wasActiveSince(ctx, session.start - WHATSAPP_OVERLAP_MS)
         ) {
             return
         }
 
         val queue = CallSession.buildQueue(ctx, entries, session.sawOffhook, session.rings)
-        showPostCallPopup(ctx, queue)
+        showPostCallPopup(ctx, if (task != null) FollowUp.attach(task, entries, queue) else queue)
     }
 }
