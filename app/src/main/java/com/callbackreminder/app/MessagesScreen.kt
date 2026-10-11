@@ -83,9 +83,12 @@ import kotlinx.coroutines.delay
 
 /** Scheduled text messages: sent from your own SIM at the time you set, once or on a repeat. */
 @Composable
-fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit) {
+fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
-    val items by SmsStore.items.collectAsState()
+    val all by SmsStore.items.collectAsState()
+    var createdFilter by ListFilters.textsCreated
+    var dueFilter by ListFilters.textsDue
+    val items = all.filter { createdFilter.matches(it.createdAt) && dueFilter.matches(it.dueAt) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<SmsReminder?>(null) }
@@ -129,10 +132,14 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
         val id = showRequest ?: return@LaunchedEffect
         SmsUi.showRequest.value = null
         val r = SmsStore.get(id) ?: return@LaunchedEffect
+        // Filters could hide it, so they're cleared and its place is found in the full list.
+        createdFilter = DateFilter()
+        dueFilter = DateFilter()
+        val everything = SmsStore.items.value
         val (t, list) = when {
-            r.done -> 2 to finished
-            r.review != null -> 1 to toReview
-            else -> 0 to pending
+            r.done -> 2 to everything.filter { it.done }.sortedByDescending { it.doneAt }
+            r.review != null -> 1 to everything.filter { !it.done && it.review != null }.sortedByDescending { it.reviewAt }
+            else -> 0 to everything.filter { it.active }.sortedBy { it.alarmAt }
         }
         tab = t
         highlightId = id
@@ -144,6 +151,14 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
         }
         delay(3_000L)
         if (highlightId == id) highlightId = null
+    }
+
+    // Home's Texts or To review tile.
+    val tabRequest by SmsUi.tabRequest.collectAsState()
+    LaunchedEffect(tabRequest) {
+        val t = tabRequest ?: return@LaunchedEffect
+        SmsUi.tabRequest.value = null
+        tab = t
     }
 
     val editRequest by SmsUi.editRequest.collectAsState()
@@ -180,10 +195,12 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        }
                     }
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
                         Text(
                             "Text messages",
                             style = MaterialTheme.typography.headlineSmall,
@@ -235,24 +252,32 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
             }
 
             item(key = "tabs") {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = tab == 0,
-                        onClick = { tab = 0 },
-                        label = { Text("Scheduled (${pending.size})") }
-                    )
-                    FilterChip(
-                        selected = tab == 1,
-                        onClick = { tab = 1 },
-                        label = { Text("To review (${toReview.size})") }
-                    )
-                    FilterChip(
-                        selected = tab == 2,
-                        onClick = { tab = 2 },
-                        label = { Text("Done (${finished.size})") }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = tab == 0,
+                            onClick = { tab = 0 },
+                            label = { Text("Scheduled (${pending.size})") }
+                        )
+                        FilterChip(
+                            selected = tab == 1,
+                            onClick = { tab = 1 },
+                            label = { Text("To review (${toReview.size})") }
+                        )
+                        FilterChip(
+                            selected = tab == 2,
+                            onClick = { tab = 2 },
+                            label = { Text("Done (${finished.size})") }
+                        )
+                    }
+                    CreatedDueFilterRow(
+                        created = createdFilter,
+                        due = dueFilter,
+                        onCreated = { createdFilter = it },
+                        onDue = { dueFilter = it },
                     )
                 }
             }
@@ -263,7 +288,16 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
                 else -> finished
             }
             if (list.isEmpty()) {
-                item(key = "empty-$tab") { EmptyMessages(tab) }
+                item(key = "empty-$tab") {
+                    if (createdFilter.active || dueFilter.active) {
+                        Text(
+                            "No text messages match these filters.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    } else EmptyMessages(tab)
+                }
             }
             items(list, key = { it.id }) { r ->
                 Box(Modifier.animateItem()) {

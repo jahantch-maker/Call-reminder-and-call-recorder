@@ -85,7 +85,7 @@ import androidx.core.content.IntentCompat
 @Composable
 fun SettingsScreen(
     resumeKey: Int,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onOpenSetup: () -> Unit,
     onOpenPopup: () -> Unit,
     onOpenQuickTimes: () -> Unit,
@@ -689,7 +689,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
 
 /** A settings page: back arrow and title, then its cards in a scrolling column. */
 @Composable
-private fun SettingsPage(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsPage(title: String, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
@@ -698,9 +698,15 @@ private fun SettingsPage(title: String, onBack: () -> Unit, content: @Composable
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+            // No back arrow on the Settings tab itself, only on the pages it opens.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 8.dp, start = if (onBack == null) 4.dp else 0.dp)
+            ) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    }
                 }
                 Text(
                     title,

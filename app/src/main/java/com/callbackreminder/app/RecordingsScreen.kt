@@ -12,18 +12,25 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,7 +83,7 @@ private fun sizeText(bytes: Long): String = when {
 @Composable
 fun RecordingsScreen(
     resumeKey: Int,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onOpenSettings: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -98,7 +105,29 @@ fun RecordingsScreen(
     }
     DisposableEffect(Unit) { onDispose { RecordingPlayer.stop() } }
 
-    val sorted = items.sortedByDescending { it.startedAt }
+    var query by ListFilters.recQuery
+    var dateFilter by ListFilters.recDate
+    var lengthFilter by ListFilters.recLength
+    var sort by ListFilters.recSort
+    val filtering = query.isNotBlank() || dateFilter.active || lengthFilter != LengthFilter.ANY
+    val q = query.trim()
+    val sorted = items
+        .filter { r ->
+            (q.isEmpty() || r.displayName.contains(q, ignoreCase = true) ||
+                r.name.contains(q, ignoreCase = true) || numberMatches(r.number, q)) &&
+                dateFilter.matches(r.startedAt) &&
+                (lengthFilter.range?.contains(r.durationSec) ?: true)
+        }
+        .let { list ->
+            when (sort) {
+                RecordingSort.NEWEST -> list.sortedByDescending { it.startedAt }
+                RecordingSort.OLDEST -> list.sortedBy { it.startedAt }
+                RecordingSort.NAME_AZ -> list.sortedBy { it.displayName.lowercase() }
+                RecordingSort.NAME_ZA -> list.sortedByDescending { it.displayName.lowercase() }
+                RecordingSort.LONGEST -> list.sortedByDescending { it.durationSec }
+                RecordingSort.SHORTEST -> list.sortedBy { it.durationSec }
+            }
+        }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
@@ -115,17 +144,20 @@ fun RecordingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        }
                     }
-                    Column {
+                    Column(Modifier.padding(start = if (onBack == null) 4.dp else 0.dp)) {
                         Text(
                             "Recordings",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "${sorted.size} saved · also in your Files app under Recordings / Call Recorder",
+                            if (filtering) "${sorted.size} of ${items.size} shown"
+                            else "${items.size} saved · also in your Files app under Recordings / Call Recorder",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -163,7 +195,33 @@ fun RecordingsScreen(
                 }
             }
 
-            if (sorted.isEmpty()) {
+            if (items.isNotEmpty()) {
+                item(key = "filters") {
+                    RecordingFilters(
+                        query = query,
+                        onQuery = { query = it },
+                        date = dateFilter,
+                        onDate = { dateFilter = it },
+                        length = lengthFilter,
+                        onLength = { lengthFilter = it },
+                        sort = sort,
+                        onSort = { sort = it },
+                    )
+                }
+            }
+
+            if (sorted.isEmpty() && items.isNotEmpty()) {
+                item(key = "no-match") {
+                    Text(
+                        "No recordings match these filters.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                }
+            }
+
+            if (items.isEmpty()) {
                 item(key = "empty") {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
@@ -383,6 +441,88 @@ private fun RecordingCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** A typed number matches by its digits, so "0300 123" finds "+92 300 1234567" too (leading 0 ignored). */
+private fun numberMatches(number: String, query: String): Boolean {
+    if (query.any { it.isLetter() }) return false
+    val q = query.filter { it.isDigit() }.trimStart('0')
+    return q.isNotEmpty() && number.filter { it.isDigit() }.contains(q)
+}
+
+/** Search by name or number, then Date, Length and Sort chips. */
+@Composable
+private fun RecordingFilters(
+    query: String,
+    onQuery: (String) -> Unit,
+    date: DateFilter,
+    onDate: (DateFilter) -> Unit,
+    length: LengthFilter,
+    onLength: (LengthFilter) -> Unit,
+    sort: RecordingSort,
+    onSort: (RecordingSort) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQuery,
+            singleLine = true,
+            placeholder = { Text("Search name or number") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            trailingIcon = if (query.isNotEmpty()) {
+                { IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") } }
+            } else null,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DateFilterChip("Date", date, ListFilters.CREATED_PRESETS, onDate)
+            ChoiceChip(
+                label = if (length == LengthFilter.ANY) "Length" else "Length: ${length.label}",
+                selected = length != LengthFilter.ANY,
+                options = LengthFilter.entries.map { it.label },
+                current = length.ordinal,
+                onPick = { onLength(LengthFilter.entries[it]) },
+            )
+            ChoiceChip(
+                label = "Sort: ${sort.label}",
+                selected = sort != RecordingSort.NEWEST,
+                options = RecordingSort.entries.map { it.label },
+                current = sort.ordinal,
+                onPick = { onSort(RecordingSort.entries[it]) },
+            )
+            if (date.active || length != LengthFilter.ANY || query.isNotEmpty()) {
+                ClearChip { onQuery(""); onDate(DateFilter()); onLength(LengthFilter.ANY) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceChip(label: String, selected: Boolean, options: List<String>, current: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(
+            selected = selected,
+            onClick = { open = true },
+            label = { Text(label) },
+            trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { i, o ->
+                DropdownMenuItem(
+                    text = { Text(o) },
+                    trailingIcon = if (i == current) {
+                        { Icon(Icons.Rounded.Check, contentDescription = null) }
+                    } else null,
+                    onClick = { open = false; onPick(i) }
+                )
             }
         }
     }

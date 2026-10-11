@@ -93,6 +93,9 @@ object Fmt {
         }
     }
 
+    /** Like "4:30 PM". */
+    fun timeOnly(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(timeFmt)
+
     fun relative(ms: Long, now: Long = System.currentTimeMillis()): String {
         val diff = ms - now
         val mins = kotlin.math.abs(diff) / 60_000L
