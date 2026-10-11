@@ -587,7 +587,11 @@ private fun ReminderCard(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { dial(ctx, r.number) },
+                    onClick = {
+                        // Calling a task that is already due: the after-call popup asks how it went.
+                        if (isOverdue) FollowUp.mark(ctx, r)
+                        dial(ctx, r.number)
+                    },
                     enabled = r.number.isNotBlank(),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 8.dp)
