@@ -299,15 +299,10 @@ fun SmsReminderDialog(
 }
 
 private const val TRACKING_HELP =
-    "Adds a task number like 261011-01 to every text (the date of the first text, then that day's count). " +
-        "The person replies Done 261011-01 to stop just this reminder; a plain \"Done\" doesn't count. " +
-        "Turn it off for people outside your team, like a vendor: the texts then go out exactly as you typed " +
-        "them, and you mark it done yourself."
+    "Adds a task number so the person can mark this task done by replying. Turn off for vendors."
 
 private const val BURST_HELP =
-    "Off: one text each time the reminder is due. On: several texts a few minutes apart each time, " +
-        "using a template you pick (like 5 texts, 5 min apart). Make your templates in " +
-        "Settings › Text messages."
+    "Sends the same text several times, a few minutes apart, using a template you choose."
 
 /** A switch with a small ⓘ next to its name that explains it. */
 @Composable
