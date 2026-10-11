@@ -1,6 +1,10 @@
 package com.callbackreminder.app
 
 import android.graphics.Color as AndroidColor
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -58,6 +62,7 @@ class ReviewAlertActivity : ComponentActivity() {
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val timeOut = Runnable { leaveNotification() }
+    private var player: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +87,7 @@ class ReviewAlertActivity : ComponentActivity() {
         })
 
         val counts = ReviewReminder.counts(this)
+        if (savedInstanceState == null) startSound()
         if (ReminderStyle.mode(this) == ReminderStyle.Mode.FULL_SCREEN_THEN_NOTIFY) {
             handler.postDelayed(timeOut, ReminderStyle.seconds(this) * 1_000L)
         }
@@ -112,12 +118,83 @@ class ReviewAlertActivity : ComponentActivity() {
 
     private fun close() {
         handler.removeCallbacks(timeOut)
+        stopSound()
         finish()
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(timeOut)
+        stopSound()
         super.onDestroy()
+    }
+
+    /** Your Popup ringtone, like the full-screen call-back reminder (only when the phone is on Normal). */
+    private fun startSound() {
+        if (getSystemService(AudioManager::class.java).ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val repeat = ReminderSound.repeats(this)
+        val isPing = ReminderSound.POPUP.builtIn(this) != null
+        val choices = listOf(
+            ReminderSound.uri(this),
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+        )
+        for ((i, uri) in choices.withIndex()) {
+            if (uri == null) continue
+            val gap = if (i == 0 && isPing) PING_GAP_MS else 0L
+            val mp = MediaPlayer()
+            try {
+                mp.setAudioAttributes(attrs)
+                mp.setDataSource(this, uri)
+                mp.isLooping = repeat && gap == 0L
+                if (repeat && gap > 0L) {
+                    mp.setOnCompletionListener { done ->
+                        handler.postDelayed({
+                            if (player === done) {
+                                try {
+                                    done.seekTo(0)
+                                    done.start()
+                                } catch (e: Exception) {
+                                    // Stopped meanwhile.
+                                }
+                            }
+                        }, gap)
+                    }
+                }
+                mp.prepare()
+                mp.start()
+                player = mp
+                return
+            } catch (e: Exception) {
+                try {
+                    mp.release()
+                } catch (e2: Exception) {
+                    // Ignore.
+                }
+            }
+        }
+    }
+
+    private fun stopSound() {
+        val mp = player ?: return
+        player = null
+        try {
+            mp.stop()
+        } catch (e: Exception) {
+            // Already stopped.
+        }
+        try {
+            mp.release()
+        } catch (e: Exception) {
+            // Already released.
+        }
+    }
+
+    private companion object {
+        const val PING_GAP_MS = 1_200L
     }
 }
 

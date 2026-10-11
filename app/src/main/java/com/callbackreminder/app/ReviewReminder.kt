@@ -2,8 +2,6 @@ package com.callbackreminder.app
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -27,7 +25,6 @@ object ReviewReminder {
     const val ACTION_FIRE = "com.callbackreminder.app.REVIEW"
     const val ACTION_SNOOZE = "com.callbackreminder.app.REVIEW_SNOOZE"
     const val EXTRA_MINUTES = "minutes"
-    const val CHANNEL = "review"
     private const val NOTIF_ID = 77_001
     private const val REQ_DAILY = 77_002
     private const val REQ_SNOOZE = 77_003
@@ -188,15 +185,6 @@ object ReviewReminder {
 
     // ---- Notification ----
 
-    fun createChannel(ctx: Context) {
-        ctx.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Review reminder", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Twice a day: calls overdue or to review, and texts to review"
-                setShowBadge(true)
-            }
-        )
-    }
-
     /** Opens the app on whatever is waiting: Calls, Texts, or Home when both have something. */
     fun reviewIntent(ctx: Context): Intent =
         Intent(ctx, MainActivity::class.java)
@@ -206,7 +194,14 @@ object ReviewReminder {
     @SuppressLint("MissingPermission")
     fun notify(ctx: Context, counts: Counts, quiet: Boolean, fullScreen: Boolean) {
         if (!Notifier.canNotify(ctx)) return
-        createChannel(ctx)
+        Notifier.createChannels(ctx)
+        // Like the call-back reminders: a banner sounds with your Notification ringtone; the
+        // full-screen popup plays your Popup ringtone itself, so its notification stays silent.
+        val channel = when {
+            fullScreen -> Notifier.CH_RINGING
+            quiet -> Notifier.CH_MISSED
+            else -> Notifier.bannerChannel(ctx)
+        }
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val review = PendingIntent.getActivity(ctx, NOTIF_ID, reviewIntent(ctx), flags)
         val snooze = PendingIntent.getBroadcast(
@@ -215,13 +210,13 @@ object ReviewReminder {
             Intent(ctx, ReviewReceiver::class.java).setAction(ACTION_SNOOZE).putExtra(EXTRA_MINUTES, 30),
             flags
         )
-        val b = NotificationCompat.Builder(ctx, CHANNEL)
+        val b = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle("Time to review")
             .setContentText(counts.summary)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setSilent(quiet)
+            .setSilent(quiet || fullScreen)
             .setContentIntent(review)
             .setAutoCancel(true)
             .addAction(0, "Review now", review)

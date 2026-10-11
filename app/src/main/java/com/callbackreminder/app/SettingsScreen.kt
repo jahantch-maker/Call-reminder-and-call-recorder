@@ -863,6 +863,7 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
             SectionCard(
                 title = "How it shows",
                 subtitle = "Uses your Reminder style: ${ReminderStyle.mode(ctx).title.lowercase()}. " +
+                    "The popup plays your Popup ringtone, a banner your Notification ringtone. " +
                     "Snooze gives 15 min, 30 min, 1 hour or 2 hours."
             ) {
                 FilledTonalButton(
