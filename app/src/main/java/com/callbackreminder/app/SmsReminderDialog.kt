@@ -23,7 +23,9 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,7 +57,9 @@ import androidx.compose.ui.unit.dp
 fun SmsReminderDialog(
     initial: SmsReminder? = null,
     onDismiss: () -> Unit,
-    onSave: (name: String, number: String, message: String, dueAt: Long, repeat: Repeat?, burst: BurstTemplate?) -> Unit,
+    onSave: (
+        name: String, number: String, message: String, dueAt: Long, repeat: Repeat?, burst: BurstTemplate?, tracked: Boolean,
+    ) -> Unit,
 ) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
@@ -74,7 +78,9 @@ fun SmsReminderDialog(
             initial?.takeIf { it.isBurst }?.let { BurstTemplate(it.burstCount, it.burstGapMin) } ?: templates.firstOrNull()
         )
     }
+    var tracked by remember { mutableStateOf(initial?.tracked ?: true) }
     var templateMenu by remember { mutableStateOf(false) }
+    var help by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showDateTime by remember { mutableStateOf(false) }
     var showRecent by remember { mutableStateOf(false) }
 
@@ -204,19 +210,19 @@ fun SmsReminderDialog(
                     }
                 }
 
-                // Burst: off sends one text each time; on sends a template's burst ("Reminder 1: …").
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Burst", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (burstOn) "Several texts each time, numbered Reminder 1, 2, 3…"
-                            else "One text each time",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = burstOn, onCheckedChange = { burstOn = it })
-                }
+                SwitchWithHelp(
+                    label = "Tracking number",
+                    checked = tracked,
+                    onCheckedChange = { tracked = it },
+                    onHelp = { help = "Tracking number" to TRACKING_HELP }
+                )
+                // Burst: off sends one text each time; on sends a template's burst ("Reminder 1 (…): …").
+                SwitchWithHelp(
+                    label = "Burst",
+                    checked = burstOn,
+                    onCheckedChange = { burstOn = it },
+                    onHelp = { help = "Burst" to BURST_HELP }
+                )
                 if (burstOn) {
                     if (burst == null) {
                         Text(
@@ -250,11 +256,20 @@ fun SmsReminderDialog(
         confirmButton = {
             TextButton(
                 enabled = number.isNotBlank() && message.isNotBlank() && dateChosen && (!burstOn || burst != null),
-                onClick = { onSave(name, number, message, due, repeat, if (burstOn) burst else null) }
+                onClick = { onSave(name, number, message, due, repeat, if (burstOn) burst else null, tracked) }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+
+    help?.let { (title, body) ->
+        AlertDialog(
+            onDismissRequest = { help = null },
+            title = { Text(title) },
+            text = { Text(body) },
+            confirmButton = { TextButton(onClick = { help = null }) { Text("OK") } }
+        )
+    }
 
     if (showDateTime) {
         DateTimeDialog(
@@ -280,6 +295,35 @@ fun SmsReminderDialog(
             },
             onDismiss = { showRecent = false }
         )
+    }
+}
+
+private const val TRACKING_HELP =
+    "Adds a task number like 261011-01 to every text (the date of the first text, then that day's count). " +
+        "The person replies Done 261011-01 to stop just this reminder; a plain \"Done\" doesn't count. " +
+        "Turn it off for people outside your team, like a vendor: the texts then go out exactly as you typed " +
+        "them, and you mark it done yourself."
+
+private const val BURST_HELP =
+    "Off: one text each time the reminder is due. On: several texts a few minutes apart each time, " +
+        "using a template you pick (like 5 texts, 5 min apart). Make your templates in " +
+        "Settings › Text messages."
+
+/** A switch with a small ⓘ next to its name that explains it. */
+@Composable
+private fun SwitchWithHelp(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, onHelp: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        IconButton(onClick = onHelp, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Outlined.Info,
+                contentDescription = "What is $label?",
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

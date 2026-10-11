@@ -155,7 +155,7 @@ fun SettingsScreen(
             icon = Icons.Rounded.Sms,
             title = "Text messages",
             summary = "${BurstTemplates.load(ctx).size} burst templates · " +
-                if (BurstTemplates.stopOnReply(ctx)) "stops on a \"Done\" reply" else "reply check off",
+                if (BurstTemplates.stopOnReply(ctx)) "stops on a \"Done <number>\" reply" else "reply check off",
             onClick = onOpenTextMessages
         )
     }
@@ -936,9 +936,10 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
 
         SectionCard(
             title = "Stop when the person replies Done",
-            subtitle = "If they text back exactly Done (capital D), their reminders stop and move to To review " +
-                "so you can check the work. \"done\", \"DONE\" or \"Done.\" don't count. The app only checks " +
-                "for this word; it doesn't keep or show anyone's messages."
+            subtitle = "Texts with Tracking number on carry a task number like 261011-01. If the person texts " +
+                "back exactly Done 261011-01 (capital D, one space, the number), only that reminder stops and " +
+                "moves to To review so you can check the work. A plain \"Done\" doesn't count. The app only " +
+                "checks for this reply; it doesn't keep or show anyone's messages."
         ) {
             SwitchRow("Stop on a \"Done\" reply", stopOnReply && canReceive) { on ->
                 if (on && !canReceive) {

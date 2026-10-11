@@ -263,8 +263,8 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
     if (showAdd) {
         SmsReminderDialog(
             onDismiss = { showAdd = false },
-            onSave = { name, number, message, dueAt, repeat, burst ->
-                SmsStore.add(name, number, message, dueAt, repeat, burst)
+            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
+                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked)
                 showAdd = false
             }
         )
@@ -274,8 +274,8 @@ fun MessagesScreen(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Uni
         SmsReminderDialog(
             initial = r,
             onDismiss = { editFor = null },
-            onSave = { name, number, message, dueAt, repeat, burst ->
-                SmsStore.edit(r.id, name, number, message, dueAt, repeat, burst)
+            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
+                SmsStore.edit(r.id, name, number, message, dueAt, repeat, burst, tracked)
                 editFor = null
             }
         )
@@ -455,6 +455,13 @@ private fun SmsCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Text(
+                        (if (r.code.isEmpty()) "No number yet" else "Task ${r.code}") +
+                            if (r.tracked) "" else " · not in texts",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Column {
                     IconButton(onClick = { menuOpen = true }) {
@@ -500,7 +507,7 @@ private fun SmsCard(
             if (inReview) {
                 InfoRow(
                     icon = Icons.Rounded.ErrorOutline,
-                    text = if (r.review == SmsReminder.Review.REPLIED) "${r.title} replied Done · ${Fmt.dueLabel(r.reviewAt)}"
+                    text = if (r.review == SmsReminder.Review.REPLIED) "${r.title} replied ${r.doneReply} · ${Fmt.dueLabel(r.reviewAt)}"
                     else "No reply · all texts sent · ${Fmt.dueLabel(r.reviewAt)}",
                     error = true
                 )
@@ -611,7 +618,7 @@ private fun InfoRow(icon: ImageVector, text: String, error: Boolean = false) {
 private fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("History · ${r.title}") },
+        title = { Text("History · ${r.title}" + if (r.code.isEmpty()) "" else " · ${r.code}") },
         text = {
             if (r.log.isEmpty()) {
                 Text("Nothing sent yet.")
