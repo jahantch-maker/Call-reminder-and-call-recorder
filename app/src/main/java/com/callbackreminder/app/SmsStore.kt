@@ -395,6 +395,9 @@ object SmsUi {
 
     /** A notification was tapped: show this reminder (its tab, scrolled to and highlighted). */
     val showRequest = MutableStateFlow<Long?>(null)
+
+    /** Home asked for a tab: 0 Scheduled, 1 To review, 2 Done. */
+    val tabRequest = MutableStateFlow<Int?>(null)
 }
 
 /** Your burst templates (up to 20), kept on the phone. */
