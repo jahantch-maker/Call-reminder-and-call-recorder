@@ -36,6 +36,12 @@ data class Recording(
     val sessionKey: Long = 0L,
     val source: String = "",
     val sizeBytes: Long = 0L,
+    /** Starred recordings are kept when deleting several at once, and by auto-delete. */
+    val starred: Boolean = false,
+    /** Pinned recordings stay at the top of the list. */
+    val pinned: Boolean = false,
+    /** What the call was about, typed by the user. */
+    val note: String = "",
 ) {
     val displayName: String
         get() = title.ifBlank { name.ifBlank { number.ifBlank { "Unknown caller" } } }
@@ -88,6 +94,9 @@ object RecordingStore {
                     sessionKey = o.optLong("sessionKey"),
                     source = o.optString("source"),
                     sizeBytes = o.optLong("sizeBytes"),
+                    starred = o.optBoolean("starred"),
+                    pinned = o.optBoolean("pinned"),
+                    note = o.optString("note"),
                 )
             }
         } catch (e: Exception) {
@@ -114,6 +123,9 @@ object RecordingStore {
                     .put("sessionKey", r.sessionKey)
                     .put("source", r.source)
                     .put("sizeBytes", r.sizeBytes)
+                    .put("starred", r.starred)
+                    .put("pinned", r.pinned)
+                    .put("note", r.note)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -207,6 +219,59 @@ object RecordingStore {
         update(id) { it.copy(title = title.trim()) }
     }
 
+    @Synchronized
+    fun setNote(id: Long, note: String) {
+        update(id) { it.copy(note = note.trim()) }
+    }
+
+    @Synchronized
+    fun setStarred(ids: Set<Long>, starred: Boolean) {
+        save(_items.value.map { if (it.id in ids) it.copy(starred = starred) else it })
+    }
+
+    @Synchronized
+    fun setPinned(ids: Set<Long>, pinned: Boolean) {
+        save(_items.value.map { if (it.id in ids) it.copy(pinned = pinned) else it })
+    }
+
+    /**
+     * A phone-call recording turned out to be a WhatsApp call (some phones report WhatsApp calls
+     * as phone calls too). Mark it as WhatsApp so the call log does not overwrite it.
+     */
+    @Synchronized
+    fun markWhatsApp(id: Long, type: Int, name: String) {
+        update(id) {
+            it.copy(
+                whatsApp = true,
+                type = if (type != 0) type else it.type,
+                name = name.ifBlank { it.name },
+            )
+        }
+    }
+
+    /** Puts the caller's name and number on a WhatsApp recording once the call is over. */
+    @Synchronized
+    fun setCaller(id: Long, name: String, number: String) {
+        update(id) {
+            it.copy(name = name.ifBlank { it.name }, number = number.ifBlank { it.number })
+        }
+    }
+
+    /** The ringing was cut from the start of the file: point at the new file. */
+    @Synchronized
+    fun replaceAudio(id: Long, uri: String, durationSec: Long, sizeBytes: Long) {
+        update(id) { it.copy(uri = uri, durationSec = durationSec, sizeBytes = sizeBytes) }
+    }
+
+    fun get(id: Long): Recording? = _items.value.firstOrNull { it.id == id }
+
+    /** Deletes several recordings, skipping starred ones. Returns how many starred were kept. */
+    fun deleteUnstarred(ctx: Context, ids: Set<Long>): Int {
+        val chosen = _items.value.filter { it.id in ids }
+        chosen.filter { !it.starred }.forEach { delete(ctx, it.id) }
+        return chosen.count { it.starred }
+    }
+
     /** Deletes the audio file and the list entry. */
     fun delete(ctx: Context, id: Long) {
         val r = _items.value.firstOrNull { it.id == id } ?: return
@@ -215,13 +280,13 @@ object RecordingStore {
         remove(id)
     }
 
-    /** Deletes recordings older than the "keep for" setting (0 = keep forever). */
+    /** Deletes recordings older than the "keep for" setting (0 = keep forever). Starred ones stay. */
     fun purgeOld(ctx: Context) {
         val days = AppSettings.getString(ctx, AppSettings.REC_KEEP_DAYS, "0").toIntOrNull() ?: 0
         if (days <= 0) return
         val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
         _items.value
-            .filter { it.finished && it.startedAt < cutoff }
+            .filter { it.finished && !it.starred && it.startedAt < cutoff }
             .forEach { delete(ctx, it.id) }
     }
 }
@@ -271,6 +336,41 @@ object RecordingFiles {
             ctx.contentResolver.update(out.uri, values, null, null)
         } catch (e: Exception) {
             // The file is still saved; it just stays hidden from other apps.
+        }
+    }
+
+    /** The file's name, e.g. "Call_2026-10-11_10-30-00.m4a". */
+    fun displayName(ctx: Context, uri: String): String? {
+        return try {
+            val u = Uri.parse(uri)
+            if (u.scheme == "file") {
+                u.path?.let { File(it).name }
+            } else {
+                ctx.contentResolver.query(u, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Gives a finished file the name [displayName] (used once the original with that name is gone).
+     * Returns where the file now is; if renaming fails it keeps its current name and place.
+     */
+    fun rename(ctx: Context, out: Output, displayName: String): Uri {
+        return try {
+            val f = out.file
+            if (f != null) {
+                val target = File(f.parentFile, displayName)
+                if (f.renameTo(target)) Uri.fromFile(target) else out.uri
+            } else {
+                val values = ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, displayName) }
+                ctx.contentResolver.update(out.uri, values, null, null)
+                out.uri
+            }
+        } catch (e: Exception) {
+            out.uri
         }
     }
 

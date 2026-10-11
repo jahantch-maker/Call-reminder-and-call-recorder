@@ -113,6 +113,7 @@ object ListFilters {
     val recDate = mutableStateOf(DateFilter())
     val recLength = mutableStateOf(LengthFilter.ANY)
     val recSort = mutableStateOf(RecordingSort.NEWEST)
+    val recStarred = mutableStateOf(false)
 
     val CREATED_PRESETS = listOf(
         DatePreset.ANY, DatePreset.TODAY, DatePreset.YESTERDAY, DatePreset.LAST_7, DatePreset.THIS_MONTH, DatePreset.CUSTOM,
