@@ -547,8 +547,18 @@ object SmsNotifier {
     fun showReview(ctx: Context, r: SmsReminder) {
         if (!Notifier.canNotify(ctx)) return
         val replied = r.review == SmsReminder.Review.REPLIED
-        val title = if (replied) "${r.title} replied ${r.doneReply}" else "No reply from ${r.title}"
-        val text = (if (replied) "Check the work: " else "All texts sent. Check the work: ") + r.message
+        val title = when {
+            replied -> "${r.title} replied ${r.doneReply}"
+            r.review == SmsReminder.Review.NOT_SENT -> "Text to ${r.title} not sent"
+            r.tracked -> "No reply from ${r.title}"
+            else -> "Text sent to ${r.title}"
+        }
+        val text = when {
+            replied -> "Check the work: "
+            r.review == SmsReminder.Review.NOT_SENT -> "Check it, or set a new time: "
+            r.isBurst || r.repeat != null -> "All texts sent. Check the work: "
+            else -> "Check the work: "
+        } + r.message
         val notDone = if (replied) action(ctx, r, SmsActionReceiver.ACTION_NOT_DONE, 300_000)
         else openMessages(ctx, r.id, editId = r.id)
         val b = NotificationCompat.Builder(ctx, Notifier.CH_REMINDER)

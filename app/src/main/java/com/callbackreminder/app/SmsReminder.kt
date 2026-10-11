@@ -62,8 +62,11 @@ data class SmsReminder(
         /** The person texted back "Done". */
         REPLIED("replied"),
 
-        /** Every text went out and the repeat ended without a "Done" reply. */
+        /** Every text went out (one text, a burst or the last of a repeat) without a "Done" reply. */
         NO_REPLY("noreply"),
+
+        /** A one-time text never went out: it failed after every retry, or its time passed while the phone was off. */
+        NOT_SENT("notsent"),
     }
 
     val title: String

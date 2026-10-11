@@ -470,8 +470,8 @@ private fun EmptyMessages(tab: Int) {
         Text(
             when (tab) {
                 0 -> "Schedule a text to someone, once or on a repeat, like a weekly \"please wash the solar panels\"."
-                1 -> "When someone replies Done, or all the texts go out with no reply, it waits here for you to check."
-                else -> "Messages you marked done, and one-time texts that went out, show up here."
+                1 -> "Every message that went out, or couldn't be sent, waits here for you to check."
+                else -> "Messages you marked done show up here."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -522,8 +522,11 @@ private fun SmsCard(
                         )
                     }
                     Text(
-                        (if (r.code.isEmpty()) "No number yet" else "Task ${r.code}") +
-                            if (r.tracked) "" else " · not in texts",
+                        when {
+                            !r.tracked -> "Tracking off"
+                            r.code.isEmpty() -> "Task no. comes with first text"
+                            else -> "Task ${r.code}"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -573,8 +576,13 @@ private fun SmsCard(
             if (inReview) {
                 InfoRow(
                     icon = Icons.Rounded.ErrorOutline,
-                    text = if (r.review == SmsReminder.Review.REPLIED) "${r.title} replied ${r.doneReply} · ${Fmt.dueLabel(r.reviewAt)}"
-                    else "No reply · all texts sent · ${Fmt.dueLabel(r.reviewAt)}",
+                    text = when {
+                        r.review == SmsReminder.Review.REPLIED -> "${r.title} replied ${r.doneReply}"
+                        r.review == SmsReminder.Review.NOT_SENT -> "Not sent"
+                        !r.tracked -> if (r.isBurst || r.repeat != null) "All texts sent" else "Sent"
+                        r.isBurst || r.repeat != null -> "No reply · all texts sent"
+                        else -> "No reply · text sent"
+                    } + " · ${Fmt.dueLabel(r.reviewAt)}",
                     error = true
                 )
                 Spacer(Modifier.height(4.dp))

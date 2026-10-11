@@ -101,7 +101,9 @@ call when the time comes, sends follow-up text messages for you, and can record 
   - When the person replies exactly **Done 261011-01** (their task number; switch in Settings › Text messages),
     only that reminder stops and moves to To review with a banner. A plain "Done" is ignored, and replies to
     untracked texts are not checked. **Mark done** moves it to Done; **Not done** carries on sending.
-  - When a burst or repeat ends with no reply, it also goes to To review ("No reply"); **Not done** lets you set new days.
+  - Every message that finishes goes to To review for you to check, whether it is a single text, a burst or a repeat
+    ("No reply", "Sent", or "Not sent" when it failed or the phone was off). Only your own **Mark done** moves it to
+    Done; **Not done** lets you set a new time.
   - Tap **Done** on a card when you already know the work is done.
 - Each message keeps a **History** (every text sent, delivered, failed or skipped, replies and your decisions).
 - Needs the SMS permission. On Android 15+ an app installed outside Play Store must first get
