@@ -392,6 +392,9 @@ object SmsStore {
 /** Screen requests that come from a notification, e.g. "Not done" opening a reminder's Edit window. */
 object SmsUi {
     val editRequest = MutableStateFlow<Long?>(null)
+
+    /** A notification was tapped: show this reminder (its tab, scrolled to and highlighted). */
+    val showRequest = MutableStateFlow<Long?>(null)
 }
 
 /** Your burst templates (up to 20), kept on the phone. */

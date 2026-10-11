@@ -34,6 +34,9 @@ class MainActivity : ComponentActivity() {
         const val OPEN_MESSAGES = "messages"
         /** A text message reminder to open in Edit (from the "Not done" button after no reply). */
         const val EXTRA_EDIT_SMS = "edit_sms"
+
+        /** The text message a notification is about: Messages opens on it. */
+        const val EXTRA_SHOW_SMS = "show_sms"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -64,6 +67,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handleOpen(intent: Intent?) {
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSAGES) {
+            val showId = intent.getLongExtra(EXTRA_SHOW_SMS, -1L)
+            if (showId >= 0) SmsUi.showRequest.value = showId
             val editId = intent.getLongExtra(EXTRA_EDIT_SMS, -1L)
             if (editId >= 0) {
                 SmsStore.noteNotDone(editId)
