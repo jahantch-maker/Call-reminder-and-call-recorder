@@ -3,6 +3,7 @@ package com.callbackreminder.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.provider.CallLog
 import android.telephony.TelephonyManager
 import java.util.concurrent.Executors
 
@@ -59,6 +60,7 @@ class BootReceiver : BroadcastReceiver() {
         Scheduler.rescheduleAll(context)
         SmsStore.init(context)
         SmsScheduler.rescheduleAll(context)
+        BankingPause.resume(context)
     }
 }
 
@@ -198,6 +200,14 @@ class CallEndReceiver : BroadcastReceiver() {
 
         // Put the real name and number on the recording made during this call.
         RecordingStore.attachCalls(session.start, entries)
+
+        // One outgoing call and nothing else: cut the ringing from the start of its recording.
+        val only = entries.singleOrNull()
+        if (session.outgoingStart && session.rings == 0 && only != null &&
+            only.type == CallLog.Calls.OUTGOING_TYPE && only.durationSec > 0L
+        ) {
+            CallRecorder.trimRingingAsync(ctx, session.start, only.durationSec)
+        }
 
         // A WhatsApp call never shows up in the call log, so the lookup above comes back empty.
         // WhatsAppCallListener already shows the proper popup for it; a blank "Unknown caller"

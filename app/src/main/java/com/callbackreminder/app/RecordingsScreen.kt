@@ -3,6 +3,10 @@ package com.callbackreminder.app
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -30,8 +35,12 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,9 +65,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,6 +105,11 @@ fun RecordingsScreen(
 
     var renameFor by remember { mutableStateOf<Recording?>(null) }
     var deleteFor by remember { mutableStateOf<Recording?>(null) }
+    var noteFor by remember { mutableStateOf<Recording?>(null) }
+    // Long-press a recording to start selecting; the list then shows a selection bar on top.
+    var selected by remember { mutableStateOf(emptySet<Long>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    val selecting = selected.isNotEmpty()
 
     // Move the playback bar while a recording plays; stop playing when leaving the screen.
     LaunchedEffect(Unit) {
@@ -109,14 +125,17 @@ fun RecordingsScreen(
     var dateFilter by ListFilters.recDate
     var lengthFilter by ListFilters.recLength
     var sort by ListFilters.recSort
-    val filtering = query.isNotBlank() || dateFilter.active || lengthFilter != LengthFilter.ANY
+    var starredOnly by ListFilters.recStarred
+    val filtering = query.isNotBlank() || dateFilter.active || lengthFilter != LengthFilter.ANY || starredOnly
     val q = query.trim()
     val sorted = items
         .filter { r ->
             (q.isEmpty() || r.displayName.contains(q, ignoreCase = true) ||
-                r.name.contains(q, ignoreCase = true) || numberMatches(r.number, q)) &&
+                r.name.contains(q, ignoreCase = true) || numberMatches(r.number, q) ||
+                r.note.contains(q, ignoreCase = true)) &&
                 dateFilter.matches(r.startedAt) &&
-                (lengthFilter.range?.contains(r.durationSec) ?: true)
+                (lengthFilter.range?.contains(r.durationSec) ?: true) &&
+                (!starredOnly || r.starred)
         }
         .let { list ->
             when (sort) {
@@ -128,6 +147,15 @@ fun RecordingsScreen(
                 RecordingSort.SHORTEST -> list.sortedBy { it.durationSec }
             }
         }
+        // Pinned recordings stay on top, in the chosen order among themselves.
+        .sortedByDescending { it.pinned }
+
+    // Recordings deleted elsewhere (auto-delete) drop out of the selection.
+    LaunchedEffect(items) {
+        val liveIds = items.map { it.id }.toSet()
+        if (selected.any { it !in liveIds }) selected = selected.intersect(liveIds)
+    }
+    BackHandler(enabled = selecting) { selected = emptySet() }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
@@ -140,6 +168,20 @@ fun RecordingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item(key = "header") {
+                if (selecting) {
+                    val chosen = items.filter { it.id in selected }
+                    SelectionBar(
+                        count = selected.size,
+                        allStarred = chosen.isNotEmpty() && chosen.all { it.starred },
+                        allPinned = chosen.isNotEmpty() && chosen.all { it.pinned },
+                        onClose = { selected = emptySet() },
+                        onSelectAll = { selected = sorted.map { it.id }.toSet() },
+                        onStar = { RecordingStore.setStarred(selected, !chosen.all { it.starred }) },
+                        onPin = { RecordingStore.setPinned(selected, !chosen.all { it.pinned }) },
+                        onDelete = { confirmBulkDelete = true },
+                    )
+                    return@item
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -206,6 +248,8 @@ fun RecordingsScreen(
                         onLength = { lengthFilter = it },
                         sort = sort,
                         onSort = { sort = it },
+                        starredOnly = starredOnly,
+                        onStarredOnly = { starredOnly = it },
                     )
                 }
             }
@@ -247,6 +291,14 @@ fun RecordingsScreen(
                 Box(Modifier.animateItem()) {
                     RecordingCard(
                         r = r,
+                        selecting = selecting,
+                        isSelected = r.id in selected,
+                        onToggleSelect = {
+                            selected = if (r.id in selected) selected - r.id else selected + r.id
+                        },
+                        onStar = { RecordingStore.setStarred(setOf(r.id), !r.starred) },
+                        onPin = { RecordingStore.setPinned(setOf(r.id), !r.pinned) },
+                        onNote = { noteFor = r },
                         player = player,
                         speed = speed,
                         onSpeed = { RecordingPlayer.setSpeed(ctx, it) },
@@ -301,11 +353,91 @@ fun RecordingsScreen(
         )
     }
 
+    noteFor?.let { r ->
+        var text by remember(r.id) { mutableStateOf(r.note) }
+        AlertDialog(
+            onDismissRequest = { noteFor = null },
+            title = { Text("Note") },
+            text = {
+                Column {
+                    Text(
+                        "${r.displayName} · ${Fmt.dueLabel(r.startedAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        placeholder = { Text("What was this call about?") },
+                        minLines = 3,
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    RecordingStore.setNote(r.id, text)
+                    noteFor = null
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { noteFor = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (confirmBulkDelete) {
+        val chosen = items.filter { it.id in selected }
+        val starredCount = chosen.count { it.starred }
+        val toDelete = chosen.size - starredCount
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = {
+                Text(
+                    if (toDelete == 0) "Nothing to delete"
+                    else if (toDelete == 1) "Delete 1 recording?"
+                    else "Delete $toDelete recordings?"
+                )
+            },
+            text = {
+                Text(
+                    when {
+                        toDelete == 0 -> "All the selected recordings are starred, so they are kept. " +
+                            "Unstar a recording first to delete it."
+                        starredCount > 0 -> "The audio files are deleted from your phone. " +
+                            "$starredCount starred ${if (starredCount == 1) "recording is" else "recordings are"} kept."
+                        else -> "The audio files are deleted from your phone."
+                    }
+                )
+            },
+            confirmButton = {
+                if (toDelete > 0) {
+                    TextButton(onClick = {
+                        val kept = RecordingStore.deleteUnstarred(ctx, selected)
+                        confirmBulkDelete = false
+                        selected = emptySet()
+                        if (kept > 0) Toast.makeText(ctx, "$kept starred kept", Toast.LENGTH_SHORT).show()
+                    }) { Text("Delete") }
+                } else {
+                    TextButton(onClick = { confirmBulkDelete = false }) { Text("OK") }
+                }
+            },
+            dismissButton = if (toDelete > 0) {
+                { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } }
+            } else null
+        )
+    }
+
     deleteFor?.let { r ->
         AlertDialog(
             onDismissRequest = { deleteFor = null },
-            title = { Text("Delete this recording?") },
-            text = { Text("${r.displayName} · ${clock(r.durationSec)}. The audio file is deleted from your phone.") },
+            title = { Text(if (r.starred) "Delete this starred recording?" else "Delete this recording?") },
+            text = {
+                Text(
+                    (if (r.starred) "This recording is starred. " else "") +
+                        "${r.displayName} · ${clock(r.durationSec)}. The audio file is deleted from your phone."
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     RecordingStore.delete(ctx, r.id)
@@ -317,9 +449,16 @@ fun RecordingsScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecordingCard(
     r: Recording,
+    selecting: Boolean,
+    isSelected: Boolean,
+    onToggleSelect: () -> Unit,
+    onStar: () -> Unit,
+    onPin: () -> Unit,
+    onNote: () -> Unit,
     player: RecordingPlayer.State,
     speed: Float,
     onSpeed: (Float) -> Unit,
@@ -334,21 +473,59 @@ private fun RecordingCard(
 
     Card(
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.combinedClickable(
+            onClick = { if (selecting) onToggleSelect() },
+            onLongClick = onToggleSelect,
+        )
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(text = r.displayName, size = 44.dp)
+                if (isSelected) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(44.dp)
+                    )
+                } else {
+                    Avatar(text = r.displayName, size = 44.dp)
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        r.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (r.pinned) {
+                            Icon(
+                                Icons.Rounded.PushPin,
+                                contentDescription = "Pinned",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            r.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (r.starred) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Rounded.Star,
+                                contentDescription = "Starred",
+                                tint = Color(0xFFF5B400),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                     Text(
                         listOf(
                             r.typeLabel,
@@ -362,7 +539,7 @@ private fun RecordingCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                if (r.finished) {
+                if (r.finished && !selecting) {
                     FilledIconButton(onClick = onPlay) {
                         Icon(
                             if (isCurrent && player.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -370,11 +547,26 @@ private fun RecordingCard(
                         )
                     }
                 }
-                Box {
+                if (!selecting) Box {
                     IconButton(onClick = { menu = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (r.starred) "Unstar" else "Star") },
+                            leadingIcon = {
+                                Icon(
+                                    if (r.starred) Icons.Rounded.StarBorder else Icons.Rounded.Star,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = { menu = false; onStar() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (r.pinned) "Unpin" else "Pin to top") },
+                            leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
+                            onClick = { menu = false; onPin() }
+                        )
                         DropdownMenuItem(
                             text = { Text("Rename") },
                             leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
@@ -401,6 +593,29 @@ private fun RecordingCard(
                         "(Settings → Call recording).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // Notes stay small: a "+ Add note" link, or the note itself in up to two lines.
+            val noteClick = Modifier.clickable { if (selecting) onToggleSelect() else onNote() }
+            if (r.note.isBlank()) {
+                if (r.finished && !selecting) {
+                    Text(
+                        "+ Add note",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 56.dp, top = 4.dp).then(noteClick).padding(vertical = 2.dp)
+                    )
+                }
+            } else {
+                Text(
+                    r.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 56.dp, top = 4.dp).fillMaxWidth().then(noteClick)
+                        .padding(vertical = 2.dp)
                 )
             }
 
@@ -464,13 +679,15 @@ private fun RecordingFilters(
     onLength: (LengthFilter) -> Unit,
     sort: RecordingSort,
     onSort: (RecordingSort) -> Unit,
+    starredOnly: Boolean,
+    onStarredOnly: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedTextField(
             value = query,
             onValueChange = onQuery,
             singleLine = true,
-            placeholder = { Text("Search name or number") },
+            placeholder = { Text("Search name, number or note") },
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             trailingIcon = if (query.isNotEmpty()) {
                 { IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") } }
@@ -482,6 +699,18 @@ private fun RecordingFilters(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            FilterChip(
+                selected = starredOnly,
+                onClick = { onStarredOnly(!starredOnly) },
+                label = { Text("Starred") },
+                leadingIcon = {
+                    Icon(
+                        if (starredOnly) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            )
             DateFilterChip("Date", date, ListFilters.CREATED_PRESETS, onDate)
             ChoiceChip(
                 label = if (length == LengthFilter.ANY) "Length" else "Length: ${length.label}",
@@ -497,8 +726,8 @@ private fun RecordingFilters(
                 current = sort.ordinal,
                 onPick = { onSort(RecordingSort.entries[it]) },
             )
-            if (date.active || length != LengthFilter.ANY || query.isNotEmpty()) {
-                ClearChip { onQuery(""); onDate(DateFilter()); onLength(LengthFilter.ANY) }
+            if (date.active || length != LengthFilter.ANY || query.isNotEmpty() || starredOnly) {
+                ClearChip { onQuery(""); onDate(DateFilter()); onLength(LengthFilter.ANY); onStarredOnly(false) }
             }
         }
     }
@@ -525,5 +754,46 @@ private fun ChoiceChip(label: String, selected: Boolean, options: List<String>, 
                 )
             }
         }
+    }
+}
+
+/** Shown instead of the title while recordings are selected. */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    allStarred: Boolean,
+    allPinned: Boolean,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onStar: () -> Unit,
+    onPin: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Cancel selection") }
+        Text(
+            "$count selected",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onSelectAll) { Icon(Icons.Rounded.SelectAll, contentDescription = "Select all") }
+        IconButton(onClick = onStar) {
+            Icon(
+                if (allStarred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                contentDescription = if (allStarred) "Unstar" else "Star"
+            )
+        }
+        IconButton(onClick = onPin) {
+            Icon(
+                Icons.Rounded.PushPin,
+                contentDescription = if (allPinned) "Unpin" else "Pin to top",
+                tint = if (allPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
     }
 }

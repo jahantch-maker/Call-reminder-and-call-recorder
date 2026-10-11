@@ -417,6 +417,37 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
             }
         }
 
+        SectionCard(
+            title = "Using a bank app?",
+            subtitle = "Bank apps won't open while the recording service is on."
+        ) {
+            val paused = BankingPause.isPaused(ctx) && !status.accessibility
+            Text(
+                if (paused) {
+                    "Recording is off for banking. When you're done, switch Callback Reminder call recording " +
+                        "back on. You'll get a reminder every 10 minutes until you do."
+                } else {
+                    "Tap below, then switch off Callback Reminder call recording. Calls are not recorded while " +
+                        "it's off, so you'll get a reminder every 10 minutes until you switch it back on."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            if (paused) {
+                Button(
+                    onClick = { ctx.startActivity(BankingPause.accessibilityIntent()) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Switch recording back on") }
+            } else {
+                OutlinedButton(
+                    onClick = { BankingPause.start(ctx) },
+                    enabled = status.accessibility,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Switch off for banking") }
+            }
+        }
+
         SectionCard(title = "Recording", subtitle = "Records your calls and keeps them in the Recordings screen.") {
             SwitchRow("Record phone calls", recPhone) {
                 recPhone = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it)

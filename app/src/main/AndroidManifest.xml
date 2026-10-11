@@ -153,6 +153,11 @@
             android:name=".SmsActionReceiver"
             android:exported="false" />
 
+        <!-- Reminds you to switch call recording back on after "Switch off for banking" -->
+        <receiver
+            android:name=".BankingReminderReceiver"
+            android:exported="false" />
+
         <!-- Re-arms reminders after a phone restart or app update -->
         <receiver
             android:name=".BootReceiver"

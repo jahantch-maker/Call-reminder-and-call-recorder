@@ -125,7 +125,7 @@ object CallRecorder {
         val out: RecordingFiles.Output,
         val startedMs: Long,
         val sourceKey: String,
-        val whatsApp: Boolean,
+        var whatsApp: Boolean,
         val test: Boolean,
     ) {
         var peak: Int = 0
@@ -135,6 +135,9 @@ object CallRecorder {
 
     private var active: Active? = null
     private var sampler: ScheduledFuture<*>? = null
+
+    /** The recording of the latest WhatsApp call, so its name can be filled in when the call ends. */
+    private var lastWhatsAppId = -1L
 
     // ---- Public entry points (all work happens on one background thread, in order) ----
 
@@ -168,6 +171,49 @@ object CallRecorder {
                 if (a != null && (!onlyWhatsApp || a.whatsApp)) stopNow(app, finalName)
             } catch (e: Throwable) {
                 note(app, "Problem while stopping: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    /**
+     * A WhatsApp call has ended: put the caller's name and number on its recording.
+     * If WhatsApp never told us the call connected, fall back to a nameless recording made since [sinceMs]
+     * (on some phones a WhatsApp call also shows up as a phone call, which starts the recording).
+     */
+    fun nameWhatsAppAsync(ctx: Context, name: String, sinceMs: Long) {
+        if (name.isBlank()) return
+        val app = ctx.applicationContext
+        exec.execute {
+            try {
+                val id = lastWhatsAppId.takeIf { it > 0L && RecordingStore.get(it) != null }
+                    ?: RecordingStore.items.value
+                        .filter { it.startedAt >= sinceMs && it.name.isBlank() && it.number.isBlank() }
+                        .maxByOrNull { it.startedAt }
+                        ?.also { RecordingStore.markWhatsApp(it.id, it.type, name) }
+                        ?.id
+                    ?: return@execute
+                lastWhatsAppId = -1L
+                RecordingStore.setCaller(id, name, ContactLookup.numberFor(app, name))
+            } catch (e: Throwable) {
+                // The recording keeps whatever name it already had.
+            }
+        }
+    }
+
+    /**
+     * An outgoing phone call has ended and the call log says how long you really talked.
+     * Cut the ringing from the start of that call's recording. Runs after the stop, on the same thread.
+     */
+    fun trimRingingAsync(ctx: Context, sessionKey: Long, talkSec: Long) {
+        val app = ctx.applicationContext
+        exec.execute {
+            try {
+                val r = RecordingStore.items.value.firstOrNull {
+                    it.sessionKey == sessionKey && !it.whatsApp && it.finished && it.id != active?.id
+                } ?: return@execute
+                if (RingTrimmer.trim(app, r, talkSec)) note(app, "Last recording saved, ringing cut off.")
+            } catch (e: Throwable) {
+                // The full recording is kept.
             }
         }
     }
@@ -222,7 +268,16 @@ object CallRecorder {
         number: String,
         test: Boolean,
     ): Boolean {
-        if (active != null) return true
+        active?.let { a ->
+            // Some phones report a WhatsApp call as a phone call too, so the phone side may have
+            // started this recording already. It belongs to the WhatsApp call: let it take over.
+            if (whatsApp && !test && !a.test && !a.whatsApp) {
+                a.whatsApp = true
+                lastWhatsAppId = a.id
+                RecordingStore.markWhatsApp(a.id, type, name)
+            }
+            return true
+        }
         if (!test && !enabled(app, whatsApp)) return false
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
@@ -297,6 +352,7 @@ object CallRecorder {
             )
             val a = Active(recorder, entry.id, out, SystemClock.elapsedRealtime(), key, whatsApp, test)
             active = a
+            if (whatsApp && !test) lastWhatsAppId = entry.id
             sampler = exec.scheduleWithFixedDelay({ sample() }, 500, 500, TimeUnit.MILLISECONDS)
             note(app, "Recording started with ${RecSource.label(key)}.")
             return true
@@ -435,6 +491,8 @@ class RecorderAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // Switched back on after banking: no more reminders needed.
+        BankingPause.end(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

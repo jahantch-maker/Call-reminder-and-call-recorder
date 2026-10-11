@@ -32,6 +32,7 @@ class WhatsAppCallListener : NotificationListenerService() {
         val name: String,
         val type: Int,
         val connectedAt: Long,
+        val firstSeen: Long,
     )
 
     companion object {
@@ -166,6 +167,7 @@ class WhatsAppCallListener : NotificationListenerService() {
                 connected -> now
                 else -> 0L
             },
+            firstSeen = prev?.firstSeen ?: now,
         )
         live = updated
 
@@ -202,6 +204,9 @@ class WhatsAppCallListener : NotificationListenerService() {
         markActivity()
         // The WhatsApp call is over (a phone-call recording, if any, keeps going).
         CallRecorder.stopAsync(applicationContext, finalName = call.name, onlyWhatsApp = true)
+        if (call.connectedAt > 0L) {
+            CallRecorder.nameWhatsAppAsync(applicationContext, call.name, call.firstSeen - 60_000L)
+        }
 
         val answered = call.connectedAt > 0L
         val type = when {

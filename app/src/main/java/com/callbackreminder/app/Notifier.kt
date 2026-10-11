@@ -21,6 +21,7 @@ object Notifier {
     const val CH_RINGING = "ringing"
     const val CH_RECORDING = "recording"
     const val CH_MISSED = "missed_reminders"
+    const val CH_REC_OFF = "recording_off"
     const val NOTIF_RING = 42
     private const val NOTIF_POSTCALL = 1
 
@@ -55,6 +56,11 @@ object Notifier {
                 description = "Shown while a call is being recorded"
                 setSound(null, null)
                 enableVibration(false)
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_REC_OFF, "Recording switched off", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Reminds you to switch call recording back on after using a bank app"
             }
         )
         nm.createNotificationChannel(
