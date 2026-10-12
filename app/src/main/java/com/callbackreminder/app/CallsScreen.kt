@@ -16,7 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -89,6 +96,7 @@ fun CallsScreen(resumeKey: Int) {
     var showAdd by remember { mutableStateOf(false) }
     var rescheduleFor by remember { mutableStateOf<Reminder?>(null) }
     var deleteFor by remember { mutableStateOf<Reminder?>(null) }
+    var textInsteadFor by remember { mutableStateOf<Reminder?>(null) }
     var createdFilter by ListFilters.callsCreated
     var dueFilter by ListFilters.callsDue
     val items = all.filter { createdFilter.matches(it.createdAt) && dueFilter.matches(it.dueAt) }
@@ -236,10 +244,11 @@ fun CallsScreen(resumeKey: Int) {
                         reminderGroup(title, list, color) { r ->
                             ReminderCard(r, now, done = false, ctx = ctx,
                                 onDone = { ReminderStore.markDone(r.id) },
-                                onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
+                                onSnooze = { ms -> ReminderStore.reschedule(r.id, ms, "Snoozed to") },
                                 onPickTime = { rescheduleFor = r },
                                 onDelete = { deleteFor = r },
-                                onHistory = { historyFor = r })
+                                onHistory = { historyFor = r },
+                                onTextInstead = { textInsteadFor = r })
                         }
                     }
                 }
@@ -310,7 +319,28 @@ fun CallsScreen(resumeKey: Int) {
     }
 
     historyFor?.let { r ->
-        DelayHistoryDialog(r = r, onDismiss = { historyFor = null })
+        // Read the live copy so new lines show while the window is open.
+        CallHistoryDialog(r = all.firstOrNull { it.id == r.id } ?: r, onDismiss = { historyFor = null })
+    }
+
+    textInsteadFor?.let { r ->
+        SmsReminderDialog(
+            prefill = TextPrefill(
+                name = r.name,
+                number = r.number,
+                message = r.note,
+                heading = "Send as a text instead",
+                info = "The call reminder and its history move into this text.",
+            ),
+            onDismiss = { textInsteadFor = null },
+            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
+                val live = ReminderStore.get(r.id) ?: r
+                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked, history = live.historyForText())
+                ReminderStore.delete(r.id)
+                textInsteadFor = null
+                Toast.makeText(ctx, "Moved to Texts · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
     deleteFor?.let { r ->
@@ -358,33 +388,52 @@ private fun EmptyText(text: String) {
     )
 }
 
-/** Every time a task was moved after a follow-up call, and why. */
+/** Everything that happened to a task, newest first: created, rang, snoozed, called, moved and why, done. */
 @Composable
-private fun DelayHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
+private fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
+    val lines = r.historyLines()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Why not done · ${r.title}") },
+        title = { Text("History · ${r.title}") },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (r.note.isNotBlank()) {
-                    Text(r.note, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                }
-                r.delays.asReversed().forEach { d ->
-                    Column {
-                        Text(
-                            d.reason.ifBlank { "No reason given" },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (d.reason.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            "Was due ${Fmt.dueLabel(d.wasDue)} · moved to ${Fmt.dueLabel(d.newDue)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            if (lines.isEmpty()) {
+                Text("Nothing yet. From now on, every ring, snooze, call and move is listed here.")
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    if (r.note.isNotBlank()) {
+                        item {
+                            Text(
+                                r.note,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
+                    items(lines) { e ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                            Text(
+                                e.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (e.what.contains("didn't pick up")) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                Fmt.dueLabel(e.at),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (e.note.isNotBlank()) {
+                                Text(
+                                    "“${e.note}”",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontStyle = FontStyle.Italic,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                        HorizontalDivider()
                     }
                 }
             }
@@ -451,6 +500,7 @@ private fun ReminderCard(
     onPickTime: () -> Unit,
     onDelete: () -> Unit,
     onHistory: () -> Unit,
+    onTextInstead: () -> Unit = {},
     review: Boolean = false,
 ) {
     val isOverdue = !done && r.dueAt <= now
@@ -652,6 +702,32 @@ private fun ReminderCard(
                         Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Done")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onHistory,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("History", maxLines = 1)
+                }
+                if (!done) {
+                    OutlinedButton(
+                        onClick = onTextInstead,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Icon(Icons.Rounded.Sms, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Text instead", maxLines = 1)
                     }
                 }
             }

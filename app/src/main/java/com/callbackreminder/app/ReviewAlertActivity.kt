@@ -248,6 +248,7 @@ private fun ReviewScreen(
                     CountLine("Calls overdue", counts.overdueCalls)
                     CountLine("Calls to review", counts.callsToReview)
                     CountLine("Texts to review", counts.textsToReview)
+                    CountLine("To schedule", counts.toSchedule)
                 }
             }
 

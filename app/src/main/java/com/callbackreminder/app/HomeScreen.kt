@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.PhoneCallback
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.EventAvailable
+import androidx.compose.material.icons.rounded.EditCalendar
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material3.Button
@@ -79,10 +80,12 @@ fun HomeScreen(
     onOpenTexts: (tab: Int, showId: Long?) -> Unit,
     onOpenSetup: () -> Unit,
     onOpenRecordingSettings: () -> Unit,
+    onOpenToSchedule: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
+    val toSchedule by ToScheduleStore.items.collectAsState()
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
     var chooseNew by remember { mutableStateOf(false) }
     var newCall by remember { mutableStateOf(false) }
@@ -171,6 +174,7 @@ fun HomeScreen(
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
             item(key = "tiles") {
+              Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CountTile(
                         icon = Icons.Rounded.PhoneCallback,
@@ -190,6 +194,8 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { onOpenTexts(0, null) },
                     )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CountTile(
                         icon = Icons.Rounded.PendingActions,
                         count = toReview,
@@ -206,7 +212,17 @@ fun HomeScreen(
                             }
                         },
                     )
+                    CountTile(
+                        icon = Icons.Rounded.EditCalendar,
+                        count = toSchedule.size,
+                        label = "To schedule",
+                        container = Color(0xFFFFE6C2),
+                        content = Color(0xFF6A3B00),
+                        modifier = Modifier.weight(1f),
+                        onClick = onOpenToSchedule,
+                    )
                 }
+              }
             }
 
             item(key = "next-title") {

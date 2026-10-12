@@ -15,6 +15,7 @@ class ReminderReceiver : BroadcastReceiver() {
         if (id < 0) return
         val r = ReminderStore.get(id)?.takeIf { !it.done } ?: return
         if (r.repeat == null) {
+            ReminderStore.logEvent(r.id, "Rang")
             ReminderStyle.alert(context, r)
             return
         }
@@ -26,6 +27,7 @@ class ReminderReceiver : BroadcastReceiver() {
             r
         }
         Scheduler.schedule(context, current)
+        ReminderStore.logEvent(current.id, "Rang")
         ReminderStyle.alert(context, current)
     }
 }
@@ -46,7 +48,7 @@ class ActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_SNOOZE -> {
                 val minutes = intent.getIntExtra(EXTRA_MINUTES, 60)
-                ReminderStore.reschedule(id, System.currentTimeMillis() + minutes * 60_000L)
+                ReminderStore.reschedule(id, System.currentTimeMillis() + minutes * 60_000L, "Snoozed to")
             }
             ACTION_DONE -> ReminderStore.markDone(id)
         }

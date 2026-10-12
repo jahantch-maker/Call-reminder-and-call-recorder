@@ -28,8 +28,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PendingActions
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -136,13 +145,23 @@ internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnS
     }
 }
 
+/** Which step of the after-call popup is showing. */
+private enum class PostCallStep { CHOOSE, CALL_BACK }
+
+/**
+ * The after-call popup. First a note box with Schedule later joined under it, and two big blocks: Set a
+ * call back reminder (opens the quick times) and Schedule a text (opens the text scheduler). Nothing gets
+ * a time from a single stray tap.
+ */
 @Composable
 private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> Unit) {
     val ctx = LocalContext.current
 
     var typedName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var step by remember { mutableStateOf(PostCallStep.CHOOSE) }
     var showPicker by remember { mutableStateOf(false) }
+    var showText by remember { mutableStateOf(false) }
 
     val callerName = call.name.takeIf { it.isNotBlank() }
     val callerNumber = call.number.takeIf { it.isNotBlank() }
@@ -168,9 +187,16 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             name = name,
             number = callerNumber ?: "",
             note = note,
-            dueAt = whenMs
+            dueAt = whenMs,
+            createdAs = "Created after a call"
         )
         Toast.makeText(ctx, "Reminder set · ${Fmt.dueLabel(whenMs)}", Toast.LENGTH_SHORT).show()
+        onNext()
+    }
+
+    fun scheduleLater() {
+        ToScheduleStore.add(name = callerName ?: typedName, number = callerNumber ?: "", note = note)
+        Toast.makeText(ctx, "Saved to To schedule", Toast.LENGTH_SHORT).show()
         onNext()
     }
 
@@ -188,6 +214,11 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (step != PostCallStep.CHOOSE) {
+                IconButton(onClick = { step = PostCallStep.CHOOSE }) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                }
+            }
             Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -225,51 +256,79 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             Spacer(Modifier.height(10.dp))
         }
 
-        OutlinedTextField(
-            value = note,
-            onValueChange = { note = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("What did they promise? (optional)") },
-            shape = RoundedCornerShape(14.dp)
-        )
+        if (step == PostCallStep.CHOOSE) {
+            // The note box and Schedule later read as one piece: the bar hangs off the box's bottom edge.
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("What did you discuss? (note)") },
+                maxLines = 4,
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
+            )
+            ScheduleLaterBar(enabled = note.isNotBlank(), onClick = { scheduleLater() })
 
-        Spacer(Modifier.height(18.dp))
-        Text(
-            text = "Remind me to call back",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Or set it now",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BigChoice(
+                    icon = Icons.Rounded.Call,
+                    label = "Set a call back reminder",
+                    container = MaterialTheme.colorScheme.primary,
+                    content = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.weight(1f),
+                    onClick = { step = PostCallStep.CALL_BACK }
+                )
+                BigChoice(
+                    icon = Icons.Rounded.Sms,
+                    label = "Schedule a text",
+                    container = MaterialTheme.colorScheme.secondary,
+                    content = MaterialTheme.colorScheme.onSecondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = { showText = true }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onNext) { Text("Skip") }
+            }
+        } else {
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Note (optional)") },
+                shape = RoundedCornerShape(14.dp)
+            )
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.chunked(3).forEach { rowOptions ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rowOptions.forEach { o ->
-                        OptionTile(
-                            title = o.title,
-                            subtitle = o.subtitle,
-                            modifier = Modifier.weight(1f)
-                        ) { schedule(o.whenMs) }
-                    }
-                    // Keeps tiles the same width when the last row isn't full.
-                    repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = "Remind me to call back",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            QuickTimeGrid(options) { schedule(it) }
+
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { showPicker = true }) {
+                    Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Pick date & time")
                 }
+                TextButton(onClick = onNext) { Text("Skip") }
             }
-        }
-
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = { showPicker = true }) {
-                Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Pick date & time")
-            }
-            TextButton(onClick = onNext) { Text("Skip") }
         }
     }
 
@@ -279,6 +338,118 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             onPicked = { showPicker = false; schedule(it) },
             onDismiss = { showPicker = false }
         )
+    }
+
+    if (showText) {
+        SmsReminderDialog(
+            prefill = TextPrefill(
+                name = callerName ?: typedName,
+                number = callerNumber ?: "",
+                message = note,
+                heading = "Schedule a text",
+            ),
+            onDismiss = { showText = false },
+            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
+                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked)
+                showText = false
+                Toast.makeText(ctx, "Text scheduled · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
+                onNext()
+            }
+        )
+    }
+}
+
+/**
+ * The wide bar under the note box. Locked (grey, dashed) until a note is typed, then orange and tappable.
+ * Its hint sits inside it.
+ */
+@Composable
+private fun ScheduleLaterBar(enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
+    val container = if (enabled) Color(0xFFFFF1D6) else MaterialTheme.colorScheme.surfaceVariant
+    val content = if (enabled) Color(0xFF6A4300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        color = container,
+        contentColor = content,
+        border = BorderStroke(if (enabled) 2.dp else 1.dp, if (enabled) Color(0xFFF0B850) else MaterialTheme.colorScheme.outline),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.PendingActions, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Schedule later", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    if (enabled) "Save this note now, set a time later" else "Type a note above to use this",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Icon(
+                if (enabled) Icons.AutoMirrored.Rounded.KeyboardArrowRight else Icons.Rounded.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(if (enabled) 26.dp else 18.dp)
+            )
+        }
+    }
+}
+
+/** One of the two big blocks on the after-call popup. */
+@Composable
+private fun BigChoice(
+    icon: ImageVector,
+    label: String,
+    container: Color,
+    content: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(110.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = container,
+        contentColor = content,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** The quick times as tiles, three to a row. */
+@Composable
+internal fun QuickTimeGrid(options: List<QuickOption>, onPick: (Long) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.chunked(3).forEach { rowOptions ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowOptions.forEach { o ->
+                    OptionTile(
+                        title = o.title,
+                        subtitle = o.subtitle,
+                        modifier = Modifier.weight(1f)
+                    ) { onPick(o.whenMs) }
+                }
+                // Keeps tiles the same width when the last row isn't full.
+                repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 

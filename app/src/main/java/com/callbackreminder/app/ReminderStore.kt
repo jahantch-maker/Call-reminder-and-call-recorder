@@ -52,6 +52,12 @@ object ReminderStore {
                             Delay(e.optLong("at"), e.optLong("wasDue"), e.optLong("newDue"), e.optString("reason"))
                         }
                     } ?: emptyList(),
+                    events = o.optJSONArray("events")?.let { d ->
+                        (0 until d.length()).map { j ->
+                            val e = d.getJSONObject(j)
+                            CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
+                        }
+                    } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -88,6 +94,17 @@ object ReminderStore {
                             )
                         }
                     })
+                    .put("events", JSONArray().apply {
+                        r.events.forEach { e ->
+                            put(
+                                JSONObject()
+                                    .put("at", e.at)
+                                    .put("what", e.what)
+                                    .put("due", e.due)
+                                    .put("note", e.note)
+                            )
+                        }
+                    })
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -97,7 +114,15 @@ object ReminderStore {
     fun get(id: Long): Reminder? = _items.value.firstOrNull { it.id == id }
 
     @Synchronized
-    fun add(name: String, number: String, note: String, dueAt: Long, repeat: Repeat? = null): Reminder {
+    fun add(
+        name: String,
+        number: String,
+        note: String,
+        dueAt: Long,
+        repeat: Repeat? = null,
+        createdAs: String = "Created",
+        earlier: List<CallEvent> = emptyList(),
+    ): Reminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
         // A weekly repeat on chosen days starts on the first of those days.
@@ -112,6 +137,7 @@ object ReminderStore {
             repeat = repeat,
             seriesStart = dueAt,
             occurrenceAt = first,
+            events = earlier + CallEvent(System.currentTimeMillis(), "$createdAs, due", first),
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)
@@ -125,6 +151,7 @@ object ReminderStore {
      */
     @Synchronized
     fun markDone(id: Long, review: Boolean = false) {
+        if (get(id)?.done == false) logEvent(id, if (review) "Done, sent to To review" else "Marked done")
         val cur = get(id) ?: return
         if (review && cur.repeat != null && !cur.done) {
             val copyId = prefs().getLong("nextId", 1L)
@@ -164,6 +191,7 @@ object ReminderStore {
     /** You checked a task on the To review chip: it is finished for good. */
     @Synchronized
     fun reviewed(id: Long) {
+        logEvent(id, "Checked on To review")
         save(_items.value.map { if (it.id == id) it.copy(review = false) else it })
     }
 
@@ -173,7 +201,7 @@ object ReminderStore {
         val cur = get(id) ?: return
         val entry = Delay(System.currentTimeMillis(), cur.dueAt, newDueAt, reason.trim())
         save(_items.value.map { if (it.id == id) it.copy(delays = it.delays + entry) else it })
-        reschedule(id, newDueAt)
+        reschedule(id, newDueAt, logAs = null)
     }
 
     /**
@@ -206,16 +234,29 @@ object ReminderStore {
         if (!updated.done && updated.dueAt > System.currentTimeMillis()) Scheduler.schedule(appCtx, updated)
     }
 
-    /** Move a reminder to a new time (also brings a finished one back to the to-call list). */
+    /**
+     * Move a reminder to a new time (also brings a finished one back to the to-call list). [logAs] names the
+     * move in History, like "Snoozed to"; null leaves no line (the caller keeps its own record).
+     */
     @Synchronized
-    fun reschedule(id: Long, newDueAt: Long) {
+    fun reschedule(id: Long, newDueAt: Long, logAs: String? = "Moved to") {
         val cur = get(id) ?: return
-        val updated = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L, review = false)
+        val log = if (logAs != null) cur.events + CallEvent(System.currentTimeMillis(), logAs, newDueAt) else cur.events
+        val updated = cur.copy(dueAt = newDueAt, done = false, doneAt = 0L, review = false, events = log)
         Notifier.cancel(appCtx, id)
         RingController.dismiss(id)
         save(_items.value.map { if (it.id == id) updated else it })
         Scheduler.schedule(appCtx, updated)
     }
+
+    /** Adds a line to the task's History. Kept to the newest [EVENT_LIMIT]. */
+    @Synchronized
+    fun logEvent(id: Long, what: String, due: Long = 0L, note: String = "") {
+        val e = CallEvent(System.currentTimeMillis(), what, due, note)
+        save(_items.value.map { if (it.id == id) it.copy(events = (it.events + e).takeLast(EVENT_LIMIT)) else it })
+    }
+
+    private const val EVENT_LIMIT = 60
 
     @Synchronized
     fun delete(id: Long) {
