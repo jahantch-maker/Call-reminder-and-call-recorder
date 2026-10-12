@@ -32,8 +32,8 @@ object ReviewReminder {
     val SNOOZE_MINUTES = listOf(15, 30, 60, 120)
     private const val ALL_DAYS = 0b1111111
 
-    data class Counts(val overdueCalls: Int, val callsToReview: Int, val textsToReview: Int) {
-        val total: Int get() = overdueCalls + callsToReview + textsToReview
+    data class Counts(val overdueCalls: Int, val callsToReview: Int, val textsToReview: Int, val toSchedule: Int = 0) {
+        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule
 
         /** Like "3 calls overdue · 2 texts to review". */
         val summary: String
@@ -41,6 +41,7 @@ object ReviewReminder {
                 overdueCalls.takeIf { it > 0 }?.let { "$it ${if (it == 1) "call" else "calls"} overdue" },
                 callsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "call" else "calls"} to review" },
                 textsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "text" else "texts"} to review" },
+                toSchedule.takeIf { it > 0 }?.let { "$it to schedule" },
             ).joinToString(" · ").ifBlank { "Nothing waiting" }
     }
 
@@ -91,12 +92,14 @@ object ReviewReminder {
     fun counts(ctx: Context): Counts {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
+        ToScheduleStore.init(ctx)
         val now = System.currentTimeMillis()
         val calls = ReminderStore.items.value
         return Counts(
             overdueCalls = calls.count { !it.done && it.dueAt <= now },
             callsToReview = calls.count { it.done && it.review },
             textsToReview = SmsStore.items.value.count { !it.done && it.review != null },
+            toSchedule = ToScheduleStore.items.value.size,
         )
     }
 

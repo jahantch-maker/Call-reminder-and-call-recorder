@@ -146,6 +146,7 @@ object SmsStore {
         repeat: Repeat?,
         burst: BurstTemplate?,
         tracked: Boolean,
+        history: List<SmsLogEntry> = emptyList(),
     ): SmsReminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -160,6 +161,7 @@ object SmsStore {
                 burstCount = burst?.count ?: 1,
                 burstGapMin = burst?.gapMin ?: 0,
                 tracked = tracked,
+                log = history.takeLast(LOG_LIMIT),
             ),
             dueAt,
             repeat

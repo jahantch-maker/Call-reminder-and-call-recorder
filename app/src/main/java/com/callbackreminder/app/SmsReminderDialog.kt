@@ -42,7 +42,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,26 +53,40 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
+ * What a new text starts with when it comes from somewhere else (the after-call popup, To schedule, or
+ * a call reminder being changed to a text). It starts at the next 8:00 AM, already chosen.
+ */
+data class TextPrefill(
+    val name: String,
+    val number: String,
+    val message: String,
+    val heading: String = "New text message",
+    /** A short line shown at the bottom, like what happens to the call reminder. */
+    val info: String? = null,
+)
+
+/**
  * New (or edit) scheduled text message: pick who, type the message, choose the date & time and
  * repeat. Same pickers as a new call-back reminder.
  */
 @Composable
 fun SmsReminderDialog(
     initial: SmsReminder? = null,
+    prefill: TextPrefill? = null,
     onDismiss: () -> Unit,
     onSave: (
         name: String, number: String, message: String, dueAt: Long, repeat: Repeat?, burst: BurstTemplate?, tracked: Boolean,
     ) -> Unit,
 ) {
     val ctx = LocalContext.current
-    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
-    var number by remember { mutableStateOf(initial?.number.orEmpty()) }
-    var message by remember { mutableStateOf(initial?.message.orEmpty()) }
+    var name by remember { mutableStateOf(initial?.name ?: prefill?.name.orEmpty()) }
+    var number by remember { mutableStateOf(initial?.number ?: prefill?.number.orEmpty()) }
+    var message by remember { mutableStateOf(initial?.message ?: prefill?.message.orEmpty()) }
     // New messages start at 8:00 AM (opening time); you pick the date.
     var due by remember {
         mutableLongStateOf(initial?.dueAt?.takeIf { it > System.currentTimeMillis() } ?: nextEightAm())
     }
-    var dateChosen by remember { mutableStateOf(initial != null) }
+    var dateChosen by remember { mutableStateOf(initial != null || prefill != null) }
     var repeat by remember { mutableStateOf(initial?.repeat) }
     val templates = remember { BurstTemplates.load(ctx) }
     var burstOn by remember { mutableStateOf(initial?.isBurst == true) }
@@ -119,7 +135,7 @@ fun SmsReminderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "New text message" else "Edit text message") },
+        title = { Text(if (initial != null) "Edit text message" else prefill?.heading ?: "New text message") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -235,6 +251,15 @@ fun SmsReminderDialog(
                     onCheckedChange = { burstOn = it },
                     onHelp = { help = "Burst" to BURST_HELP }
                 )
+                prefill?.info?.let { info ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Text(info, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if (burstOn) {
                     if (burst == null) {
                         Text(

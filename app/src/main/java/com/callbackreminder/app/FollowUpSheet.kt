@@ -69,12 +69,19 @@ fun FollowUpSheet(
         if (answered) append(" · ").append(Fmt.duration(call.durationSec))
     }
 
+    // Each outcome below first notes the call itself in the task's History.
+    fun logCall() = ReminderStore.logEvent(
+        task.id,
+        if (answered) "Called · ${Fmt.duration(call.durationSec)}" else "Called · didn't pick up"
+    )
+
     fun finish(message: String) {
         Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
         if (newTaskOn) onNewTask() else onNext()
     }
 
     fun moveTo(whenMs: Long) {
+        logCall()
         ReminderStore.postpone(task.id, whenMs, reason)
         finish("Task moved · ${Fmt.dueLabel(whenMs)}")
     }
@@ -201,6 +208,7 @@ fun FollowUpSheet(
                 selected = false,
                 modifier = Modifier.weight(1f)
             ) {
+                logCall()
                 ReminderStore.markDone(task.id)
                 finish("Task done")
             }
@@ -210,6 +218,7 @@ fun FollowUpSheet(
                 selected = false,
                 modifier = Modifier.weight(1f)
             ) {
+                logCall()
                 ReminderStore.markDone(task.id, review = true)
                 finish("Sent to To review")
             }

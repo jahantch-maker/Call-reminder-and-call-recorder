@@ -168,7 +168,7 @@ private fun AlertScreen(onAllDone: () -> Unit) {
                             dial(ctx, r.number)
                             RingController.dismiss(r.id)
                         },
-                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms) },
+                        onSnooze = { ms -> ReminderStore.reschedule(r.id, ms, "Snoozed to") },
                         onPickTime = { pickFor = r },
                         onDone = { ReminderStore.markDone(r.id) },
                     )
@@ -182,7 +182,7 @@ private fun AlertScreen(onAllDone: () -> Unit) {
             initialMs = System.currentTimeMillis() + 3_600_000L,
             onPicked = { ms ->
                 pickFor = null
-                ReminderStore.reschedule(r.id, ms)
+                ReminderStore.reschedule(r.id, ms, "Snoozed to")
             },
             onDismiss = { pickFor = null }
         )

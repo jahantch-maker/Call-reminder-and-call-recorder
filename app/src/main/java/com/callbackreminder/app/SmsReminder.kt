@@ -17,7 +17,15 @@ data class SmsLogEntry(
         NO_REPLY("noreply", "No reply, moved to review"),
         MARKED_DONE("done", "You marked it done"),
         MARKED_NOT_DONE("notdone", "You marked it not done"),
+
+        /** A line carried over from the call reminder this text replaced; [detail] says what happened. */
+        CALL_EVENT("call", "Call reminder"),
+        FROM_CALL("fromcall", "Changed from a call reminder to a text"),
     }
+
+    /** Carried over from the call reminder, not something this text did. */
+    val fromCall: Boolean
+        get() = status == Status.CALL_EVENT || status == Status.FROM_CALL
 }
 
 /** A text message the app sends for you at a set time, once or on a repeat, as one text or a burst. */
@@ -113,7 +121,7 @@ data class SmsReminder(
         get() = "Done $code"
 
     val lastLog: SmsLogEntry?
-        get() = log.lastOrNull()
+        get() = log.lastOrNull { !it.fromCall }
 }
 
 /** A saved burst: how many texts, how many minutes apart. */

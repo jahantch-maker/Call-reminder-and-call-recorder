@@ -15,6 +15,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -40,7 +42,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -79,6 +83,7 @@ class MainActivity : ComponentActivity() {
         ReminderStore.init(this)
         RecordingStore.init(this)
         SmsStore.init(this)
+        ToScheduleStore.init(this)
         ReviewReminder.schedule(this)
         handleOpen(intent)
         setContent {
@@ -106,6 +111,8 @@ class MainActivity : ComponentActivity() {
             val calls = c.overdueCalls + c.callsToReview
             openTab = when {
                 calls > 0 && c.textsToReview > 0 -> Tab.HOME
+                // To schedule lives on Home.
+                c.toSchedule > 0 -> Tab.HOME
                 c.textsToReview > 0 -> {
                     SmsUi.tabRequest.value = 1
                     Tab.TEXTS
@@ -151,6 +158,7 @@ private object Screen {
     const val REMINDER_SETTINGS = 7
     const val TEXT_SETTINGS = 9
     const val REVIEW_SETTINGS = 10
+    const val TO_SCHEDULE = 11
 }
 
 /** The bottom bar's tabs. */
@@ -160,6 +168,7 @@ private object Tab {
     const val TEXTS = 2
     const val RECORDINGS = 3
     const val SETTINGS = 4
+    const val COUNT = 5
 }
 
 @Composable
@@ -230,6 +239,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
+                Screen.TO_SCHEDULE -> ToScheduleScreen(onBack = { back() })
                 else -> MainTabs(
                     tab = tab,
                     onTab = { tab = it },
@@ -241,11 +251,25 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     }
 }
 
-/** The bottom-bar page. Switching tabs is instant; only setting pages slide. */
+/**
+ * The bottom-bar page. Swiping left or right slides to the next or previous tab; tapping the bar jumps
+ * straight to a tab.
+ */
 @Composable
 private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int) -> Unit) {
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
+    val toSchedule by ToScheduleStore.items.collectAsState()
+    val pager = rememberPagerState(initialPage = tab) { Tab.COUNT }
+    val currentTab by rememberUpdatedState(tab)
+    // The bar or a notification picked a tab: jump straight there, without sliding past the pages between.
+    LaunchedEffect(tab) {
+        if (pager.currentPage != tab && !pager.isScrollInProgress) pager.scrollToPage(tab)
+    }
+    // A swipe came to rest on a page: that page is now the tab.
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { if (it != currentTab) onTab(it) }
+    }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -261,49 +285,58 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar {
-                TabItem(tab, Tab.HOME, Icons.Rounded.Home, "Home", 0, onTab)
-                TabItem(tab, Tab.CALLS, Icons.Rounded.PhoneCallback, "Calls", callsBadge, onTab)
-                TabItem(tab, Tab.TEXTS, Icons.Rounded.Sms, "Texts", textsBadge, onTab)
-                TabItem(tab, Tab.RECORDINGS, Icons.Rounded.Mic, "Recordings", 0, onTab)
-                TabItem(tab, Tab.SETTINGS, Icons.Rounded.Settings, "Settings", 0, onTab)
+                // Follows the page under your finger while swiping.
+                val shown = pager.currentPage
+                TabItem(shown, Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size, onTab)
+                TabItem(shown, Tab.CALLS, Icons.Rounded.PhoneCallback, "Calls", callsBadge, onTab)
+                TabItem(shown, Tab.TEXTS, Icons.Rounded.Sms, "Texts", textsBadge, onTab)
+                TabItem(shown, Tab.RECORDINGS, Icons.Rounded.Mic, "Recordings", 0, onTab)
+                TabItem(shown, Tab.SETTINGS, Icons.Rounded.Settings, "Settings", 0, onTab)
             }
         }
     ) { padding ->
         // The bar already handles the bottom inset, so each tab's own Scaffold must not add it again.
-        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            when (tab) {
-                Tab.CALLS -> CallsScreen(resumeKey = resumeKey)
-                Tab.TEXTS -> MessagesScreen(
-                    resumeKey = resumeKey,
-                    onBack = null,
-                    onOpenSettings = { open(Screen.TEXT_SETTINGS) }
-                )
-                Tab.RECORDINGS -> RecordingsScreen(
-                    resumeKey = resumeKey,
-                    onBack = null,
-                    onOpenSettings = { open(Screen.RECORDING_SETTINGS) }
-                )
-                Tab.SETTINGS -> SettingsScreen(
-                    resumeKey = resumeKey,
-                    onBack = null,
-                    onOpenSetup = { open(Screen.SETUP) },
-                    onOpenPopup = { open(Screen.POPUP_SETTINGS) },
-                    onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
-                    onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
-                    onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
-                    onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
-                    onOpenReview = { open(Screen.REVIEW_SETTINGS) }
-                )
-                else -> HomeScreen(
-                    resumeKey = resumeKey,
-                    onOpenCalls = { onTab(Tab.CALLS) },
-                    onOpenTexts = { t, showId ->
-                        if (showId != null) SmsUi.showRequest.value = showId else SmsUi.tabRequest.value = t
-                        onTab(Tab.TEXTS)
-                    },
-                    onOpenSetup = { open(Screen.SETUP) },
-                    onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
-                )
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
+            key = { it },
+        ) { page ->
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                when (page) {
+                    Tab.CALLS -> CallsScreen(resumeKey = resumeKey)
+                    Tab.TEXTS -> MessagesScreen(
+                        resumeKey = resumeKey,
+                        onBack = null,
+                        onOpenSettings = { open(Screen.TEXT_SETTINGS) }
+                    )
+                    Tab.RECORDINGS -> RecordingsScreen(
+                        resumeKey = resumeKey,
+                        onBack = null,
+                        onOpenSettings = { open(Screen.RECORDING_SETTINGS) }
+                    )
+                    Tab.SETTINGS -> SettingsScreen(
+                        resumeKey = resumeKey,
+                        onBack = null,
+                        onOpenSetup = { open(Screen.SETUP) },
+                        onOpenPopup = { open(Screen.POPUP_SETTINGS) },
+                        onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
+                        onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
+                        onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
+                        onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
+                        onOpenReview = { open(Screen.REVIEW_SETTINGS) }
+                    )
+                    else -> HomeScreen(
+                        resumeKey = resumeKey,
+                        onOpenCalls = { onTab(Tab.CALLS) },
+                        onOpenTexts = { t, showId ->
+                            if (showId != null) SmsUi.showRequest.value = showId else SmsUi.tabRequest.value = t
+                            onTab(Tab.TEXTS)
+                        },
+                        onOpenSetup = { open(Screen.SETUP) },
+                        onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
+                        onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                    )
+                }
             }
         }
     }

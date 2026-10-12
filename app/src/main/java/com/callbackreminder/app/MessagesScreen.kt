@@ -702,13 +702,14 @@ private fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
                         val bad = e.status == SmsLogEntry.Status.FAILED || e.status == SmsLogEntry.Status.RETRYING
                         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                             Text(
-                                e.status.label,
+                                if (e.status == SmsLogEntry.Status.CALL_EVENT) e.detail else e.status.label,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                listOf(Fmt.dueLabel(e.at), e.detail).filter { it.isNotBlank() }.joinToString(" · "),
+                                listOf(Fmt.dueLabel(e.at), e.detail.takeIf { e.status != SmsLogEntry.Status.CALL_EVENT })
+                                    .filter { !it.isNullOrBlank() }.joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
