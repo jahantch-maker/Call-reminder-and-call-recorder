@@ -1,6 +1,16 @@
 package com.callbackreminder.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,17 +71,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** One row of "Next up": a call-back or a text message due today. */
-private data class NextItem(
-    val key: String,
-    val at: Long,
-    val title: String,
-    val detail: String,
-    val isCall: Boolean,
-    val smsId: Long = -1L,
-)
-
-/** The Home tab: today's counts and one time-ordered list of the calls and texts still to come today. */
+/**
+ * The Home tab: today's counts, filters (person, type, due, created), overdue work by age, people with
+ * pending work, and one time-ordered "Next up" list of calls, texts, My tasks and dossier.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -81,15 +84,31 @@ fun HomeScreen(
     onOpenSetup: () -> Unit,
     onOpenRecordingSettings: () -> Unit,
     onOpenToSchedule: () -> Unit,
+    onOpenMyTasks: (sub: Int) -> Unit,
+    onOpenDossierReview: () -> Unit,
+    onOpenPeople: () -> Unit,
+    onOpenPerson: (key: String) -> Unit,
+    onOpenItem: (WorkItem) -> Unit,
 ) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val toSchedule by ToScheduleStore.items.collectAsState()
+    val myTasks by MyTaskStore.items.collectAsState()
+    val dossier by DossierStore.tasks.collectAsState()
+    val records by DossierStore.records.collectAsState()
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
     var chooseNew by remember { mutableStateOf(false) }
     var newCall by remember { mutableStateOf(false) }
     var newText by remember { mutableStateOf(false) }
+    var newTask by remember { mutableStateOf(false) }
+
+    var personFilter by ListFilters.homePerson
+    var typeFilter by ListFilters.homeType
+    var createdFilter by ListFilters.homeCreated
+    var dueFilter by ListFilters.homeDue
+    var ageFilter by ListFilters.homeAge
+    val filtering = personFilter != null || typeFilter != null || createdFilter.active || dueFilter.active || ageFilter != null
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -108,32 +127,29 @@ fun HomeScreen(
     val textsToday = texts.filter { it.active && it.alarmAt < endOfToday }
     val textsToReview = texts.count { !it.done && it.review != null }
     val callsToReview = calls.count { it.done && it.review }
-    val toReview = textsToReview + callsToReview
+    val dossierDay = Dossier.openDay(now)
+    val dossierToday = dossier.filter { it.isOn(dossierDay) }
+    val dossierDone = dossierToday.count { records[DossierStore.key(it.id, dossierDay)]?.done == true }
+    val dossierLeft = dossierToday.count {
+        records[DossierStore.key(it.id, dossierDay)]?.done != true && it.dueAt(dossierDay) <= now
+    }
+    val toReview = textsToReview + callsToReview + dossierLeft
+    val myTasksToday = myTasks.count { !it.done && it.dueAt < endOfToday }
 
-    val nextUp = (
-        callsDue.map { r ->
-            NextItem(
-                key = "c${r.id}",
-                at = r.dueAt,
-                title = r.title,
-                detail = listOfNotNull("Call back", r.note.takeIf { it.isNotBlank() } ?: r.repeatLabel)
-                    .joinToString(" · "),
-                isCall = true,
-            )
-        } + textsToday.map { r ->
-            val parts = mutableListOf(if (r.code.isNotEmpty()) "Text ${r.code}" else "Text")
-            if (r.isBurst) parts += "Reminder ${(r.burstIndex + 1).coerceAtMost(r.burstCount)} of ${r.burstCount}"
-            else if (r.message.isNotBlank()) parts += r.message
-            NextItem(
-                key = "s${r.id}",
-                at = r.alarmAt,
-                title = r.title,
-                detail = parts.joinToString(" · "),
-                isCall = false,
-                smsId = r.id,
-            )
-        }
-        ).sortedBy { it.at }
+    val open = Work.open(now, calls, texts, myTasks, dossier, records)
+    val overdue = open.filter { it.overdue }
+    val ageCounts = (0..3).map { b -> overdue.count { Work.ageBucket(it, now) == b } }
+    val people = Work.people(now, calls, texts, myTasks)
+        .sortedWith(compareByDescending<PersonSummary> { it.overdue }.thenByDescending { it.pending })
+
+    val nextUp = open.filter { !it.inReview && it.at < endOfToday }.sortedBy { it.at }
+    val filtered = if (!filtering) emptyList() else open.filter { w ->
+        (personFilter == null || w.personKey == personFilter) &&
+            (typeFilter == null || w.kind == typeFilter) &&
+            createdFilter.matches(w.createdAt) &&
+            dueFilter.matches(w.at) &&
+            (ageFilter == null || (w.overdue && Work.ageBucket(w, now) == ageFilter))
+    }.sortedBy { it.at }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -177,55 +193,137 @@ fun HomeScreen(
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
             item(key = "tiles") {
-              Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CountTile(
-                        icon = Icons.Rounded.PhoneCallback,
-                        count = callsDue.size,
-                        label = "Calls due",
-                        container = Color(0xFFFFE3E6),
-                        content = Color(0xFF7A1020),
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenCalls,
-                    )
-                    CountTile(
-                        icon = Icons.Rounded.Sms,
-                        count = textsToday.size,
-                        label = "Texts today",
-                        container = MaterialTheme.colorScheme.secondaryContainer,
-                        content = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenTexts(0, null) },
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CountTile(
+                            icon = Icons.Rounded.PhoneCallback,
+                            count = "${callsDue.size}",
+                            label = "Calls due",
+                            container = Color(0xFFFFE3E6),
+                            content = Color(0xFF7A1020),
+                            modifier = Modifier.weight(1f),
+                            onClick = onOpenCalls,
+                        )
+                        CountTile(
+                            icon = Icons.Rounded.Sms,
+                            count = "${textsToday.size}",
+                            label = "Texts today",
+                            container = MaterialTheme.colorScheme.secondaryContainer,
+                            content = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenTexts(0, null) },
+                        )
+                        CountTile(
+                            icon = Icons.Rounded.PendingActions,
+                            count = "$toReview",
+                            label = "To review",
+                            container = Color(0xFFFFF1C9),
+                            content = Color(0xFF6A4A00),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                when {
+                                    dossierLeft > 0 -> onOpenDossierReview()
+                                    textsToReview == 0 && callsToReview > 0 -> {
+                                        CallsUi.tabRequest.value = CallsUi.TO_REVIEW
+                                        onOpenCalls()
+                                    }
+                                    else -> onOpenTexts(1, null)
+                                }
+                            },
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CountTile(
+                            icon = Icons.Rounded.TaskAlt,
+                            count = "$myTasksToday",
+                            label = "My tasks",
+                            container = Color(0xFFEDE4FF),
+                            content = Color(0xFF3F1F8C),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenMyTasks(MyTasksUi.ONE_TIME) },
+                        )
+                        CountTile(
+                            icon = Icons.Rounded.Checklist,
+                            count = "$dossierDone/${dossierToday.size}",
+                            label = "Dossier",
+                            container = Color(0xFFD9F3EC),
+                            content = Color(0xFF0B5A4C),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenMyTasks(MyTasksUi.DOSSIER) },
+                        )
+                        CountTile(
+                            icon = Icons.Rounded.EditCalendar,
+                            count = "${toSchedule.size}",
+                            label = "To schedule",
+                            container = Color(0xFFFFE6C2),
+                            content = Color(0xFF6A3B00),
+                            modifier = Modifier.weight(1f),
+                            onClick = onOpenToSchedule,
+                        )
+                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CountTile(
-                        icon = Icons.Rounded.PendingActions,
-                        count = toReview,
-                        label = "To review",
-                        container = Color(0xFFFFF1C9),
-                        content = Color(0xFF6A4A00),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            if (textsToReview == 0 && callsToReview > 0) {
-                                CallsUi.tabRequest.value = CallsUi.TO_REVIEW
-                                onOpenCalls()
-                            } else {
-                                onOpenTexts(1, null)
-                            }
+            }
+
+            item(key = "filters") {
+                HomeFilterRow(
+                    people = Work.people(now, calls, texts, myTasks).sortedBy { it.title.lowercase() },
+                    person = personFilter,
+                    type = typeFilter,
+                    created = createdFilter,
+                    due = dueFilter,
+                    age = ageFilter,
+                    onPerson = { personFilter = it },
+                    onType = { typeFilter = it },
+                    onCreated = { createdFilter = it },
+                    onDue = { dueFilter = it },
+                    onClear = {
+                        personFilter = null
+                        typeFilter = null
+                        createdFilter = DateFilter()
+                        dueFilter = DateFilter()
+                        ageFilter = null
+                    },
+                )
+            }
+
+            if (filtering) {
+                item(key = "filtered-title") {
+                    val who = personFilter?.let { k -> people.firstOrNull { it.key == k }?.title }
+                    Text(
+                        buildString {
+                            append("${filtered.size} ${if (filtered.size == 1) "task" else "tasks"}")
+                            if (who != null) append(" for ").append(who)
+                            ageFilter?.let { append(" · overdue ").append(Work.AGE_LABELS[it]) }
                         },
-                    )
-                    CountTile(
-                        icon = Icons.Rounded.EditCalendar,
-                        count = toSchedule.size,
-                        label = "To schedule",
-                        container = Color(0xFFFFE6C2),
-                        content = Color(0xFF6A3B00),
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenToSchedule,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
-              }
+                if (filtered.isEmpty()) {
+                    item(key = "filtered-empty") {
+                        Text(
+                            "Nothing matches these filters.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp, horizontal = 4.dp)
+                        )
+                    }
+                }
+                items(filtered, key = { "f" + it.key }) { w -> WorkRow(w, now, showPerson = true) { onOpenItem(w) } }
+                return@LazyColumn
+            }
+
+            if (overdue.isNotEmpty()) {
+                item(key = "age") {
+                    OverdueChart(ageCounts) { ageFilter = it }
+                }
+            }
+
+            if (people.isNotEmpty()) {
+                item(key = "people") {
+                    PeopleBlock(people.take(4), now, onSeeAll = onOpenPeople, onOpen = onOpenPerson)
+                }
             }
 
             item(key = "next-title") {
@@ -240,15 +338,7 @@ fun HomeScreen(
             if (nextUp.isEmpty()) {
                 item(key = "next-empty") { AllClear() }
             }
-            items(nextUp, key = { it.key }) { n ->
-                NextRow(
-                    n = n,
-                    now = now,
-                    onClick = {
-                        if (n.isCall) onOpenCalls() else onOpenTexts(0, n.smsId)
-                    }
-                )
-            }
+            items(nextUp, key = { it.key }) { w -> WorkRow(w, now, showPerson = true) { onOpenItem(w) } }
         }
     }
 
@@ -277,6 +367,14 @@ fun HomeScreen(
                     content = MaterialTheme.colorScheme.onSecondaryContainer,
                     onClick = { chooseNew = false; newText = true },
                 )
+                CreateOption(
+                    icon = Icons.Rounded.TaskAlt,
+                    title = "My task",
+                    subtitle = "Your own to-do, or a dossier task you tick every day",
+                    container = Color(0xFFEDE4FF),
+                    content = Color(0xFF3F1F8C),
+                    onClick = { chooseNew = false; newTask = true },
+                )
             }
         }
     }
@@ -300,6 +398,149 @@ fun HomeScreen(
             }
         )
     }
+
+    if (newTask) {
+        MyTaskDialog(
+            existing = null,
+            onDismiss = { newTask = false },
+            onSwitchKind = { newTask = false; onOpenMyTasks(MyTasksUi.DOSSIER) },
+        )
+    }
+}
+
+/** Person, Type, Due and Created chips, plus Clear when any is set. */
+@Composable
+private fun HomeFilterRow(
+    people: List<PersonSummary>,
+    person: String?,
+    type: WorkItem.Kind?,
+    created: DateFilter,
+    due: DateFilter,
+    age: Int?,
+    onPerson: (String?) -> Unit,
+    onType: (WorkItem.Kind?) -> Unit,
+    onCreated: (DateFilter) -> Unit,
+    onDue: (DateFilter) -> Unit,
+    onClear: () -> Unit,
+) {
+    var personMenu by remember { mutableStateOf(false) }
+    var typeMenu by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box {
+            FilterChip(
+                selected = person != null,
+                onClick = { personMenu = true },
+                label = {
+                    Text(person?.let { k -> people.firstOrNull { it.key == k }?.title ?: "Person" } ?: "Person")
+                },
+                leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            )
+            DropdownMenu(expanded = personMenu, onDismissRequest = { personMenu = false }) {
+                DropdownMenuItem(text = { Text("Everyone") }, onClick = { personMenu = false; onPerson(null) })
+                if (people.isEmpty()) {
+                    DropdownMenuItem(text = { Text("No one has pending work") }, onClick = { personMenu = false }, enabled = false)
+                }
+                people.forEach { p ->
+                    DropdownMenuItem(
+                        text = { Text("${p.title} · ${p.pending}") },
+                        onClick = { personMenu = false; onPerson(p.key) }
+                    )
+                }
+            }
+        }
+        Box {
+            FilterChip(
+                selected = type != null,
+                onClick = { typeMenu = true },
+                label = { Text(type?.label ?: "Type") },
+                trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            )
+            DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                DropdownMenuItem(text = { Text("All types") }, onClick = { typeMenu = false; onType(null) })
+                WorkItem.Kind.values().forEach { k ->
+                    DropdownMenuItem(text = { Text(k.label) }, onClick = { typeMenu = false; onType(k) })
+                }
+            }
+        }
+        DateFilterChip("Due", due, ListFilters.DUE_PRESETS, onDue)
+        DateFilterChip("Created", created, ListFilters.CREATED_PRESETS, onCreated)
+        if (person != null || type != null || created.active || due.active || age != null) {
+            ClearChip(onClick = onClear)
+        }
+    }
+}
+
+/** "Overdue by age": four bars (1 day, 2-3, 4-7, 7+ days). Tapping a bar lists those tasks. */
+@Composable
+private fun OverdueChart(counts: List<Int>, onBar: (Int) -> Unit) {
+    val colors = listOf(Color(0xFFF0B850), Color(0xFFEE8A3C), Color(0xFFD93A4A), Color(0xFF8E1B27))
+    val max = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Overdue by age", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "Tap a bar to see those tasks",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth().height(110.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
+                counts.forEachIndexed { i, c ->
+                    Column(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(enabled = c > 0) { onBar(i) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        Text("$c", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                        Box(
+                            Modifier
+                                .fillMaxWidth(0.7f)
+                                .height((6 + 60 * c / max).dp)
+                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                .background(colors[i])
+                        )
+                        Text(
+                            Work.AGE_LABELS[i],
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "People with pending work": the top few, with Delayed N× or On time. */
+@Composable
+private fun PeopleBlock(people: List<PersonSummary>, now: Long, onSeeAll: () -> Unit, onOpen: (String) -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "People with pending work",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onSeeAll) { Text("See all") }
+            }
+            people.forEach { p -> PersonRow(p, now, withWaiting = false) { onOpen(p.key) } }
+        }
+    }
 }
 
 private fun greeting(t: LocalTime): String = when {
@@ -311,7 +552,7 @@ private fun greeting(t: LocalTime): String = when {
 @Composable
 private fun CountTile(
     icon: ImageVector,
-    count: Int,
+    count: String,
     label: String,
     container: Color,
     content: Color,
@@ -324,62 +565,14 @@ private fun CountTile(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = container, contentColor = content)
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+        Column(Modifier.padding(12.dp)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(
-                "$count",
-                style = MaterialTheme.typography.headlineMedium,
+                count,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold
             )
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun NextRow(n: NextItem, now: Long, onClick: () -> Unit) {
-    val overdue = n.isCall && n.at <= now
-    Card(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            KindIcon(
-                icon = if (n.isCall) Icons.Rounded.Call else Icons.Rounded.Sms,
-                container = if (n.isCall) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.secondaryContainer,
-                content = if (n.isCall) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSecondaryContainer,
-                size = 36,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    n.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    n.detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (overdue) Fmt.relative(n.at, now).replace("Overdue by ", "Overdue\n")
-                else Fmt.timeOnly(n.at),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-                color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

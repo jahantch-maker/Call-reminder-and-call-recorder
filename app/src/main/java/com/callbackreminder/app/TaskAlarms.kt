@@ -267,6 +267,7 @@ object TaskAlarms {
         MyTaskStore.items.value.filter { !it.done }.forEach { scheduleTask(ctx, it) }
         DossierStore.tasks.value.forEach { scheduleDossier(ctx, it) }
         scheduleNudge(ctx)
+        MorningSummary.schedule(ctx)
     }
 }
 
@@ -301,6 +302,8 @@ class TaskReceiver : BroadcastReceiver() {
                 TaskAlarms.cancelDossierNotification(context, id)
             }
             TaskAlarms.ACTION_DOSSIER_NUDGE -> TaskAlarms.fireNudge(context)
+            MorningSummary.ACTION_FIRE -> MorningSummary.fire(context)
+            MorningSummary.ACTION_LATER -> MorningSummary.later(context)
         }
     }
 }
