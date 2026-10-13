@@ -80,19 +80,30 @@ fun PostCallScreen(queue: SnapshotStateList<CallInfo>, onFinished: () -> Unit) {
         if (queue.isNotEmpty()) queue.removeAt(0)
         handled = handled + 1
     }
-    val task = current.followUpId.takeIf { it > 0 }?.let { ReminderStore.get(it) }?.takeIf { !it.done }
-    key(handled, task?.id) {
-        if (task != null) {
-            FollowUpSheet(
+    // A call task may still be waiting or sit in To review (Call now); a text task must not be done.
+    val task = current.followUpId.takeIf { it > 0 }?.let { ReminderStore.get(it) }?.takeIf { !it.done || it.review }
+    val textTask = current.textTaskId.takeIf { it > 0 }?.let { SmsStore.get(it) }?.takeIf { !it.done }
+    // A new task came up in the same call: ask about it next, with the same person.
+    val onNewTask = {
+        if (queue.isNotEmpty()) queue[0] = current.copy(followUpId = -1L, textTaskId = -1L, prefillNote = "")
+    }
+    key(handled, task?.id, textTask?.id) {
+        when {
+            task != null -> FollowUpSheet(
                 call = current,
                 task = task,
                 positionLabel = positionLabel,
                 onNext = onNext,
-                // A new task came up in the same call: ask about it next, with the same person.
-                onNewTask = { if (queue.isNotEmpty()) queue[0] = current.copy(followUpId = -1L) },
+                onNewTask = onNewTask,
             )
-        } else {
-            PostCallSheet(call = current, positionLabel = positionLabel, onNext = onNext)
+            textTask != null -> TextFollowUpSheet(
+                call = current,
+                task = textTask,
+                positionLabel = positionLabel,
+                onNext = onNext,
+                onNewTask = onNewTask,
+            )
+            else -> PostCallSheet(call = current, positionLabel = positionLabel, onNext = onNext)
         }
     }
 }
@@ -158,7 +169,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     val ctx = LocalContext.current
 
     var typedName by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf(call.prefillNote) }
     var step by remember { mutableStateOf(PostCallStep.CHOOSE) }
     var showPicker by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
@@ -178,7 +189,9 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     val subtitle = buildString {
         append(typeLabel)
         if (callerName != null && callerNumber != null) append(" · ").append(callerNumber)
-        if (call.durationSec > 0) append(" · ").append(Fmt.duration(call.durationSec))
+        val round = CallAgain.roundLabel(call)
+        if (round != null) append(" · ").append(round)
+        else if (call.durationSec > 0) append(" · ").append(Fmt.duration(call.durationSec))
     }
 
     fun schedule(whenMs: Long) {
@@ -292,6 +305,10 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                     modifier = Modifier.weight(1f),
                     onClick = { showText = true }
                 )
+            }
+            if (callerNumber != null) {
+                Spacer(Modifier.height(14.dp))
+                CallAgainButton { CallAgain.dialAgain(ctx, call, callerName ?: typedName, note); onNext() }
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -411,7 +428,7 @@ private fun BigChoice(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(110.dp),
+        modifier = modifier.height(90.dp),
         shape = RoundedCornerShape(18.dp),
         color = container,
         contentColor = content,
@@ -421,14 +438,35 @@ private fun BigChoice(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(30.dp))
-            Spacer(Modifier.height(8.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 label,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+/**
+ * The green full-width button at the bottom of the after-call popups: calls the person again and keeps
+ * what was typed, so the popup comes back after that call with "called twice".
+ */
+@Composable
+internal fun CallAgainButton(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(60.dp),
+        shape = RoundedCornerShape(30.dp),
+        color = Color(0xFF0FA68E),
+        contentColor = Color.White,
+    ) {
+        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("Call again", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
 }

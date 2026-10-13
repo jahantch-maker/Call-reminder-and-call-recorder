@@ -430,7 +430,10 @@ class SmsReplyReceiver : BroadcastReceiver() {
         val body = parts.joinToString("") { it.messageBody.orEmpty() }
         val code = DONE_REPLY.matchEntire(body.trim())?.groupValues?.get(1) ?: return
         SmsStore.init(context)
-        SmsStore.markReplied(from, code)?.let { SmsNotifier.showReview(context, it) }
+        val replied = SmsStore.markReplied(from, code)
+        if (replied != null) SmsNotifier.showReview(context, replied)
+        // The text was changed to a call (Call instead): its old number still counts.
+        else TextToCall.replied(context, from, code)
     }
 
     private companion object {

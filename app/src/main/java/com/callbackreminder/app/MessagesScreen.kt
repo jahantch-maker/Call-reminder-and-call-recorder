@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
@@ -97,6 +98,7 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     var deleteFor by remember { mutableStateOf<SmsReminder?>(null) }
     var sendNowFor by remember { mutableStateOf<SmsReminder?>(null) }
     var historyFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var callInsteadFor by remember { mutableStateOf<SmsReminder?>(null) }
     var showPermissionHelp by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val canSend = remember(resumeKey, refresh) { SmsSender.hasPermission(ctx) }
@@ -320,6 +322,12 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                         },
                         onPickTime = { rescheduleFor = r },
                         onDelete = { deleteFor = r },
+                        onCallNow = {
+                            // The after-call popup asks how this text task went.
+                            FollowUp.markText(ctx, r)
+                            dial(ctx, r.number)
+                        },
+                        onCallInstead = { callInsteadFor = r },
                     )
                 }
             }
@@ -343,6 +351,21 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
             onSave = { name, number, message, dueAt, repeat, burst, tracked ->
                 SmsStore.edit(r.id, name, number, message, dueAt, repeat, burst, tracked)
                 editFor = null
+            }
+        )
+    }
+
+    callInsteadFor?.let { r ->
+        AddReminderDialog(
+            title = "Call instead",
+            initialName = r.name,
+            initialNumber = r.number,
+            initialNote = r.message,
+            onDismiss = { callInsteadFor = null },
+            onSave = { name, number, note, dueAt, repeat ->
+                TextToCall.move(ctx, r, name, number, note, dueAt, repeat)
+                callInsteadFor = null
+                Toast.makeText(ctx, "Moved to Calls · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -494,6 +517,8 @@ private fun SmsCard(
     onNotDone: () -> Unit,
     onPickTime: () -> Unit,
     onDelete: () -> Unit,
+    onCallNow: () -> Unit,
+    onCallInstead: () -> Unit,
 ) {
     val inReview = !r.done && r.review != null
     var menuOpen by remember { mutableStateOf(false) }
@@ -548,6 +573,12 @@ private fun SmsCard(
                             DropdownMenuItem(
                                 text = { Text("Stop repeating") },
                                 onClick = { menuOpen = false; SmsStore.stopRepeating(r.id) }
+                            )
+                        }
+                        if (!r.done && r.number.isNotBlank()) {
+                            DropdownMenuItem(
+                                text = { Text("Call instead") },
+                                onClick = { menuOpen = false; onCallInstead() }
                             )
                         }
                         DropdownMenuItem(
@@ -617,7 +648,8 @@ private fun SmsCard(
                 val bad = last.status == SmsLogEntry.Status.FAILED || last.status == SmsLogEntry.Status.RETRYING
                 InfoRow(
                     icon = if (bad) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
-                    text = "Last: ${last.status.label} · ${Fmt.dueLabel(last.at)}",
+                    text = if (last.status == SmsLogEntry.Status.CALLED) "Called · ${last.detail} · ${Fmt.dueLabel(last.at)}"
+                    else "Last: ${last.status.label} · ${Fmt.dueLabel(last.at)}",
                     error = bad
                 )
             }
@@ -662,7 +694,18 @@ private fun SmsCard(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
-                        Text("Not done")
+                        Text("Not done", maxLines = 1)
+                    }
+                    if (r.number.isNotBlank()) {
+                        FilledTonalButton(
+                            onClick = onCallNow,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Call now", maxLines = 1)
+                        }
                     }
                     Button(
                         onClick = { SmsStore.markDone(r.id) },

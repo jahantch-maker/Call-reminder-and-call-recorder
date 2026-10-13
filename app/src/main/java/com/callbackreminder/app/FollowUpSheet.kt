@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.PhoneDisabled
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,7 +60,7 @@ fun FollowUpSheet(
     // When they did not pick up, the only sensible step is a new time to call again.
     var newTime by remember { mutableStateOf(!answered) }
     var newTaskOn by remember { mutableStateOf(false) }
-    var reason by remember { mutableStateOf("") }
+    var reason by remember { mutableStateOf(call.prefillNote) }
     var showPicker by remember { mutableStateOf(false) }
     val options = remember { QuickTimes.options(ctx) }
 
@@ -66,7 +68,9 @@ fun FollowUpSheet(
     val subtitle = buildString {
         append("Follow-up call")
         if (call.number.isNotBlank() && call.name.isNotBlank()) append(" · ").append(call.number)
-        if (answered) append(" · ").append(Fmt.duration(call.durationSec))
+        val round = CallAgain.roundLabel(call)
+        if (round != null) append(" · ").append(round)
+        else if (answered) append(" · ").append(Fmt.duration(call.durationSec))
     }
 
     // Each outcome below first notes the call itself in the task's History.
@@ -274,6 +278,15 @@ fun FollowUpSheet(
                 TextButton(onClick = onNext) { Text("Skip") }
             }
         }
+
+        if (call.number.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            CallAgainButton {
+                logCall()
+                CallAgain.dialAgain(ctx, call, title, reason)
+                onNext()
+            }
+        }
     }
 
     if (showPicker) {
@@ -315,5 +328,261 @@ private fun OutcomeButton(
                 maxLines = 2
             )
         }
+    }
+}
+
+/** Which outcome the text follow-up popup is showing. */
+private enum class TextOutcome { NONE, CALL_LATER }
+
+/**
+ * The after-call popup for a call you made with Call now on a text in To review. It settles the text
+ * task: Done, Not done (text again, in the text's own Edit window), or Not done (call later, which
+ * moves it to Calls). If they didn't pick up, the text stays in To review with "Called · no answer".
+ */
+@Composable
+fun TextFollowUpSheet(
+    call: CallInfo,
+    task: SmsReminder,
+    positionLabel: String?,
+    onNext: () -> Unit,
+    onNewTask: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val answered = call.durationSec > 0
+    var outcome by remember { mutableStateOf(TextOutcome.NONE) }
+    var newTaskOn by remember { mutableStateOf(false) }
+    var reason by remember { mutableStateOf(call.prefillNote) }
+    var showPicker by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    val options = remember { QuickTimes.options(ctx) }
+
+    val title = call.name.ifBlank { task.title }
+    val length = if (answered) Fmt.duration(call.durationSec) else "no answer"
+    val subtitle = buildString {
+        append("Call about a text")
+        if (call.number.isNotBlank() && call.name.isNotBlank()) append(" · ").append(call.number)
+        append(" · ").append(CallAgain.roundLabel(call) ?: length)
+    }
+
+    // The call goes in the text's History once, whatever is chosen (or if the popup is just closed).
+    var logged by remember { mutableStateOf(false) }
+    fun logCall(extra: String = "") {
+        if (logged) return
+        logged = true
+        val detail = if (extra.isBlank()) length else "$length · $extra"
+        SmsStore.addLog(task.id, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.CALLED, detail))
+    }
+
+    fun finish(message: String) {
+        Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
+        if (newTaskOn) onNewTask() else onNext()
+    }
+
+    fun close() {
+        logCall()
+        onNext()
+    }
+
+    fun callLater(whenMs: Long) {
+        logCall(reason.trim().takeIf { it.isNotEmpty() }?.let { "not done: $it" }.orEmpty())
+        val extra = listOf(CallEvent(System.currentTimeMillis(), "Not done, call later", note = reason.trim()))
+        TextToCall.move(ctx, task, task.name, task.number, task.message, whenMs, extra = extra)
+        finish("Moved to Calls · ${Fmt.dueLabel(whenMs)}")
+    }
+
+    PopupSheetFrame(onDismiss = { close() }) {
+        if (positionLabel != null) {
+            Text(
+                text = positionLabel,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Avatar(text = title, size = 48.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = { close() }) {
+                Icon(Icons.Rounded.Close, contentDescription = "Close")
+            }
+        }
+
+        if (!answered) {
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.PhoneDisabled,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Didn't pick up. The text stays in To review, marked \"Called · no answer\".",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+
+        // The text task this call was about.
+        Spacer(Modifier.height(12.dp))
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Text(
+                    if (task.code.isNotEmpty()) "TEXT TASK · ${task.code}" else "TEXT TASK",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(task.message, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 4)
+                if (task.reviewAt > 0L) {
+                    Text(
+                        "In To review since ${Fmt.dueLabel(task.reviewAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (answered) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("New task discussed", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "After this, add a new reminder for $title",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = newTaskOn, onCheckedChange = { newTaskOn = it })
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "How did this task go?",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutcomeButton(icon = Icons.Rounded.Check, label = "Done", selected = false, modifier = Modifier.weight(1f)) {
+                    logCall()
+                    SmsStore.markDone(task.id)
+                    finish("Task done")
+                }
+                OutcomeButton(
+                    icon = Icons.Rounded.Sms,
+                    label = "Not done, text again",
+                    selected = false,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    logCall(reason.trim().takeIf { it.isNotEmpty() }?.let { "not done: $it" }.orEmpty())
+                    SmsStore.noteNotDone(task.id)
+                    showEdit = true
+                }
+                OutcomeButton(
+                    icon = Icons.Rounded.Call,
+                    label = "Not done, call later",
+                    selected = outcome == TextOutcome.CALL_LATER,
+                    modifier = Modifier.weight(1f)
+                ) { outcome = TextOutcome.CALL_LATER }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = reason,
+                onValueChange = { reason = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Why not done? (optional)") },
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            if (outcome == TextOutcome.CALL_LATER) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Call again at",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                QuickTimeGrid(options) { callLater(it) }
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = { showPicker = true }) {
+                    Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Pick date & time")
+                }
+            }
+        }
+
+        if (call.number.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            CallAgainButton {
+                logCall()
+                CallAgain.dialAgain(ctx, call, title, reason)
+                onNext()
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { close() }) { Text(if (answered) "Skip" else "Keep in To review") }
+        }
+    }
+
+    if (showPicker) {
+        DateTimePickerFlow(
+            initialMs = QuickTime.OnDay(1, 10).toOption().whenMs, // Tomorrow 10 am
+            onPicked = { showPicker = false; callLater(it) },
+            onDismiss = { showPicker = false }
+        )
+    }
+
+    if (showEdit) {
+        SmsReminderDialog(
+            initial = SmsStore.get(task.id) ?: task,
+            onDismiss = {
+                // Not done is noted; it stays in To review until you set new days.
+                showEdit = false
+                finish("Still in To review")
+            },
+            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
+                SmsStore.edit(task.id, name, number, message, dueAt, repeat, burst, tracked)
+                showEdit = false
+                finish("Text scheduled again · ${Fmt.dueLabel(dueAt)}")
+            }
+        )
     }
 }

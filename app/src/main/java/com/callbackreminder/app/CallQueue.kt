@@ -13,6 +13,9 @@ object CallBatch {
     private const val DURATIONS = "call_durations"
     private const val WHATSAPP = "call_whatsapp"
     private const val FOLLOW_UPS = "call_follow_ups"
+    private const val TEXT_TASKS = "call_text_tasks"
+    private const val NOTES = "call_notes"
+    private const val EARLIER = "call_earlier"
 
     fun putInto(intent: Intent, calls: List<CallInfo>): Intent {
         intent.putExtra(IDS, calls.map { it.id }.toLongArray())
@@ -22,6 +25,9 @@ object CallBatch {
         intent.putExtra(DURATIONS, calls.map { it.durationSec }.toLongArray())
         intent.putExtra(WHATSAPP, calls.map { it.viaWhatsApp }.toBooleanArray())
         intent.putExtra(FOLLOW_UPS, calls.map { it.followUpId }.toLongArray())
+        intent.putExtra(TEXT_TASKS, calls.map { it.textTaskId }.toLongArray())
+        intent.putExtra(NOTES, calls.map { it.prefillNote }.toTypedArray())
+        intent.putExtra(EARLIER, calls.map { it.earlier }.toTypedArray())
         return intent
     }
 
@@ -33,6 +39,9 @@ object CallBatch {
         val durations = intent.getLongArrayExtra(DURATIONS) ?: return emptyList()
         val whatsApp = intent.getBooleanArrayExtra(WHATSAPP)
         val followUps = intent.getLongArrayExtra(FOLLOW_UPS)
+        val textTasks = intent.getLongArrayExtra(TEXT_TASKS)
+        val notes = intent.getStringArrayExtra(NOTES)
+        val earlier = intent.getStringArrayExtra(EARLIER)
         val now = System.currentTimeMillis()
         val count = minOf(ids.size, numbers.size, names.size, types.size, durations.size)
         return (0 until count).map { i ->
@@ -45,6 +54,9 @@ object CallBatch {
                 endedAt = now,
                 viaWhatsApp = whatsApp?.getOrNull(i) ?: false,
                 followUpId = followUps?.getOrNull(i) ?: -1L,
+                textTaskId = textTasks?.getOrNull(i) ?: -1L,
+                prefillNote = notes?.getOrNull(i).orEmpty(),
+                earlier = earlier?.getOrNull(i).orEmpty(),
             )
         }
     }

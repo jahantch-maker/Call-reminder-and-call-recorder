@@ -21,6 +21,9 @@ data class SmsLogEntry(
         /** A line carried over from the call reminder this text replaced; [detail] says what happened. */
         CALL_EVENT("call", "Call reminder"),
         FROM_CALL("fromcall", "Changed from a call reminder to a text"),
+
+        /** You called about this text (Call now in To review); [detail] is the length or "no answer". */
+        CALLED("called", "Called"),
     }
 
     /** Carried over from the call reminder, not something this text did. */
