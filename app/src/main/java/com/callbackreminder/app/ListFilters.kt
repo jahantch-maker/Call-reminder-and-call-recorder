@@ -114,6 +114,12 @@ object ListFilters {
     val recLength = mutableStateOf(LengthFilter.ANY)
     val recSort = mutableStateOf(RecordingSort.NEWEST)
     val recStarred = mutableStateOf(false)
+    val homePerson = mutableStateOf<String?>(null)
+    val homeType = mutableStateOf<WorkItem.Kind?>(null)
+    val homeCreated = mutableStateOf(DateFilter())
+    val homeDue = mutableStateOf(DateFilter())
+    /** A bar of "Overdue by age" was tapped: 0 = 1 day … 3 = 7+ days. */
+    val homeAge = mutableStateOf<Int?>(null)
 
     val CREATED_PRESETS = listOf(
         DatePreset.ANY, DatePreset.TODAY, DatePreset.YESTERDAY, DatePreset.LAST_7, DatePreset.THIS_MONTH, DatePreset.CUSTOM,

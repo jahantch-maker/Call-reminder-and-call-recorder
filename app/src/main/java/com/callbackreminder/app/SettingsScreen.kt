@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -106,6 +107,7 @@ fun SettingsScreen(
     onOpenTextMessages: () -> Unit,
     onOpenReview: () -> Unit,
     onOpenDossier: () -> Unit,
+    onOpenMorningSummary: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -183,6 +185,12 @@ fun SettingsScreen(
             title = "Dossier",
             summary = remember { DossierSettings.summary(ctx) + " · locks at 3:00 AM" },
             onClick = onOpenDossier
+        )
+        NavRow(
+            icon = Icons.Rounded.WbSunny,
+            title = "Morning summary",
+            summary = remember { MorningSummary.summary(ctx) },
+            onClick = onOpenMorningSummary
         )
     }
 }
@@ -896,6 +904,104 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
                 editTime = null
             },
             onDismiss = { editTime = null }
+        )
+    }
+}
+
+// ---------------------------------------------------------------- Morning summary
+
+/** One notification each morning with today's plan; tapping it opens "Your day". */
+@Composable
+fun MorningSummarySettingsScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var on by remember { mutableStateOf(MorningSummary.enabled(ctx)) }
+    var minute by remember { mutableStateOf(MorningSummary.minute(ctx)) }
+    var days by remember { mutableStateOf(MorningSummary.days(ctx)) }
+    var full by remember { mutableStateOf(MorningSummary.fullScreen(ctx)) }
+    var skipEmpty by remember { mutableStateOf(MorningSummary.skipEmpty(ctx)) }
+    var editTime by remember { mutableStateOf(false) }
+
+    SettingsPage(title = "Morning summary", onBack = onBack) {
+        SectionCard(
+            title = "Morning summary",
+            subtitle = "One notification with today's calls, texts, My tasks and dossier, and what is still overdue. " +
+                "Tap it to see your day."
+        ) {
+            SwitchRow(label = "Send me a morning summary", checked = on, onChange = {
+                on = it
+                MorningSummary.setEnabled(ctx, it)
+            })
+        }
+
+        if (on) {
+            SectionCard(title = "Time", subtitle = "Later on the notification brings it back in ${MorningSummary.LATER_MINUTES} minutes.") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        Dossier.timeLabel(minute),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilledTonalButton(onClick = { editTime = true }) { Text("Change") }
+                }
+            }
+
+            SectionCard(title = "Days", subtitle = "Runs on ${ReviewReminder.daysLabel(days)}.") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DayOfWeek.values().forEach { day ->
+                        val selected = days and (1 shl (day.value - 1)) != 0
+                        Surface(
+                            onClick = {
+                                days = days xor (1 shl (day.value - 1))
+                                MorningSummary.setDays(ctx, days)
+                            },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(day.name.take(1), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionCard(title = "How it shows", subtitle = "A notification, or full screen like a call-back reminder.") {
+                SwitchRow(label = "Full screen", checked = full, onChange = {
+                    full = it
+                    MorningSummary.setFullScreen(ctx, it)
+                })
+                HorizontalDivider()
+                SwitchRow(label = "Skip when the day is empty", checked = skipEmpty, onChange = {
+                    skipEmpty = it
+                    MorningSummary.setSkipEmpty(ctx, it)
+                })
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = { MorningSummary.show(ctx, MorningSummary.compute(ctx)) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Show the summary now") }
+            }
+        }
+    }
+
+    if (editTime) {
+        ClockDialog(
+            initial = LocalTime.of(minute / 60, minute % 60),
+            is24h = DateFormat.is24HourFormat(ctx),
+            onPicked = { t ->
+                minute = t.hour * 60 + t.minute
+                MorningSummary.setMinute(ctx, minute)
+                editTime = false
+            },
+            onDismiss = { editTime = false }
         )
     }
 }

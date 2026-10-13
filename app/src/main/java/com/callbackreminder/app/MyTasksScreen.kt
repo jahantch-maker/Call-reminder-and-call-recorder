@@ -560,9 +560,18 @@ private fun TaskWindow(
     }
 }
 
-/** New one-time task, or Edit. [onSwitchKind] (new tasks only) flips to a dossier task. */
+/**
+ * New one-time task, or Edit. [onSwitchKind] (new tasks only) flips to a dossier task. A new task can
+ * start with a person already on it (from their person page).
+ */
 @Composable
-private fun MyTaskDialog(existing: MyTask?, onDismiss: () -> Unit, onSwitchKind: (() -> Unit)?) {
+internal fun MyTaskDialog(
+    existing: MyTask?,
+    onDismiss: () -> Unit,
+    onSwitchKind: (() -> Unit)?,
+    personName: String = "",
+    personNumber: String = "",
+) {
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var due by remember {
@@ -574,8 +583,8 @@ private fun MyTaskDialog(existing: MyTask?, onDismiss: () -> Unit, onSwitchKind:
             }
         )
     }
-    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
-    var number by remember { mutableStateOf(existing?.number.orEmpty()) }
+    var name by remember { mutableStateOf(existing?.name ?: personName) }
+    var number by remember { mutableStateOf(existing?.number ?: personNumber) }
     var addPerson by remember { mutableStateOf(false) }
     var showDateTime by remember { mutableStateOf(false) }
 

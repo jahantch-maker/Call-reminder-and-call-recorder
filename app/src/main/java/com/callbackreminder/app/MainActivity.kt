@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
         const val OPEN_DOSSIER = "dossier"
         /** The separate dossier reminder: To review › Dossier. */
         const val OPEN_DOSSIER_REVIEW = "dossier_review"
+        /** The morning summary: the "Your day" page. */
+        const val OPEN_MY_DAY = "my_day"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -137,6 +139,12 @@ class MainActivity : ComponentActivity() {
             OPEN_DOSSIER_REVIEW -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
+                return
+            }
+            OPEN_MY_DAY -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                MorningSummary.cancelNotification(this)
+                showTab(Tab.HOME, Screen.MY_DAY)
                 return
             }
         }
@@ -205,6 +213,34 @@ private object Screen {
     const val SETTINGS = 13
     const val DOSSIER_SETTINGS = 14
     const val DOSSIER_REVIEW = 15
+    const val PEOPLE = 16
+    const val PERSON = 17
+    const val MY_DAY = 18
+    const val MORNING_SETTINGS = 19
+}
+
+/** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
+private fun tabFor(item: WorkItem): Int = when (item.kind) {
+    WorkItem.Kind.CALL -> {
+        CallsUi.tabRequest.value = when {
+            item.inReview -> CallsUi.TO_REVIEW
+            item.overdue -> CallsUi.OVERDUE
+            else -> CallsUi.TO_CALL
+        }
+        Tab.CALLS
+    }
+    WorkItem.Kind.TEXT -> {
+        SmsUi.showRequest.value = item.id
+        Tab.TEXTS
+    }
+    WorkItem.Kind.MY_TASK -> {
+        MyTasksUi.tabRequest.value = MyTasksUi.ONE_TIME
+        Tab.MY_TASKS
+    }
+    WorkItem.Kind.DOSSIER -> {
+        MyTasksUi.tabRequest.value = MyTasksUi.DOSSIER
+        Tab.MY_TASKS
+    }
 }
 
 /** The bottom bar's tabs. */
@@ -300,6 +336,27 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
                     onOpenReview = { open(Screen.REVIEW_SETTINGS) },
                     onOpenDossier = { open(Screen.DOSSIER_SETTINGS) },
+                    onOpenMorningSummary = { open(Screen.MORNING_SETTINGS) },
+                )
+                Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
+                Screen.PEOPLE -> PeopleScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenPerson = {
+                        PeopleUi.current.value = it
+                        open(Screen.PERSON)
+                    },
+                )
+                Screen.PERSON -> PersonScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenItem = { showTab(tabFor(it)) },
+                )
+                Screen.MY_DAY -> MyDayScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onStart = { showTab(Tab.HOME) },
+                    onOpenItem = { showTab(tabFor(it)) },
                 )
                 Screen.DOSSIER_SETTINGS -> DossierSettingsScreen(onBack = { back() })
                 Screen.DOSSIER_REVIEW -> DossierReviewScreen(
@@ -417,6 +474,17 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                        onOpenMyTasks = { sub ->
+                            MyTasksUi.tabRequest.value = sub
+                            onTab(Tab.MY_TASKS)
+                        },
+                        onOpenDossierReview = { open(Screen.DOSSIER_REVIEW) },
+                        onOpenPeople = { open(Screen.PEOPLE) },
+                        onOpenPerson = {
+                            PeopleUi.current.value = it
+                            open(Screen.PERSON)
+                        },
+                        onOpenItem = { onTab(tabFor(it)) },
                     )
                 }
               }
