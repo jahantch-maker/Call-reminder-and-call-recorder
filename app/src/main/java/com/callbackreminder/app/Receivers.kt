@@ -213,20 +213,30 @@ class CallEndReceiver : BroadcastReceiver() {
             CallRecorder.trimRingingAsync(ctx, session.start, only.durationSec)
         }
 
-        // You tapped Call back on a due reminder: this popup asks how that task went.
+        // You tapped Call back on a due reminder (or Call now in To review): this popup asks how that task went.
         ReminderStore.init(ctx)
+        SmsStore.init(ctx)
         val task = FollowUp.take(ctx, session.start)
+        val queue = CallSession.buildQueue(ctx, entries, session.sawOffhook, session.rings)
+        // "Call again" on the popup: it comes back with the note and task kept.
+        val again = CallAgain.take(ctx, session.start, entries, queue)
 
         // A WhatsApp call never shows up in the call log, so the lookup above comes back empty.
         // WhatsAppCallListener already shows the proper popup for it; a blank "Unknown caller"
         // popup from here would only be a duplicate.
-        if (task == null && entries.isEmpty() &&
+        if (task == null && again == null && entries.isEmpty() &&
             WhatsAppCallListener.wasActiveSince(ctx, session.start - WHATSAPP_OVERLAP_MS)
         ) {
             return
         }
 
-        val queue = CallSession.buildQueue(ctx, entries, session.sawOffhook, session.rings)
-        showPostCallPopup(ctx, if (task != null) FollowUp.attach(task, entries, queue) else queue)
+        showPostCallPopup(
+            ctx,
+            when {
+                again != null -> again
+                task != null -> FollowUp.attach(task, entries, queue)
+                else -> queue
+            }
+        )
     }
 }

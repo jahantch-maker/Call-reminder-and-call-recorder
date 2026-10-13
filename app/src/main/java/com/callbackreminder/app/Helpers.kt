@@ -245,7 +245,17 @@ data class CallInfo(
     val viaWhatsApp: Boolean = false,
     /** The task this call followed up on (Call back on a due reminder), or -1. */
     val followUpId: Long = -1L,
-)
+    /** The text task this call followed up on (Call now on a text in To review), or -1. */
+    val textTaskId: Long = -1L,
+    /** "Call again" from the popup: the note typed before calling again, kept for the popup that follows. */
+    val prefillNote: String = "",
+    /** "Call again": the lengths (seconds) of the earlier calls in this round, comma separated. */
+    val earlier: String = "",
+) {
+    /** Every call in this round, oldest first: the earlier ones, then this one. */
+    val roundDurations: List<Long>
+        get() = earlier.split(",").mapNotNull { it.trim().toLongOrNull() } + durationSec
+}
 
 object CallLookup {
     private val COLUMNS = arrayOf(

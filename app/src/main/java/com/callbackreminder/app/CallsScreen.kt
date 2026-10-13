@@ -664,8 +664,9 @@ private fun ReminderCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        // Calling a task that is already due: the after-call popup asks how it went.
-                        if (isOverdue) FollowUp.mark(ctx, r)
+                        // Calling a task that is already due, or one waiting in To review: the after-call
+                        // popup asks how it went.
+                        if (isOverdue || review) FollowUp.mark(ctx, r)
                         dial(ctx, r.number)
                     },
                     enabled = r.number.isNotBlank(),
@@ -674,7 +675,7 @@ private fun ReminderCard(
                 ) {
                     Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (done) "Call again" else "Call")
+                    Text(if (review) "Call now" else if (done) "Call again" else "Call", maxLines = 1)
                 }
                 if (review) {
                     OutlinedButton(
