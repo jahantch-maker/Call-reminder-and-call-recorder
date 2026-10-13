@@ -170,6 +170,7 @@ class WhatsAppCallListener : NotificationListenerService() {
             firstSeen = prev?.firstSeen ?: now,
         )
         live = updated
+        CallerCard.onWhatsApp(applicationContext, updated.name, updated.connectedAt > 0L)
 
         // The call was just answered: start recording it.
         if (updated.connectedAt > 0L && (prev == null || prev.connectedAt == 0L)) {
@@ -201,6 +202,7 @@ class WhatsAppCallListener : NotificationListenerService() {
         }
         if (stillOn) return
         live = null
+        CallerCard.onWhatsAppEnded(applicationContext)
         markActivity()
         // The WhatsApp call is over (a phone-call recording, if any, keeps going).
         CallRecorder.stopAsync(applicationContext, finalName = call.name, onlyWhatsApp = true)

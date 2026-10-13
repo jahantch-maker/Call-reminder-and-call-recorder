@@ -173,12 +173,17 @@ object ReviewReminder {
     fun fire(ctx: Context) {
         schedule(ctx)
         val counts = counts(ctx)
-        if (counts.total == 0) return
+        if (counts.total == 0 || !Notify.on(ctx, NotifType.REVIEW)) return
         show(ctx, counts)
     }
 
     /** Pops up the review reminder in the Reminder style chosen in Settings. */
     fun show(ctx: Context, counts: Counts) {
+        // Settings › Notifications › Review reminder set to Silent: a quiet notification, no popup.
+        if (Notify.level(ctx, NotifType.REVIEW) == NotifLevel.SILENT) {
+            notify(ctx, counts, quiet = true, fullScreen = false)
+            return
+        }
         if (ReminderStyle.mode(ctx) == ReminderStyle.Mode.BANNER) {
             notify(ctx, counts, quiet = false, fullScreen = false)
             return

@@ -369,6 +369,7 @@ fun RecordingsScreen(
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
+                        trailingIcon = voiceMic(text) { text = it },
                         placeholder = { Text("What was this call about?") },
                         minLines = 3,
                         maxLines = 8,

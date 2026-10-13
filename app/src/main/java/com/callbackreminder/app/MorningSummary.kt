@@ -181,8 +181,8 @@ object MorningSummary {
             .setAutoCancel(true)
             .addAction(0, "Open", open)
             .addAction(0, "Later", later)
-        if (fullScreen(ctx)) b.setFullScreenIntent(open, true)
-        NotificationManagerCompat.from(ctx).notify(NOTIF_ID, b.build())
+        if (fullScreen(ctx) && Notify.loud(ctx, NotifType.MORNING)) b.setFullScreenIntent(open, true)
+        Notify.post(ctx, NotifType.MORNING, NOTIF_ID, b)
     }
 
     fun cancelNotification(ctx: Context) = NotificationManagerCompat.from(ctx).cancel(NOTIF_ID)

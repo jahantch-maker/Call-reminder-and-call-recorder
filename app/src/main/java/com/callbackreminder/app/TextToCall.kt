@@ -103,6 +103,6 @@ object TextToCall {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
             .setAutoCancel(true)
-        NotificationManagerCompat.from(ctx).notify(1_400_000 + r.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.TEXT_REPLIED, 1_400_000 + r.id.toInt(), b)
     }
 }

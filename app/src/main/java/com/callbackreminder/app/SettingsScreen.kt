@@ -56,6 +56,8 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.KeyboardVoice
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -108,6 +110,10 @@ fun SettingsScreen(
     onOpenReview: () -> Unit,
     onOpenDossier: () -> Unit,
     onOpenMorningSummary: () -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenDailyList: () -> Unit,
+    onOpenBackup: () -> Unit,
+    onOpenVoiceTyping: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -191,6 +197,30 @@ fun SettingsScreen(
             title = "Morning summary",
             summary = remember { MorningSummary.summary(ctx) },
             onClick = onOpenMorningSummary
+        )
+        NavRow(
+            icon = Icons.Rounded.Notifications,
+            title = "Notifications",
+            summary = remember { Notify.summary(ctx) },
+            onClick = onOpenNotifications
+        )
+        NavRow(
+            icon = Icons.Rounded.Sms,
+            title = "Daily list",
+            summary = remember { DailyList.summary(ctx) },
+            onClick = onOpenDailyList
+        )
+        NavRow(
+            icon = Icons.Rounded.Backup,
+            title = "Backup",
+            summary = remember(resumeKey) { Backup.summary(ctx) },
+            onClick = onOpenBackup
+        )
+        NavRow(
+            icon = Icons.Rounded.KeyboardVoice,
+            title = "Voice typing",
+            summary = remember { VoiceTyping.summary(ctx) },
+            onClick = onOpenVoiceTyping
         )
     }
 }
@@ -350,8 +380,35 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
     var outgoing by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.OUTGOING)) }
     var missed by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.MISSED)) }
     var whatsapp by remember { mutableStateOf(AppSettings.get(ctx, AppSettings.WHATSAPP)) }
+    var callerCard by remember { mutableStateOf(CallerCard.enabled(ctx)) }
 
     SettingsPage(title = "After-call popup", onBack = onBack) {
+        SectionCard(
+            title = "Caller card",
+            subtitle = "When someone with pending tasks calls, or you call them, their tasks show over the call screen. " +
+                "Once the call is answered it shrinks to a small bubble; tap it to read the tasks while you talk."
+        ) {
+            SwitchRow("Show the caller card", callerCard) {
+                callerCard = it; CallerCard.setEnabled(ctx, it)
+            }
+            if (callerCard) {
+                Text(
+                    "WhatsApp only gives the caller's name, so the card shows when that name matches a saved task.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = {
+                        if (!CallerCard.preview(ctx)) {
+                            Toast.makeText(ctx, "No one has pending tasks yet", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Try the caller card") }
+            }
+        }
+
         SectionCard(title = "Show the popup after", subtitle = "Choose which calls show the popup.") {
             SwitchRow("Outgoing calls", outgoing) {
                 outgoing = it; AppSettings.set(ctx, AppSettings.OUTGOING, it)
@@ -1241,7 +1298,7 @@ private fun SoundChooserDialog(
 
 /** A settings page: back arrow and title, then its cards in a scrolling column. */
 @Composable
-private fun SettingsPage(title: String, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsPage(title: String, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
@@ -1302,7 +1359,7 @@ private fun NavRow(icon: ImageVector, title: String, summary: String, onClick: (
 }
 
 @Composable
-private fun SectionCard(title: String, subtitle: String, content: @Composable () -> Unit) {
+internal fun SectionCard(title: String, subtitle: String, content: @Composable () -> Unit) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1381,7 +1438,7 @@ private fun StyleRow(title: String, description: String, selected: Boolean, onSe
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

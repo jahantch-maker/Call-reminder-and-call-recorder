@@ -112,7 +112,7 @@ object TaskAlarms {
             b.addAction(0, "Call ${t.personTitle}", call)
         }
         b.addAction(0, "Done", done)
-        NotificationManagerCompat.from(ctx).notify(TASK_BASE + t.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.MY_TASK, TASK_BASE + t.id.toInt(), b)
     }
 
     // ---- Dossier tasks ----
@@ -191,7 +191,7 @@ object TaskAlarms {
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, DOSSIER_BASE + t.id.toInt()))
             .setAutoCancel(true)
             .addAction(0, "✓ Done", done)
-        NotificationManagerCompat.from(ctx).notify(DOSSIER_BASE + t.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.DOSSIER, DOSSIER_BASE + t.id.toInt(), b)
     }
 
     /** The extra heads-up before a dossier task. */
@@ -206,7 +206,7 @@ object TaskAlarms {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, BEFORE_BASE + t.id.toInt()))
             .setAutoCancel(true)
-        NotificationManagerCompat.from(ctx).notify(BEFORE_BASE + t.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.DOSSIER_BEFORE, BEFORE_BASE + t.id.toInt(), b)
     }
 
     // ---- Separate dossier reminder (Settings › Dossier) ----
@@ -257,7 +257,7 @@ object TaskAlarms {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER_REVIEW, NUDGE_ID))
             .setAutoCancel(true)
-        NotificationManagerCompat.from(ctx).notify(NUDGE_ID, b.build())
+        Notify.post(ctx, NotifType.DOSSIER_NUDGE, NUDGE_ID, b)
     }
 
     /** After a restart, an app update or on opening the app: set every task alarm again. */
@@ -268,6 +268,8 @@ object TaskAlarms {
         DossierStore.tasks.value.forEach { scheduleDossier(ctx, it) }
         scheduleNudge(ctx)
         MorningSummary.schedule(ctx)
+        DailyList.schedule(ctx)
+        Backup.schedule(ctx)
     }
 }
 
@@ -304,6 +306,27 @@ class TaskReceiver : BroadcastReceiver() {
             TaskAlarms.ACTION_DOSSIER_NUDGE -> TaskAlarms.fireNudge(context)
             MorningSummary.ACTION_FIRE -> MorningSummary.fire(context)
             MorningSummary.ACTION_LATER -> MorningSummary.later(context)
+            DailyList.ACTION_FIRE -> {
+                val pending = goAsync()
+                Thread {
+                    try {
+                        DailyList.fire(context)
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
+            }
+            DailyList.ACTION_SENT -> DailyList.onResult(context, intent, resultCode)
+            Backup.ACTION_FIRE -> {
+                val pending = goAsync()
+                Thread {
+                    try {
+                        Backup.fire(context)
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
+            }
         }
     }
 }
