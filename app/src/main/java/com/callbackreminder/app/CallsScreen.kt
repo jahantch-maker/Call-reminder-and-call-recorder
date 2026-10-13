@@ -97,6 +97,7 @@ fun CallsScreen(resumeKey: Int) {
     var rescheduleFor by remember { mutableStateOf<Reminder?>(null) }
     var deleteFor by remember { mutableStateOf<Reminder?>(null) }
     var textInsteadFor by remember { mutableStateOf<Reminder?>(null) }
+    var editFor by remember { mutableStateOf<Reminder?>(null) }
     var createdFilter by ListFilters.callsCreated
     var dueFilter by ListFilters.callsDue
     val items = all.filter { createdFilter.matches(it.createdAt) && dueFilter.matches(it.dueAt) }
@@ -180,6 +181,7 @@ fun CallsScreen(resumeKey: Int) {
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    TopActions()
                 }
             }
 
@@ -248,7 +250,8 @@ fun CallsScreen(resumeKey: Int) {
                                 onPickTime = { rescheduleFor = r },
                                 onDelete = { deleteFor = r },
                                 onHistory = { historyFor = r },
-                                onTextInstead = { textInsteadFor = r })
+                                onTextInstead = { textInsteadFor = r },
+                                onEdit = { editFor = r })
                         }
                     }
                 }
@@ -303,6 +306,22 @@ fun CallsScreen(resumeKey: Int) {
             onSave = { name, number, note, dueAt, repeat ->
                 ReminderStore.add(name, number, note, dueAt, repeat)
                 showAdd = false
+            }
+        )
+    }
+
+    editFor?.let { r ->
+        AddReminderDialog(
+            title = "Edit reminder",
+            initialName = r.name,
+            initialNumber = r.number,
+            initialNote = r.note,
+            initialDue = r.dueAt,
+            initialRepeat = r.repeat,
+            onDismiss = { editFor = null },
+            onSave = { name, number, note, dueAt, repeat ->
+                ReminderStore.edit(r.id, name, number, note, dueAt, repeat)
+                editFor = null
             }
         )
     }
@@ -501,6 +520,7 @@ private fun ReminderCard(
     onDelete: () -> Unit,
     onHistory: () -> Unit,
     onTextInstead: () -> Unit = {},
+    onEdit: (() -> Unit)? = null,
     review: Boolean = false,
 ) {
     val isOverdue = !done && r.dueAt <= now
@@ -537,6 +557,12 @@ private fun ReminderCard(
                         Icon(Icons.Rounded.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (onEdit != null) {
+                            DropdownMenuItem(
+                                text = { Text("Edit") },
+                                onClick = { menuOpen = false; onEdit() }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(if (done) "Reschedule" else "Change time") },
                             onClick = { menuOpen = false; onPickTime() }

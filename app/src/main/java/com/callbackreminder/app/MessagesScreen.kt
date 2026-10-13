@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
@@ -214,8 +215,9 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                         )
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "Text message settings")
+                        Icon(Icons.Rounded.Tune, contentDescription = "Text message settings")
                     }
+                    TopActions()
                 }
             }
 

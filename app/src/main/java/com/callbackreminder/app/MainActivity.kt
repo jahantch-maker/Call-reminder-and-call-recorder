@@ -26,6 +26,9 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhoneCallback
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -64,6 +67,13 @@ class MainActivity : ComponentActivity() {
 
         /** The text message a notification is about: Messages opens on it. */
         const val EXTRA_SHOW_SMS = "show_sms"
+
+        /** A My tasks notification: the One-time list. */
+        const val OPEN_MY_TASKS = "my_tasks"
+        /** A dossier notification: the Dossier list. */
+        const val OPEN_DOSSIER = "dossier"
+        /** The separate dossier reminder: To review › Dossier. */
+        const val OPEN_DOSSIER_REVIEW = "dossier_review"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -72,6 +82,8 @@ class MainActivity : ComponentActivity() {
     // A notification asked for a bottom-bar tab (bumped each time, with the tab to show).
     private val openTabTick = mutableIntStateOf(0)
     private var openTab = Tab.HOME
+    // A page to open over the tab (e.g. To review › Dossier), read once.
+    private var openScreen: Int? = null
 
     // Bumped every time the app comes back to the front, so permission status refreshes
     // right after the user returns from a system settings page.
@@ -84,7 +96,10 @@ class MainActivity : ComponentActivity() {
         RecordingStore.init(this)
         SmsStore.init(this)
         ToScheduleStore.init(this)
+        MyTaskStore.init(this)
+        DossierStore.init(this)
         ReviewReminder.schedule(this)
+        TaskAlarms.rescheduleAll(this)
         handleOpen(intent)
         setContent {
             CallbackTheme {
@@ -93,6 +108,7 @@ class MainActivity : ComponentActivity() {
                     openMessagesKey = openMessagesTick.intValue,
                     openTabKey = openTabTick.intValue,
                     openTab = { openTab },
+                    openScreen = { openScreen.also { openScreen = null } },
                 )
             }
         }
@@ -103,12 +119,37 @@ class MainActivity : ComponentActivity() {
         handleOpen(intent)
     }
 
+    private fun showTab(tab: Int, screen: Int? = null) {
+        openTab = tab
+        openScreen = screen
+        openTabTick.intValue = openTabTick.intValue + 1
+    }
+
     private fun handleOpen(intent: Intent?) {
+        val asked = intent?.getStringExtra(EXTRA_OPEN)
+        when (asked) {
+            OPEN_MY_TASKS, OPEN_DOSSIER -> {
+                MyTasksUi.tabRequest.value = if (asked == OPEN_DOSSIER) MyTasksUi.DOSSIER else MyTasksUi.ONE_TIME
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.MY_TASKS)
+                return
+            }
+            OPEN_DOSSIER_REVIEW -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
+                return
+            }
+        }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REVIEW) {
             intent.removeExtra(EXTRA_OPEN)
             ReviewReminder.cancelNotification(this)
             val c = ReviewReminder.counts(this)
             val calls = c.overdueCalls + c.callsToReview
+            // Today's dossier opens its own To review page, which links to calls and texts waiting too.
+            if (c.dossierLeft > 0) {
+                showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
+                return
+            }
             openTab = when {
                 calls > 0 && c.textsToReview > 0 -> Tab.HOME
                 // To schedule lives on Home.
@@ -146,8 +187,9 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * The app's screens. HOME is the bottom-bar page (Home, Calls, Texts, Recordings, Settings); setting
- * pages slide in over it from the right like a phone's own settings app.
+ * The app's screens. HOME is the bottom-bar page (Home, My tasks, Calls, Texts). Recordings, Settings
+ * (the icons at the top right) and setting pages slide in over it from the right like a phone's own
+ * settings app.
  */
 private object Screen {
     const val HOME = 0
@@ -159,20 +201,23 @@ private object Screen {
     const val TEXT_SETTINGS = 9
     const val REVIEW_SETTINGS = 10
     const val TO_SCHEDULE = 11
+    const val RECORDINGS = 12
+    const val SETTINGS = 13
+    const val DOSSIER_SETTINGS = 14
+    const val DOSSIER_REVIEW = 15
 }
 
 /** The bottom bar's tabs. */
 private object Tab {
     const val HOME = 0
-    const val CALLS = 1
-    const val TEXTS = 2
-    const val RECORDINGS = 3
-    const val SETTINGS = 4
-    const val COUNT = 5
+    const val MY_TASKS = 1
+    const val CALLS = 2
+    const val TEXTS = 3
+    const val COUNT = 4
 }
 
 @Composable
-private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openTab: () -> Int) {
+private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openTab: () -> Int, openScreen: () -> Int?) {
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
     var tab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
@@ -204,7 +249,10 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
 
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {
-        if (openTabKey > 0) showTab(openTab())
+        if (openTabKey > 0) {
+            showTab(openTab())
+            openScreen()?.let { open(it) }
+        }
     }
 
     AnimatedContent(
@@ -234,7 +282,41 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                 Screen.RECORDING_SETTINGS -> RecordingSettingsScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },
-                    onOpenRecordings = { showTab(Tab.RECORDINGS) }
+                    onOpenRecordings = { open(Screen.RECORDINGS) }
+                )
+                Screen.RECORDINGS -> RecordingsScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenSettings = { open(Screen.RECORDING_SETTINGS) }
+                )
+                Screen.SETTINGS -> SettingsScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenSetup = { open(Screen.SETUP) },
+                    onOpenPopup = { open(Screen.POPUP_SETTINGS) },
+                    onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
+                    onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
+                    onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
+                    onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
+                    onOpenReview = { open(Screen.REVIEW_SETTINGS) },
+                    onOpenDossier = { open(Screen.DOSSIER_SETTINGS) },
+                )
+                Screen.DOSSIER_SETTINGS -> DossierSettingsScreen(onBack = { back() })
+                Screen.DOSSIER_REVIEW -> DossierReviewScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenCalls = {
+                        CallsUi.tabRequest.value = CallsUi.TO_REVIEW
+                        showTab(Tab.CALLS)
+                    },
+                    onOpenOverdueCalls = {
+                        CallsUi.tabRequest.value = CallsUi.OVERDUE
+                        showTab(Tab.CALLS)
+                    },
+                    onOpenTexts = {
+                        SmsUi.tabRequest.value = 1
+                        showTab(Tab.TEXTS)
+                    },
                 )
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
@@ -260,7 +342,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val toSchedule by ToScheduleStore.items.collectAsState()
-    val pager = rememberPagerState(initialPage = tab) { Tab.COUNT }
+    val pager = rememberPagerState(initialPage = tab.coerceIn(0, Tab.COUNT - 1)) { Tab.COUNT }
     val currentTab by rememberUpdatedState(tab)
     // The bar or a notification picked a tab: jump straight there, without sliding past the pages between.
     LaunchedEffect(tab) {
@@ -280,6 +362,21 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     LaunchedEffect(resumeKey) { now = System.currentTimeMillis() }
     val callsBadge = calls.count { !it.done && it.dueAt <= now }
     val textsBadge = texts.count { !it.done && it.review != null }
+    val myTasks by MyTaskStore.items.collectAsState()
+    val dossierTasks by DossierStore.tasks.collectAsState()
+    val dossierRecords by DossierStore.records.collectAsState()
+    val myTasksBadge = myTasks.count { !it.done && it.dueAt <= now } +
+        remember(dossierTasks, dossierRecords, now) { DossierStore.leftNow(now) }
+
+    // Recordings and Settings at the top right of every tab.
+    val topActions: @Composable () -> Unit = {
+        IconButton(onClick = { open(Screen.RECORDINGS) }) {
+            Icon(Icons.Rounded.Mic, contentDescription = "Recordings")
+        }
+        IconButton(onClick = { open(Screen.SETTINGS) }) {
+            Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -288,10 +385,9 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                 // Follows the page under your finger while swiping.
                 val shown = pager.currentPage
                 TabItem(shown, Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size, onTab)
+                TabItem(shown, Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge, onTab)
                 TabItem(shown, Tab.CALLS, Icons.Rounded.PhoneCallback, "Calls", callsBadge, onTab)
                 TabItem(shown, Tab.TEXTS, Icons.Rounded.Sms, "Texts", textsBadge, onTab)
-                TabItem(shown, Tab.RECORDINGS, Icons.Rounded.Mic, "Recordings", 0, onTab)
-                TabItem(shown, Tab.SETTINGS, Icons.Rounded.Settings, "Settings", 0, onTab)
             }
         }
     ) { padding ->
@@ -302,28 +398,14 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             key = { it },
         ) { page ->
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+              CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
+                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey)
                     Tab.CALLS -> CallsScreen(resumeKey = resumeKey)
                     Tab.TEXTS -> MessagesScreen(
                         resumeKey = resumeKey,
                         onBack = null,
                         onOpenSettings = { open(Screen.TEXT_SETTINGS) }
-                    )
-                    Tab.RECORDINGS -> RecordingsScreen(
-                        resumeKey = resumeKey,
-                        onBack = null,
-                        onOpenSettings = { open(Screen.RECORDING_SETTINGS) }
-                    )
-                    Tab.SETTINGS -> SettingsScreen(
-                        resumeKey = resumeKey,
-                        onBack = null,
-                        onOpenSetup = { open(Screen.SETUP) },
-                        onOpenPopup = { open(Screen.POPUP_SETTINGS) },
-                        onOpenQuickTimes = { open(Screen.QUICK_TIMES) },
-                        onOpenRecording = { open(Screen.RECORDING_SETTINGS) },
-                        onOpenReminder = { open(Screen.REMINDER_SETTINGS) },
-                        onOpenTextMessages = { open(Screen.TEXT_SETTINGS) },
-                        onOpenReview = { open(Screen.REVIEW_SETTINGS) }
                     )
                     else -> HomeScreen(
                         resumeKey = resumeKey,
@@ -337,6 +419,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
                     )
                 }
+              }
             }
         }
     }

@@ -1,0 +1,512 @@
+package com.callbackreminder.app
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+/** A task of your own (My tasks › One-time), with an optional person to call or text about it. */
+data class MyTask(
+    val id: Long,
+    val title: String,
+    val note: String,
+    val dueAt: Long,
+    val name: String = "",
+    val number: String = "",
+    val createdAt: Long,
+    val done: Boolean = false,
+    val doneAt: Long = 0L,
+) {
+    val hasPerson: Boolean get() = number.isNotBlank()
+    val personTitle: String get() = name.ifBlank { number }
+}
+
+/**
+ * A repeat task you tick every day it comes up (My tasks › Dossier). It repeats on the chosen
+ * weekdays, or once a month on [monthDay]. The time is required.
+ */
+data class DossierTask(
+    val id: Long,
+    val title: String,
+    val note: String = "",
+    /** Due time, as minutes after midnight. */
+    val minute: Int,
+    /** Weekdays it repeats on: bit 0 = Monday … bit 6 = Sunday. Not used when [monthDay] is set. */
+    val days: Int = Dossier.ALL_DAYS,
+    /** 1..31 for "Monthly on the 14th" (the last day in shorter months), or 0 for weekdays. */
+    val monthDay: Int = 0,
+    /** Minutes before the due time for an extra heads-up notification, or 0 for none. */
+    val remindBefore: Int = 0,
+    /** The first day it counts. Days before it are never Missed. */
+    val startDate: String,
+    val createdAt: Long,
+) {
+    val start: LocalDate get() = runCatching { LocalDate.parse(startDate) }.getOrElse { LocalDate.now() }
+
+    fun isOn(date: LocalDate): Boolean {
+        if (date.isBefore(start)) return false
+        return if (monthDay > 0) {
+            date.dayOfMonth == minOf(monthDay, YearMonth.from(date).lengthOfMonth())
+        } else {
+            days and (1 shl (date.dayOfWeek.value - 1)) != 0
+        }
+    }
+
+    fun dueAt(date: LocalDate): Long =
+        date.atTime(minute / 60, minute % 60).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    val timeLabel: String get() = Dossier.timeLabel(minute)
+
+    /** Like "Daily, Mon-Sat", "Weekly, every Tuesday" or "Monthly on the 14th". */
+    val frequency: String get() = Dossier.frequency(days, monthDay)
+}
+
+/** One task on one day: ticked (with the time), or a reason why not. */
+data class DossierRecord(
+    val taskId: Long,
+    val date: String,
+    val doneAt: Long = 0L,
+    val reason: String = "",
+) {
+    val done: Boolean get() = doneAt > 0L
+}
+
+/** One day in a dossier task's History. */
+data class DossierDay(val date: LocalDate, val status: Status, val doneAt: Long, val reason: String) {
+    enum class Status { DONE, MISSED, OPEN }
+}
+
+/** The dossier's day rules: a day can be ticked until 3:00 AM the next morning, then it locks. */
+object Dossier {
+    const val ALL_DAYS = 0b1111111
+    const val LOCK_HOUR = 3
+    val REMIND_CHOICES = listOf(5, 15, 30, 60)
+
+    private val timeFmt = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    private val dayNames = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private val shortNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+    fun timeLabel(minute: Int): String = LocalTime.of(minute / 60, minute % 60).format(timeFmt)
+
+    /** The day you are ticking now. Between midnight and 3:00 AM that is still yesterday. */
+    fun openDay(now: Long = System.currentTimeMillis()): LocalDate =
+        Instant.ofEpochMilli(now - LOCK_HOUR * 3_600_000L).atZone(ZoneId.systemDefault()).toLocalDate()
+
+    /** When [date] locks into History: 3:00 AM the next morning. */
+    fun lockAt(date: LocalDate): Long =
+        date.plusDays(1).atTime(LOCK_HOUR, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    fun isLocked(date: LocalDate, now: Long = System.currentTimeMillis()) = now >= lockAt(date)
+
+    fun ordinal(n: Int): String {
+        val suffix = if (n % 100 in 11..13) "th" else when (n % 10) {
+            1 -> "st"
+            2 -> "nd"
+            3 -> "rd"
+            else -> "th"
+        }
+        return "$n$suffix"
+    }
+
+    fun frequency(days: Int, monthDay: Int): String {
+        if (monthDay > 0) return "Monthly on the ${ordinal(monthDay)}"
+        val on = (0..6).filter { days and (1 shl it) != 0 }
+        return when {
+            on.size == 7 -> "Daily"
+            on == (0..5).toList() -> "Daily, Mon-Sat"
+            on == (0..4).toList() -> "Daily, Mon-Fri"
+            on.size == 1 -> "Weekly, every ${dayNames[on[0]]}"
+            on.isEmpty() -> "No days picked"
+            else -> on.joinToString(", ") { shortNames[it] }
+        }
+    }
+
+    fun dayOfWeekBit(d: DayOfWeek) = 1 shl (d.value - 1)
+}
+
+/** One-time My tasks, kept on the phone like the other lists. */
+object MyTaskStore {
+    private lateinit var appCtx: Context
+    private val _items = MutableStateFlow<List<MyTask>>(emptyList())
+    val items: StateFlow<List<MyTask>> = _items.asStateFlow()
+
+    @Synchronized
+    fun init(context: Context) {
+        if (::appCtx.isInitialized) return
+        appCtx = context.applicationContext
+        _items.value = load()
+    }
+
+    private fun prefs() = appCtx.getSharedPreferences("my_tasks", Context.MODE_PRIVATE)
+
+    private fun load(): List<MyTask> {
+        val raw = prefs().getString("list", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                MyTask(
+                    id = o.getLong("id"),
+                    title = o.optString("title"),
+                    note = o.optString("note"),
+                    dueAt = o.optLong("dueAt"),
+                    name = o.optString("name"),
+                    number = o.optString("number"),
+                    createdAt = o.optLong("createdAt"),
+                    done = o.optBoolean("done"),
+                    doneAt = o.optLong("doneAt"),
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun save(list: List<MyTask>) {
+        val arr = JSONArray()
+        list.forEach { t ->
+            arr.put(
+                JSONObject()
+                    .put("id", t.id)
+                    .put("title", t.title)
+                    .put("note", t.note)
+                    .put("dueAt", t.dueAt)
+                    .put("name", t.name)
+                    .put("number", t.number)
+                    .put("createdAt", t.createdAt)
+                    .put("done", t.done)
+                    .put("doneAt", t.doneAt)
+            )
+        }
+        prefs().edit().putString("list", arr.toString()).apply()
+        _items.value = list
+    }
+
+    fun get(id: Long): MyTask? = _items.value.firstOrNull { it.id == id }
+
+    @Synchronized
+    fun add(title: String, note: String, dueAt: Long, name: String, number: String): MyTask {
+        val id = prefs().getLong("nextId", 1L)
+        prefs().edit().putLong("nextId", id + 1).apply()
+        val t = MyTask(
+            id = id,
+            title = title.trim(),
+            note = note.trim(),
+            dueAt = dueAt,
+            name = name.trim(),
+            number = number.trim(),
+            createdAt = System.currentTimeMillis(),
+        )
+        save(_items.value + t)
+        if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
+        TaskAlarms.scheduleTask(appCtx, t)
+        return t
+    }
+
+    @Synchronized
+    fun edit(id: Long, title: String, note: String, dueAt: Long, name: String, number: String) {
+        val old = get(id) ?: return
+        val t = old.copy(title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim())
+        save(_items.value.map { if (it.id == id) t else it })
+        if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
+        TaskAlarms.cancelTaskNotification(appCtx, id)
+        if (!t.done) TaskAlarms.scheduleTask(appCtx, t)
+    }
+
+    @Synchronized
+    fun setDone(id: Long, done: Boolean) {
+        val old = get(id) ?: return
+        val t = old.copy(done = done, doneAt = if (done) System.currentTimeMillis() else 0L)
+        save(_items.value.map { if (it.id == id) t else it })
+        TaskAlarms.cancelTaskNotification(appCtx, id)
+        if (done) TaskAlarms.cancelTask(appCtx, id) else TaskAlarms.scheduleTask(appCtx, t)
+    }
+
+    @Synchronized
+    fun delete(id: Long) {
+        save(_items.value.filter { it.id != id })
+        TaskAlarms.cancelTask(appCtx, id)
+        TaskAlarms.cancelTaskNotification(appCtx, id)
+    }
+}
+
+/** Dossier tasks and each day's ticks and reasons. */
+object DossierStore {
+    private lateinit var appCtx: Context
+    private val _tasks = MutableStateFlow<List<DossierTask>>(emptyList())
+    val tasks: StateFlow<List<DossierTask>> = _tasks.asStateFlow()
+
+    /** Keyed by "taskId|yyyy-MM-dd". */
+    private val _records = MutableStateFlow<Map<String, DossierRecord>>(emptyMap())
+    val records: StateFlow<Map<String, DossierRecord>> = _records.asStateFlow()
+
+    /** How long ticks and reasons are kept (for History and the monthly score). */
+    private const val KEEP_DAYS = 400L
+
+    @Synchronized
+    fun init(context: Context) {
+        if (::appCtx.isInitialized) return
+        appCtx = context.applicationContext
+        _tasks.value = loadTasks()
+        _records.value = loadRecords()
+    }
+
+    private fun prefs() = appCtx.getSharedPreferences("dossier", Context.MODE_PRIVATE)
+
+    fun key(taskId: Long, date: LocalDate) = "$taskId|$date"
+
+    private fun loadTasks(): List<DossierTask> {
+        val raw = prefs().getString("tasks", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                DossierTask(
+                    id = o.getLong("id"),
+                    title = o.optString("title"),
+                    note = o.optString("note"),
+                    minute = o.optInt("minute", 9 * 60),
+                    days = o.optInt("days", Dossier.ALL_DAYS),
+                    monthDay = o.optInt("monthDay", 0),
+                    remindBefore = o.optInt("remindBefore", 0),
+                    startDate = o.optString("startDate").ifBlank { LocalDate.now().toString() },
+                    createdAt = o.optLong("createdAt"),
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveTasks(list: List<DossierTask>) {
+        val arr = JSONArray()
+        list.forEach { t ->
+            arr.put(
+                JSONObject()
+                    .put("id", t.id)
+                    .put("title", t.title)
+                    .put("note", t.note)
+                    .put("minute", t.minute)
+                    .put("days", t.days)
+                    .put("monthDay", t.monthDay)
+                    .put("remindBefore", t.remindBefore)
+                    .put("startDate", t.startDate)
+                    .put("createdAt", t.createdAt)
+            )
+        }
+        prefs().edit().putString("tasks", arr.toString()).apply()
+        _tasks.value = list
+    }
+
+    private fun loadRecords(): Map<String, DossierRecord> {
+        val raw = prefs().getString("records", null) ?: return emptyMap()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                DossierRecord(
+                    taskId = o.getLong("t"),
+                    date = o.getString("d"),
+                    doneAt = o.optLong("done"),
+                    reason = o.optString("why"),
+                )
+            }.associateBy { "${it.taskId}|${it.date}" }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun saveRecords(map: Map<String, DossierRecord>) {
+        val oldest = LocalDate.now().minusDays(KEEP_DAYS).toString()
+        val kept = map.filterValues { (it.done || it.reason.isNotBlank()) && it.date >= oldest }
+        val arr = JSONArray()
+        kept.values.forEach { r ->
+            arr.put(JSONObject().put("t", r.taskId).put("d", r.date).put("done", r.doneAt).put("why", r.reason))
+        }
+        prefs().edit().putString("records", arr.toString()).apply()
+        _records.value = kept
+    }
+
+    fun get(id: Long): DossierTask? = _tasks.value.firstOrNull { it.id == id }
+
+    fun record(taskId: Long, date: LocalDate): DossierRecord? = _records.value[key(taskId, date)]
+
+    /**
+     * The first day a new task counts: today if its time has not passed yet, otherwise tomorrow,
+     * so a task added in the evening is not Missed on its first day.
+     */
+    private fun firstDay(minute: Int, now: Long): LocalDate {
+        val today = Dossier.openDay(now)
+        val dueToday = today.atTime(minute / 60, minute % 60).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return if (dueToday > now) today else today.plusDays(1)
+    }
+
+    @Synchronized
+    fun add(title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int): DossierTask {
+        val id = prefs().getLong("nextId", 1L)
+        prefs().edit().putLong("nextId", id + 1).apply()
+        val now = System.currentTimeMillis()
+        val t = DossierTask(
+            id = id,
+            title = title.trim(),
+            note = note.trim(),
+            minute = minute,
+            days = days,
+            monthDay = monthDay,
+            remindBefore = remindBefore,
+            startDate = firstDay(minute, now).toString(),
+            createdAt = now,
+        )
+        saveTasks(_tasks.value + t)
+        TaskAlarms.scheduleDossier(appCtx, t)
+        return t
+    }
+
+    @Synchronized
+    fun edit(id: Long, title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int) {
+        val old = get(id) ?: return
+        val t = old.copy(
+            title = title.trim(),
+            note = note.trim(),
+            minute = minute,
+            days = days,
+            monthDay = monthDay,
+            remindBefore = remindBefore,
+        )
+        saveTasks(_tasks.value.map { if (it.id == id) t else it })
+        TaskAlarms.scheduleDossier(appCtx, t)
+    }
+
+    @Synchronized
+    fun delete(id: Long) {
+        saveTasks(_tasks.value.filter { it.id != id })
+        saveRecords(_records.value.filterValues { it.taskId != id })
+        TaskAlarms.cancelDossier(appCtx, id)
+        TaskAlarms.cancelDossierNotification(appCtx, id)
+    }
+
+    /** Ticks [taskId] for [date]. Ticking removes a "why not" reason. False once the day has locked. */
+    @Synchronized
+    fun tick(taskId: Long, date: LocalDate, now: Long = System.currentTimeMillis()): Boolean {
+        if (Dossier.isLocked(date, now)) return false
+        val r = DossierRecord(taskId, date.toString(), doneAt = now, reason = "")
+        saveRecords(_records.value + (key(taskId, date) to r))
+        TaskAlarms.cancelDossierNotification(appCtx, taskId)
+        return true
+    }
+
+    /** Takes a tick back (tapped by mistake). Only before the day locks. */
+    @Synchronized
+    fun untick(taskId: Long, date: LocalDate): Boolean {
+        if (Dossier.isLocked(date)) return false
+        saveRecords(_records.value - key(taskId, date))
+        return true
+    }
+
+    /** Saves (or clears, when blank) why the task was not done that day. Only before the day locks. */
+    @Synchronized
+    fun setReason(taskId: Long, date: LocalDate, reason: String): Boolean {
+        if (Dossier.isLocked(date)) return false
+        val old = record(taskId, date)
+        val r = DossierRecord(taskId, date.toString(), doneAt = 0L, reason = reason.trim())
+        if (old?.done == true) return false
+        saveRecords(_records.value + (key(taskId, date) to r))
+        return true
+    }
+
+    /** Today's dossier (the day being ticked), in time order. */
+    fun todays(now: Long = System.currentTimeMillis()): List<DossierTask> {
+        val day = Dossier.openDay(now)
+        return _tasks.value.filter { it.isOn(day) }.sortedBy { it.minute }
+    }
+
+    /** Unticked tasks of the open day whose time has passed: what the review reminder counts. */
+    fun leftNow(now: Long = System.currentTimeMillis()): Int {
+        val day = Dossier.openDay(now)
+        return todays(now).count { record(it.id, day)?.done != true && it.dueAt(day) <= now }
+    }
+
+    /** The task's days from the newest, back to [limit] days or its first day. */
+    fun history(t: DossierTask, now: Long = System.currentTimeMillis(), limit: Int = 120): List<DossierDay> {
+        val open = Dossier.openDay(now)
+        val out = mutableListOf<DossierDay>()
+        var d = open
+        var n = 0
+        while (!d.isBefore(t.start) && n < limit) {
+            if (t.isOn(d)) {
+                val r = record(t.id, d)
+                val status = when {
+                    r?.done == true -> DossierDay.Status.DONE
+                    Dossier.isLocked(d, now) -> DossierDay.Status.MISSED
+                    else -> DossierDay.Status.OPEN
+                }
+                out += DossierDay(d, status, r?.doneAt ?: 0L, r?.reason.orEmpty())
+            }
+            d = d.minusDays(1)
+            n++
+        }
+        return out
+    }
+
+    /**
+     * This month's score: (done, counted). Counted days are the locked ones plus today when it is
+     * already ticked, so an open day never pulls the score down.
+     */
+    fun monthScore(t: DossierTask, now: Long = System.currentTimeMillis()): Pair<Int, Int> {
+        val open = Dossier.openDay(now)
+        val first = open.withDayOfMonth(1)
+        var done = 0
+        var total = 0
+        var d = maxOf(first, t.start)
+        while (!d.isAfter(open)) {
+            if (t.isOn(d)) {
+                val ticked = record(t.id, d)?.done == true
+                if (ticked || Dossier.isLocked(d, now)) {
+                    total++
+                    if (ticked) done++
+                }
+            }
+            d = d.plusDays(1)
+        }
+        return done to total
+    }
+}
+
+/** Settings › Dossier. */
+object DossierSettings {
+    private fun p(c: Context) = c.getSharedPreferences("dossier_settings", Context.MODE_PRIVATE)
+
+    /** Off: dossier is part of the To review reminder. On: its own reminder at [times]. */
+    fun separate(c: Context) = p(c).getBoolean("separate", false)
+    fun setSeparate(c: Context, on: Boolean) {
+        p(c).edit().putBoolean("separate", on).apply()
+        TaskAlarms.scheduleNudge(c)
+    }
+
+    /** The separate reminder's times, minutes after midnight (9:00 PM to start with). */
+    fun times(c: Context): List<Int> =
+        p(c).getString("times", null)?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.sorted()
+            ?: listOf(21 * 60)
+
+    fun setTimes(c: Context, list: List<Int>) {
+        p(c).edit().putString("times", list.distinct().sorted().joinToString(",")).apply()
+        TaskAlarms.scheduleNudge(c)
+    }
+
+    fun skipWhenAllDone(c: Context) = p(c).getBoolean("skip_all_done", true)
+    fun setSkipWhenAllDone(c: Context, on: Boolean) = p(c).edit().putBoolean("skip_all_done", on).apply()
+
+    fun summary(c: Context): String =
+        if (separate(c)) "Own reminder at " + times(c).joinToString(", ") { Dossier.timeLabel(it) }
+        else "Reminded at the To review times"
+}

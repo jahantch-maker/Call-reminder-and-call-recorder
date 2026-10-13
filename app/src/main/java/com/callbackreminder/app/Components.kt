@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,4 +34,15 @@ fun Avatar(text: String, size: Dp = 44.dp) {
             fontSize = (size.value * 0.4f).sp
         )
     }
+}
+
+/**
+ * The Recordings and Settings icons at the top right of every bottom-bar tab. The tabs page
+ * provides them; anywhere else (a page opened over the tabs) shows nothing.
+ */
+val LocalTopActions = compositionLocalOf<@Composable () -> Unit> { {} }
+
+@Composable
+fun TopActions() {
+    LocalTopActions.current()
 }

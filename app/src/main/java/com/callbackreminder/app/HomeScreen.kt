@@ -157,17 +157,20 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item(key = "header") {
-                Column(Modifier.padding(top = 8.dp, start = 4.dp)) {
-                    Text(
-                        today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        greeting(Instant.ofEpochMilli(now).atZone(zone).toLocalTime()),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            greeting(Instant.ofEpochMilli(now).atZone(zone).toLocalTime()),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    TopActions()
                 }
             }
 
