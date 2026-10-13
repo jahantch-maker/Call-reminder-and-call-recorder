@@ -95,8 +95,7 @@ object BankingPause {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
             .setAutoCancel(true)
-            .build()
-        NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n)
+        Notify.post(ctx, NotifType.BANKING, NOTIF_ID, n)
     }
 }
 

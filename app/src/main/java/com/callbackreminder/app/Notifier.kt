@@ -33,6 +33,7 @@ object Notifier {
     fun createChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         bannerChannel(ctx)
+        Notify.createChannel(ctx)
         nm.createNotificationChannel(
             NotificationChannel(CH_MISSED, "Unanswered reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "A quiet notification left behind when a full-screen reminder times out"
@@ -171,7 +172,7 @@ object Notifier {
         b.addAction(0, "Snooze 1h", actionIntent(ctx, r.id, ActionReceiver.ACTION_SNOOZE, 60))
         b.addAction(0, "Done", actionIntent(ctx, r.id, ActionReceiver.ACTION_DONE, 0))
 
-        NotificationManagerCompat.from(ctx).notify(r.id.toInt(), b.build())
+        Notify.post(ctx, if (quiet) NotifType.MISSED else NotifType.CALLBACK, r.id.toInt(), b)
     }
 
     /** The notification that stays up while reminders are ringing (also opens the ringing screen). */

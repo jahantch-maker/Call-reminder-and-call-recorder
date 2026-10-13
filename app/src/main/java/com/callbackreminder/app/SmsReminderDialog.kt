@@ -193,6 +193,7 @@ fun SmsReminderDialog(
                 OutlinedTextField(
                     value = message,
                     onValueChange = { message = it },
+                    trailingIcon = voiceMic(message) { message = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Message") },
                     placeholder = { Text("e.g. Please wash the solar panels today") },

@@ -31,7 +31,10 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -299,6 +302,8 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     var newCall by remember { mutableStateOf(false) }
     var newText by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf(false) }
+    var dailyOn by remember(key) { mutableStateOf(DailyList.isOn(ctx, key.orEmpty())) }
+    var preview by remember { mutableStateOf<String?>(null) }
 
     val k = key.orEmpty()
     fun mine(number: String) = k.isNotEmpty() && Work.personKey(number) == k
@@ -408,6 +413,37 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                     MiniTile("${done.size}", "Done", Color(0xFFD9F3EC), Color(0xFF0B5A4C), Modifier.weight(1f))
                 }
             }
+            item(key = "daily") {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Daily list", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (dailyOn) "Texts $name their Calls and Texts tasks at ${Dossier.timeLabel(DailyList.minute(ctx))}" +
+                                        (DailyList.lastSent(ctx, k).takeIf { it > 0L }?.let { " · last sent ${Fmt.dueLabel(it)}" } ?: "")
+                                    else "Off: $name gets no daily list",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = dailyOn, enabled = number.isNotBlank(), onCheckedChange = {
+                                dailyOn = it
+                                DailyList.setOn(ctx, k, it)
+                            })
+                        }
+                        if (dailyOn) {
+                            TextButton(onClick = {
+                                preview = DailyList.build(ctx, k) ?: "Nothing to send: $name has no tasks for that day."
+                            }) { Text("Preview the list") }
+                        }
+                    }
+                }
+            }
             item(key = "tabs") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Pending ${pending.size}") })
@@ -433,6 +469,15 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                 }
             }
         }
+    }
+
+    preview?.let { text ->
+        AlertDialog(
+            onDismissRequest = { preview = null },
+            title = { Text("Daily list for $name") },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = { preview = null }) { Text("Close") } },
+        )
     }
 
     if (newCall) {

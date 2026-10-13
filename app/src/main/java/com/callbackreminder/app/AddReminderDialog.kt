@@ -105,6 +105,7 @@ fun AddReminderDialog(
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
+                    trailingIcon = voiceMic(note) { note = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Note (what to discuss)") },
                     maxLines = 3,

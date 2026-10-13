@@ -240,6 +240,7 @@ fun FollowUpSheet(
             OutlinedTextField(
                 value = reason,
                 onValueChange = { reason = it },
+                trailingIcon = voiceMic(reason) { reason = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("Why not done? (optional)") },
@@ -525,6 +526,7 @@ fun TextFollowUpSheet(
             OutlinedTextField(
                 value = reason,
                 onValueChange = { reason = it },
+                trailingIcon = voiceMic(reason) { reason = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("Why not done? (optional)") },

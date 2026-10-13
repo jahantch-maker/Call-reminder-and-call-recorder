@@ -102,6 +102,9 @@ class CallEndReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
+        // Android sends each state twice, once with the number; the caller card wants the one with it.
+        @Suppress("DEPRECATION")
+        CallerCard.onPhoneState(context, state, intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER))
         val p = prefs(context)
 
         var sessionOpen = false

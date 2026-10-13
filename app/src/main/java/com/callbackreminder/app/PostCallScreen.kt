@@ -274,6 +274,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
+                trailingIcon = voiceMic(note) { note = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("What did you discuss? (note)") },
                 maxLines = 4,
@@ -318,6 +319,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
+                trailingIcon = voiceMic(note) { note = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("Note (optional)") },

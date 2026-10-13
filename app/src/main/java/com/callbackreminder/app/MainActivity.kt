@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
         DossierStore.init(this)
         ReviewReminder.schedule(this)
         TaskAlarms.rescheduleAll(this)
+        Backup.rearmIfRestored(this)
         handleOpen(intent)
         setContent {
             CallbackTheme {
@@ -217,6 +218,10 @@ private object Screen {
     const val PERSON = 17
     const val MY_DAY = 18
     const val MORNING_SETTINGS = 19
+    const val NOTIFICATION_SETTINGS = 20
+    const val DAILY_LIST_SETTINGS = 21
+    const val BACKUP_SETTINGS = 22
+    const val VOICE_SETTINGS = 23
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -337,7 +342,15 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     onOpenReview = { open(Screen.REVIEW_SETTINGS) },
                     onOpenDossier = { open(Screen.DOSSIER_SETTINGS) },
                     onOpenMorningSummary = { open(Screen.MORNING_SETTINGS) },
+                    onOpenNotifications = { open(Screen.NOTIFICATION_SETTINGS) },
+                    onOpenDailyList = { open(Screen.DAILY_LIST_SETTINGS) },
+                    onOpenBackup = { open(Screen.BACKUP_SETTINGS) },
+                    onOpenVoiceTyping = { open(Screen.VOICE_SETTINGS) },
                 )
+                Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
+                Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
+                Screen.BACKUP_SETTINGS -> BackupSettingsScreen(onBack = { back() })
+                Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
                 Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
                 Screen.PEOPLE -> PeopleScreen(
                     resumeKey = resumeKey,

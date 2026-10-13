@@ -613,6 +613,7 @@ internal fun MyTaskDialog(
         OutlinedTextField(
             value = note,
             onValueChange = { note = it },
+            trailingIcon = voiceMic(note) { note = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Note (optional)") },
             maxLines = 3,
@@ -837,6 +838,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
             OutlinedTextField(
                 value = reason,
                 onValueChange = { reason = it },
+                trailingIcon = voiceMic(reason) { reason = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Why not done?") },
                 minLines = 2,
@@ -921,6 +923,7 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
         OutlinedTextField(
             value = note,
             onValueChange = { note = it },
+            trailingIcon = voiceMic(note) { note = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Note (optional)") },
             maxLines = 2,

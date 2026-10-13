@@ -184,7 +184,7 @@ object SmsSender {
 
     /** The SMS manager for the SIM the phone uses for texts, and a short label like "SIM 1 · Jazz". */
     @SuppressLint("MissingPermission")
-    private fun managerForDefaultSim(ctx: Context): Pair<SmsManager, String> {
+    internal fun managerForDefaultSim(ctx: Context): Pair<SmsManager, String> {
         var subId = SmsManager.getDefaultSmsSubscriptionId()
         var label = ""
         try {
@@ -500,7 +500,7 @@ object SmsNotifier {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-        NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.TEXT_SENT, ID_BASE + r.id.toInt(), b)
     }
 
     /** Gave up after the retries: alerts you with sound, with Try again and Open in Messages. */
@@ -520,7 +520,7 @@ object SmsNotifier {
             .setAutoCancel(true)
             .addAction(0, "Try again", action(ctx, r, SmsActionReceiver.ACTION_SEND_NOW, 0))
             .addAction(0, "Open in Messages", composer(ctx, r))
-        NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.TEXT_FAILED, ID_BASE + r.id.toInt(), b)
     }
 
     /** SMS permission is off: tap to send it yourself from your Messages app. */
@@ -538,7 +538,7 @@ object SmsNotifier {
             .setContentIntent(composer(ctx, r, text))
             .setAutoCancel(true)
             .addAction(0, "Open in Messages", composer(ctx, r, text))
-        NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
+        Notify.post(ctx, NotifType.TAP_TO_SEND, ID_BASE + r.id.toInt(), b)
     }
 
     /**
@@ -576,7 +576,7 @@ object SmsNotifier {
             .setAutoCancel(true)
             .addAction(0, "Mark done", action(ctx, r, SmsActionReceiver.ACTION_MARK_DONE, 400_000))
             .addAction(0, "Not done", notDone)
-        NotificationManagerCompat.from(ctx).notify(ID_BASE + r.id.toInt(), b.build())
+        Notify.post(ctx, if (r.review == SmsReminder.Review.NOT_SENT) NotifType.TEXT_FAILED else NotifType.TEXT_REVIEW, ID_BASE + r.id.toInt(), b)
     }
 
     fun cancel(ctx: Context, id: Long) {

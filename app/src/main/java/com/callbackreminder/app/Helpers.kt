@@ -215,6 +215,7 @@ fun hasCallPhonePermission(ctx: Context) =
  */
 fun dial(ctx: Context, number: String) {
     if (number.isBlank()) return
+    CallerCard.dialling(number)
     val uri = Uri.fromParts("tel", number.trim(), null)
 
     if (hasCallPhonePermission(ctx)) {
