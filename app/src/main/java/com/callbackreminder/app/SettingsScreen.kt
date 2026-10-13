@@ -38,6 +38,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.Delete
@@ -102,6 +105,7 @@ fun SettingsScreen(
     onOpenReminder: () -> Unit,
     onOpenTextMessages: () -> Unit,
     onOpenReview: () -> Unit,
+    onOpenDossier: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -173,6 +177,12 @@ fun SettingsScreen(
             title = "Review reminder",
             summary = remember { ReviewReminder.summary(ctx) },
             onClick = onOpenReview
+        )
+        NavRow(
+            icon = Icons.Rounded.Checklist,
+            title = "Dossier",
+            summary = remember { DossierSettings.summary(ctx) + " · locks at 3:00 AM" },
+            onClick = onOpenDossier
         )
     }
 }
@@ -883,6 +893,107 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
                 val minutes = t.hour * 60 + t.minute
                 ReviewReminder.setTime(ctx, i, minutes)
                 times = ReviewReminder.times(ctx)
+                editTime = null
+            },
+            onDismiss = { editTime = null }
+        )
+    }
+}
+
+// ---------------------------------------------------------------- Dossier
+
+/** The dossier reminder (with To review, or at its own times) and the 3:00 AM lock. */
+@Composable
+fun DossierSettingsScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var separate by remember { mutableStateOf(DossierSettings.separate(ctx)) }
+    var times by remember { mutableStateOf(DossierSettings.times(ctx)) }
+    var skipAllDone by remember { mutableStateOf(DossierSettings.skipWhenAllDone(ctx)) }
+    var editTime by remember { mutableStateOf<Int?>(null) } // -1 = a new time
+
+    SettingsPage(title = "Dossier", onBack = onBack) {
+        SectionCard(
+            title = "Separate dossier reminder",
+            subtitle = if (separate) "On: you're reminded about unticked dossier tasks at your own times below."
+            else "Off: unticked dossier tasks are part of your To review reminder (" +
+                ReviewReminder.times(ctx).sorted().joinToString(", ") { ReviewReminder.timeLabel(it) } + ")."
+        ) {
+            SwitchRow(label = "Use my own times", checked = separate, onChange = {
+                separate = it
+                DossierSettings.setSeparate(ctx, it)
+            })
+        }
+
+        if (separate) {
+            SectionCard(title = "Times", subtitle = "Every day. Add as many as you like, for example a late one for evening updates.") {
+                times.forEachIndexed { i, minutes ->
+                    if (i > 0) HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        TextButton(onClick = { editTime = i }, modifier = Modifier.weight(1f)) {
+                            Text(
+                                Dossier.timeLabel(minutes),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (times.size > 1) {
+                            IconButton(onClick = {
+                                times = times.filterIndexed { j, _ -> j != i }
+                                DossierSettings.setTimes(ctx, times)
+                            }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Remove this time")
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = { editTime = -1 }) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add a time")
+                }
+            }
+
+            SectionCard(title = "Skip reminder when all done", subtitle = "No reminder if every task due so far is ticked.") {
+                SwitchRow(label = "Skip when all done", checked = skipAllDone, onChange = {
+                    skipAllDone = it
+                    DossierSettings.setSkipWhenAllDone(ctx, it)
+                })
+            }
+        }
+
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        ) {
+            Row(Modifier.padding(16.dp)) {
+                Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "A day's dossier can be ticked until 3:00 AM the next morning. After that it is saved to " +
+                        "History and can't be changed. Unticked tasks are saved as Missed, with the reason if you gave one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+    }
+
+    editTime?.let { i ->
+        val m = times.getOrNull(i) ?: (21 * 60)
+        ClockDialog(
+            initial = LocalTime.of(m / 60, m % 60),
+            is24h = DateFormat.is24HourFormat(ctx),
+            onPicked = { t ->
+                val minutes = t.hour * 60 + t.minute
+                times = if (i < 0) times + minutes else times.mapIndexed { j, v -> if (j == i) minutes else v }
+                DossierSettings.setTimes(ctx, times)
+                times = DossierSettings.times(ctx)
                 editTime = null
             },
             onDismiss = { editTime = null }

@@ -56,110 +56,47 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** Add a follow-up by hand: pick who to call, add a note, choose the date & time (and repeat). */
+/**
+ * Add a follow-up by hand: pick who to call, add a note, choose the date & time (and repeat).
+ * With the initial values filled in, it is the Edit window for an existing reminder.
+ */
 @Composable
 fun AddReminderDialog(
     onDismiss: () -> Unit,
     onSave: (name: String, number: String, note: String, dueAt: Long, repeat: Repeat?) -> Unit,
+    title: String = "New reminder",
+    initialName: String = "",
+    initialNumber: String = "",
+    initialNote: String = "",
+    initialDue: Long? = null,
+    initialRepeat: Repeat? = null,
 ) {
     val ctx = LocalContext.current
-    var name by remember { mutableStateOf("") }
-    var number by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
+    var number by remember { mutableStateOf(initialNumber) }
+    var note by remember { mutableStateOf(initialNote) }
     var due by remember {
         mutableLongStateOf(
-            QuickTimes.options(ctx).getOrNull(1)?.whenMs ?: (System.currentTimeMillis() + 3_600_000L)
+            initialDue
+                ?: QuickTimes.options(ctx).getOrNull(1)?.whenMs
+                ?: (System.currentTimeMillis() + 3_600_000L)
         )
     }
-    var repeat by remember { mutableStateOf<Repeat?>(null) }
+    var repeat by remember { mutableStateOf(initialRepeat) }
     var showDateTime by remember { mutableStateOf(false) }
-    var showRecent by remember { mutableStateOf(false) }
-    var showUsed by remember { mutableStateOf(false) }
-
-    val contactLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val uri = result.data?.data
-        if (uri != null) {
-            try {
-                ctx.contentResolver.query(
-                    uri,
-                    arrayOf(
-                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                        ContactsContract.CommonDataKinds.Phone.NUMBER
-                    ),
-                    null, null, null
-                )?.use { c ->
-                    if (c.moveToFirst()) {
-                        name = c.getString(0).orEmpty()
-                        number = c.getString(1).orEmpty()
-                    }
-                }
-            } catch (e: Exception) {
-            }
-        }
-    }
-
-    // Recent calls need the call-log permission; ask for it the first time if needed.
-    val callLogPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) showRecent = true
-        else Toast.makeText(ctx, "Allow call log access to pick from recent calls", Toast.LENGTH_LONG).show()
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New reminder") },
+        title = { Text(title) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (number.isBlank()) {
-                    Text(
-                        "Who do you want to call?",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                contactLauncher.launch(
-                                    Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
-                        ) {
-                            Icon(Icons.Rounded.Contacts, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Contacts", maxLines = 1)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                if (CallLookup.hasPermission(ctx)) showRecent = true
-                                else callLogPermission.launch(Manifest.permission.READ_CALL_LOG)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
-                        ) {
-                            Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Recent calls", maxLines = 1)
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = { showUsed = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Used recently", maxLines = 1)
+                    PersonPicker(prompt = "Who do you want to call?") { n, num ->
+                        name = n
+                        number = num
                     }
                 } else {
                     ContactCard(name = name, number = number, onClear = { name = ""; number = "" })
@@ -222,13 +159,101 @@ fun AddReminderDialog(
             onDismiss = { showDateTime = false }
         )
     }
+}
+
+/**
+ * Pick a person without typing: Contacts, Recent calls (asks for call-log access the first time)
+ * or Used recently. [onPicked] gets the name (may be blank) and the number.
+ */
+@Composable
+internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: String) -> Unit) {
+    val ctx = LocalContext.current
+    var showRecent by remember { mutableStateOf(false) }
+    var showUsed by remember { mutableStateOf(false) }
+
+    val contactLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        if (uri != null) {
+            try {
+                ctx.contentResolver.query(
+                    uri,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    ),
+                    null, null, null
+                )?.use { c ->
+                    if (c.moveToFirst()) onPicked(c.getString(0).orEmpty(), c.getString(1).orEmpty())
+                }
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    // Recent calls need the call-log permission; ask for it the first time if needed.
+    val callLogPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) showRecent = true
+        else Toast.makeText(ctx, "Allow call log access to pick from recent calls", Toast.LENGTH_LONG).show()
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (prompt != null) {
+            Text(
+                prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    contactLauncher.launch(
+                        Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Rounded.Contacts, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Contacts", maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = {
+                    if (CallLookup.hasPermission(ctx)) showRecent = true
+                    else callLogPermission.launch(Manifest.permission.READ_CALL_LOG)
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Recent calls", maxLines = 1)
+            }
+        }
+        OutlinedButton(
+            onClick = { showUsed = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Used recently", maxLines = 1)
+        }
+    }
 
     if (showUsed) {
         UsedRecentlyDialog(
             onPick = { person ->
-                number = person.number
-                name = person.name.ifBlank { ContactLookup.nameFor(ctx, person.number) }
                 showUsed = false
+                onPicked(person.name.ifBlank { ContactLookup.nameFor(ctx, person.number) }, person.number)
             },
             onDismiss = { showUsed = false }
         )
@@ -237,9 +262,8 @@ fun AddReminderDialog(
     if (showRecent) {
         RecentCallsDialog(
             onPick = { call ->
-                number = call.number
-                name = call.name.ifBlank { ContactLookup.nameFor(ctx, call.number) }
                 showRecent = false
+                onPicked(call.name.ifBlank { ContactLookup.nameFor(ctx, call.number) }, call.number)
             },
             onDismiss = { showRecent = false }
         )

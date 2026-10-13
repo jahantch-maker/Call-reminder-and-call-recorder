@@ -19,7 +19,8 @@ import java.util.Locale
 
 /**
  * Twice a day (times and days set in Settings › Review reminder) it pops up how many calls are
- * overdue or waiting for review, and how many texts are waiting for review. Nothing waiting: no popup.
+ * overdue or waiting for review, how many texts are waiting for review, and (unless the dossier has
+ * its own reminder) how many of today's dossier tasks are not ticked. Nothing waiting: no popup.
  */
 object ReviewReminder {
     const val ACTION_FIRE = "com.callbackreminder.app.REVIEW"
@@ -32,8 +33,15 @@ object ReviewReminder {
     val SNOOZE_MINUTES = listOf(15, 30, 60, 120)
     private const val ALL_DAYS = 0b1111111
 
-    data class Counts(val overdueCalls: Int, val callsToReview: Int, val textsToReview: Int, val toSchedule: Int = 0) {
-        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule
+    data class Counts(
+        val overdueCalls: Int,
+        val callsToReview: Int,
+        val textsToReview: Int,
+        val toSchedule: Int = 0,
+        /** Today's dossier tasks past their time and not ticked (0 when the dossier has its own reminder). */
+        val dossierLeft: Int = 0,
+    ) {
+        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule + dossierLeft
 
         /** Like "3 calls overdue · 2 texts to review". */
         val summary: String
@@ -42,6 +50,7 @@ object ReviewReminder {
                 callsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "call" else "calls"} to review" },
                 textsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "text" else "texts"} to review" },
                 toSchedule.takeIf { it > 0 }?.let { "$it to schedule" },
+                dossierLeft.takeIf { it > 0 }?.let { "$it dossier not ticked" },
             ).joinToString(" · ").ifBlank { "Nothing waiting" }
     }
 
@@ -93,6 +102,7 @@ object ReviewReminder {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
         ToScheduleStore.init(ctx)
+        DossierStore.init(ctx)
         val now = System.currentTimeMillis()
         val calls = ReminderStore.items.value
         return Counts(
@@ -100,6 +110,7 @@ object ReviewReminder {
             callsToReview = calls.count { it.done && it.review },
             textsToReview = SmsStore.items.value.count { !it.done && it.review != null },
             toSchedule = ToScheduleStore.items.value.size,
+            dossierLeft = if (DossierSettings.separate(ctx)) 0 else DossierStore.leftNow(now),
         )
     }
 

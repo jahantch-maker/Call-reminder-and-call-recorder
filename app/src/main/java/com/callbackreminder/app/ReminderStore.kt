@@ -188,6 +188,43 @@ object ReminderStore {
         save(_items.value.map { if (it.id == id) it.copy(done = true, doneAt = now, review = false) else it })
     }
 
+    /**
+     * Edit from the card's ⋮ menu: person, note, time and repeat. History gets an "Edited" line
+     * naming what changed. A finished task stays finished; a waiting one gets its alarm moved.
+     */
+    @Synchronized
+    fun edit(id: Long, name: String, number: String, note: String, dueAt: Long, repeat: Repeat?) {
+        val cur = get(id) ?: return
+        val changes = mutableListOf<String>()
+        if (name.trim() != cur.name || number.trim() != cur.number) changes += "person"
+        if (note.trim() != cur.note) changes += "note"
+        if (dueAt != cur.dueAt) changes += "time"
+        if (repeat != cur.repeat) changes += "repeat"
+        if (changes.isEmpty()) return
+        val timeChanged = dueAt != cur.dueAt || repeat != cur.repeat
+        var updated = cur.copy(name = name.trim(), number = number.trim(), note = note.trim(), repeat = repeat)
+        if (timeChanged) {
+            val first = repeat?.first(Repeat.at(dueAt))?.toInstant()?.toEpochMilli() ?: dueAt
+            updated = updated.copy(
+                dueAt = first,
+                seriesStart = dueAt,
+                occurrenceAt = first,
+                occurrenceCount = if (repeat != cur.repeat) 0 else cur.occurrenceCount,
+            )
+        }
+        val what = "Edited (" + changes.joinToString(", ") + ")" + if (timeChanged) ", due" else ""
+        val e = CallEvent(System.currentTimeMillis(), what, if (timeChanged) updated.dueAt else 0L,
+            if ("note" in changes) updated.note else "")
+        updated = updated.copy(events = (updated.events + e).takeLast(EVENT_LIMIT))
+        save(_items.value.map { if (it.id == id) updated else it })
+        if (!updated.done) {
+            Notifier.cancel(appCtx, id)
+            RingController.dismiss(id)
+            Scheduler.schedule(appCtx, updated)
+        }
+        RecentPeople.record(appCtx, updated.name, updated.number)
+    }
+
     /** You checked a task on the To review chip: it is finished for good. */
     @Synchronized
     fun reviewed(id: Long) {
