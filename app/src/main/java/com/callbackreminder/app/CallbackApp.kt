@@ -9,6 +9,7 @@ class CallbackApp : Application() {
         ReminderStore.init(this)
         RecordingStore.init(this)
         SmsStore.init(this)
+        OffDays.init(this)
         Notifier.createChannels(this)
         SmsNotifier.createChannel(this)
     }

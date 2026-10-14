@@ -51,8 +51,10 @@ object CallerCard {
         val name: String,
         val pending: Int,
         val overdue: Int,
-        /** Up to 3 lines, overdue first. */
+        /** Up to 3 lines, soonest due first. */
         val lines: List<String>,
+        /** Which of [lines] are overdue (shown in red). */
+        val lateLines: List<Boolean> = emptyList(),
         val more: Int,
         val lastNote: String,
     )
@@ -168,12 +170,13 @@ object CallerCard {
         val texts = SmsStore.items.value.filter { RecentPeople.key(it.number) == key }
         val mine = MyTaskStore.items.value.filter { it.hasPerson && RecentPeople.key(it.number) == key }
         val open = Work.open(now, calls, texts, mine, emptyList(), emptyMap(), includeDossier = false)
-            .sortedWith(compareByDescending<WorkItem> { it.overdue }.thenBy { it.at })
+            .sortedBy { it.at }
         if (open.isEmpty()) return null
         val name = (calls.map { it.createdAt to it.name } + texts.map { it.createdAt to it.name } + mine.map { it.createdAt to it.name })
             .filter { it.second.isNotBlank() }.maxByOrNull { it.first }?.second
             ?: open.first().number
-        val lines = open.take(3).map { w ->
+        val top = open.take(3)
+        val lines = top.map { w ->
             val what = when (w.kind) {
                 WorkItem.Kind.CALL -> "Call" + (calls.firstOrNull { it.id == w.id }?.note?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: " back")
                 WorkItem.Kind.TEXT -> texts.firstOrNull { it.id == w.id }?.let { t ->
@@ -201,6 +204,7 @@ object CallerCard {
             pending = open.size,
             overdue = open.count { it.overdue },
             lines = lines,
+            lateLines = top.map { it.overdue },
             more = (open.size - 3).coerceAtLeast(0),
             lastNote = lastNote,
         )
@@ -295,16 +299,28 @@ object CallerCard {
             if (info.overdue > 0) red else grey,
             bold = true
         ))
-        info.lines.forEach { line ->
-            card.addView(text(ctx, "•  $line", 15f, dark).apply { setPadding(0, dp(ctx, 6), 0, 0) })
+        info.lines.forEachIndexed { i, line ->
+            val late = info.lateLines.getOrNull(i) == true
+            card.addView(text(ctx, "•  $line", 15f, if (late) red else dark).apply { setPadding(0, dp(ctx, 6), 0, 0) })
         }
-        if (info.more > 0) card.addView(text(ctx, "+${info.more} more", 14f, grey).apply { setPadding(0, dp(ctx, 4), 0, 0) })
         if (info.lastNote.isNotBlank()) {
             card.addView(text(ctx, "Last note: “${info.lastNote}”", 14f, Color.parseColor("#8A5300")).apply {
                 setPadding(0, dp(ctx, 8), 0, 0)
                 setTypeface(typeface, Typeface.ITALIC)
             })
         }
+        // Opens the app on this person's page, Pending list (calls, texts and My tasks, soonest due first).
+        card.addView(text(ctx, "Show all his tasks (${info.pending})", 15f, Color.WHITE, bold = true, lines = 1).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(ctx, 20).toFloat()
+                setColor(Color.parseColor("#0FA68E"))
+            }
+            setOnClickListener { openAll(ctx, info.key) }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(ctx, 12)
+        })
         card.setOnClickListener { collapse(ctx) }
         val wrap = LinearLayout(ctx).apply {
             setPadding(dp(ctx, 12), 0, dp(ctx, 12), 0)
@@ -381,17 +397,30 @@ object CallerCard {
         }
     }
 
+    private fun allIntent(ctx: Context, key: String) = Intent(ctx, MainActivity::class.java)
+        .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_PERSON)
+        .putExtra(MainActivity.EXTRA_PERSON, key)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+    /** "Show all his tasks": the person page in the app. The card goes away. */
+    private fun openAll(ctx: Context, key: String) {
+        hide(ctx)
+        try {
+            ctx.startActivity(allIntent(ctx, key))
+        } catch (e: Exception) {
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private fun notify(ctx: Context, info: Info) {
         if (!Notifier.canNotify(ctx)) return
         val body = (info.lines + listOfNotNull(
-            "+${info.more} more".takeIf { info.more > 0 },
             "Last note: “${info.lastNote}”".takeIf { info.lastNote.isNotBlank() },
         )).joinToString("\n")
         val open = PendingIntent.getActivity(
             ctx,
             NOTIF_ID,
-            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            allIntent(ctx, info.key),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = NotificationCompat.Builder(ctx, Notifier.CH_POSTCALL)

@@ -331,14 +331,18 @@ fun RecordingsScreen(
     }
 
     renameFor?.let { r ->
-        var text by remember(r.id) { mutableStateOf(r.title.ifBlank { r.displayName }) }
+        val startText = remember(r.id) { r.title.ifBlank { r.displayName } }
+        var text by remember(r.id) { mutableStateOf(startText) }
+        val cancel = rememberDiscardGuard(changed = { text != startText }, onClose = { renameFor = null })
         AlertDialog(
-            onDismissRequest = { renameFor = null },
+            onDismissRequest = cancel,
+            properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
             title = { Text("Rename recording") },
             text = {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
+                    trailingIcon = voiceMic(text) { text = it },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -349,14 +353,16 @@ fun RecordingsScreen(
                     renameFor = null
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { renameFor = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
         )
     }
 
     noteFor?.let { r ->
         var text by remember(r.id) { mutableStateOf(r.note) }
+        val cancel = rememberDiscardGuard(changed = { text != r.note }, onClose = { noteFor = null })
         AlertDialog(
-            onDismissRequest = { noteFor = null },
+            onDismissRequest = cancel,
+            properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
             title = { Text("Note") },
             text = {
                 Column {
@@ -383,7 +389,7 @@ fun RecordingsScreen(
                     noteFor = null
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { noteFor = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
         )
     }
 
@@ -692,7 +698,7 @@ private fun RecordingFilters(
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             trailingIcon = if (query.isNotEmpty()) {
                 { IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear search") } }
-            } else null,
+            } else voiceMic(query, onQuery),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth()
         )

@@ -107,7 +107,8 @@ object Work {
             out += WorkItem(
                 kind = WorkItem.Kind.MY_TASK,
                 id = m.id,
-                at = m.dueAt,
+                // No time yet: it waits in To review ("Needs a time"), counted from when it was made.
+                at = if (m.timed) m.dueAt else m.createdAt,
                 createdAt = m.createdAt,
                 title = m.title,
                 detail = listOfNotNull("My task", m.personTitle.takeIf { m.hasPerson }?.let { "with $it" }, m.note.takeIf { it.isNotBlank() })
@@ -115,7 +116,8 @@ object Work {
                 personKey = if (m.hasPerson) personKey(m.number) else "",
                 personName = m.name,
                 number = m.number,
-                overdue = m.dueAt <= now,
+                overdue = m.timed && m.dueAt <= now,
+                inReview = !m.timed,
             )
         }
         if (includeDossier) {

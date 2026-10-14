@@ -286,6 +286,17 @@ object SmsStore {
         SmsScheduler.schedule(appCtx, r)
     }
 
+    /** "Not done, move back" on a Done text: it goes back to To review so you can decide again. */
+    @Synchronized
+    fun reopen(id: Long) {
+        val cur = get(id)?.takeIf { it.done } ?: return
+        val now = System.currentTimeMillis()
+        replace(
+            withLog(cur, SmsLogEntry(now, SmsLogEntry.Status.MARKED_NOT_DONE))
+                .copy(done = false, doneAt = 0L, review = SmsReminder.Review.NO_REPLY, reviewAt = now)
+        )
+    }
+
     /** "Not done" after No reply: note it before Edit sets new days. */
     @Synchronized
     fun noteNotDone(id: Long) {

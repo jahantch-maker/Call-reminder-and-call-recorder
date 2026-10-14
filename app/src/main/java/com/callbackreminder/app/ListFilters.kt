@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -137,6 +138,8 @@ fun CreatedDueFilterRow(
     due: DateFilter,
     onCreated: (DateFilter) -> Unit,
     onDue: (DateFilter) -> Unit,
+    starredOnly: Boolean? = null,
+    onStarred: (Boolean) -> Unit = {},
 ) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -144,10 +147,29 @@ fun CreatedDueFilterRow(
     ) {
         DateFilterChip("Created", created, ListFilters.CREATED_PRESETS, onCreated)
         DateFilterChip("Due", due, ListFilters.DUE_PRESETS, onDue)
-        if (created.active || due.active) {
-            ClearChip { onCreated(DateFilter()); onDue(DateFilter()) }
+        if (starredOnly != null) StarredFilterChip(starredOnly, onStarred)
+        if (created.active || due.active || starredOnly == true) {
+            ClearChip { onCreated(DateFilter()); onDue(DateFilter()); onStarred(false) }
         }
     }
+}
+
+/** "★ Starred": shows only tasks starred as important. */
+@Composable
+fun StarredFilterChip(on: Boolean, onChange: (Boolean) -> Unit) {
+    FilterChip(
+        selected = on,
+        onClick = { onChange(!on) },
+        label = { Text("Starred") },
+        leadingIcon = {
+            Icon(
+                androidx.compose.material.icons.Icons.Rounded.Star,
+                contentDescription = null,
+                tint = StarGold,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    )
 }
 
 @Composable

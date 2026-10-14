@@ -47,12 +47,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 
 class MainActivity : ComponentActivity() {
 
@@ -76,6 +78,9 @@ class MainActivity : ComponentActivity() {
         const val OPEN_DOSSIER_REVIEW = "dossier_review"
         /** The morning summary: the "Your day" page. */
         const val OPEN_MY_DAY = "my_day"
+        /** The caller card's "Show all his tasks": the person page, with [EXTRA_PERSON] as the key. */
+        const val OPEN_PERSON = "person"
+        const val EXTRA_PERSON = "person_key"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -146,6 +151,15 @@ class MainActivity : ComponentActivity() {
                 showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
                 return
             }
+            OPEN_PERSON -> {
+                val key = intent?.getStringExtra(EXTRA_PERSON)
+                intent?.removeExtra(EXTRA_OPEN)
+                if (!key.isNullOrEmpty()) {
+                    PeopleUi.current.value = key
+                    showTab(Tab.HOME, Screen.PERSON)
+                }
+                return
+            }
             OPEN_MY_DAY -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 MorningSummary.cancelNotification(this)
@@ -159,7 +173,7 @@ class MainActivity : ComponentActivity() {
             val c = ReviewReminder.counts(this)
             val calls = c.overdueCalls + c.callsToReview
             // Today's dossier opens its own To review page, which links to calls and texts waiting too.
-            if (c.dossierLeft > 0) {
+            if (c.dossierLeft > 0 || c.needsTime > 0) {
                 showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
                 return
             }
@@ -226,6 +240,8 @@ private object Screen {
     const val DAILY_LIST_SETTINGS = 21
     const val BACKUP_SETTINGS = 22
     const val VOICE_SETTINGS = 23
+    const val OFF_DAYS = 24
+    const val SEARCH = 25
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -266,19 +282,27 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
     var tab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
+    // Keeps each open screen's scroll spot while a page on top of it is showing, so Back lands where you were.
+    val screenStates = rememberSaveableStateHolder()
+
+    fun setStack(next: List<Int>) {
+        // A screen that is closed starts fresh (at the top) the next time it opens.
+        (stack - next.toSet()).forEach { screenStates.removeState(it) }
+        stack = next
+    }
 
     fun open(screen: Int) {
         val i = stack.indexOf(screen)
         // Already open further back (e.g. Settings → Recordings → Settings): go back to it instead of stacking a copy.
-        stack = if (i >= 0) stack.take(i + 1) else stack + screen
+        setStack(if (i >= 0) stack.take(i + 1) else stack + screen)
     }
 
     fun back() {
-        if (stack.size > 1) stack = stack.dropLast(1)
+        if (stack.size > 1) setStack(stack.dropLast(1))
     }
 
     fun showTab(t: Int) {
-        stack = listOf(Screen.HOME)
+        setStack(listOf(Screen.HOME))
         tab = t
     }
 
@@ -320,6 +344,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     ) { s ->
         // Each screen gets a solid background so the one underneath doesn't show through mid-slide.
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            screenStates.SaveableStateProvider(s.last()) {
             when (s.last()) {
                 Screen.QUICK_TIMES -> QuickTimesScreen(onBack = { back() })
                 Screen.SETUP -> SetupSettingsScreen(resumeKey = resumeKey, onBack = { back() })
@@ -350,11 +375,43 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     onOpenDailyList = { open(Screen.DAILY_LIST_SETTINGS) },
                     onOpenBackup = { open(Screen.BACKUP_SETTINGS) },
                     onOpenVoiceTyping = { open(Screen.VOICE_SETTINGS) },
+                    onOpenOffDays = { open(Screen.OFF_DAYS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
                 Screen.BACKUP_SETTINGS -> BackupSettingsScreen(onBack = { back() })
                 Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
+                Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
+                Screen.SEARCH -> SearchScreen(
+                    onBack = { back() },
+                    onOpenCalls = { showTab(Tab.CALLS) },
+                    onOpenTexts = { showTab(Tab.TEXTS) },
+                    onOpenMyTasks = { showTab(Tab.MY_TASKS) },
+                    onOpenPerson = {
+                        PeopleUi.current.value = it
+                        open(Screen.PERSON)
+                    },
+                    onOpenRecordings = { open(Screen.RECORDINGS) },
+                    onOpenSetting = { key ->
+                        when (key) {
+                            "off_days" -> Screen.OFF_DAYS
+                            "setup" -> Screen.SETUP
+                            "popup" -> Screen.POPUP_SETTINGS
+                            "quick_times" -> Screen.QUICK_TIMES
+                            "recording" -> Screen.RECORDING_SETTINGS
+                            "reminder" -> Screen.REMINDER_SETTINGS
+                            "texts" -> Screen.TEXT_SETTINGS
+                            "review" -> Screen.REVIEW_SETTINGS
+                            "dossier" -> Screen.DOSSIER_SETTINGS
+                            "morning" -> Screen.MORNING_SETTINGS
+                            "notifications" -> Screen.NOTIFICATION_SETTINGS
+                            "daily_list" -> Screen.DAILY_LIST_SETTINGS
+                            "backup" -> Screen.BACKUP_SETTINGS
+                            "voice" -> Screen.VOICE_SETTINGS
+                            else -> null
+                        }?.let { open(it) }
+                    },
+                )
                 Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
                 Screen.PEOPLE -> PeopleScreen(
                     resumeKey = resumeKey,
@@ -403,6 +460,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     open = { open(it) },
                 )
             }
+            }
         }
     }
 }
@@ -424,7 +482,8 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     }
     // A swipe came to rest on a page: that page is now the tab.
     LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.collect { if (it != currentTab) onTab(it) }
+        // The first value is the page restored when coming back from a page on top; the bar's tab wins over it.
+        snapshotFlow { pager.settledPage }.drop(1).collect { if (it != currentTab) onTab(it) }
     }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -439,7 +498,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     val myTasks by MyTaskStore.items.collectAsState()
     val dossierTasks by DossierStore.tasks.collectAsState()
     val dossierRecords by DossierStore.records.collectAsState()
-    val myTasksBadge = myTasks.count { !it.done && it.dueAt <= now } +
+    val myTasksBadge = myTasks.count { !it.done && it.timed && it.dueAt <= now } +
         remember(dossierTasks, dossierRecords, now) { DossierStore.leftNow(now) }
 
     // Recordings and Settings at the top right of every tab.
@@ -502,6 +561,10 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                             open(Screen.PERSON)
                         },
                         onOpenItem = { onTab(tabFor(it)) },
+                        onOpenSearch = {
+                            SearchUi.initial.value = it
+                            open(Screen.SEARCH)
+                        },
                     )
                 }
               }

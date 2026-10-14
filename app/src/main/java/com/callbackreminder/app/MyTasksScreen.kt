@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +47,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -71,6 +76,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,6 +103,10 @@ object MyTasksUi {
     const val ONE_TIME = 0
     const val DOSSIER = 1
     val tabRequest = MutableStateFlow<Int?>(null)
+
+    /** Search tapped a task: open its list and outline it for a moment. */
+    val showTask = MutableStateFlow<Long?>(null)
+    val showDossier = MutableStateFlow<Long?>(null)
 }
 
 private val Teal = Color(0xFF0FA68E)
@@ -117,16 +127,23 @@ private fun rememberNow(resumeKey: Int): Long {
     return now
 }
 
-/** The My tasks tab: One-time tasks of your own, and the Dossier you tick every day. */
+/** The My tasks tab: your Tasks in lists (like Google Tasks), and the Dossier you tick every day. */
 @Composable
 fun MyTasksScreen(resumeKey: Int) {
     val ctx = LocalContext.current
     val tasks by MyTaskStore.items.collectAsState()
+    val lists by MyTaskStore.lists.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     var sub by rememberSaveable { mutableIntStateOf(MyTasksUi.ONE_TIME) }
-    var chip by rememberSaveable { mutableIntStateOf(0) } // 0 To do, 1 Overdue, 2 Done
+    // Unsorted opens first; -1 is the All tab.
+    var listSel by rememberSaveable { mutableLongStateOf(MyTaskStore.UNSORTED) }
+    var starredOnly by rememberSaveable { mutableStateOf(false) }
+    var dossierStarred by rememberSaveable { mutableStateOf(false) }
+    var completedOpen by rememberSaveable { mutableStateOf(false) }
     val now = rememberNow(resumeKey)
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val tabRequest by MyTasksUi.tabRequest.collectAsState()
     LaunchedEffect(tabRequest) {
@@ -134,34 +151,110 @@ fun MyTasksScreen(resumeKey: Int) {
         MyTasksUi.tabRequest.value = null
         sub = t
     }
+    var highlightId by remember { mutableStateOf<Long?>(null) }
+    val showTask by MyTasksUi.showTask.collectAsState()
+    LaunchedEffect(showTask) {
+        val id = showTask ?: return@LaunchedEffect
+        MyTasksUi.showTask.value = null
+        val t = MyTaskStore.get(id) ?: return@LaunchedEffect
+        sub = MyTasksUi.ONE_TIME
+        listSel = t.listId
+        starredOnly = false
+        if (t.done) completedOpen = true
+        highlightId = id
+        delay(3_000L)
+        if (highlightId == id) highlightId = null
+    }
+    val showDossierReq by MyTasksUi.showDossier.collectAsState()
+    LaunchedEffect(showDossierReq) {
+        val id = showDossierReq ?: return@LaunchedEffect
+        MyTasksUi.showDossier.value = null
+        sub = MyTasksUi.DOSSIER
+        dossierStarred = false
+        highlightId = -id
+        delay(3_000L)
+        if (highlightId == -id) highlightId = null
+    }
+    if (listSel != ALL_LISTS && lists.none { it.id == listSel }) listSel = MyTaskStore.UNSORTED
+    val current = lists.firstOrNull { it.id == listSel }
 
     var newKind by remember { mutableStateOf<Int?>(null) }
     var editTask by remember { mutableStateOf<MyTask?>(null) }
     var editDossier by remember { mutableStateOf<DossierTask?>(null) }
-    var deleteTask by remember { mutableStateOf<MyTask?>(null) }
-    var deleteDossier by remember { mutableStateOf<DossierTask?>(null) }
     var whyFor by remember { mutableStateOf<DossierTask?>(null) }
     var historyFor by remember { mutableStateOf<DossierTask?>(null) }
+    var listMenu by remember { mutableStateOf(false) }
+    var newList by remember { mutableStateOf(false) }
+    var renameList by remember { mutableStateOf(false) }
+    var reorderLists by remember { mutableStateOf(false) }
+    var deleteList by remember { mutableStateOf(false) }
 
     val day = Dossier.openDay(now)
-    val todays = dossier.filter { it.isOn(day) }.sortedBy { it.minute }
-    val notToday = dossier.filter { !it.isOn(day) }.sortedBy { it.minute }
-    val doneToday = todays.count { records[DossierStore.key(it.id, day)]?.done == true }
+    val shownDossier = dossier.filter { !dossierStarred || it.starred }
+    val todays = shownDossier.filter { it.isOn(day) }.sortedBy { it.minute }
+    val notToday = shownDossier.filter { !it.isOn(day) }.sortedBy { it.minute }
+    val allTodays = dossier.filter { it.isOn(day) }
+    val doneToday = allTodays.count { records[DossierStore.key(it.id, day)]?.done == true }
 
-    val pending = tasks.filter { !it.done }.sortedBy { it.dueAt }
-    val overdue = pending.filter { it.dueAt <= now }
-    val finished = tasks.filter { it.done }.sortedByDescending { it.doneAt }
+    val pending = tasks.filter { !it.done }
+    val overdue = pending.filter { it.timed && it.dueAt <= now }
+    val inView = if (listSel == ALL_LISTS) tasks else tasks.filter { it.listId == listSel }
+    val viewPending = inView.filter { !it.done && (!starredOnly || it.starred) }
+    val viewDone = inView.filter { it.done && (!starredOnly || it.starred) }.sortedByDescending { it.doneAt }
+
+    fun tick(t: MyTask) {
+        val before = t
+        MyTaskStore.setDone(t.id, !t.done)
+        scope.offerUndo(snack, if (t.done) "Not done · ${t.title}" else "Done · ${t.title}") { MyTaskStore.restore(before) }
+    }
+    fun deleteTask(t: MyTask) {
+        MyTaskStore.delete(t.id)
+        scope.offerUndo(snack, "Deleted · ${t.title}") { MyTaskStore.restore(t) }
+    }
+    fun dossierTick(t: DossierTask) {
+        val rec = records[DossierStore.key(t.id, day)]
+        val wasDone = rec?.done == true
+        val ok = if (wasDone) DossierStore.untick(t.id, day) else DossierStore.tick(t.id, day)
+        if (!ok) {
+            Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.offerUndo(snack, if (wasDone) "Not done · ${t.title}" else "Done · ${t.title}") {
+            if (wasDone) DossierStore.tick(t.id, day) else {
+                DossierStore.untick(t.id, day)
+                rec?.reason?.takeIf { it.isNotBlank() }?.let { DossierStore.setReason(t.id, day, it) }
+            }
+        }
+    }
+    fun deleteDossier(t: DossierTask) {
+        val recs = records.filterValues { it.taskId == t.id }
+        DossierStore.delete(t.id)
+        scope.offerUndo(snack, "Deleted · ${t.title}") { DossierStore.restore(t, recs) }
+    }
+
+    @Composable
+    fun row(t: MyTask, showList: Boolean, handle: Modifier? = null) {
+        GTaskRow(
+            t = t,
+            now = now,
+            listName = if (showList) MyTaskStore.listName(t.listId) else null,
+            highlighted = t.id == highlightId,
+            handle = handle,
+            onTick = { tick(t) },
+            onStar = { MyTaskStore.setStar(t.id, !t.starred) },
+            onOpen = { editTask = t },
+        )
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snack) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
                 onClick = { newKind = sub },
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("Task") },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-            )
+            ) { Icon(Icons.Rounded.Add, contentDescription = "New task") }
         }
     ) { padding ->
         LazyColumn(
@@ -171,7 +264,7 @@ fun MyTasksScreen(resumeKey: Int) {
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 96.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item(key = "header") {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -180,8 +273,8 @@ fun MyTasksScreen(resumeKey: Int) {
                         Text(
                             when {
                                 overdue.isNotEmpty() -> "${overdue.size} overdue"
-                                pending.isEmpty() && todays.isEmpty() -> "Nothing waiting"
-                                else -> "${pending.size} to do · dossier $doneToday of ${todays.size} done"
+                                pending.isEmpty() && allTodays.isEmpty() -> "Nothing waiting"
+                                else -> "${pending.size} to do · dossier $doneToday of ${allTodays.size} done"
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (overdue.isNotEmpty()) MaterialTheme.colorScheme.error
@@ -195,56 +288,133 @@ fun MyTasksScreen(resumeKey: Int) {
             item(key = "sub") {
                 KindTabs(
                     selected = sub,
-                    oneTimeLabel = "One-time · ${pending.size}",
-                    dossierLabel = "Dossier · $doneToday/${todays.size}",
+                    oneTimeLabel = "Tasks · ${pending.size}",
+                    dossierLabel = "Dossier · $doneToday/${allTodays.size}",
                     onSelect = { sub = it }
                 )
             }
 
             if (sub == MyTasksUi.ONE_TIME) {
-                item(key = "chips") {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(selected = chip == 0, onClick = { chip = 0 }, label = { Text("To do (${pending.size})") })
-                        FilterChip(selected = chip == 1, onClick = { chip = 1 }, label = { Text("Overdue (${overdue.size})") })
-                        FilterChip(selected = chip == 2, onClick = { chip = 2 }, label = { Text("Done (${finished.size})") })
+                item(key = "lists") {
+                    ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
+                }
+                item(key = "list-head") {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                current?.name ?: "All lists",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                if (current == null || current.byDate) "By date" else "My order",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (current != null) {
+                                Box {
+                                    IconButton(onClick = { listMenu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List menu") }
+                                    DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
+                                        MenuLabel("SORT")
+                                        DropdownMenuItem(
+                                            text = { Text("My order (drag)") },
+                                            trailingIcon = if (!current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
+                                            onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, false) }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("By date") },
+                                            trailingIcon = if (current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
+                                            onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, true) }
+                                        )
+                                        MenuLabel("LIST")
+                                        if (current.id != MyTaskStore.UNSORTED) {
+                                            DropdownMenuItem(text = { Text("Rename list") }, onClick = { listMenu = false; renameList = true })
+                                        }
+                                        DropdownMenuItem(text = { Text("Reorder lists") }, onClick = { listMenu = false; reorderLists = true })
+                                        if (current.id != MyTaskStore.UNSORTED) {
+                                            DropdownMenuItem(
+                                                text = { Text("Delete list", color = MaterialTheme.colorScheme.error) },
+                                                onClick = { listMenu = false; deleteList = true }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        StarredFilterChip(starredOnly) { starredOnly = it }
                     }
                 }
-                val shown = when (chip) {
-                    1 -> overdue
-                    2 -> finished
-                    else -> pending
-                }
-                if (shown.isEmpty()) {
+                if (viewPending.isEmpty()) {
                     item(key = "empty-one") {
                         HintText(
-                            when (chip) {
-                                1 -> "Nothing overdue. Well done!"
-                                2 -> "Tasks you tick will show here."
-                                else -> "Your own to-dos, apart from follow-ups. Tap ＋ Task to add one. " +
-                                    "Add a person to get Call and Text buttons on it."
+                            when {
+                                starredOnly -> "No starred tasks here."
+                                viewDone.isNotEmpty() -> "All done here. Well done!"
+                                else -> "Your own to-dos, apart from follow-ups. Tap ＋ to add one. A time is optional: " +
+                                    "tasks without one wait in To review."
                             }
                         )
                     }
                 }
-                items(shown, key = { "t${it.id}" }) { t ->
-                    MyTaskCard(
-                        t = t,
-                        now = now,
-                        onToggle = { MyTaskStore.setDone(t.id, !t.done) },
-                        onEdit = { editTask = t },
-                        onDelete = { deleteTask = t },
-                    )
+                if (current == null) {
+                    allGroups(viewPending, now).forEach { (title, group) ->
+                        item(key = "g-$title") {
+                            Column {
+                                DayHeader(
+                                    title,
+                                    "${group.size}",
+                                    when (title) {
+                                        "Overdue" -> MaterialTheme.colorScheme.error
+                                        "Today" -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                                TaskGroup {
+                                    group.forEachIndexed { i, t ->
+                                        if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp))
+                                        row(t, showList = true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (viewPending.isNotEmpty()) {
+                    item(key = "list-${current.id}") {
+                        TaskGroup {
+                            ReorderableTasks(
+                                tasks = sortedForList(viewPending, current.byDate),
+                                enabled = !current.byDate && !starredOnly,
+                                onDrop = { ids ->
+                                    // Keep the hidden (starred-off) tasks after the moved ones.
+                                    MyTaskStore.reorder(ids)
+                                },
+                            ) { t, handle -> row(t, showList = false, handle = handle) }
+                        }
+                    }
+                }
+                if (viewDone.isNotEmpty()) {
+                    item(key = "completed") { CompletedHeader(viewDone.size, completedOpen) { completedOpen = !completedOpen } }
+                    if (completedOpen) {
+                        item(key = "completed-list") {
+                            TaskGroup {
+                                viewDone.forEachIndexed { i, t ->
+                                    if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp))
+                                    row(t, showList = current == null)
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
-                item(key = "progress") { DossierProgress(day, now, doneToday, todays.size) }
-                if (dossier.isEmpty()) {
+                item(key = "progress") { DossierProgress(day, now, doneToday, allTodays.size) }
+                item(key = "dossier-star") { StarredFilterChip(dossierStarred) { dossierStarred = it } }
+                if (shownDossier.isEmpty()) {
                     item(key = "empty-dossier") {
                         HintText(
-                            "The tasks you do on set days, like checking the cash book every morning. " +
-                                "Tick each one when it's done, or say why not. Tap ＋ Task to add one."
+                            if (dossierStarred) "No starred dossier tasks."
+                            else "The tasks you do on set days, like checking the cash book every morning. " +
+                                "Tick each one when it's done, or say why not. Tap ＋ to add one."
                         )
                     }
                 }
@@ -255,17 +425,19 @@ fun MyTasksScreen(resumeKey: Int) {
                         rec = records[DossierStore.key(t.id, day)],
                         now = now,
                         showScore = true,
-                        onTick = { tickOrUntick(ctx, t, day, records[DossierStore.key(t.id, day)]) },
+                        onTick = { dossierTick(t) },
                         onWhy = { whyFor = t },
                         onOpen = { historyFor = t },
                         onEdit = { editDossier = t },
-                        onDelete = { deleteDossier = t },
+                        onDelete = { deleteDossier(t) },
+                        onStar = { DossierStore.setStar(t.id, !t.starred) },
+                        highlighted = -t.id == highlightId,
                     )
                 }
                 if (notToday.isNotEmpty()) {
                     item(key = "not-today") {
                         Text(
-                            "Not today · ${notToday.size}",
+                            if (OffDays.isOff(day)) "Weekly off day · ${notToday.size} paused" else "Not today · ${notToday.size}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -284,7 +456,9 @@ fun MyTasksScreen(resumeKey: Int) {
                             onWhy = {},
                             onOpen = { historyFor = t },
                             onEdit = { editDossier = t },
-                            onDelete = { deleteDossier = t },
+                            onDelete = { deleteDossier(t) },
+                            onStar = { DossierStore.setStar(t.id, !t.starred) },
+                            highlighted = -t.id == highlightId,
                         )
                     }
                 }
@@ -304,10 +478,23 @@ fun MyTasksScreen(resumeKey: Int) {
                 existing = null,
                 onDismiss = { newKind = null },
                 onSwitchKind = { newKind = MyTasksUi.DOSSIER },
+                listId = if (listSel == ALL_LISTS) MyTaskStore.UNSORTED else listSel,
             )
         }
     }
-    editTask?.let { t -> MyTaskDialog(existing = t, onDismiss = { editTask = null }, onSwitchKind = null) }
+    editTask?.let { t ->
+        MyTaskDialog(
+            existing = t,
+            onDismiss = { editTask = null },
+            onSwitchKind = null,
+            onDelete = { deleteTask(it) },
+            onSaved = { before, after ->
+                if (before != null && before.listId != after.listId) {
+                    scope.offerUndo(snack, "Moved to ${MyTaskStore.listName(after.listId)}") { MyTaskStore.restore(before) }
+                }
+            },
+        )
+    }
     editDossier?.let { t -> DossierTaskDialog(existing = t, onDismiss = { editDossier = null }, onSwitchKind = null) }
 
     whyFor?.let { t ->
@@ -321,34 +508,46 @@ fun MyTasksScreen(resumeKey: Int) {
         )
     }
 
-    deleteTask?.let { t ->
-        AlertDialog(
-            onDismissRequest = { deleteTask = null },
-            title = { Text("Delete task?") },
-            text = { Text("Remove “${t.title}”.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    MyTaskStore.delete(t.id)
-                    deleteTask = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { deleteTask = null }) { Text("Cancel") } }
-        )
+    if (newList) {
+        ListNameDialog(title = "New list", initial = "", onDismiss = { newList = false }) { n ->
+            listSel = MyTaskStore.addList(n).id
+            newList = false
+        }
     }
-    deleteDossier?.let { t ->
-        AlertDialog(
-            onDismissRequest = { deleteDossier = null },
-            title = { Text("Delete dossier task?") },
-            text = { Text("Remove “${t.title}” and its History. To keep the History, edit the task instead.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    DossierStore.delete(t.id)
-                    deleteDossier = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { deleteDossier = null }) { Text("Cancel") } }
-        )
+    if (renameList && current != null) {
+        ListNameDialog(title = "Rename list", initial = current.name, onDismiss = { renameList = false }) { n ->
+            MyTaskStore.renameList(current.id, n)
+            renameList = false
+        }
     }
+    if (reorderLists) ReorderListsDialog(lists) { reorderLists = false }
+    if (deleteList && current != null) {
+        DeleteListDialog(
+            list = current,
+            count = tasks.count { it.listId == current.id },
+            onDismiss = { deleteList = false },
+        ) { deleteTasks ->
+            deleteList = false
+            val name = current.name
+            val before = MyTaskStore.deleteList(current.id, deleteTasks)
+            listSel = MyTaskStore.UNSORTED
+            if (before != null) {
+                scope.offerUndo(snack, "Deleted list · $name") {
+                    MyTaskStore.restoreLists(before.first, before.second)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+    )
 }
 
 private fun tickOrUntick(ctx: android.content.Context, t: DossierTask, day: LocalDate, rec: DossierRecord?) {
@@ -400,7 +599,7 @@ private fun KindTabs(selected: Int, oneTimeLabel: String, dossierLabel: String, 
 
 /** The round tick box. */
 @Composable
-private fun TickCircle(done: Boolean, missed: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun TickCircle(done: Boolean, missed: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -420,109 +619,6 @@ private fun TickCircle(done: Boolean, missed: Boolean = false, enabled: Boolean 
     }
 }
 
-// ---------------------------------------------------------------- One-time
-
-@Composable
-private fun MyTaskCard(t: MyTask, now: Long, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
-    val ctx = LocalContext.current
-    var menuOpen by remember { mutableStateOf(false) }
-    val overdue = !t.done && t.dueAt <= now
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 14.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.padding(top = 2.dp)) { TickCircle(done = t.done, onClick = onToggle) }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        t.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (t.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                    )
-                    if (t.note.isNotBlank()) {
-                        Text(t.note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Rounded.Schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            when {
-                                t.done -> "Done ${Fmt.dueLabel(t.doneAt)}"
-                                overdue -> "${Fmt.dueLabel(t.dueAt)} · overdue"
-                                else -> Fmt.dueLabel(t.dueAt)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = if (overdue) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
-                        DropdownMenuItem(
-                            text = { Text(if (t.done) "Not done yet" else "Mark done") },
-                            onClick = { menuOpen = false; onToggle() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            onClick = { menuOpen = false; onDelete() }
-                        )
-                    }
-                }
-            }
-            if (t.hasPerson) {
-                Spacer(Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(end = 12.dp)
-                ) {
-                    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(text = t.personTitle, size = 34.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(t.personTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (t.name.isNotBlank()) {
-                                Text(t.number, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        FilledTonalIconButton(onClick = { dial(ctx, t.number) }) {
-                            Icon(Icons.Rounded.Call, contentDescription = "Call ${t.personTitle}")
-                        }
-                        FilledTonalIconButton(onClick = { openTextApp(ctx, t.number) }) {
-                            Icon(Icons.Rounded.Sms, contentDescription = "Text ${t.personTitle}")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Opens your Messages app on a new text to [number]. */
-private fun openTextApp(ctx: android.content.Context, number: String) {
-    try {
-        ctx.startActivity(
-            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number.trim())))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-    } catch (e: Exception) {
-        Toast.makeText(ctx, "No messages app found", Toast.LENGTH_SHORT).show()
-    }
-}
-
 /** The window shared by New task and Edit, laid out as a card with ✕ and a Save button. */
 @Composable
 private fun TaskWindow(
@@ -533,7 +629,7 @@ private fun TaskWindow(
     onSave: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -557,111 +653,6 @@ private fun TaskWindow(
                 ) { Text(saveLabel, fontWeight = FontWeight.Bold) }
             }
         }
-    }
-}
-
-/**
- * New one-time task, or Edit. [onSwitchKind] (new tasks only) flips to a dossier task. A new task can
- * start with a person already on it (from their person page).
- */
-@Composable
-internal fun MyTaskDialog(
-    existing: MyTask?,
-    onDismiss: () -> Unit,
-    onSwitchKind: (() -> Unit)?,
-    personName: String = "",
-    personNumber: String = "",
-) {
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
-    var note by remember { mutableStateOf(existing?.note.orEmpty()) }
-    var due by remember {
-        mutableLongStateOf(
-            existing?.dueAt ?: run {
-                val zone = ZoneId.systemDefault()
-                java.time.ZonedDateTime.now(zone).plusHours(1).withMinute(0).withSecond(0).withNano(0)
-                    .toInstant().toEpochMilli()
-            }
-        )
-    }
-    var name by remember { mutableStateOf(existing?.name ?: personName) }
-    var number by remember { mutableStateOf(existing?.number ?: personNumber) }
-    var addPerson by remember { mutableStateOf(false) }
-    var showDateTime by remember { mutableStateOf(false) }
-
-    TaskWindow(
-        title = if (existing == null) "New task" else "Edit task",
-        onDismiss = onDismiss,
-        saveLabel = "Save task",
-        canSave = title.isNotBlank(),
-        onSave = {
-            if (existing == null) MyTaskStore.add(title, note, due, name, number)
-            else MyTaskStore.edit(existing.id, title, note, due, name, number)
-            onDismiss()
-        }
-    ) {
-        if (onSwitchKind != null) {
-            KindTabs(MyTasksUi.ONE_TIME, "One-time", "Dossier (repeat)") { if (it == MyTasksUi.DOSSIER) onSwitchKind() }
-        }
-        OutlinedTextField(
-            value = title,
-            onValueChange = { title = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Task") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp)
-        )
-        OutlinedTextField(
-            value = note,
-            onValueChange = { note = it },
-            trailingIcon = voiceMic(note) { note = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Note (optional)") },
-            maxLines = 3,
-            shape = RoundedCornerShape(14.dp)
-        )
-        OutlinedButton(
-            onClick = { showDateTime = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(Fmt.dueLabel(due), fontWeight = FontWeight.SemiBold)
-                Text("Tap to change the date or time", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        when {
-            number.isNotBlank() -> ContactCard(name = name, number = number, onClear = { name = ""; number = "" })
-            addPerson -> PersonPicker(prompt = "Who is this task with?") { n, num ->
-                name = n
-                number = num
-                addPerson = false
-            }
-            else -> OutlinedButton(
-                onClick = { addPerson = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Rounded.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Add person (optional)")
-            }
-        }
-        Text(
-            "A person adds Call and Text buttons to the task.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-
-    if (showDateTime) {
-        DateTimePickerFlow(
-            initialMs = due,
-            onPicked = { ms -> due = ms; showDateTime = false },
-            onDismiss = { showDateTime = false }
-        )
     }
 }
 
@@ -721,12 +712,15 @@ private fun DossierRow(
     onOpen: () -> Unit,
     onEdit: (() -> Unit)?,
     onDelete: (() -> Unit)?,
+    onStar: (() -> Unit)? = null,
+    highlighted: Boolean = false,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val done = rec?.done == true
     val wasDue = today && !done && t.dueAt(day) <= now
     Card(
         onClick = onOpen,
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (done) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
@@ -785,6 +779,8 @@ private fun DossierRow(
                     color = if (wasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp, end = if (onEdit == null) 10.dp else 0.dp)
                 )
+                if (onStar != null) StarButton(t.starred, onStar)
+                else if (t.starred) Icon(Icons.Rounded.Star, contentDescription = "Starred", tint = StarGold, modifier = Modifier.padding(end = 10.dp).size(18.dp))
                 if (onEdit != null || onDelete != null) {
                     Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
@@ -821,11 +817,17 @@ private fun nextDay(t: DossierTask, after: LocalDate): LocalDate? {
 @Composable
 private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var reason by remember { mutableStateOf(rec?.reason.orEmpty()) }
+    val cancel = rememberDiscardGuard(changed = { reason != rec?.reason.orEmpty() }, onClose = onDismiss)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = {
+            if (it == SheetValue.Hidden && reason != rec?.reason.orEmpty()) { cancel(); false } else true
+        }
+    )
     val due = t.dueAt(day) <= System.currentTimeMillis()
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = cancel, sheetState = sheetState) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column {
                 Text(t.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -891,11 +893,17 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
     var minute by remember { mutableStateOf(existing?.minute) }
     var remind by remember { mutableStateOf((existing?.remindBefore ?: 0) > 0) }
     var remindMin by remember { mutableIntStateOf(existing?.remindBefore?.takeIf { it > 0 } ?: 15) }
+    var starred by remember { mutableStateOf(existing?.starred ?: false) }
     var showClock by remember { mutableStateOf(false) }
+    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred) }
+    val cancel = rememberDiscardGuard(
+        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred) != start },
+        onClose = onDismiss,
+    )
 
     TaskWindow(
         title = if (existing == null) "New task" else "Edit dossier task",
-        onDismiss = onDismiss,
+        onDismiss = cancel,
         saveLabel = "Save dossier task",
         canSave = title.isNotBlank() && minute != null && (monthly || days != 0),
         onSave = {
@@ -903,8 +911,8 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
                 val d = if (monthly) Dossier.ALL_DAYS else days
                 val md = if (monthly) monthDay else 0
                 val rb = if (remind) remindMin else 0
-                if (existing == null) DossierStore.add(title, note, m, d, md, rb)
-                else DossierStore.edit(existing.id, title, note, m, d, md, rb)
+                if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred)
+                else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred)
                 onDismiss()
             }
         }
@@ -917,6 +925,7 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
             onValueChange = { title = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Dossier task") },
+            trailingIcon = voiceMic(title) { title = it },
             singleLine = true,
             shape = RoundedCornerShape(14.dp)
         )
@@ -929,6 +938,8 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
             maxLines = 2,
             shape = RoundedCornerShape(14.dp)
         )
+
+        StarSwitchRow(starred) { starred = it }
 
         Text("Repeats", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -1207,6 +1218,12 @@ fun DossierReviewScreen(
     val texts by SmsStore.items.collectAsState()
     val now = rememberNow(resumeKey)
     var whyFor by remember { mutableStateOf<DossierTask?>(null) }
+    val myTasks by MyTaskStore.items.collectAsState()
+    val needsTime = myTasks.filter { !it.done && !it.timed }.sortedBy { it.createdAt }
+    var timeFor by remember { mutableStateOf<MyTask?>(null) }
+    var pickFor by remember { mutableStateOf<MyTask?>(null) }
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val day = Dossier.openDay(now)
     val todays = dossier.filter { it.isOn(day) }.sortedBy { it.minute }
@@ -1215,7 +1232,7 @@ fun DossierReviewScreen(
     val callsOverdue = calls.count { !it.done && it.dueAt <= now }
     val textsToReview = texts.count { !it.done && it.review != null }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snack) }) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
@@ -1240,6 +1257,41 @@ fun DossierReviewScreen(
                     )
                     FilterChip(selected = false, onClick = onOpenTexts, label = { Text("Texts $textsToReview") })
                     FilterChip(selected = true, onClick = {}, label = { Text("Dossier $left left") })
+                }
+            }
+            if (needsTime.isNotEmpty()) {
+                item(key = "needs-time") {
+                    Column {
+                        DayHeader("⏱ Needs a time", "${needsTime.size}", MaterialTheme.colorScheme.onSurfaceVariant)
+                        TaskGroup {
+                            needsTime.forEachIndexed { i, t ->
+                                if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp))
+                                Row(
+                                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TickCircle(done = false) {
+                                        MyTaskStore.setDone(t.id, true)
+                                        scope.offerUndo(snack, "Done · ${t.title}") { MyTaskStore.restore(t) }
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(t.title, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            MyTaskStore.listName(t.listId),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    FilledTonalButton(onClick = { timeFor = t }) {
+                                        Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Set time")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             item(key = "hint") {
@@ -1282,5 +1334,29 @@ fun DossierReviewScreen(
 
     whyFor?.let { t ->
         WhyNotSheet(t = t, day = day, rec = records[DossierStore.key(t.id, day)], onDismiss = { whyFor = null })
+    }
+    timeFor?.let { t ->
+        SnoozeSheet(
+            heading = "Set time",
+            about = t.title,
+            onPick = { ms ->
+                timeFor = null
+                MyTaskStore.setDue(t.id, ms)
+                scope.offerUndo(snack, "Set for ${Fmt.dueLabel(ms)}") { MyTaskStore.restore(t) }
+            },
+            onPickTime = { timeFor = null; pickFor = t },
+            onDismiss = { timeFor = null }
+        )
+    }
+    pickFor?.let { t ->
+        DateTimePickerFlow(
+            initialMs = QuickTime.OnDay(1, 10).toOption().whenMs,
+            onPicked = { ms ->
+                pickFor = null
+                MyTaskStore.setDue(t.id, ms)
+                scope.offerUndo(snack, "Set for ${Fmt.dueLabel(ms)}") { MyTaskStore.restore(t) }
+            },
+            onDismiss = { pickFor = null }
+        )
     }
 }

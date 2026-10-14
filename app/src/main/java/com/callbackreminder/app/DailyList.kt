@@ -137,7 +137,7 @@ object DailyList {
         val m = minute(ctx)
         val mask = days(ctx)
         val at = (0..7).map { LocalDate.now(zone).plusDays(it.toLong()) }
-            .filter { mask and Dossier.dayOfWeekBit(it.dayOfWeek) != 0 }
+            .filter { mask and Dossier.dayOfWeekBit(it.dayOfWeek) != 0 && !OffDays.isOff(it) }
             .map { it.atTime(m / 60, m % 60).atZone(zone).toInstant().toEpochMilli() }
             .firstOrNull { it > now }
         if (at == null) {

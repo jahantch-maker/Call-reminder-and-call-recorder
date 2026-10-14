@@ -40,8 +40,10 @@ object ReviewReminder {
         val toSchedule: Int = 0,
         /** Today's dossier tasks past their time and not ticked (0 when the dossier has its own reminder). */
         val dossierLeft: Int = 0,
+        /** My tasks with no time yet ("Needs a time"). */
+        val needsTime: Int = 0,
     ) {
-        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule + dossierLeft
+        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule + dossierLeft + needsTime
 
         /** Like "3 calls overdue · 2 texts to review". */
         val summary: String
@@ -51,6 +53,7 @@ object ReviewReminder {
                 textsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "text" else "texts"} to review" },
                 toSchedule.takeIf { it > 0 }?.let { "$it to schedule" },
                 dossierLeft.takeIf { it > 0 }?.let { "$it dossier not ticked" },
+                needsTime.takeIf { it > 0 }?.let { "$it ${if (it == 1) "task needs" else "tasks need"} a time" },
             ).joinToString(" · ").ifBlank { "Nothing waiting" }
     }
 
@@ -103,6 +106,7 @@ object ReviewReminder {
         SmsStore.init(ctx)
         ToScheduleStore.init(ctx)
         DossierStore.init(ctx)
+        MyTaskStore.init(ctx)
         val now = System.currentTimeMillis()
         val calls = ReminderStore.items.value
         return Counts(
@@ -111,6 +115,7 @@ object ReviewReminder {
             textsToReview = SmsStore.items.value.count { !it.done && it.review != null },
             toSchedule = ToScheduleStore.items.value.size,
             dossierLeft = if (DossierSettings.separate(ctx)) 0 else DossierStore.leftNow(now),
+            needsTime = MyTaskStore.items.value.count { !it.done && !it.timed },
         )
     }
 
@@ -134,7 +139,7 @@ object ReviewReminder {
         val today = LocalDate.now(zone)
         for (d in 0..7) {
             val date = today.plusDays(d.toLong())
-            if (!isDayOn(mask, date.dayOfWeek)) continue
+            if (!isDayOn(mask, date.dayOfWeek) || OffDays.isOff(date)) continue
             val at = times(ctx).sorted()
                 .map { date.atTime(it / 60, it % 60).atZone(zone).toInstant().toEpochMilli() }
                 .firstOrNull { it > now }

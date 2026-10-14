@@ -2,6 +2,7 @@ package com.callbackreminder.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -44,5 +45,6 @@ val LocalTopActions = compositionLocalOf<@Composable () -> Unit> { {} }
 
 @Composable
 fun TopActions() {
-    LocalTopActions.current()
+    // One Row, so a header using SpaceBetween keeps the two icons together instead of spreading them.
+    Row(verticalAlignment = Alignment.CenterVertically) { LocalTopActions.current() }
 }

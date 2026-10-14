@@ -435,8 +435,8 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             initialName = person?.name.orEmpty(),
             initialNumber = number,
             onDismiss = { newCall = false },
-            onSave = { n, num, note, dueAt, repeat ->
-                ReminderStore.add(n, num, note, dueAt, repeat)
+            onSave = { n, num, note, dueAt, repeat, starred ->
+                ReminderStore.add(n, num, note, dueAt, repeat, starred = starred)
                 newCall = false
             }
         )

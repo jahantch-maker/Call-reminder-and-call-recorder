@@ -568,8 +568,10 @@ fun SnoozeSheet(
 @Composable
 fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
+    val cancel = rememberDiscardGuard(changed = { text.isNotBlank() }, onClose = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text(r.title) },
         text = {
             Column {
@@ -601,15 +603,20 @@ fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
                 }
             ) { Text("Save task") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
 }
 
-/** A short bar with Undo after Done or Snooze. */
+/** A black bar with UNDO for 5 seconds after Done, Snooze, Delete and the like. */
 fun CoroutineScope.offerUndo(host: SnackbarHostState, message: String, undo: () -> Unit) {
     launch {
         host.currentSnackbarData?.dismiss()
-        val res = host.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Short)
+        val closer = launch {
+            kotlinx.coroutines.delay(5_000L)
+            host.currentSnackbarData?.dismiss()
+        }
+        val res = host.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
+        closer.cancel()
         if (res == SnackbarResult.ActionPerformed) undo()
     }
 }

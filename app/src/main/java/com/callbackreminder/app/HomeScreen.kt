@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -89,6 +90,7 @@ fun HomeScreen(
     onOpenPeople: () -> Unit,
     onOpenPerson: (key: String) -> Unit,
     onOpenItem: (WorkItem) -> Unit,
+    onOpenSearch: (String) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
@@ -98,7 +100,7 @@ fun HomeScreen(
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
-    var chooseNew by remember { mutableStateOf(false) }
+    var dialOpen by remember { mutableStateOf(false) }
     var newCall by remember { mutableStateOf(false) }
     var newText by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf(false) }
@@ -133,8 +135,9 @@ fun HomeScreen(
     val dossierLeft = dossierToday.count {
         records[DossierStore.key(it.id, dossierDay)]?.done != true && it.dueAt(dossierDay) <= now
     }
-    val toReview = textsToReview + callsToReview + dossierLeft
-    val myTasksToday = myTasks.count { !it.done && it.dueAt < endOfToday }
+    val needsTime = myTasks.count { !it.done && !it.timed }
+    val toReview = textsToReview + callsToReview + dossierLeft + needsTime
+    val myTasksToday = myTasks.count { !it.done && it.timed && it.dueAt < endOfToday }
 
     val open = Work.open(now, calls, texts, myTasks, dossier, records)
     val overdue = open.filter { it.overdue }
@@ -151,17 +154,9 @@ fun HomeScreen(
             (ageFilter == null || (w.overdue && Work.ageBucket(w, now) == ageFilter))
     }.sortedBy { it.at }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { chooseNew = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = "New reminder")
-            }
-        }
     ) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(
@@ -189,6 +184,8 @@ fun HomeScreen(
                     TopActions()
                 }
             }
+
+            item(key = "search") { HomeSearchBar(onOpen = onOpenSearch) }
 
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
@@ -222,7 +219,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 when {
-                                    dossierLeft > 0 -> onOpenDossierReview()
+                                    dossierLeft > 0 || needsTime > 0 -> onOpenDossierReview()
                                     textsToReview == 0 && callsToReview > 0 -> {
                                         CallsUi.tabRequest.value = CallsUi.TO_REVIEW
                                         onOpenCalls()
@@ -342,48 +339,23 @@ fun HomeScreen(
         }
     }
 
-    if (chooseNew) {
-        ModalBottomSheet(onDismissRequest = { chooseNew = false }) {
-            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 32.dp)) {
-                Text(
-                    "Create new",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                CreateOption(
-                    icon = Icons.Rounded.PhoneCallback,
-                    title = "Call-back reminder",
-                    subtitle = "Rings like a call at the time you pick",
-                    container = MaterialTheme.colorScheme.primaryContainer,
-                    content = MaterialTheme.colorScheme.onPrimaryContainer,
-                    onClick = { chooseNew = false; newCall = true },
-                )
-                CreateOption(
-                    icon = Icons.Rounded.Sms,
-                    title = "Text message",
-                    subtitle = "Sends an SMS on time, once, on a repeat or as a burst",
-                    container = MaterialTheme.colorScheme.secondaryContainer,
-                    content = MaterialTheme.colorScheme.onSecondaryContainer,
-                    onClick = { chooseNew = false; newText = true },
-                )
-                CreateOption(
-                    icon = Icons.Rounded.TaskAlt,
-                    title = "My task",
-                    subtitle = "Your own to-do, or a dossier task you tick every day",
-                    container = Color(0xFFEDE4FF),
-                    content = Color(0xFF3F1F8C),
-                    onClick = { chooseNew = false; newTask = true },
-                )
-            }
-        }
+    // Google Keep style ＋: from the bottom up My task, Call reminder, Message schedule.
+    SpeedDial(
+        open = dialOpen,
+        onOpenChange = { dialOpen = it },
+        options = listOf(
+            DialOption("My task", Icons.Rounded.TaskAlt, Color(0xFF3F1F8C)) { newTask = true },
+            DialOption("Call reminder", Icons.Rounded.Call, MaterialTheme.colorScheme.primary) { newCall = true },
+            DialOption("Message schedule", Icons.Rounded.Sms, Color(0xFF0B7A5C)) { newText = true },
+        ),
+    )
     }
 
     if (newCall) {
         AddReminderDialog(
             onDismiss = { newCall = false },
-            onSave = { name, number, note, dueAt, repeat ->
-                ReminderStore.add(name, number, note, dueAt, repeat)
+            onSave = { name, number, note, dueAt, repeat, starred ->
+                ReminderStore.add(name, number, note, dueAt, repeat, starred = starred)
                 newCall = false
             }
         )

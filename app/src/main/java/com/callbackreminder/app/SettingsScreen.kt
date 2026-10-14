@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BatteryFull
+import androidx.compose.material.icons.rounded.BeachAccess
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Checklist
@@ -77,6 +78,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -114,6 +116,7 @@ fun SettingsScreen(
     onOpenDailyList: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenVoiceTyping: () -> Unit,
+    onOpenOffDays: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -141,7 +144,15 @@ fun SettingsScreen(
     }
     val reminderSummary = remember { "${ReminderStyle.mode(ctx).title} · ${ReminderSound.title(ctx)}" }
 
+    val offDays by OffDays.mask.collectAsState()
+
     SettingsPage(title = "Settings", onBack = onBack) {
+        NavRow(
+            icon = Icons.Rounded.BeachAccess,
+            title = "Weekly off day",
+            summary = OffDays.label(offDays),
+            onClick = onOpenOffDays
+        )
         NavRow(
             icon = Icons.Rounded.VerifiedUser,
             title = "Setup",
@@ -1622,9 +1633,12 @@ private fun BurstTemplateDialog(initial: BurstTemplate?, onDismiss: () -> Unit, 
     var gapText by remember { mutableStateOf((initial?.gapMin ?: 5).toString()) }
     val count = countText.toIntOrNull()?.takeIf { it in BurstTemplate.COUNT_RANGE }
     val gap = gapText.toIntOrNull()?.takeIf { it in BurstTemplate.GAP_RANGE }
+    val start = remember { countText to gapText }
+    val cancel = rememberDiscardGuard(changed = { (countText to gapText) != start }, onClose = onDismiss)
 
     androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text(if (initial == null) "New burst template" else "Edit burst template") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1658,6 +1672,6 @@ private fun BurstTemplateDialog(initial: BurstTemplate?, onDismiss: () -> Unit, 
                 onClick = { onSave(BurstTemplate(count ?: 5, gap ?: 5)) }
             ) { Text("Save") }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { androidx.compose.material3.TextButton(onClick = cancel) { Text("Cancel") } }
     )
 }

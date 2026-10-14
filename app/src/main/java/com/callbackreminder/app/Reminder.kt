@@ -24,6 +24,8 @@ data class Reminder(
     val delays: List<Delay> = emptyList(),
     /** What happened to this task (created, rang, snoozed, called, done...), oldest first. */
     val events: List<CallEvent> = emptyList(),
+    /** Starred as important (★): shown on the card and found with the Starred filter. */
+    val starred: Boolean = false,
 ) {
     /** What we show as the headline: the name, else the number, else a placeholder. */
     val title: String
