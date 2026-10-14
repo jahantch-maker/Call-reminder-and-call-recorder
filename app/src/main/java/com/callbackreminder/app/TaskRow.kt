@@ -568,8 +568,10 @@ fun SnoozeSheet(
 @Composable
 fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
+    val cancel = rememberDiscardGuard(changed = { text.isNotBlank() }, onClose = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text(r.title) },
         text = {
             Column {
@@ -601,7 +603,7 @@ fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
                 }
             ) { Text("Save task") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
 }
 

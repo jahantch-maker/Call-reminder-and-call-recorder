@@ -279,9 +279,14 @@ private fun AddQuickTimeDialog(
         if (amount != null && amount in 1..span.max) QuickTime.After(amount, span) else null
     }
     val duplicate = candidate != null && candidate in existing
+    val cancel = rememberDiscardGuard(
+        changed = { amountText.isNotEmpty() || onDay || daysAhead != 1 || sameTime || timeState.hour != 10 || timeState.minute != 0 },
+        onClose = onDismiss,
+    )
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text("Add a quick time") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -347,6 +352,6 @@ private fun AddQuickTimeDialog(
                 enabled = candidate != null && !duplicate
             ) { Text("Add") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
 }

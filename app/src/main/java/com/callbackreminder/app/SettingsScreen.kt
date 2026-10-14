@@ -1622,9 +1622,12 @@ private fun BurstTemplateDialog(initial: BurstTemplate?, onDismiss: () -> Unit, 
     var gapText by remember { mutableStateOf((initial?.gapMin ?: 5).toString()) }
     val count = countText.toIntOrNull()?.takeIf { it in BurstTemplate.COUNT_RANGE }
     val gap = gapText.toIntOrNull()?.takeIf { it in BurstTemplate.GAP_RANGE }
+    val start = remember { countText to gapText }
+    val cancel = rememberDiscardGuard(changed = { (countText to gapText) != start }, onClose = onDismiss)
 
     androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text(if (initial == null) "New burst template" else "Edit burst template") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1658,6 +1661,6 @@ private fun BurstTemplateDialog(initial: BurstTemplate?, onDismiss: () -> Unit, 
                 onClick = { onSave(BurstTemplate(count ?: 5, gap ?: 5)) }
             ) { Text("Save") }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { androidx.compose.material3.TextButton(onClick = cancel) { Text("Cancel") } }
     )
 }
