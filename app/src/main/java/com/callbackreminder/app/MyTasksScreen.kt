@@ -103,6 +103,10 @@ object MyTasksUi {
     const val ONE_TIME = 0
     const val DOSSIER = 1
     val tabRequest = MutableStateFlow<Int?>(null)
+
+    /** Search tapped a task: open its list and outline it for a moment. */
+    val showTask = MutableStateFlow<Long?>(null)
+    val showDossier = MutableStateFlow<Long?>(null)
 }
 
 private val Teal = Color(0xFF0FA68E)
@@ -146,6 +150,30 @@ fun MyTasksScreen(resumeKey: Int) {
         val t = tabRequest ?: return@LaunchedEffect
         MyTasksUi.tabRequest.value = null
         sub = t
+    }
+    var highlightId by remember { mutableStateOf<Long?>(null) }
+    val showTask by MyTasksUi.showTask.collectAsState()
+    LaunchedEffect(showTask) {
+        val id = showTask ?: return@LaunchedEffect
+        MyTasksUi.showTask.value = null
+        val t = MyTaskStore.get(id) ?: return@LaunchedEffect
+        sub = MyTasksUi.ONE_TIME
+        listSel = t.listId
+        starredOnly = false
+        if (t.done) completedOpen = true
+        highlightId = id
+        delay(3_000L)
+        if (highlightId == id) highlightId = null
+    }
+    val showDossierReq by MyTasksUi.showDossier.collectAsState()
+    LaunchedEffect(showDossierReq) {
+        val id = showDossierReq ?: return@LaunchedEffect
+        MyTasksUi.showDossier.value = null
+        sub = MyTasksUi.DOSSIER
+        dossierStarred = false
+        highlightId = -id
+        delay(3_000L)
+        if (highlightId == -id) highlightId = null
     }
     if (listSel != ALL_LISTS && lists.none { it.id == listSel }) listSel = MyTaskStore.UNSORTED
     val current = lists.firstOrNull { it.id == listSel }
@@ -210,6 +238,7 @@ fun MyTasksScreen(resumeKey: Int) {
             t = t,
             now = now,
             listName = if (showList) MyTaskStore.listName(t.listId) else null,
+            highlighted = t.id == highlightId,
             handle = handle,
             onTick = { tick(t) },
             onStar = { MyTaskStore.setStar(t.id, !t.starred) },
@@ -402,6 +431,7 @@ fun MyTasksScreen(resumeKey: Int) {
                         onEdit = { editDossier = t },
                         onDelete = { deleteDossier(t) },
                         onStar = { DossierStore.setStar(t.id, !t.starred) },
+                        highlighted = -t.id == highlightId,
                     )
                 }
                 if (notToday.isNotEmpty()) {
@@ -428,6 +458,7 @@ fun MyTasksScreen(resumeKey: Int) {
                             onEdit = { editDossier = t },
                             onDelete = { deleteDossier(t) },
                             onStar = { DossierStore.setStar(t.id, !t.starred) },
+                            highlighted = -t.id == highlightId,
                         )
                     }
                 }
@@ -682,12 +713,14 @@ private fun DossierRow(
     onEdit: (() -> Unit)?,
     onDelete: (() -> Unit)?,
     onStar: (() -> Unit)? = null,
+    highlighted: Boolean = false,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val done = rec?.done == true
     val wasDue = today && !done && t.dueAt(day) <= now
     Card(
         onClick = onOpen,
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (done) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)

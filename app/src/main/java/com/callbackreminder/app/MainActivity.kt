@@ -241,6 +241,7 @@ private object Screen {
     const val BACKUP_SETTINGS = 22
     const val VOICE_SETTINGS = 23
     const val OFF_DAYS = 24
+    const val SEARCH = 25
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -381,6 +382,36 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                 Screen.BACKUP_SETTINGS -> BackupSettingsScreen(onBack = { back() })
                 Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
                 Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
+                Screen.SEARCH -> SearchScreen(
+                    onBack = { back() },
+                    onOpenCalls = { showTab(Tab.CALLS) },
+                    onOpenTexts = { showTab(Tab.TEXTS) },
+                    onOpenMyTasks = { showTab(Tab.MY_TASKS) },
+                    onOpenPerson = {
+                        PeopleUi.current.value = it
+                        open(Screen.PERSON)
+                    },
+                    onOpenRecordings = { open(Screen.RECORDINGS) },
+                    onOpenSetting = { key ->
+                        when (key) {
+                            "off_days" -> Screen.OFF_DAYS
+                            "setup" -> Screen.SETUP
+                            "popup" -> Screen.POPUP_SETTINGS
+                            "quick_times" -> Screen.QUICK_TIMES
+                            "recording" -> Screen.RECORDING_SETTINGS
+                            "reminder" -> Screen.REMINDER_SETTINGS
+                            "texts" -> Screen.TEXT_SETTINGS
+                            "review" -> Screen.REVIEW_SETTINGS
+                            "dossier" -> Screen.DOSSIER_SETTINGS
+                            "morning" -> Screen.MORNING_SETTINGS
+                            "notifications" -> Screen.NOTIFICATION_SETTINGS
+                            "daily_list" -> Screen.DAILY_LIST_SETTINGS
+                            "backup" -> Screen.BACKUP_SETTINGS
+                            "voice" -> Screen.VOICE_SETTINGS
+                            else -> null
+                        }?.let { open(it) }
+                    },
+                )
                 Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
                 Screen.PEOPLE -> PeopleScreen(
                     resumeKey = resumeKey,
@@ -530,6 +561,10 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                             open(Screen.PERSON)
                         },
                         onOpenItem = { onTab(tabFor(it)) },
+                        onOpenSearch = {
+                            SearchUi.initial.value = it
+                            open(Screen.SEARCH)
+                        },
                     )
                 }
               }

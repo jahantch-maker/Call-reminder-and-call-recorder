@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalDate
 import java.time.ZoneId
@@ -74,6 +75,9 @@ object CallsUi {
     const val DONE = 3
 
     val tabRequest = MutableStateFlow<Int?>(null)
+
+    /** Search tapped a call task: show it (its chip, scrolled to and outlined for a moment). */
+    val showRequest = MutableStateFlow<Long?>(null)
 }
 
 /** Which list a call row sits in. */
@@ -133,6 +137,45 @@ fun CallsScreen(resumeKey: Int) {
     }
 
     val today = LocalDate.now(ZoneId.systemDefault())
+    val listState = rememberLazyListState()
+    var highlightId by remember { mutableStateOf<Long?>(null) }
+
+    val showRequest by CallsUi.showRequest.collectAsState()
+    LaunchedEffect(showRequest) {
+        val id = showRequest ?: return@LaunchedEffect
+        CallsUi.showRequest.value = null
+        val r = ReminderStore.items.value.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        createdFilter = DateFilter()
+        dueFilter = DateFilter()
+        starredOnly = false
+        val everything = ReminderStore.items.value
+        val t = when {
+            r.done && r.review -> CallsUi.TO_REVIEW
+            r.done -> CallsUi.DONE
+            else -> CallsUi.TO_CALL
+        }
+        tab = t
+        highlightId = id
+        // The order the list draws its items in: header, chips, then each block's header and rows.
+        val keys = mutableListOf<Any>("header", "tabs")
+        val nowMs = System.currentTimeMillis()
+        val blocks: List<List<Reminder>> = when (t) {
+            CallsUi.TO_REVIEW -> listOf(everything.filter { it.done && it.review }.sortedByDescending { it.doneAt })
+            CallsUi.DONE -> byDay(everything.filter { it.done && !it.review }.sortedByDescending { it.doneAt }) { it.doneAt }.map { it.second }
+            else -> {
+                val p = everything.filter { !it.done }.sortedBy { it.dueAt }
+                listOf(p.filter { it.dueAt <= nowMs }) + byDay(p.filter { it.dueAt > nowMs }) { it.dueAt }.map { it.second }
+            }
+        }
+        blocks.filter { it.isNotEmpty() }.forEach { b -> keys += "group"; b.forEach { keys += it.id } }
+        val index = keys.indexOf(id)
+        if (index >= 0) {
+            delay(150L)
+            listState.animateScrollToItem(index)
+        }
+        delay(3_000L)
+        if (highlightId == id) highlightId = null
+    }
 
     val pending = items.filter { !it.done }.sortedBy { it.dueAt }
     val toReview = items.filter { it.done && it.review }.sortedByDescending { it.doneAt }
@@ -196,6 +239,7 @@ fun CallsScreen(resumeKey: Int) {
             onDelete = { deleteNow(r) },
             onStar = { ReminderStore.setStar(r.id, !r.starred) },
             onMoveBack = { moveBack(r) },
+            highlighted = r.id == highlightId,
         )
     }
 
@@ -213,6 +257,7 @@ fun CallsScreen(resumeKey: Int) {
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -470,6 +515,7 @@ private fun CallRow(
     onDelete: () -> Unit,
     onStar: () -> Unit,
     onMoveBack: () -> Unit,
+    highlighted: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val noTask = r.note.isBlank()
@@ -530,6 +576,7 @@ private fun CallRow(
             chips = chips,
             expanded = expanded,
             onClick = onToggle,
+            highlighted = highlighted,
             quote = quote,
             action = {
                 if (mode == CallMode.DONE) {

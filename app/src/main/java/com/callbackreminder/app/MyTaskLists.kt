@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -176,6 +177,7 @@ internal fun GTaskRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), RoundedCornerShape(14.dp)) else Modifier)
             .clickable(onClick = onOpen)
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Top
