@@ -489,13 +489,17 @@ object SmsNotifier {
     @SuppressLint("MissingPermission")
     fun showSent(ctx: Context, r: SmsReminder, index: Int) {
         if (!Notifier.canNotify(ctx)) return
-        val title = if (index >= 0) "Sent to ${r.title} · ${index + 1} of ${r.burstCount} today"
-        else "Sent to ${r.title} ✓"
+        // Task first: the message is the title; who it went to, the task number and progress under it.
+        val text = listOfNotNull(
+            r.title,
+            r.code.takeIf { r.tracked && it.isNotEmpty() }?.let { "# $it" },
+            if (index >= 0) "text ${index + 1} of ${r.burstCount} sent" else "sent ✓",
+        ).joinToString(" · ")
         val b = NotificationCompat.Builder(ctx, CH_SMS_SENT)
             .setSmallIcon(R.drawable.ic_stat_sms)
-            .setContentTitle(title)
-            .setContentText(r.message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(r.message))
+            .setContentTitle(r.message)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text).setBigContentTitle(r.message))
             .setContentIntent(openMessages(ctx, r.id))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -529,9 +533,9 @@ object SmsNotifier {
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_sms)
-            .setContentTitle("Text ${r.title} now")
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentTitle(r.message)
+            .setContentText("Tap to text ${r.title} now")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("Tap to text ${r.title} now:\n$text"))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)

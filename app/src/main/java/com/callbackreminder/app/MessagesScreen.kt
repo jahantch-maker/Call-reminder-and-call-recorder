@@ -8,8 +8,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,45 +21,39 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Repeat
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -70,18 +64,58 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import java.time.LocalDate
+import java.time.ZoneId
+
+/** One day block of the Texts list. */
+private class SmsBlock(val key: String, val title: String, val count: String, val tone: Int, val list: List<SmsReminder>)
+
+private const val TONE_RED = 0
+private const val TONE_BLUE = 1
+private const val TONE_MUTED = 2
+
+/** The blocks a tab shows: Scheduled by the day of the next text, To review as one block, Done by the day it was done. */
+private fun smsBlocks(tab: Int, list: List<SmsReminder>): List<SmsBlock> {
+    val today = LocalDate.now(ZoneId.systemDefault())
+    return when (tab) {
+        0 -> byDay(list) { it.alarmAt }.map { (day, l) ->
+            val isToday = day == today
+            SmsBlock("day-$day", RowFmt.dayTitle(day), "${l.size}", if (isToday) TONE_BLUE else TONE_MUTED, l)
+        }
+        1 -> if (list.isEmpty()) emptyList() else listOf(SmsBlock("review", "Waiting for you", "${list.size}", TONE_RED, list))
+        else -> byDay(list) { it.doneAt }.map { (day, l) ->
+            SmsBlock("done-$day", RowFmt.dayTitle(day), "${l.size} done", TONE_MUTED, l)
+        }
+    }
+}
+
+/** Where the row for [id] sits in the list, counting [before] items above the first block. */
+private fun smsIndex(blocks: List<SmsBlock>, id: Long, before: Int): Int? {
+    var i = before
+    for (b in blocks) {
+        i++ // the day header
+        val pos = b.list.indexOfFirst { it.id == id }
+        if (pos >= 0) return i + pos
+        i += b.list.size
+    }
+    return null
+}
+
+/** The texts were answered with "Done <number>" at some point. */
+private val SmsReminder.repliedDone: Boolean
+    get() = log.any { it.status == SmsLogEntry.Status.REPLIED_DONE }
 
 /** Scheduled text messages: sent from your own SIM at the time you set, once or on a repeat. */
 @Composable
@@ -99,9 +133,13 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     var sendNowFor by remember { mutableStateOf<SmsReminder?>(null) }
     var historyFor by remember { mutableStateOf<SmsReminder?>(null) }
     var callInsteadFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var laterFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var openId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showPermissionHelp by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val canSend = remember(resumeKey, refresh) { SmsSender.hasPermission(ctx) }
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -125,7 +163,6 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     val toReview = items.filter { !it.done && it.review != null }.sortedByDescending { it.reviewAt }
     val finished = items.filter { it.done }.sortedByDescending { it.doneAt }
 
-    // "Not done" on a no-reply notification: open that reminder in Edit to set new days.
     val listState = rememberLazyListState()
     var highlightId by remember { mutableStateOf<Long?>(null) }
 
@@ -146,11 +183,11 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         }
         tab = t
         highlightId = id
-        val pos = list.indexOfFirst { it.id == id }
-        if (pos >= 0) {
+        // Header, the permission card when it shows, then the tabs come before the day blocks.
+        val index = smsIndex(smsBlocks(t, list), id, before = if (canSend) 2 else 3)
+        if (index != null) {
             delay(150L)
-            // Header, the permission card when it shows, then the tabs come before the cards.
-            listState.animateScrollToItem((if (canSend) 2 else 3) + pos)
+            listState.animateScrollToItem(index)
         }
         delay(3_000L)
         if (highlightId == id) highlightId = null
@@ -171,8 +208,24 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         SmsUi.editRequest.value = null
     }
 
+    fun done(r: SmsReminder) {
+        val before = r
+        SmsStore.markDone(r.id)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Done · ${r.message}") { SmsStore.restore(before) }
+    }
+    fun later(r: SmsReminder, ms: Long) {
+        val before = r
+        SmsStore.reschedule(r.id, ms)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { SmsStore.restore(before) }
+    }
+
+    val toneColors = listOf(MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onSurfaceVariant)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snack) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAdd = true },
@@ -191,11 +244,10 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 96.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item(key = "header") {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (onBack != null) {
@@ -227,7 +279,8 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                 item(key = "permission") {
                     Card(
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier.padding(bottom = 12.dp)
                     ) {
                         Column(Modifier.padding(16.dp)) {
                             Text(
@@ -303,35 +356,53 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                     } else EmptyMessages(tab)
                 }
             }
-            items(list, key = { it.id }) { r ->
-                Box(Modifier.animateItem()) {
-                    SmsCard(
-                        r = r,
-                        now = now,
-                        highlighted = r.id == highlightId,
-                        onSendNow = { sendNowFor = r },
-                        onHistory = { historyFor = r },
-                        onEdit = { editFor = r },
-                        onNotDone = {
-                            if (r.review == SmsReminder.Review.REPLIED) {
-                                SmsStore.resume(r.id)
-                            } else {
-                                SmsStore.noteNotDone(r.id)
-                                editFor = r
-                            }
-                        },
-                        onPickTime = { rescheduleFor = r },
-                        onDelete = { deleteFor = r },
-                        onCallNow = {
-                            // The after-call popup asks how this text task went.
-                            FollowUp.markText(ctx, r)
-                            dial(ctx, r.number)
-                        },
-                        onCallInstead = { callInsteadFor = r },
-                    )
+            smsBlocks(tab, list).forEach { b ->
+                item(key = "group-${b.key}") { DayHeader(b.title, b.count, toneColors[b.tone]) }
+                itemsIndexed(b.list, key = { _, r -> r.id }) { i, r ->
+                    Box(Modifier.animateItem()) {
+                        SmsRow(
+                            r = r,
+                            pos = rowPos(i, b.list.size),
+                            now = now,
+                            expanded = openId == r.id,
+                            highlighted = r.id == highlightId,
+                            onToggle = { openId = if (openId == r.id) null else r.id },
+                            onSendNow = { sendNowFor = r },
+                            onDone = { done(r) },
+                            onLater = { laterFor = r },
+                            onHistory = { historyFor = r },
+                            onEdit = { editFor = r },
+                            onNotDone = {
+                                if (r.review == SmsReminder.Review.REPLIED) {
+                                    SmsStore.resume(r.id)
+                                } else {
+                                    SmsStore.noteNotDone(r.id)
+                                    editFor = r
+                                }
+                            },
+                            onPickTime = { rescheduleFor = r },
+                            onDelete = { deleteFor = r },
+                            onCallNow = {
+                                // The after-call popup asks how this text task went.
+                                FollowUp.markText(ctx, r)
+                                dial(ctx, r.number)
+                            },
+                            onCallInstead = { callInsteadFor = r },
+                        )
+                    }
                 }
             }
         }
+    }
+
+    laterFor?.let { r ->
+        SnoozeSheet(
+            heading = if (r.active) "Send later" else "Send again later",
+            about = r.message,
+            onPick = { ms -> laterFor = null; later(r, ms) },
+            onPickTime = { laterFor = null; rescheduleFor = r },
+            onDismiss = { laterFor = null }
+        )
     }
 
     if (showAdd) {
@@ -506,12 +577,18 @@ private fun EmptyMessages(tab: Int) {
     }
 }
 
+/** One text task as a slim row: the message in bold, the person under it, and the task number as a chip. */
 @Composable
-private fun SmsCard(
+private fun SmsRow(
     r: SmsReminder,
+    pos: RowPos,
     now: Long,
+    expanded: Boolean,
     highlighted: Boolean,
+    onToggle: () -> Unit,
     onSendNow: () -> Unit,
+    onDone: () -> Unit,
+    onLater: () -> Unit,
     onHistory: () -> Unit,
     onEdit: () -> Unit,
     onNotDone: () -> Unit,
@@ -520,215 +597,137 @@ private fun SmsCard(
     onCallNow: () -> Unit,
     onCallInstead: () -> Unit,
 ) {
+    val cs = MaterialTheme.colorScheme
     val inReview = !r.done && r.review != null
-    var menuOpen by remember { mutableStateOf(false) }
+    val retrying = r.active && r.retryAt > 0L
+    val hasNumber = r.number.isNotBlank()
 
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(text = r.title)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        r.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (r.name.isNotBlank()) {
-                        Text(
-                            r.number,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        when {
-                            !r.tracked -> "Tracking off"
-                            r.code.isEmpty() -> "Task no. comes with first text"
-                            else -> "Task ${r.code}"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Column {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "More")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
-                        DropdownMenuItem(
-                            text = { Text(if (r.done) "Send again later" else "Change time") },
-                            onClick = { menuOpen = false; onPickTime() }
-                        )
-                        if (r.repeat != null && r.active) {
-                            DropdownMenuItem(
-                                text = { Text("Stop repeating") },
-                                onClick = { menuOpen = false; SmsStore.stopRepeating(r.id) }
-                            )
-                        }
-                        if (!r.done && r.number.isNotBlank()) {
-                            DropdownMenuItem(
-                                text = { Text("Call instead") },
-                                onClick = { menuOpen = false; onCallInstead() }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            onClick = { menuOpen = false; onDelete() }
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    r.message,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-            if (inReview) {
-                InfoRow(
-                    icon = Icons.Rounded.ErrorOutline,
-                    text = when {
-                        r.review == SmsReminder.Review.REPLIED -> "${r.title} replied ${r.doneReply}"
-                        r.review == SmsReminder.Review.NOT_SENT -> "Not sent"
-                        !r.tracked -> if (r.isBurst || r.repeat != null) "All texts sent" else "Sent"
-                        r.isBurst || r.repeat != null -> "No reply · all texts sent"
-                        else -> "No reply · text sent"
-                    } + " · ${Fmt.dueLabel(r.reviewAt)}",
-                    error = true
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-            if (r.active) {
-                val retrying = r.retryAt > 0L
-                InfoRow(
-                    icon = Icons.Rounded.Schedule,
-                    text = when {
-                        retrying -> "Retrying ${Fmt.dueLabel(r.retryAt)} (try ${r.attempts + 1} of ${SmsSender.MAX_RETRIES + 1})"
-                        r.isBurst && r.burstIndex > 0 ->
-                            "${r.burstIndex} of ${r.burstCount} sent · next ${Fmt.dueLabel(r.nextTextAt)}"
-                        else -> "${Fmt.dueLabel(r.dueAt)} · ${Fmt.relative(r.dueAt, now)}"
-                    },
-                    error = retrying
-                )
-            }
-            if (!r.done) {
-                r.repeatLabel?.let { label ->
-                    Spacer(Modifier.height(4.dp))
-                    InfoRow(icon = Icons.Rounded.Repeat, text = label)
-                }
-                r.burstLabel?.let { label ->
-                    Spacer(Modifier.height(4.dp))
-                    InfoRow(icon = Icons.Rounded.Sms, text = label)
-                }
-            }
-            r.lastLog?.let { last ->
-                Spacer(Modifier.height(4.dp))
-                val bad = last.status == SmsLogEntry.Status.FAILED || last.status == SmsLogEntry.Status.RETRYING
-                InfoRow(
-                    icon = if (bad) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
-                    text = if (last.status == SmsLogEntry.Status.CALLED) "Called · ${last.detail} · ${Fmt.dueLabel(last.at)}"
-                    else "Last: ${last.status.label} · ${Fmt.dueLabel(last.at)}",
-                    error = bad
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onHistory,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("History")
-                }
-                if (r.active) {
-                    OutlinedButton(
-                        onClick = onSendNow,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Send now")
-                    }
-                    FilledTonalButton(
-                        onClick = { SmsStore.markDone(r.id) },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Done")
-                    }
-                }
-            }
-            if (inReview) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onNotDone,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Text("Not done", maxLines = 1)
-                    }
-                    if (r.number.isNotBlank()) {
-                        FilledTonalButton(
-                            onClick = onCallNow,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
-                        ) {
-                            Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Call now", maxLines = 1)
-                        }
-                    }
-                    Button(
-                        onClick = { SmsStore.markDone(r.id) },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Mark done")
-                    }
-                }
-            }
+    val chips = buildList {
+        when {
+            !r.tracked -> add(RowChip("Tracking off", ChipTone.MUTED))
+            r.code.isEmpty() -> add(RowChip("comes with 1st text", ChipTone.MUTED, Icons.Rounded.Tag))
+            else -> add(RowChip(r.code, ChipTone.BLUE, Icons.Rounded.Tag))
         }
+        if (r.active) {
+            if (retrying) add(RowChip("Retry ${r.attempts + 1} of ${SmsSender.MAX_RETRIES + 1}", ChipTone.RED))
+            if (r.isBurst) {
+                add(
+                    if (r.burstIndex > 0) RowChip("${r.burstIndex} of ${r.burstCount} sent", ChipTone.BLUE, Icons.Rounded.Sms)
+                    else RowChip(r.burstLabel ?: "", ChipTone.BLUE, Icons.Rounded.Sms)
+                )
+            }
+            r.repeatLabel?.let { add(RowChip(it, ChipTone.MUTED, Icons.Rounded.Repeat)) }
+        }
+        if (inReview) {
+            add(
+                when {
+                    r.review == SmsReminder.Review.REPLIED -> RowChip("Replied “${r.doneReply}”", ChipTone.GREEN, Icons.Rounded.Check)
+                    r.review == SmsReminder.Review.NOT_SENT -> RowChip("Not sent", ChipTone.RED)
+                    !r.tracked -> RowChip(if (r.isBurst || r.repeat != null) "All texts sent" else "Sent", ChipTone.MUTED)
+                    r.isBurst -> RowChip("No reply · all ${r.burstCount} texts sent", ChipTone.ORANGE)
+                    r.repeat != null -> RowChip("No reply · all texts sent", ChipTone.ORANGE)
+                    else -> RowChip("No reply · text sent", ChipTone.ORANGE)
+                }
+            )
+        }
+        if (r.done && r.repliedDone) add(RowChip("Replied Done", ChipTone.GREEN))
     }
-}
 
-@Composable
-private fun InfoRow(icon: ImageVector, text: String, error: Boolean = false) {
-    val color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = color)
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+    val (timeTop, timeSub) = when {
+        r.done -> "✓ ${Fmt.timeOnly(r.doneAt)}" to null
+        inReview -> Pair(
+            when (r.review) {
+                SmsReminder.Review.REPLIED -> "Replied"
+                SmsReminder.Review.NOT_SENT -> "Failed"
+                else -> "Sent"
+            },
+            RowFmt.doneSub(r.reviewAt)
+        )
+        retrying -> Fmt.timeOnly(r.retryAt) to "retrying"
+        r.isBurst && r.burstIndex > 0 -> Fmt.timeOnly(r.nextTextAt) to "next text"
+        else -> Fmt.timeOnly(r.alarmAt) to RowFmt.timeSub(r.alarmAt, now)
+    }
+
+    // The latest result, shown under the message once the row is open.
+    val last = r.lastLog?.let { e ->
+        if (e.status == SmsLogEntry.Status.CALLED) "Called · ${e.detail} · ${Fmt.dueLabel(e.at)}"
+        else "Last: ${e.status.label} · ${Fmt.dueLabel(e.at)}"
+    }
+
+    SwipeActions(
+        enabled = !expanded && !r.done,
+        shape = rowShape(pos),
+        doneLabel = if (inReview) "Mark done" else "Done",
+        snoozeLabel = "Later",
+        onDone = onDone,
+        onSnooze = onLater,
+    ) {
+        TaskRow(
+            pos = pos,
+            timeTop = timeTop,
+            timeSub = timeSub,
+            timeRed = retrying,
+            title = r.message,
+            titleStyle = if (r.done) TitleStyle.DONE else TitleStyle.NORMAL,
+            person = r.title,
+            personDetail = r.number.takeIf { r.name.isNotBlank() && it.isNotBlank() },
+            chips = chips,
+            expanded = expanded,
+            onClick = onToggle,
+            highlighted = highlighted,
+            action = {
+                when {
+                    r.done -> RoundAction(Icons.Rounded.Replay, "Send again later", cs.secondaryContainer, cs.onSecondaryContainer, onClick = onPickTime)
+                    inReview -> RoundAction(Icons.Rounded.Check, "Mark done", cs.secondaryContainer, cs.onSecondaryContainer, onClick = onDone)
+                    else -> RoundAction(Icons.AutoMirrored.Rounded.Send, "Send now", cs.secondary, cs.onSecondary, onClick = onSendNow)
+                }
+            },
+            expandedContent = {
+                if (last != null) {
+                    Text(last, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                }
+                when {
+                    r.done -> RowActions(
+                        actions = listOf(RowAction("Send again later", Icons.Rounded.Replay, ActionStyle.OUTLINED, onPickTime)),
+                        links = listOf(
+                            RowLink("History", onClick = onHistory),
+                            RowLink("Edit", onClick = onEdit),
+                            RowLink("Delete", danger = true, onClick = onDelete),
+                        )
+                    )
+                    inReview -> RowActions(
+                        actions = listOfNotNull(
+                            RowAction("Mark done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
+                            RowAction("Not done", Icons.Rounded.Replay, ActionStyle.OUTLINED, onNotDone),
+                            RowAction("Call now", Icons.Rounded.Call, ActionStyle.FILLED, onCallNow).takeIf { hasNumber },
+                        ),
+                        links = listOfNotNull(
+                            RowLink("History", onClick = onHistory),
+                            RowLink("Edit", onClick = onEdit),
+                            RowLink("Send again later", onClick = onLater),
+                            RowLink("Call instead", onClick = onCallInstead).takeIf { hasNumber },
+                            RowLink("Delete", danger = true, onClick = onDelete),
+                        )
+                    )
+                    else -> RowActions(
+                        actions = listOf(
+                            RowAction("Send now", Icons.AutoMirrored.Rounded.Send, ActionStyle.GREEN, onSendNow),
+                            RowAction("Change time", Icons.Rounded.Schedule, ActionStyle.OUTLINED, onPickTime),
+                            RowAction("Edit", Icons.Rounded.Edit, ActionStyle.OUTLINED, onEdit),
+                            RowAction("Done", Icons.Rounded.Check, ActionStyle.OUTLINED, onDone),
+                        ),
+                        links = listOfNotNull(
+                            RowLink("Call now", onClick = onCallNow).takeIf { hasNumber },
+                            RowLink("Call instead", onClick = onCallInstead).takeIf { hasNumber },
+                            RowLink("History", onClick = onHistory),
+                            RowLink("Stop repeat") { SmsStore.stopRepeating(r.id) }.takeIf { r.repeat != null },
+                            RowLink("Delete", danger = true, onClick = onDelete),
+                        )
+                    )
+                }
+            }
+        )
     }
 }
 
