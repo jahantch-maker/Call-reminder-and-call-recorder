@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 
 class MainActivity : ComponentActivity() {
 
@@ -329,10 +330,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     ) { s ->
         // Each screen gets a solid background so the one underneath doesn't show through mid-slide.
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            // The tabs page manages its own state (the bar decides which tab shows), so it isn't kept here.
-            if (s.last() == Screen.HOME) {
-                MainTabs(tab = tab, onTab = { tab = it }, resumeKey = resumeKey, open = { open(it) })
-            } else screenStates.SaveableStateProvider(s.last()) {
+            screenStates.SaveableStateProvider(s.last()) {
             when (s.last()) {
                 Screen.QUICK_TIMES -> QuickTimesScreen(onBack = { back() })
                 Screen.SETUP -> SetupSettingsScreen(resumeKey = resumeKey, onBack = { back() })
@@ -438,7 +436,8 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     }
     // A swipe came to rest on a page: that page is now the tab.
     LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.collect { if (it != currentTab) onTab(it) }
+        // The first value is the page restored when coming back from a page on top; the bar's tab wins over it.
+        snapshotFlow { pager.settledPage }.drop(1).collect { if (it != currentTab) onTab(it) }
     }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
