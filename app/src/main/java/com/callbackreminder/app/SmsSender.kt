@@ -52,7 +52,7 @@ object SmsScheduler {
             Intent(ctx, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, open), pending(ctx, r.id))
+        am.setClockSafely(AlarmManager.AlarmClockInfo(at, open), pending(ctx, r.id))
     }
 
     fun cancel(ctx: Context, id: Long) {

@@ -100,9 +100,12 @@ class MainActivity : ComponentActivity() {
         ToScheduleStore.init(this)
         MyTaskStore.init(this)
         DossierStore.init(this)
-        ReviewReminder.schedule(this)
-        TaskAlarms.rescheduleAll(this)
-        Backup.rearmIfRestored(this)
+        // Setting alarms must never stop the app from opening.
+        CrashLog.guard(this, "Setting reminders at start") {
+            ReviewReminder.schedule(this)
+            TaskAlarms.rescheduleAll(this)
+            Backup.rearmIfRestored(this)
+        }
         handleOpen(intent)
         setContent {
             CallbackTheme {
@@ -115,6 +118,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        CrashLog.offer(this)
     }
 
     override fun onNewIntent(intent: Intent) {
