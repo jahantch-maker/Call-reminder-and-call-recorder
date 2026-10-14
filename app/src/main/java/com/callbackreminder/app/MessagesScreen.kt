@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
@@ -129,7 +130,7 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     var showAdd by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<SmsReminder?>(null) }
     var rescheduleFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var deleteFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var pickTimeFor by remember { mutableStateOf<SmsReminder?>(null) }
     var sendNowFor by remember { mutableStateOf<SmsReminder?>(null) }
     var historyFor by remember { mutableStateOf<SmsReminder?>(null) }
     var callInsteadFor by remember { mutableStateOf<SmsReminder?>(null) }
@@ -219,6 +220,29 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         SmsStore.reschedule(r.id, ms)
         if (openId == r.id) openId = null
         scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { SmsStore.restore(before) }
+    }
+
+    fun deleteNow(r: SmsReminder) {
+        val before = r
+        SmsStore.delete(r.id)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Deleted · ${r.message}") { SmsStore.restore(before) }
+    }
+    fun moveBack(r: SmsReminder) {
+        val before = r
+        SmsStore.reopen(r.id)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Moved back to To review") { SmsStore.restore(before) }
+    }
+    fun notDone(r: SmsReminder) {
+        val before = r
+        if (r.review == SmsReminder.Review.REPLIED) {
+            SmsStore.resume(r.id)
+            scope.offerUndo(snack, "Back to Scheduled") { SmsStore.restore(before) }
+        } else {
+            SmsStore.noteNotDone(r.id)
+            editFor = r
+        }
     }
 
     val toneColors = listOf(MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onSurfaceVariant)
@@ -372,16 +396,10 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                             onLater = { laterFor = r },
                             onHistory = { historyFor = r },
                             onEdit = { editFor = r },
-                            onNotDone = {
-                                if (r.review == SmsReminder.Review.REPLIED) {
-                                    SmsStore.resume(r.id)
-                                } else {
-                                    SmsStore.noteNotDone(r.id)
-                                    editFor = r
-                                }
-                            },
+                            onNotDone = { notDone(r) },
                             onPickTime = { rescheduleFor = r },
-                            onDelete = { deleteFor = r },
+                            onDelete = { deleteNow(r) },
+                            onMoveBack = { moveBack(r) },
                             onCallNow = {
                                 // The after-call popup asks how this text task went.
                                 FollowUp.markText(ctx, r)
@@ -400,8 +418,19 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
             heading = if (r.active) "Send later" else "Send again later",
             about = r.message,
             onPick = { ms -> laterFor = null; later(r, ms) },
-            onPickTime = { laterFor = null; rescheduleFor = r },
+            onPickTime = { laterFor = null; pickTimeFor = r },
             onDismiss = { laterFor = null }
+        )
+    }
+
+    // Change time / Send again later: the quick times first, one tap sets it and closes.
+    rescheduleFor?.let { r ->
+        SnoozeSheet(
+            heading = if (r.active) "Change time" else "Send again later",
+            about = r.message,
+            onPick = { ms -> rescheduleFor = null; later(r, ms) },
+            onPickTime = { rescheduleFor = null; pickTimeFor = r },
+            onDismiss = { rescheduleFor = null }
         )
     }
 
@@ -441,14 +470,14 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         )
     }
 
-    rescheduleFor?.let { r ->
+    pickTimeFor?.let { r ->
         DateTimePickerFlow(
             initialMs = maxOf(r.dueAt, now + 60_000L),
             onPicked = { ms ->
-                SmsStore.reschedule(r.id, ms)
-                rescheduleFor = null
+                pickTimeFor = null
+                later(r, ms)
             },
-            onDismiss = { rescheduleFor = null }
+            onDismiss = { pickTimeFor = null }
         )
     }
 
@@ -485,21 +514,6 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         // Read the live copy so new results show while the window is open.
         val live = items.firstOrNull { it.id == r.id } ?: r
         HistoryDialog(live, onDismiss = { historyFor = null })
-    }
-
-    deleteFor?.let { r ->
-        AlertDialog(
-            onDismissRequest = { deleteFor = null },
-            title = { Text("Delete message?") },
-            text = { Text("Stop sending this message to ${r.title}.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    SmsStore.delete(r.id)
-                    deleteFor = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
-        )
     }
 
     if (showPermissionHelp) {
@@ -596,6 +610,7 @@ private fun SmsRow(
     onDelete: () -> Unit,
     onCallNow: () -> Unit,
     onCallInstead: () -> Unit,
+    onMoveBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val inReview = !r.done && r.review != null
@@ -689,7 +704,10 @@ private fun SmsRow(
                 }
                 when {
                     r.done -> RowActions(
-                        actions = listOf(RowAction("Send again later", Icons.Rounded.Replay, ActionStyle.OUTLINED, onPickTime)),
+                        actions = listOf(
+                            RowAction("Not done, move back", Icons.AutoMirrored.Rounded.Undo, ActionStyle.ORANGE, onMoveBack),
+                            RowAction("Send again later", Icons.Rounded.Replay, ActionStyle.OUTLINED, onPickTime),
+                        ),
                         links = listOf(
                             RowLink("History", onClick = onHistory),
                             RowLink("Edit", onClick = onEdit),

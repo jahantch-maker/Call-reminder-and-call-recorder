@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * What a new text starts with when it comes from somewhere else (the after-call popup, To schedule, or
@@ -101,6 +102,13 @@ fun SmsReminderDialog(
     var showDateTime by remember { mutableStateOf(false) }
     var showRecent by remember { mutableStateOf(false) }
     var showUsed by remember { mutableStateOf(false) }
+    // The Quick time tile that set the current time, outlined.
+    var picked by remember { mutableStateOf<Long?>(null) }
+    val start = remember { listOf(name, number, message, due, dateChosen, repeat, burstOn, burst, tracked) }
+    val cancel = rememberDiscardGuard(
+        changed = { listOf(name, number, message, due, dateChosen, repeat, burstOn, burst, tracked) != start },
+        onClose = onDismiss,
+    )
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -134,7 +142,8 @@ fun SmsReminderDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text(if (initial != null) "Edit text message" else prefill?.heading ?: "New text message") },
         text = {
             Column(
@@ -210,6 +219,17 @@ fun SmsReminderDialog(
                         }
                     }
                 )
+
+                Text(
+                    "WHEN?",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                QuickTimeTiles(selected = picked) { ms ->
+                    due = ms
+                    dateChosen = true
+                    picked = ms
+                }
 
                 OutlinedButton(
                     onClick = { showDateTime = true },
@@ -297,7 +317,7 @@ fun SmsReminderDialog(
                 onClick = { onSave(name, number, message, due, repeat, if (burstOn) burst else null, tracked) }
             ) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
 
     help?.let { (title, body) ->
@@ -318,6 +338,7 @@ fun SmsReminderDialog(
                 due = ms
                 repeat = r
                 dateChosen = true
+                picked = null
                 showDateTime = false
             },
             onDismiss = { showDateTime = false }
