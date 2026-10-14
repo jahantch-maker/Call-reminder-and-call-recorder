@@ -228,6 +228,7 @@ private object Screen {
     const val DAILY_LIST_SETTINGS = 21
     const val BACKUP_SETTINGS = 22
     const val VOICE_SETTINGS = 23
+    const val OFF_DAYS = 24
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -361,11 +362,13 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     onOpenDailyList = { open(Screen.DAILY_LIST_SETTINGS) },
                     onOpenBackup = { open(Screen.BACKUP_SETTINGS) },
                     onOpenVoiceTyping = { open(Screen.VOICE_SETTINGS) },
+                    onOpenOffDays = { open(Screen.OFF_DAYS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
                 Screen.BACKUP_SETTINGS -> BackupSettingsScreen(onBack = { back() })
                 Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
+                Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
                 Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
                 Screen.PEOPLE -> PeopleScreen(
                     resumeKey = resumeKey,

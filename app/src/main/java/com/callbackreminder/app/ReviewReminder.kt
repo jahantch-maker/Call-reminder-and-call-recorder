@@ -134,7 +134,7 @@ object ReviewReminder {
         val today = LocalDate.now(zone)
         for (d in 0..7) {
             val date = today.plusDays(d.toLong())
-            if (!isDayOn(mask, date.dayOfWeek)) continue
+            if (!isDayOn(mask, date.dayOfWeek) || OffDays.isOff(date)) continue
             val at = times(ctx).sorted()
                 .map { date.atTime(it / 60, it % 60).atZone(zone).toInstant().toEpochMilli() }
                 .firstOrNull { it > now }

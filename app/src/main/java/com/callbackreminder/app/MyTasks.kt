@@ -55,6 +55,8 @@ data class DossierTask(
 
     fun isOn(date: LocalDate): Boolean {
         if (date.isBefore(start)) return false
+        // Weekly off day: the task doesn't come up, so it is never Missed.
+        if (OffDays.isOff(date)) return false
         return if (monthDay > 0) {
             date.dayOfMonth == minOf(monthDay, YearMonth.from(date).lengthOfMonth())
         } else {
@@ -422,6 +424,14 @@ object DossierStore {
         if (old?.done == true) return false
         saveRecords(_records.value + (key(taskId, date) to r))
         return true
+    }
+
+    /** One-time move when the off day became Friday: "Mon-Sat" tasks run every day, Friday pauses them. */
+    @Synchronized
+    fun sundayToEveryDay() {
+        val list = _tasks.value
+        if (list.none { it.monthDay == 0 && it.days == 0b0111111 }) return
+        saveTasks(list.map { if (it.monthDay == 0 && it.days == 0b0111111) it.copy(days = Dossier.ALL_DAYS) else it })
     }
 
     /** Today's dossier (the day being ticked), in time order. */

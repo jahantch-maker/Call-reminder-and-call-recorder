@@ -349,3 +349,62 @@ fun VoiceTypingSettingsScreen(onBack: () -> Unit) {
         }
     }
 }
+
+// ---------------------------------------------------------------- Weekly off day
+
+@Composable
+fun WeeklyOffDayScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var mask by remember { mutableIntStateOf(OffDays.mask.value) }
+    val count = Integer.bitCount(mask)
+
+    SettingsPage(title = "Weekly off day", onBack = onBack) {
+        SectionCard(title = "Your off days", subtitle = "Pick up to ${OffDays.MAX} days. Untick all if you work every day.") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DayOfWeek.values().forEach { day ->
+                        val bit = 1 shl (day.value - 1)
+                        val on = mask and bit != 0
+                        val faded = !on && count >= OffDays.MAX
+                        Surface(
+                            onClick = {
+                                if (!on && count >= OffDays.MAX) {
+                                    Toast.makeText(ctx, "Max ${OffDays.MAX} off days. Untick one first.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    mask = mask xor bit
+                                    OffDays.set(ctx, mask)
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = when {
+                                on -> MaterialTheme.colorScheme.onPrimary
+                                faded -> MaterialTheme.colorScheme.outline
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(day.name.take(3).lowercase().replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+                Text(
+                    if (mask == 0) "No off day, every day is a working day" else "Off: ${OffDays.label(mask)}",
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+        SectionCard(
+            title = "On your off day the app pauses",
+            subtitle = "Review reminder · Morning summary · Dossier tasks (not counted as Missed) · Daily lists sent to people"
+        ) {
+            Text(
+                "Still goes out as normal: call-back reminders and text messages you set for that day.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
