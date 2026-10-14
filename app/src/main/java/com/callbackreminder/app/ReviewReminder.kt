@@ -152,14 +152,14 @@ object ReviewReminder {
             am.cancel(pi)
             return
         }
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, openApp(ctx)), pi)
+        am.setClockSafely(AlarmManager.AlarmClockInfo(at, openApp(ctx)), pi)
     }
 
     fun snooze(ctx: Context, minutes: Int) {
         cancelNotification(ctx)
         val at = System.currentTimeMillis() + minutes * 60_000L
         ctx.getSystemService(AlarmManager::class.java)
-            .setAlarmClock(AlarmManager.AlarmClockInfo(at, openApp(ctx)), pending(ctx, REQ_SNOOZE))
+            .setClockSafely(AlarmManager.AlarmClockInfo(at, openApp(ctx)), pending(ctx, REQ_SNOOZE))
     }
 
     private fun openApp(ctx: Context): PendingIntent = PendingIntent.getActivity(

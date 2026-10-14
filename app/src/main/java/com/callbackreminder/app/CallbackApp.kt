@@ -5,6 +5,7 @@ import android.app.Application
 class CallbackApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         ReminderStore.init(this)
         RecordingStore.init(this)
         SmsStore.init(this)

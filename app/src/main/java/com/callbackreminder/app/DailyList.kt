@@ -147,7 +147,7 @@ object DailyList {
         val show = PendingIntent.getActivity(
             ctx, REQ_DAILY, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+        am.setClockSafely(AlarmManager.AlarmClockInfo(at, show), pi)
     }
 
     fun fire(ctx: Context) {

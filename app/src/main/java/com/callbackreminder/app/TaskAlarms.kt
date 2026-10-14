@@ -46,7 +46,7 @@ object TaskAlarms {
     )
 
     private fun setAlarm(ctx: Context, at: Long, pi: PendingIntent, open: String) {
-        am(ctx).setAlarmClock(AlarmManager.AlarmClockInfo(at, openApp(ctx, open, 0)), pi)
+        am(ctx).setClockSafely(AlarmManager.AlarmClockInfo(at, openApp(ctx, open, 0)), pi)
     }
 
     // ---- One-time tasks ----

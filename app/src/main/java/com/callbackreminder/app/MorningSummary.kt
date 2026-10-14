@@ -140,7 +140,7 @@ object MorningSummary {
             am.cancel(pi)
             return
         }
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(at, openDay(ctx, REQ_DAILY)), pi)
+        am.setClockSafely(AlarmManager.AlarmClockInfo(at, openDay(ctx, REQ_DAILY)), pi)
     }
 
     /** Later on the notification: the same summary again in [LATER_MINUTES] minutes. */
@@ -148,7 +148,7 @@ object MorningSummary {
         NotificationManagerCompat.from(ctx).cancel(NOTIF_ID)
         val at = System.currentTimeMillis() + LATER_MINUTES * 60_000L
         ctx.getSystemService(AlarmManager::class.java)
-            .setAlarmClock(AlarmManager.AlarmClockInfo(at, openDay(ctx, REQ_LATER)), alarm(ctx, REQ_LATER))
+            .setClockSafely(AlarmManager.AlarmClockInfo(at, openDay(ctx, REQ_LATER)), alarm(ctx, REQ_LATER))
     }
 
     fun fire(ctx: Context) {
