@@ -78,6 +78,9 @@ class MainActivity : ComponentActivity() {
         const val OPEN_DOSSIER_REVIEW = "dossier_review"
         /** The morning summary: the "Your day" page. */
         const val OPEN_MY_DAY = "my_day"
+        /** The caller card's "Show all his tasks": the person page, with [EXTRA_PERSON] as the key. */
+        const val OPEN_PERSON = "person"
+        const val EXTRA_PERSON = "person_key"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -146,6 +149,15 @@ class MainActivity : ComponentActivity() {
             OPEN_DOSSIER_REVIEW -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
+                return
+            }
+            OPEN_PERSON -> {
+                val key = intent?.getStringExtra(EXTRA_PERSON)
+                intent?.removeExtra(EXTRA_OPEN)
+                if (!key.isNullOrEmpty()) {
+                    PeopleUi.current.value = key
+                    showTab(Tab.HOME, Screen.PERSON)
+                }
                 return
             }
             OPEN_MY_DAY -> {
