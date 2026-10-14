@@ -286,6 +286,20 @@ object ReminderStore {
         Scheduler.schedule(appCtx, updated)
     }
 
+    /**
+     * Undo after a swipe: put the task back exactly as it was. Its alarm is set again only for a time
+     * still ahead (or its next repeat), so undoing a Done on an overdue task does not ring at once.
+     */
+    @Synchronized
+    fun restore(r: Reminder) {
+        Scheduler.cancel(appCtx, r.id)
+        Notifier.cancel(appCtx, r.id)
+        RingController.dismiss(r.id)
+        val list = _items.value
+        save(if (list.any { it.id == r.id }) list.map { if (it.id == r.id) r else it } else list + r)
+        if (!r.done && (r.dueAt > System.currentTimeMillis() || r.repeat != null)) Scheduler.schedule(appCtx, r)
+    }
+
     /** Adds a line to the task's History. Kept to the newest [EVENT_LIMIT]. */
     @Synchronized
     fun logEvent(id: Long, what: String, due: Long = 0L, note: String = "") {

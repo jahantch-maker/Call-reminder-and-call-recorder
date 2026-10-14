@@ -310,7 +310,7 @@ fun HomeScreen(
                         )
                     }
                 }
-                items(filtered, key = { "f" + it.key }) { w -> WorkRow(w, now, showPerson = true) { onOpenItem(w) } }
+                if (filtered.isNotEmpty()) item(key = "filtered-list") { WorkBlock(filtered, now, showPerson = true, onOpen = onOpenItem) }
                 return@LazyColumn
             }
 
@@ -338,7 +338,7 @@ fun HomeScreen(
             if (nextUp.isEmpty()) {
                 item(key = "next-empty") { AllClear() }
             }
-            items(nextUp, key = { it.key }) { w -> WorkRow(w, now, showPerson = true) { onOpenItem(w) } }
+            if (nextUp.isNotEmpty()) item(key = "next-list") { WorkBlock(nextUp, now, showPerson = true, onOpen = onOpenItem) }
         }
     }
 

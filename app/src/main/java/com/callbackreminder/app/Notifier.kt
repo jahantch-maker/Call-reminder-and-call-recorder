@@ -137,14 +137,12 @@ object Notifier {
             FLAGS
         )
 
-        val text = listOfNotNull(
-            r.note.takeIf { it.isNotBlank() },
-            r.number.takeIf { it.isNotBlank() && r.name.isNotBlank() }
-        ).joinToString(" · ").ifBlank { "Time for your follow-up call" }
+        // Task first: the task is the title, the person and number the line under it.
+        val text = listOfNotNull(r.title, r.personDetail()).joinToString(" · ")
 
         val b = NotificationCompat.Builder(ctx, if (quiet) CH_MISSED else bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_call)
-            .setContentTitle("Call back ${r.title}")
+            .setContentTitle(r.headline())
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -187,16 +185,13 @@ object Notifier {
         val first = list.firstOrNull()
         val title = when {
             first == null -> "Call-back reminder"
-            list.size == 1 -> "Call back ${first.title}"
+            list.size == 1 -> first.headline()
             else -> "${list.size} call-backs due"
         }
         val text = when {
             first == null -> "Time for your follow-up call"
-            list.size == 1 -> listOfNotNull(
-                first.note.takeIf { it.isNotBlank() },
-                first.number.takeIf { it.isNotBlank() && first.name.isNotBlank() }
-            ).joinToString(" · ").ifBlank { "Time for your follow-up call" }
-            else -> list.joinToString(", ") { it.title }
+            list.size == 1 -> listOfNotNull(first.title, first.personDetail()).joinToString(" · ")
+            else -> list.joinToString(", ") { it.headline() }
         }
 
         val b = NotificationCompat.Builder(ctx, CH_RINGING)

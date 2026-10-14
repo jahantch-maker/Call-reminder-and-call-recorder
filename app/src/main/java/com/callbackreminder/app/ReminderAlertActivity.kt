@@ -48,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -204,44 +206,56 @@ private fun AlertCard(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Avatar(text = r.title, size = 96.dp)
-        Spacer(Modifier.height(16.dp))
+        // The task on top in large text, the person in a pill under it (task first, like the lists).
         Text(
-            text = r.title,
-            color = Color.White,
-            fontSize = 30.sp,
+            text = "Due ${Fmt.dueLabel(r.dueAt)}",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = r.headline(),
+            color = if (r.note.isBlank()) Color.White.copy(alpha = 0.8f) else Color.White,
+            fontSize = if (r.note.length > 80) 22.sp else 28.sp,
+            lineHeight = if (r.note.length > 80) 28.sp else 34.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        if (r.name.isNotBlank() && r.number.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = r.number,
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 17.sp,
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Due ${Fmt.dueLabel(r.dueAt)}",
-            color = Color.White.copy(alpha = 0.55f),
-            fontSize = 14.sp,
-        )
-
-        if (r.note.isNotBlank()) {
-            Spacer(Modifier.height(16.dp))
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = GlassWhite,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+        Spacer(Modifier.height(18.dp))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(32.dp))
+                .background(GlassWhite)
+                .padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Avatar(text = r.title, size = 40.dp)
+            Spacer(Modifier.width(10.dp))
+            Column {
                 Text(
-                    text = r.note,
-                    modifier = Modifier.padding(14.dp),
+                    text = r.title,
                     color = Color.White,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (r.name.isNotBlank() && r.number.isNotBlank()) {
+                    Text(text = r.number, color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp)
+                }
             }
+        }
+        val extra = listOfNotNull(
+            r.repeatLabel,
+            r.delays.size.takeIf { it > 0 }?.let { if (it == 1) "delayed once" else "delayed $it times" },
+        )
+        if (extra.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = extra.joinToString(" · "),
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 14.sp,
+            )
         }
 
         Spacer(Modifier.height(24.dp))

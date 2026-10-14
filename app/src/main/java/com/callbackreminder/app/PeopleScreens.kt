@@ -107,56 +107,6 @@ private fun kindColors(k: WorkItem.Kind): Pair<Color, Color> = when (k) {
     WorkItem.Kind.DOSSIER -> Color(0xFFD9F3EC) to Color(0xFF0B5A4C)
 }
 
-/** One task in a list: its kind, who or what, the detail line, and when (or how overdue). */
-@Composable
-internal fun WorkRow(w: WorkItem, now: Long, showPerson: Boolean, onClick: () -> Unit) {
-    val (bg, fg) = kindColors(w.kind)
-    Card(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(bg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(kindIcon(w.kind), contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (showPerson) w.title else w.detail.substringAfter(" · ", w.detail),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    w.detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                when {
-                    w.inReview -> "To review"
-                    w.overdue -> Fmt.relative(w.at, now).replace("Overdue by ", "Overdue\n")
-                    else -> Fmt.dueLabel(w.at).replace("Today, ", "")
-                },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-                color = if (w.overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
 /** "Delayed 3×" in red or amber, or "On time" in green. */
 @Composable
 private fun DelayPill(delayed: Int) {
@@ -454,7 +404,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             when (tab) {
                 0 -> {
                     if (pending.isEmpty()) item(key = "none-p") { Hint("Nothing pending with $name.") }
-                    items(pending, key = { it.key }) { w -> WorkRow(w, now, showPerson = false) { onOpenItem(w) } }
+                    if (pending.isNotEmpty()) item(key = "pending") { WorkBlock(pending, now, showPerson = false, onOpen = onOpenItem) }
                 }
                 1 -> {
                     if (done.isEmpty()) item(key = "none-d") { Hint("Nothing done yet.") }
@@ -665,7 +615,7 @@ fun MyDayScreen(resumeKey: Int, onBack: () -> Unit, onStart: () -> Unit, onOpenI
             }
             val first = day.today.filter { it.at >= now - 3_600_000L }.take(6)
             if (first.isEmpty()) item(key = "none") { Hint("Nothing else due today.") }
-            items(first, key = { it.key }) { w -> WorkRow(w, now, showPerson = true) { onOpenItem(w) } }
+            if (first.isNotEmpty()) item(key = "first-list") { WorkBlock(first, now, showPerson = true, onOpen = onOpenItem) }
             item(key = "buttons") {
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f).height(48.dp)) { Text("Later") }

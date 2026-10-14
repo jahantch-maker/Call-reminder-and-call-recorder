@@ -238,6 +238,18 @@ object SmsStore {
         save(_items.value.filter { it.id != id })
     }
 
+    /**
+     * Undo after a swipe: put the text back exactly as it was. Its alarm is set again only for a time still
+     * ahead, so an undo never sends at once.
+     */
+    @Synchronized
+    fun restore(r: SmsReminder) {
+        SmsScheduler.cancel(appCtx, r.id)
+        val list = _items.value
+        save(if (list.any { it.id == r.id }) list.map { if (it.id == r.id) r else it } else list + r)
+        if (r.active && r.alarmAt > System.currentTimeMillis()) SmsScheduler.schedule(appCtx, r)
+    }
+
     @Synchronized
     fun addLog(id: Long, entry: SmsLogEntry) {
         val cur = get(id) ?: return
