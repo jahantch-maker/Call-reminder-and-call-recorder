@@ -250,6 +250,7 @@ private fun ReviewScreen(
                     CountLine("Texts to review", counts.textsToReview)
                     CountLine("To schedule", counts.toSchedule)
                     CountLine("Dossier not ticked", counts.dossierLeft)
+                    CountLine("Tasks needing a time", counts.needsTime)
                 }
             }
 

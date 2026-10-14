@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
             val c = ReviewReminder.counts(this)
             val calls = c.overdueCalls + c.callsToReview
             // Today's dossier opens its own To review page, which links to calls and texts waiting too.
-            if (c.dossierLeft > 0) {
+            if (c.dossierLeft > 0 || c.needsTime > 0) {
                 showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
                 return
             }
@@ -467,7 +467,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     val myTasks by MyTaskStore.items.collectAsState()
     val dossierTasks by DossierStore.tasks.collectAsState()
     val dossierRecords by DossierStore.records.collectAsState()
-    val myTasksBadge = myTasks.count { !it.done && it.dueAt <= now } +
+    val myTasksBadge = myTasks.count { !it.done && it.timed && it.dueAt <= now } +
         remember(dossierTasks, dossierRecords, now) { DossierStore.leftNow(now) }
 
     // Recordings and Settings at the top right of every tab.

@@ -133,8 +133,9 @@ fun HomeScreen(
     val dossierLeft = dossierToday.count {
         records[DossierStore.key(it.id, dossierDay)]?.done != true && it.dueAt(dossierDay) <= now
     }
-    val toReview = textsToReview + callsToReview + dossierLeft
-    val myTasksToday = myTasks.count { !it.done && it.dueAt < endOfToday }
+    val needsTime = myTasks.count { !it.done && !it.timed }
+    val toReview = textsToReview + callsToReview + dossierLeft + needsTime
+    val myTasksToday = myTasks.count { !it.done && it.timed && it.dueAt < endOfToday }
 
     val open = Work.open(now, calls, texts, myTasks, dossier, records)
     val overdue = open.filter { it.overdue }
@@ -222,7 +223,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 when {
-                                    dossierLeft > 0 -> onOpenDossierReview()
+                                    dossierLeft > 0 || needsTime > 0 -> onOpenDossierReview()
                                     textsToReview == 0 && callsToReview > 0 -> {
                                         CallsUi.tabRequest.value = CallsUi.TO_REVIEW
                                         onOpenCalls()

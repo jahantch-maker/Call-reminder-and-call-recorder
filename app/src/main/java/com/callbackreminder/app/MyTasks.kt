@@ -15,7 +15,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** A task of your own (My tasks › One-time), with an optional person to call or text about it. */
+/**
+ * A task of your own (My tasks › Tasks), with an optional person to call or text about it. It sits in
+ * one list ([listId] 0 is Unsorted). [dueAt] 0 means no time yet: it waits in To review as "Needs a time".
+ */
 data class MyTask(
     val id: Long,
     val title: String,
@@ -26,8 +29,13 @@ data class MyTask(
     val createdAt: Long,
     val done: Boolean = false,
     val doneAt: Long = 0L,
+    val listId: Long = MyTaskStore.UNSORTED,
+    val starred: Boolean = false,
+    /** Place in the list's "My order" (smaller first). */
+    val position: Long = createdAt,
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
+    val timed: Boolean get() = dueAt > 0L
     val personTitle: String get() = name.ifBlank { number }
 }
 
@@ -43,6 +51,7 @@ data class DossierTask(
     val minute: Int,
     /** Weekdays it repeats on: bit 0 = Monday … bit 6 = Sunday. Not used when [monthDay] is set. */
     val days: Int = Dossier.ALL_DAYS,
+    val starred: Boolean = false,
     /** 1..31 for "Monthly on the 14th" (the last day in shorter months), or 0 for weekdays. */
     val monthDay: Int = 0,
     /** Minutes before the due time for an extra heads-up notification, or 0 for none. */
@@ -147,6 +156,7 @@ object MyTaskStore {
         if (::appCtx.isInitialized) return
         appCtx = context.applicationContext
         _items.value = load()
+        _lists.value = loadLists()
     }
 
     private fun prefs() = appCtx.getSharedPreferences("my_tasks", Context.MODE_PRIVATE)
@@ -167,6 +177,9 @@ object MyTaskStore {
                     createdAt = o.optLong("createdAt"),
                     done = o.optBoolean("done"),
                     doneAt = o.optLong("doneAt"),
+                    listId = o.optLong("listId", UNSORTED),
+                    starred = o.optBoolean("starred"),
+                    position = o.optLong("position", o.optLong("createdAt")),
                 )
             }
         } catch (e: Exception) {
@@ -188,18 +201,120 @@ object MyTaskStore {
                     .put("createdAt", t.createdAt)
                     .put("done", t.done)
                     .put("doneAt", t.doneAt)
+                    .put("listId", t.listId)
+                    .put("starred", t.starred)
+                    .put("position", t.position)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
         _items.value = list
     }
 
+    // ---- Lists ----
+
+    const val UNSORTED = 0L
+
+    private val _lists = MutableStateFlow(listOf(TaskList(UNSORTED, "Unsorted")))
+    /** Unsorted first, then your lists in your order. */
+    val lists: StateFlow<List<TaskList>> = _lists.asStateFlow()
+
+    private fun loadLists(): List<TaskList> {
+        val raw = prefs().getString("lists", null)
+        val saved = try {
+            if (raw == null) emptyList() else JSONArray(raw).let { arr ->
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    TaskList(o.getLong("id"), o.optString("name"), o.optBoolean("byDate"))
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val unsorted = saved.firstOrNull { it.id == UNSORTED } ?: TaskList(UNSORTED, "Unsorted")
+        return listOf(unsorted.copy(name = "Unsorted")) + saved.filter { it.id != UNSORTED }
+    }
+
+    private fun saveLists(list: List<TaskList>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name).put("byDate", it.byDate)) }
+        prefs().edit().putString("lists", arr.toString()).apply()
+        _lists.value = list
+    }
+
+    fun list(id: Long): TaskList? = _lists.value.firstOrNull { it.id == id }
+    fun listName(id: Long): String = list(id)?.name ?: "Unsorted"
+
+    @Synchronized
+    fun addList(name: String): TaskList {
+        val id = prefs().getLong("nextListId", 1L)
+        prefs().edit().putLong("nextListId", id + 1).apply()
+        val l = TaskList(id, name.trim())
+        saveLists(_lists.value + l)
+        return l
+    }
+
+    @Synchronized
+    fun renameList(id: Long, name: String) {
+        if (id == UNSORTED) return
+        saveLists(_lists.value.map { if (it.id == id) it.copy(name = name.trim()) else it })
+    }
+
+    @Synchronized
+    fun setListByDate(id: Long, byDate: Boolean) {
+        saveLists(_lists.value.map { if (it.id == id) it.copy(byDate = byDate) else it })
+    }
+
+    /** Your lists in a new order (Unsorted always stays first). */
+    @Synchronized
+    fun reorderLists(ids: List<Long>) {
+        val byId = _lists.value.associateBy { it.id }
+        val mine = ids.filter { it != UNSORTED }.mapNotNull { byId[it] }
+        val rest = _lists.value.filter { it.id != UNSORTED && it.id !in ids }
+        saveLists(listOf(byId.getValue(UNSORTED)) + mine + rest)
+    }
+
+    /**
+     * Deletes a list: its tasks move to Unsorted, or are deleted with it. Unsorted can't be deleted.
+     * Returns what was there, for Undo.
+     */
+    @Synchronized
+    fun deleteList(id: Long, deleteTasks: Boolean): Pair<List<TaskList>, List<MyTask>>? {
+        if (id == UNSORTED) return null
+        val beforeLists = _lists.value
+        val beforeTasks = _items.value
+        saveLists(beforeLists.filter { it.id != id })
+        if (deleteTasks) {
+            beforeTasks.filter { it.listId == id }.forEach {
+                TaskAlarms.cancelTask(appCtx, it.id)
+                TaskAlarms.cancelTaskNotification(appCtx, it.id)
+            }
+            save(beforeTasks.filter { it.listId != id })
+        } else {
+            save(beforeTasks.map { if (it.listId == id) it.copy(listId = UNSORTED) else it })
+        }
+        return beforeLists to beforeTasks
+    }
+
+    /** Undo for [deleteList]. */
+    @Synchronized
+    fun restoreLists(lists: List<TaskList>, tasks: List<MyTask>) {
+        saveLists(lists)
+        save(tasks)
+        tasks.filter { !it.done }.forEach { TaskAlarms.scheduleTask(appCtx, it) }
+    }
+
     fun get(id: Long): MyTask? = _items.value.firstOrNull { it.id == id }
 
     @Synchronized
-    fun add(title: String, note: String, dueAt: Long, name: String, number: String): MyTask {
+    fun add(
+        title: String, note: String, dueAt: Long, name: String, number: String,
+        listId: Long = UNSORTED, starred: Boolean = false,
+    ): MyTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
+        val now = System.currentTimeMillis()
+        // New tasks go on top of "My order", like Google Tasks.
+        val top = (_items.value.filter { it.listId == listId }.minOfOrNull { it.position } ?: now) - 1
         val t = MyTask(
             id = id,
             title = title.trim(),
@@ -207,7 +322,10 @@ object MyTaskStore {
             dueAt = dueAt,
             name = name.trim(),
             number = number.trim(),
-            createdAt = System.currentTimeMillis(),
+            createdAt = now,
+            listId = if (list(listId) != null) listId else UNSORTED,
+            starred = starred,
+            position = minOf(top, now),
         )
         save(_items.value + t)
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -216,9 +334,15 @@ object MyTaskStore {
     }
 
     @Synchronized
-    fun edit(id: Long, title: String, note: String, dueAt: Long, name: String, number: String) {
+    fun edit(
+        id: Long, title: String, note: String, dueAt: Long, name: String, number: String,
+        listId: Long? = null, starred: Boolean? = null,
+    ) {
         val old = get(id) ?: return
-        val t = old.copy(title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim())
+        val t = old.copy(
+            title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim(),
+            listId = listId ?: old.listId, starred = starred ?: old.starred,
+        )
         save(_items.value.map { if (it.id == id) t else it })
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
         TaskAlarms.cancelTaskNotification(appCtx, id)
@@ -240,7 +364,46 @@ object MyTaskStore {
         TaskAlarms.cancelTask(appCtx, id)
         TaskAlarms.cancelTaskNotification(appCtx, id)
     }
+
+    @Synchronized
+    fun setStar(id: Long, starred: Boolean) {
+        save(_items.value.map { if (it.id == id) it.copy(starred = starred) else it })
+    }
+
+    @Synchronized
+    fun moveToList(id: Long, listId: Long) {
+        save(_items.value.map { if (it.id == id) it.copy(listId = listId) else it })
+    }
+
+    /** Sets (or clears, with 0) the time, e.g. "Set time" in To review. */
+    @Synchronized
+    fun setDue(id: Long, dueAt: Long) {
+        val old = get(id) ?: return
+        val t = old.copy(dueAt = dueAt)
+        save(_items.value.map { if (it.id == id) t else it })
+        TaskAlarms.cancelTaskNotification(appCtx, id)
+        if (!t.done) TaskAlarms.scheduleTask(appCtx, t)
+    }
+
+    /** "My order" after a drag: [ids] top to bottom. */
+    @Synchronized
+    fun reorder(ids: List<Long>) {
+        val pos = ids.withIndex().associate { (i, id) -> id to i.toLong() }
+        save(_items.value.map { t -> pos[t.id]?.let { t.copy(position = it) } ?: t })
+    }
+
+    /** Undo: puts the task back exactly as it was. */
+    @Synchronized
+    fun restore(t: MyTask) {
+        val list = _items.value
+        save(if (list.any { it.id == t.id }) list.map { if (it.id == t.id) t else it } else list + t)
+        TaskAlarms.cancelTaskNotification(appCtx, t.id)
+        if (t.done) TaskAlarms.cancelTask(appCtx, t.id) else TaskAlarms.scheduleTask(appCtx, t)
+    }
 }
+
+/** A My tasks list, like Google Tasks' lists. [byDate] off sorts by your own order. */
+data class TaskList(val id: Long, val name: String, val byDate: Boolean = false)
 
 /** Dossier tasks and each day's ticks and reasons. */
 object DossierStore {
@@ -279,6 +442,7 @@ object DossierStore {
                     note = o.optString("note"),
                     minute = o.optInt("minute", 9 * 60),
                     days = o.optInt("days", Dossier.ALL_DAYS),
+                    starred = o.optBoolean("starred"),
                     monthDay = o.optInt("monthDay", 0),
                     remindBefore = o.optInt("remindBefore", 0),
                     startDate = o.optString("startDate").ifBlank { LocalDate.now().toString() },
@@ -300,6 +464,7 @@ object DossierStore {
                     .put("note", t.note)
                     .put("minute", t.minute)
                     .put("days", t.days)
+                    .put("starred", t.starred)
                     .put("monthDay", t.monthDay)
                     .put("remindBefore", t.remindBefore)
                     .put("startDate", t.startDate)
@@ -354,7 +519,7 @@ object DossierStore {
     }
 
     @Synchronized
-    fun add(title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int): DossierTask {
+    fun add(title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int, starred: Boolean = false): DossierTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
         val now = System.currentTimeMillis()
@@ -366,6 +531,7 @@ object DossierStore {
             days = days,
             monthDay = monthDay,
             remindBefore = remindBefore,
+            starred = starred,
             startDate = firstDay(minute, now).toString(),
             createdAt = now,
         )
@@ -375,9 +541,13 @@ object DossierStore {
     }
 
     @Synchronized
-    fun edit(id: Long, title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int) {
+    fun edit(
+        id: Long, title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int,
+        starred: Boolean? = null,
+    ) {
         val old = get(id) ?: return
         val t = old.copy(
+            starred = starred ?: old.starred,
             title = title.trim(),
             note = note.trim(),
             minute = minute,
@@ -405,6 +575,19 @@ object DossierStore {
         saveRecords(_records.value + (key(taskId, date) to r))
         TaskAlarms.cancelDossierNotification(appCtx, taskId)
         return true
+    }
+
+    @Synchronized
+    fun setStar(id: Long, starred: Boolean) {
+        saveTasks(_tasks.value.map { if (it.id == id) it.copy(starred = starred) else it })
+    }
+
+    /** Undo for a delete: the task and its History come back. */
+    @Synchronized
+    fun restore(t: DossierTask, recs: Map<String, DossierRecord>) {
+        if (_tasks.value.none { it.id == t.id }) saveTasks(_tasks.value + t)
+        saveRecords(_records.value + recs.filterValues { it.taskId == t.id })
+        TaskAlarms.scheduleDossier(appCtx, t)
     }
 
     /** Takes a tick back (tapped by mistake). Only before the day locks. */
