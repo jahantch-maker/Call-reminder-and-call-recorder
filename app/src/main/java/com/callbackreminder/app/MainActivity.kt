@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -266,19 +267,27 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
     var tab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
+    // Keeps each open screen's scroll spot while a page on top of it is showing, so Back lands where you were.
+    val screenStates = rememberSaveableStateHolder()
+
+    fun setStack(next: List<Int>) {
+        // A screen that is closed starts fresh (at the top) the next time it opens.
+        (stack - next.toSet()).forEach { screenStates.removeState(it) }
+        stack = next
+    }
 
     fun open(screen: Int) {
         val i = stack.indexOf(screen)
         // Already open further back (e.g. Settings → Recordings → Settings): go back to it instead of stacking a copy.
-        stack = if (i >= 0) stack.take(i + 1) else stack + screen
+        setStack(if (i >= 0) stack.take(i + 1) else stack + screen)
     }
 
     fun back() {
-        if (stack.size > 1) stack = stack.dropLast(1)
+        if (stack.size > 1) setStack(stack.dropLast(1))
     }
 
     fun showTab(t: Int) {
-        stack = listOf(Screen.HOME)
+        setStack(listOf(Screen.HOME))
         tab = t
     }
 
@@ -320,6 +329,10 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
     ) { s ->
         // Each screen gets a solid background so the one underneath doesn't show through mid-slide.
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // The tabs page manages its own state (the bar decides which tab shows), so it isn't kept here.
+            if (s.last() == Screen.HOME) {
+                MainTabs(tab = tab, onTab = { tab = it }, resumeKey = resumeKey, open = { open(it) })
+            } else screenStates.SaveableStateProvider(s.last()) {
             when (s.last()) {
                 Screen.QUICK_TIMES -> QuickTimesScreen(onBack = { back() })
                 Screen.SETUP -> SetupSettingsScreen(resumeKey = resumeKey, onBack = { back() })
@@ -402,6 +415,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     resumeKey = resumeKey,
                     open = { open(it) },
                 )
+            }
             }
         }
     }
