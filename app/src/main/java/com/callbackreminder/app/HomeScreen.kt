@@ -382,8 +382,8 @@ fun HomeScreen(
     if (newCall) {
         AddReminderDialog(
             onDismiss = { newCall = false },
-            onSave = { name, number, note, dueAt, repeat ->
-                ReminderStore.add(name, number, note, dueAt, repeat)
+            onSave = { name, number, note, dueAt, repeat, starred ->
+                ReminderStore.add(name, number, note, dueAt, repeat, starred = starred)
                 newCall = false
             }
         )

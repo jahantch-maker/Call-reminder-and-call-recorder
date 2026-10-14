@@ -58,6 +58,7 @@ object ReminderStore {
                             CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
                         }
                     } ?: emptyList(),
+                    starred = o.optBoolean("starred"),
                 )
             }
         } catch (e: Exception) {
@@ -83,6 +84,7 @@ object ReminderStore {
                     .put("occurrenceAt", r.occurrenceAt)
                     .put("occurrenceCount", r.occurrenceCount)
                     .put("review", r.review)
+                    .put("starred", r.starred)
                     .put("delays", JSONArray().apply {
                         r.delays.forEach { d ->
                             put(
@@ -122,6 +124,7 @@ object ReminderStore {
         repeat: Repeat? = null,
         createdAs: String = "Created",
         earlier: List<CallEvent> = emptyList(),
+        starred: Boolean = false,
     ): Reminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -138,6 +141,7 @@ object ReminderStore {
             seriesStart = dueAt,
             occurrenceAt = first,
             events = earlier + CallEvent(System.currentTimeMillis(), "$createdAs, due", first),
+            starred = starred,
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)
@@ -193,7 +197,10 @@ object ReminderStore {
      * naming what changed. A finished task stays finished; a waiting one gets its alarm moved.
      */
     @Synchronized
-    fun edit(id: Long, name: String, number: String, note: String, dueAt: Long, repeat: Repeat?) {
+    fun edit(id: Long, name: String, number: String, note: String, dueAt: Long, repeat: Repeat?, starred: Boolean? = null) {
+        val cur0 = get(id) ?: return
+        // The star is not "an edit" worth a History line; it is just saved.
+        if (starred != null && starred != cur0.starred) setStar(id, starred)
         val cur = get(id) ?: return
         val changes = mutableListOf<String>()
         if (name.trim() != cur.name || number.trim() != cur.number) changes += "person"
@@ -298,6 +305,23 @@ object ReminderStore {
         val list = _items.value
         save(if (list.any { it.id == r.id }) list.map { if (it.id == r.id) r else it } else list + r)
         if (!r.done && (r.dueAt > System.currentTimeMillis() || r.repeat != null)) Scheduler.schedule(appCtx, r)
+    }
+
+    /** Star or unstar a task (important). */
+    @Synchronized
+    fun setStar(id: Long, starred: Boolean) {
+        save(_items.value.map { if (it.id == id) it.copy(starred = starred) else it })
+    }
+
+    /**
+     * "Not done, move back" on a finished task: it waits again (overdue if its time has passed) and
+     * its alarm is set again only when that time is still ahead.
+     */
+    @Synchronized
+    fun reopen(id: Long) {
+        val cur = get(id) ?: return
+        restore(cur.copy(done = false, doneAt = 0L, review = false))
+        logEvent(id, "Moved back from Done")
     }
 
     /** Adds a line to the task's History. Kept to the newest [EVENT_LIMIT]. */

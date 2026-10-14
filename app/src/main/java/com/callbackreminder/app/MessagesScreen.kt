@@ -433,8 +433,8 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
             initialNumber = r.number,
             initialNote = r.message,
             onDismiss = { callInsteadFor = null },
-            onSave = { name, number, note, dueAt, repeat ->
-                TextToCall.move(ctx, r, name, number, note, dueAt, repeat)
+            onSave = { name, number, note, dueAt, repeat, starred ->
+                TextToCall.move(ctx, r, name, number, note, dueAt, repeat).let { if (starred) ReminderStore.setStar(it.id, true) }
                 callInsteadFor = null
                 Toast.makeText(ctx, "Moved to Calls · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
             }

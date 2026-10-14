@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
@@ -93,7 +94,6 @@ fun CallsScreen(resumeKey: Int) {
     var historyFor by remember { mutableStateOf<Reminder?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     var rescheduleFor by remember { mutableStateOf<Reminder?>(null) }
-    var deleteFor by remember { mutableStateOf<Reminder?>(null) }
     var textInsteadFor by remember { mutableStateOf<Reminder?>(null) }
     var editFor by remember { mutableStateOf<Reminder?>(null) }
     var snoozeFor by remember { mutableStateOf<Reminder?>(null) }
@@ -103,8 +103,12 @@ fun CallsScreen(resumeKey: Int) {
     val scope = rememberCoroutineScope()
     var createdFilter by ListFilters.callsCreated
     var dueFilter by ListFilters.callsDue
-    val items = all.filter { createdFilter.matches(it.createdAt) && dueFilter.matches(it.dueAt) }
-    val filtering = createdFilter.active || dueFilter.active
+    var starredOnly by rememberSaveable { mutableStateOf(false) }
+    var pickTimeFor by remember { mutableStateOf<Reminder?>(null) }
+    val items = all.filter {
+        createdFilter.matches(it.createdAt) && dueFilter.matches(it.dueAt) && (!starredOnly || it.starred)
+    }
+    val filtering = createdFilter.active || dueFilter.active || starredOnly
 
     // Refresh "in 5 min / overdue" labels while the screen is open.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -149,11 +153,23 @@ fun CallsScreen(resumeKey: Int) {
         if (openId == r.id) openId = null
         scope.offerUndo(snack, "Checked · ${r.headline()}") { ReminderStore.restore(before) }
     }
-    fun snoozeTo(r: Reminder, ms: Long) {
+    fun snoozeTo(r: Reminder, ms: Long, logAs: String = if (r.done) "Moved to" else "Snoozed to") {
         val before = r
-        ReminderStore.reschedule(r.id, ms, if (r.done) "Moved to" else "Snoozed to")
+        ReminderStore.reschedule(r.id, ms, logAs)
         if (openId == r.id) openId = null
         scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { ReminderStore.restore(before) }
+    }
+    fun deleteNow(r: Reminder) {
+        val before = r
+        ReminderStore.delete(r.id)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Deleted · ${r.headline()}") { ReminderStore.restore(before) }
+    }
+    fun moveBack(r: Reminder) {
+        val before = r
+        ReminderStore.reopen(r.id)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Moved back · ${r.headline()}") { ReminderStore.restore(before) }
     }
 
     val row: @Composable (Reminder, RowPos, CallMode) -> Unit = { r, pos, mode ->
@@ -177,7 +193,9 @@ fun CallsScreen(resumeKey: Int) {
             onEdit = { editFor = r },
             onTextInstead = { textInsteadFor = r },
             onHistory = { historyFor = r },
-            onDelete = { deleteFor = r },
+            onDelete = { deleteNow(r) },
+            onStar = { ReminderStore.setStar(r.id, !r.starred) },
+            onMoveBack = { moveBack(r) },
         )
     }
 
@@ -262,6 +280,8 @@ fun CallsScreen(resumeKey: Int) {
                         due = dueFilter,
                         onCreated = { createdFilter = it },
                         onDue = { dueFilter = it },
+                        starredOnly = starredOnly,
+                        onStarred = { starredOnly = it },
                     )
                 }
             }
@@ -333,7 +353,7 @@ fun CallsScreen(resumeKey: Int) {
             heading = if (r.done) "New time" else "Snooze",
             about = r.headline(),
             onPick = { ms -> snoozeFor = null; snoozeTo(r, ms) },
-            onPickTime = { snoozeFor = null; rescheduleFor = r },
+            onPickTime = { snoozeFor = null; pickTimeFor = r },
             onDismiss = { snoozeFor = null }
         )
     }
@@ -343,8 +363,8 @@ fun CallsScreen(resumeKey: Int) {
     if (showAdd) {
         AddReminderDialog(
             onDismiss = { showAdd = false },
-            onSave = { name, number, note, dueAt, repeat ->
-                ReminderStore.add(name, number, note, dueAt, repeat)
+            onSave = { name, number, note, dueAt, repeat, starred ->
+                ReminderStore.add(name, number, note, dueAt, repeat, starred = starred)
                 showAdd = false
             }
         )
@@ -358,23 +378,34 @@ fun CallsScreen(resumeKey: Int) {
             initialNote = r.note,
             initialDue = r.dueAt,
             initialRepeat = r.repeat,
+            initialStarred = r.starred,
             onDismiss = { editFor = null },
-            onSave = { name, number, note, dueAt, repeat ->
-                ReminderStore.edit(r.id, name, number, note, dueAt, repeat)
+            onSave = { name, number, note, dueAt, repeat, starred ->
+                ReminderStore.edit(r.id, name, number, note, dueAt, repeat, starred)
                 editFor = null
             }
         )
     }
 
+    // New time: your Quick times first (one tap sets it), Pick date & time for anything else.
     rescheduleFor?.let { r ->
+        SnoozeSheet(
+            heading = "New time",
+            about = r.headline(),
+            onPick = { ms -> rescheduleFor = null; snoozeTo(r, ms, "Moved to") },
+            onPickTime = { rescheduleFor = null; pickTimeFor = r },
+            onDismiss = { rescheduleFor = null }
+        )
+    }
+
+    pickTimeFor?.let { r ->
         DateTimePickerFlow(
             initialMs = maxOf(r.dueAt, now),
             onPicked = { ms ->
-                ReminderStore.reschedule(r.id, ms)
-                rescheduleFor = null
-                if (openId == r.id) openId = null
+                pickTimeFor = null
+                snoozeTo(r, ms, "Moved to")
             },
-            onDismiss = { rescheduleFor = null }
+            onDismiss = { pickTimeFor = null }
         )
     }
 
@@ -400,21 +431,6 @@ fun CallsScreen(resumeKey: Int) {
                 textInsteadFor = null
                 Toast.makeText(ctx, "Moved to Texts · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
             }
-        )
-    }
-
-    deleteFor?.let { r ->
-        AlertDialog(
-            onDismissRequest = { deleteFor = null },
-            title = { Text("Delete reminder?") },
-            text = { Text("Remove “${r.headline()}” for ${r.title}.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    ReminderStore.delete(r.id)
-                    deleteFor = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
 }
@@ -452,6 +468,8 @@ private fun CallRow(
     onTextInstead: () -> Unit,
     onHistory: () -> Unit,
     onDelete: () -> Unit,
+    onStar: () -> Unit,
+    onMoveBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val noTask = r.note.isBlank()
@@ -517,7 +535,11 @@ private fun CallRow(
                 if (mode == CallMode.DONE) {
                     RoundAction(Icons.Rounded.Replay, "Call again", cs.secondaryContainer, cs.onSecondaryContainer, hasNumber, onCall)
                 } else {
-                    RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber, onCall)
+                    // The ☆ sits just above the call button.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        StarButton(r.starred, onStar)
+                        RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber, onCall)
+                    }
                 }
             },
             expandedContent = {
@@ -546,6 +568,7 @@ private fun CallRow(
                             RowAction("Mark done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
                         ),
                         links = listOf(
+                            RowLink("Not done, move back", onClick = onMoveBack),
                             RowLink("Edit", onClick = onEdit),
                             RowLink(historyLabel, onClick = onHistory),
                             RowLink("Delete", danger = true, onClick = onDelete),
@@ -553,6 +576,7 @@ private fun CallRow(
                     )
                     CallMode.DONE -> RowActions(
                         actions = listOfNotNull(
+                            RowAction("Not done, move back", Icons.AutoMirrored.Rounded.Undo, ActionStyle.ORANGE, onMoveBack),
                             RowAction("Call again", Icons.Rounded.Replay, ActionStyle.FILLED, onCall).takeIf { hasNumber },
                             RowAction("Reschedule", Icons.Rounded.Schedule, ActionStyle.OUTLINED, onPickTime),
                         ),

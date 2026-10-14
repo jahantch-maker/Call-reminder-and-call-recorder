@@ -605,11 +605,16 @@ fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
     )
 }
 
-/** A short bar with Undo after Done or Snooze. */
+/** A black bar with UNDO for 5 seconds after Done, Snooze, Delete and the like. */
 fun CoroutineScope.offerUndo(host: SnackbarHostState, message: String, undo: () -> Unit) {
     launch {
         host.currentSnackbarData?.dismiss()
-        val res = host.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Short)
+        val closer = launch {
+            kotlinx.coroutines.delay(5_000L)
+            host.currentSnackbarData?.dismiss()
+        }
+        val res = host.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
+        closer.cancel()
         if (res == SnackbarResult.ActionPerformed) undo()
     }
 }

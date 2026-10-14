@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * Add a follow-up by hand: pick who to call, add a note, choose the date & time (and repeat).
@@ -63,13 +64,14 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AddReminderDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, number: String, note: String, dueAt: Long, repeat: Repeat?) -> Unit,
+    onSave: (name: String, number: String, note: String, dueAt: Long, repeat: Repeat?, starred: Boolean) -> Unit,
     title: String = "New reminder",
     initialName: String = "",
     initialNumber: String = "",
     initialNote: String = "",
     initialDue: Long? = null,
     initialRepeat: Repeat? = null,
+    initialStarred: Boolean = false,
 ) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf(initialName) }
@@ -83,10 +85,22 @@ fun AddReminderDialog(
         )
     }
     var repeat by remember { mutableStateOf(initialRepeat) }
+    var starred by remember { mutableStateOf(initialStarred) }
     var showDateTime by remember { mutableStateOf(false) }
+    // The Quick time tile that set the current time, outlined.
+    var picked by remember { mutableStateOf<Long?>(null) }
+    val startDue = remember { due }
+    val cancel = rememberDiscardGuard(
+        changed = {
+            name != initialName || number != initialNumber || note != initialNote ||
+                due != startDue || repeat != initialRepeat || starred != initialStarred
+        },
+        onClose = onDismiss,
+    )
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
+        properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text(title) },
         text = {
             Column(
@@ -112,6 +126,16 @@ fun AddReminderDialog(
                     shape = RoundedCornerShape(14.dp)
                 )
 
+                Text(
+                    "WHEN?",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                QuickTimeTiles(selected = picked) { ms ->
+                    due = ms
+                    picked = ms
+                }
+
                 OutlinedButton(
                     onClick = { showDateTime = true },
                     modifier = Modifier.fillMaxWidth(),
@@ -136,15 +160,17 @@ fun AddReminderDialog(
                         }
                     }
                 }
+
+                StarSwitchRow(starred) { starred = it }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = number.isNotBlank(),
-                onClick = { onSave(name, number, note, due, repeat) }
+                onClick = { onSave(name, number, note, due, repeat, starred) }
             ) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
 
     if (showDateTime) {
@@ -155,6 +181,7 @@ fun AddReminderDialog(
             onDone = { ms, r ->
                 due = ms
                 repeat = r
+                picked = null
                 showDateTime = false
             },
             onDismiss = { showDateTime = false }
