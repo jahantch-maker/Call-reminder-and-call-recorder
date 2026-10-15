@@ -515,7 +515,6 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar {
-                // Follows the page under your finger while swiping.
                 val shown = pager.currentPage
                 TabItem(shown, Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size, onTab)
                 TabItem(shown, Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge, onTab)
@@ -529,6 +528,8 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             state = pager,
             modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
             key = { it },
+            // Swiping sideways is for Done / Snooze on rows; pages change from the bottom bar only.
+            userScrollEnabled = false,
         ) { page ->
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
               CompositionLocalProvider(LocalTopActions provides topActions) {
