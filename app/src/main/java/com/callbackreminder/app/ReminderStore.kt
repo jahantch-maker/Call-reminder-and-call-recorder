@@ -59,6 +59,9 @@ object ReminderStore {
                         }
                     } ?: emptyList(),
                     starred = o.optBoolean("starred"),
+                    linkId = o.optLong("linkId"),
+                    autopilot = o.optBoolean("autopilot"),
+                    reviewLaterUntil = o.optLong("reviewLater"),
                 )
             }
         } catch (e: Exception) {
@@ -85,6 +88,9 @@ object ReminderStore {
                     .put("occurrenceCount", r.occurrenceCount)
                     .put("review", r.review)
                     .put("starred", r.starred)
+                    .put("linkId", r.linkId)
+                    .put("autopilot", r.autopilot)
+                    .put("reviewLater", r.reviewLaterUntil)
                     .put("delays", JSONArray().apply {
                         r.delays.forEach { d ->
                             put(
@@ -154,9 +160,11 @@ object ReminderStore {
      * A repeating task leaves a finished copy there and carries on with its next time.
      */
     @Synchronized
-    fun markDone(id: Long, review: Boolean = false) {
+    fun markDone(id: Long, review: Boolean = false, linked: Boolean = true) {
         if (get(id)?.done == false) logEvent(id, if (review) "Done, sent to To review" else "Marked done")
         val cur = get(id) ?: return
+        // The task is done, so its follow-up's texts stop too (not for a repeat, which carries on).
+        if (linked && cur.linkId != 0L && cur.repeat == null && !cur.done) FollowUps.stopTexts(cur.linkId)
         if (review && cur.repeat != null && !cur.done) {
             val copyId = prefs().getLong("nextId", 1L)
             prefs().edit().putLong("nextId", copyId + 1).apply()
@@ -305,6 +313,19 @@ object ReminderStore {
         val list = _items.value
         save(if (list.any { it.id == r.id }) list.map { if (it.id == r.id) r else it } else list + r)
         if (!r.done && (r.dueAt > System.currentTimeMillis() || r.repeat != null)) Scheduler.schedule(appCtx, r)
+    }
+
+    /** Joins this call to a follow-up (its texts share [linkId]). */
+    @Synchronized
+    fun setLink(id: Long, linkId: Long, autopilot: Boolean) {
+        save(_items.value.map { if (it.id == id) it.copy(linkId = linkId, autopilot = autopilot) else it })
+    }
+
+    /** "Review later": hidden from To review until [until]. */
+    @Synchronized
+    fun reviewLater(id: Long, until: Long) {
+        save(_items.value.map { if (it.id == id) it.copy(reviewLaterUntil = until) else it })
+        logEvent(id, "Review later,", until)
     }
 
     /** Star or unstar a task (important). */

@@ -120,7 +120,12 @@ private val SmsReminder.repliedDone: Boolean
 
 /** Scheduled text messages: sent from your own SIM at the time you set, once or on a repeat. */
 @Composable
-fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> Unit) {
+fun MessagesScreen(
+    resumeKey: Int,
+    onBack: (() -> Unit)?,
+    onOpenSettings: () -> Unit,
+    switcher: (@Composable () -> Unit)? = null,
+) {
     val ctx = LocalContext.current
     val all by SmsStore.items.collectAsState()
     var createdFilter by ListFilters.textsCreated
@@ -133,7 +138,8 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     var pickTimeFor by remember { mutableStateOf<SmsReminder?>(null) }
     var sendNowFor by remember { mutableStateOf<SmsReminder?>(null) }
     var historyFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var callInsteadFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var reviewLaterFor by remember { mutableStateOf<SmsReminder?>(null) }
+    var pickReviewLaterFor by remember { mutableStateOf<SmsReminder?>(null) }
     var laterFor by remember { mutableStateOf<SmsReminder?>(null) }
     var openId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showPermissionHelp by remember { mutableStateOf(false) }
@@ -161,7 +167,10 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
     }
 
     val pending = items.filter { it.active }.sortedBy { it.alarmAt }
-    val toReview = items.filter { !it.done && it.review != null }.sortedByDescending { it.reviewAt }
+    // "Review later" hides an item until its time comes.
+    val allToReview = items.filter { !it.done && it.review != null }.sortedByDescending { it.reviewAt }
+    val toReview = allToReview.filter { it.reviewLaterUntil <= now }
+    val reviewLaterCount = allToReview.size - toReview.size
     val finished = items.filter { it.done }.sortedByDescending { it.doneAt }
 
     val listState = rememberLazyListState()
@@ -184,8 +193,9 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         }
         tab = t
         highlightId = id
-        // Header, the permission card when it shows, then the tabs come before the day blocks.
-        val index = smsIndex(smsBlocks(t, list), id, before = if (canSend) 2 else 3)
+        openId = id
+        // Header, the switcher and the permission card when they show, then the tabs come before the day blocks.
+        val index = smsIndex(smsBlocks(t, list), id, before = (if (canSend) 2 else 3) + (if (switcher != null) 1 else 0))
         if (index != null) {
             delay(150L)
             listState.animateScrollToItem(index)
@@ -211,9 +221,17 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
 
     fun done(r: SmsReminder) {
         val before = r
+        // Undo also puts back a follow-up's call reminder.
+        val linked = FollowUps.snapshot(r.linkId)
         SmsStore.markDone(r.id)
         if (openId == r.id) openId = null
-        scope.offerUndo(snack, "Done · ${r.message}") { SmsStore.restore(before) }
+        scope.offerUndo(snack, "Done · ${r.message}") { SmsStore.restore(before); linked() }
+    }
+    fun reviewLater(r: SmsReminder, ms: Long) {
+        val before = r
+        SmsStore.reviewLater(r.id, ms)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Back in To review ${Fmt.dueLabel(ms)}") { SmsStore.restore(before) }
     }
     fun later(r: SmsReminder, ms: Long) {
         val before = r
@@ -281,7 +299,7 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                     }
                     Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
                         Text(
-                            "Text messages",
+                            if (switcher != null) "Follow-ups" else "Text messages",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -298,6 +316,8 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                     TopActions()
                 }
             }
+
+            if (switcher != null) item(key = "switch") { switcher() }
 
             if (!canSend) {
                 item(key = "permission") {
@@ -405,12 +425,41 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
                                 FollowUp.markText(ctx, r)
                                 dial(ctx, r.number)
                             },
-                            onCallInstead = { callInsteadFor = r },
+                            onReviewLater = { reviewLaterFor = r },
                         )
                     }
                 }
             }
+            if (tab == 1 && reviewLaterCount > 0) {
+                item(key = "review-later") {
+                    Text(
+                        "$reviewLaterCount set to Review later. They come back here at their time.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                }
+            }
         }
+    }
+
+    reviewLaterFor?.let { r ->
+        SnoozeSheet(
+            heading = "Review later",
+            about = r.message,
+            onPick = { ms -> reviewLaterFor = null; reviewLater(r, ms) },
+            onPickTime = { reviewLaterFor = null; pickReviewLaterFor = r },
+            onDismiss = { reviewLaterFor = null },
+            plusRow = true
+        )
+    }
+
+    pickReviewLaterFor?.let { r ->
+        DateTimePickerFlow(
+            initialMs = now + 3_600_000L,
+            onPicked = { ms -> pickReviewLaterFor = null; reviewLater(r, ms) },
+            onDismiss = { pickReviewLaterFor = null }
+        )
     }
 
     laterFor?.let { r ->
@@ -444,28 +493,17 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
         )
     }
 
-    editFor?.let { r ->
+    editFor?.takeIf { it.linkId != 0L }?.let { r ->
+        FollowUpDialog(onDismiss = { editFor = null }, linkId = r.linkId)
+    }
+
+    editFor?.takeIf { it.linkId == 0L }?.let { r ->
         SmsReminderDialog(
             initial = r,
             onDismiss = { editFor = null },
             onSave = { name, number, message, dueAt, repeat, burst, tracked ->
                 SmsStore.edit(r.id, name, number, message, dueAt, repeat, burst, tracked)
                 editFor = null
-            }
-        )
-    }
-
-    callInsteadFor?.let { r ->
-        AddReminderDialog(
-            title = "Call instead",
-            initialName = r.name,
-            initialNumber = r.number,
-            initialNote = r.message,
-            onDismiss = { callInsteadFor = null },
-            onSave = { name, number, note, dueAt, repeat, starred ->
-                TextToCall.move(ctx, r, name, number, note, dueAt, repeat).let { if (starred) ReminderStore.setStar(it.id, true) }
-                callInsteadFor = null
-                Toast.makeText(ctx, "Moved to Calls · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -488,6 +526,8 @@ fun MessagesScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenSettings: () -> 
             text = {
                 Text(
                     when {
+                        r.slots.isNotEmpty() -> "Sends text ${r.burstIndex + 1} of ${r.burstCount} to ${r.title} now. " +
+                            "The rest go at their set times."
                         r.isBurst -> "Starts today's burst to ${r.title} now: ${r.burstCount} texts, " +
                             "${r.burstGapMin} min apart, starting with Reminder 1."
                         r.repeat != null -> "Sends the message to ${r.title} now. It counts as the one due " +
@@ -609,7 +649,7 @@ private fun SmsRow(
     onPickTime: () -> Unit,
     onDelete: () -> Unit,
     onCallNow: () -> Unit,
-    onCallInstead: () -> Unit,
+    onReviewLater: () -> Unit,
     onMoveBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -723,8 +763,8 @@ private fun SmsRow(
                         links = listOfNotNull(
                             RowLink("History", onClick = onHistory),
                             RowLink("Edit", onClick = onEdit),
+                            RowLink("Review later", onClick = onReviewLater),
                             RowLink("Send again later", onClick = onLater),
-                            RowLink("Call instead", onClick = onCallInstead).takeIf { hasNumber },
                             RowLink("Delete", danger = true, onClick = onDelete),
                         )
                     )
@@ -737,7 +777,6 @@ private fun SmsRow(
                         ),
                         links = listOfNotNull(
                             RowLink("Call now", onClick = onCallNow).takeIf { hasNumber },
-                            RowLink("Call instead", onClick = onCallInstead).takeIf { hasNumber },
                             RowLink("History", onClick = onHistory),
                             RowLink("Stop repeat") { SmsStore.stopRepeating(r.id) }.takeIf { r.repeat != null },
                             RowLink("Delete", danger = true, onClick = onDelete),

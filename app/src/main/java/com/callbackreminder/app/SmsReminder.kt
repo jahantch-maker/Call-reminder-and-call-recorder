@@ -18,6 +18,9 @@ data class SmsLogEntry(
         MARKED_DONE("done", "You marked it done"),
         MARKED_NOT_DONE("notdone", "You marked it not done"),
 
+        /** The follow-up got a new due time; [detail] says where the texts went and the new due time. */
+        MOVED("moved", "Moved with the task"),
+
         /** A line carried over from the call reminder this text replaced; [detail] says what happened. */
         CALL_EVENT("call", "Call reminder"),
         FROM_CALL("fromcall", "Changed from a call reminder to a text"),
@@ -68,6 +71,17 @@ data class SmsReminder(
     val code: String = "",
     /** Put the task number (and "Reminder N") in the texts, so a "Done <number>" reply can stop it. */
     val tracked: Boolean = true,
+    /** The follow-up this text belongs to, shared with its call (0 = a text on its own). */
+    val linkId: Long = 0L,
+    /**
+     * Texts at set times (a follow-up's "Text him" times): minutes after [dueAt] for each text, first 0.
+     * Empty for a single text or a template burst. When set, [burstCount] is its size.
+     */
+    val slots: List<Int> = emptyList(),
+    /** The task's due time, written at the end of each text and updated on every New time; 0 = none. */
+    val taskDue: Long = 0L,
+    /** "Review later" in To review: hidden there until this time. */
+    val reviewLaterUntil: Long = 0L,
 ) {
     enum class Review(val code: String) {
         /** The person texted back "Done". */
@@ -97,13 +111,22 @@ data class SmsReminder(
     val repeatLabel: String?
         get() = repeat?.label(Repeat.at(seriesStart))
 
-    /** Like "5 texts, 5 min apart", or null for a single text. */
+    /** Like "5 texts, 5 min apart" (or "2 texts: 9:00 AM, 2:00 PM"), or null for a single text. */
     val burstLabel: String?
-        get() = if (isBurst) BurstTemplate(burstCount, burstGapMin).label else null
+        get() = when {
+            !isBurst -> null
+            slots.isNotEmpty() -> "$burstCount texts: " + slots.indices.joinToString(", ") { Fmt.timeOnly(textAt(it)) }
+            else -> BurstTemplate(burstCount, burstGapMin).label
+        }
+
+    /** When text [index] of the current message or burst goes out. */
+    fun textAt(index: Int): Long =
+        if (slots.isNotEmpty()) dueAt + slots[index.coerceIn(0, slots.size - 1)] * 60_000L
+        else dueAt + index * burstGapMin * 60_000L
 
     /** When the next text of the current burst goes out. */
     val nextTextAt: Long
-        get() = dueAt + burstIndex * burstGapMin * 60_000L
+        get() = textAt(burstIndex)
 
     /** When the alarm should fire: the waiting retry, else the next text. */
     val alarmAt: Long
@@ -113,10 +136,13 @@ data class SmsReminder(
      * The text that actually goes out. Tracked: "Reminder 2 (261011-01): …" for a burst, "(261011-01) …"
      * for a single text. Not tracked: just the message, as typed.
      */
-    fun textFor(index: Int): String = when {
-        !tracked || code.isEmpty() -> message
-        isBurst -> "Reminder ${index + 1} ($code): $message"
-        else -> "($code) $message"
+    fun textFor(index: Int): String {
+        val body = if (taskDue > 0L) "$message (Due: ${Fmt.fullDate(taskDue)})" else message
+        return when {
+            !tracked || code.isEmpty() -> body
+            isBurst -> "Reminder ${index + 1} ($code): $body"
+            else -> "($code) $body"
+        }
     }
 
     /** The exact reply that stops this reminder, e.g. "Done 261011-01". */

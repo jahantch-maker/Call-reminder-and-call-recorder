@@ -109,11 +109,11 @@ object SmsSender {
 
         if (r.isBurst) {
             if (manual) {
-                r = SmsStore.restartBurstNow(id) ?: return
+                // A follow-up's texts at set times: Send now sends the next one, the rest keep their times.
+                if (r.slots.isEmpty()) r = SmsStore.restartBurstNow(id) ?: return
             } else {
                 // Texts whose time passed while the phone was off are skipped; carry on from the next one.
-                val gap = r.burstGapMin * 60_000L
-                val late = (r.burstIndex until r.burstCount).count { i -> r.dueAt + i * gap < now - BURST_GRACE_MS }
+                val late = (r.burstIndex until r.burstCount).count { i -> r.textAt(i) < now - BURST_GRACE_MS }
                 if (late > 0) {
                     val first = r.burstIndex + 1
                     val last = r.burstIndex + late
@@ -431,7 +431,10 @@ class SmsReplyReceiver : BroadcastReceiver() {
         val code = DONE_REPLY.matchEntire(body.trim())?.groupValues?.get(1) ?: return
         SmsStore.init(context)
         val replied = SmsStore.markReplied(from, code)
-        if (replied != null) SmsNotifier.showReview(context, replied)
+        if (replied != null) {
+            SmsNotifier.showReview(context, replied)
+            FollowUps.onReplied(context, replied)
+        }
         // The text was changed to a call (Call instead): its old number still counts.
         else TextToCall.replied(context, from, code)
     }

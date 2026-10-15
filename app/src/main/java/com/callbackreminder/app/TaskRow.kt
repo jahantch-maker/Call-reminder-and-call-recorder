@@ -523,6 +523,7 @@ fun SnoozeSheet(
     onPickTime: () -> Unit,
     onDismiss: () -> Unit,
     plusRow: Boolean = false,
+    footer: (@Composable () -> Unit)? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -541,6 +542,7 @@ fun SnoozeSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            footer?.invoke()
             TimePickerPanel(plusRow = plusRow, onPick = onPick)
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }

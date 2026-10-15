@@ -164,6 +164,12 @@ object Fmt {
     /** Like "4:30 PM". */
     fun timeOnly(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(timeFmt)
 
+    /** Like "Fri 16 Oct, 5:00 PM": for text messages, where "Today" would be wrong by the time it is read. */
+    fun fullDate(ms: Long): String {
+        val dt = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
+        return "${dt.format(dayFmt)}, ${dt.format(timeFmt)}"
+    }
+
     fun relative(ms: Long, now: Long = System.currentTimeMillis()): String {
         val diff = ms - now
         val mins = kotlin.math.abs(diff) / 60_000L

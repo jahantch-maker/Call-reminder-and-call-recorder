@@ -148,10 +148,19 @@ internal fun PersonRow(p: PersonSummary, now: Long, withWaiting: Boolean, onClic
 }
 
 @Composable
-private fun PageHeader(title: String, onBack: () -> Unit) {
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+private fun PageHeader(title: String, onBack: (() -> Unit)?) {
+    // As a bottom-bar tab (no back arrow) it carries Recordings and Settings at the right, like the other tabs.
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+        }
+        Text(
+            title,
+            style = if (onBack != null) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f)
+        )
+        if (onBack == null) TopActions()
     }
 }
 
@@ -161,7 +170,7 @@ private enum class PeopleSort(val label: String) { PENDING("Most pending"), DELA
 
 /** Everyone with pending work, sorted and filtered. Tap a person for their page. */
 @Composable
-fun PeopleScreen(resumeKey: Int, onBack: () -> Unit, onOpenPerson: (String) -> Unit) {
+fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -> Unit) {
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()

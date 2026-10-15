@@ -102,7 +102,6 @@ fun HomeScreen(
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
     var dialOpen by remember { mutableStateOf(false) }
     var newCall by remember { mutableStateOf(false) }
-    var newText by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf(false) }
 
     var personFilter by ListFilters.homePerson
@@ -339,36 +338,19 @@ fun HomeScreen(
         }
     }
 
-    // Google Keep style ＋: from the bottom up My task, Call reminder, Message schedule.
+    // Google Keep style ＋: from the bottom up My task, Follow-up.
     SpeedDial(
         open = dialOpen,
         onOpenChange = { dialOpen = it },
         options = listOf(
             DialOption("My task", Icons.Rounded.TaskAlt, Color(0xFF3F1F8C)) { newTask = true },
-            DialOption("Call reminder", Icons.Rounded.Call, MaterialTheme.colorScheme.primary) { newCall = true },
-            DialOption("Message schedule", Icons.Rounded.Sms, Color(0xFF0B7A5C)) { newText = true },
+            DialOption("Follow-up", Icons.Rounded.Call, MaterialTheme.colorScheme.primary) { newCall = true },
         ),
     )
     }
 
     if (newCall) {
-        AddReminderDialog(
-            onDismiss = { newCall = false },
-            onSave = { name, number, note, dueAt, repeat, starred ->
-                ReminderStore.add(name, number, note, dueAt, repeat, starred = starred)
-                newCall = false
-            }
-        )
-    }
-
-    if (newText) {
-        SmsReminderDialog(
-            onDismiss = { newText = false },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked)
-                newText = false
-            }
-        )
+        FollowUpDialog(onDismiss = { newCall = false })
     }
 
     if (newTask) {
