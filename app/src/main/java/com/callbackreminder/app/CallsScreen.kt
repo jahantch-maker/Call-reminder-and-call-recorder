@@ -399,7 +399,8 @@ fun CallsScreen(resumeKey: Int) {
             about = r.headline(),
             onPick = { ms -> snoozeFor = null; snoozeTo(r, ms) },
             onPickTime = { snoozeFor = null; pickTimeFor = r },
-            onDismiss = { snoozeFor = null }
+            onDismiss = { snoozeFor = null },
+            plusRow = !r.done
         )
     }
 
@@ -432,7 +433,7 @@ fun CallsScreen(resumeKey: Int) {
         )
     }
 
-    // New time: your Quick times first (one tap sets it), Pick date & time for anything else.
+    // New time: the time picker (one tap sets it), Custom date & time for anything else.
     rescheduleFor?.let { r ->
         SnoozeSheet(
             heading = "New time",

@@ -186,9 +186,10 @@ fun DateTimePickerFlow(
     onPicked: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     DateTimeDialog(
         initialMs = initialMs,
-        onDone = { ms, _ -> onPicked(ms) },
+        onDone = { ms, _ -> RecentPicks.record(ctx, ms); onPicked(ms) },
         onDismiss = onDismiss
     )
 }

@@ -352,7 +352,6 @@ private fun ToScheduleCard(t: ToScheduleItem, onCall: () -> Unit, onText: () -> 
 @Composable
 private fun CallBackTimeSheet(t: ToScheduleItem, onPicked: (Long) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    val options = remember { QuickTimes.options(ctx) }
     var showPicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -392,7 +391,7 @@ private fun CallBackTimeSheet(t: ToScheduleItem, onPicked: (Long) -> Unit, onDis
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
-            QuickTimeGrid(options) { onPicked(it) }
+            TimePickerPanel { onPicked(it) }
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

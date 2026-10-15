@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -505,7 +506,7 @@ fun SwipeActions(
     }
 }
 
-/** Your Quick times as tiles, plus Pick date & time. */
+/** The time picker in a sheet: one tap on a time sets it and closes. [plusRow] adds +15m to +2h (Snooze). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SnoozeSheet(
@@ -514,13 +515,18 @@ fun SnoozeSheet(
     onPick: (Long) -> Unit,
     onPickTime: () -> Unit,
     onDismiss: () -> Unit,
+    plusRow: Boolean = false,
 ) {
-    val ctx = LocalContext.current
-    // Built when the sheet opens, so "15 min" counts from the moment you swipe.
-    val options = remember { QuickTimes.options(ctx) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
-            Text(heading, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(heading, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("One tap sets it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
             Text(
                 about,
                 style = MaterialTheme.typography.bodySmall,
@@ -528,38 +534,9 @@ fun SnoozeSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(12.dp))
-            options.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { o ->
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .clickable { onPick(o.whenMs) }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                o.title,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1
-                            )
-                            Text(
-                                o.subtitle.removePrefix("Today, "),
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-            TextButton(onClick = onPickTime) { Text("Pick date & time…") }
+            TimePickerPanel(plusRow = plusRow, onPick = onPick)
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }
         }
     }
 }
