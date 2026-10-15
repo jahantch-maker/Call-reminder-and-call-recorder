@@ -213,8 +213,6 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         onNext()
     }
 
-    val options = remember { QuickTimes.options(ctx) }
-
     PopupSheetFrame(onDismiss = onNext) {
         if (positionLabel != null) {
             Text(
@@ -333,7 +331,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
-            QuickTimeGrid(options) { schedule(it) }
+            TimePickerPanel(plusRow = true) { schedule(it) }
 
             Spacer(Modifier.height(6.dp))
             Row(
@@ -469,26 +467,6 @@ internal fun CallAgainButton(onClick: () -> Unit) {
             Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
             Text("Call again", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-/** The quick times as tiles, three to a row. */
-@Composable
-internal fun QuickTimeGrid(options: List<QuickOption>, onPick: (Long) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(3).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { o ->
-                    OptionTile(
-                        title = o.title,
-                        subtitle = o.subtitle,
-                        modifier = Modifier.weight(1f)
-                    ) { onPick(o.whenMs) }
-                }
-                // Keeps tiles the same width when the last row isn't full.
-                repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
-            }
         }
     }
 }

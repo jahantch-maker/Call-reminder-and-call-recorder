@@ -121,7 +121,6 @@ fun SettingsScreen(
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
     val setupItems = setupChecks(status)
-    val quickCount = remember { QuickTimes.load(ctx).size }
 
     val popupTypes = remember {
         listOfNotNull(
@@ -168,8 +167,8 @@ fun SettingsScreen(
         )
         NavRow(
             icon = Icons.Rounded.Schedule,
-            title = "Quick times",
-            summary = "$quickCount of ${QuickTime.MAX} set · shown on the popup and Snooze menu",
+            title = "Time picker",
+            summary = "${TimeGrid.clock(TimeGrid.start(ctx))} to ${TimeGrid.clock(TimeGrid.end(ctx))}, every ${TimeGrid.gap(ctx)} min",
             onClick = onOpenQuickTimes
         )
         NavRow(

@@ -540,7 +540,7 @@ internal fun MyTaskDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Box(Modifier.padding(end = 8.dp)) {
-                    QuickTimeTiles(selected = picked) { ms -> due = ms; picked = ms }
+                    TimePickerPanel(selected = due.takeIf { it > 0L }) { ms -> due = ms; picked = ms }
                 }
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (due > 0L) {

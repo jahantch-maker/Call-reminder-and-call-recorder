@@ -301,30 +301,14 @@ private fun AlertCard(
                     Spacer(Modifier.width(8.dp))
                     Text("Snooze", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
-                DropdownMenu(expanded = snoozeOpen, onDismissRequest = { snoozeOpen = false }) {
-                    // Built when the menu opens, so "15 min" counts from the moment you tap.
-                    QuickTimes.options(ctx).forEach { o ->
-                        DropdownMenuItem(
-                            text = { Text(o.title) },
-                            trailingIcon = {
-                                Text(
-                                    o.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            onClick = {
-                                snoozeOpen = false
-                                onSnooze(o.whenMs)
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Pick date & time…") },
-                        onClick = {
-                            snoozeOpen = false
-                            onPickTime()
-                        }
+                if (snoozeOpen) {
+                    SnoozeSheet(
+                        heading = "Snooze",
+                        about = r.headline(),
+                        onPick = { ms -> snoozeOpen = false; onSnooze(ms) },
+                        onPickTime = { snoozeOpen = false; onPickTime() },
+                        onDismiss = { snoozeOpen = false },
+                        plusRow = true
                     )
                 }
             }

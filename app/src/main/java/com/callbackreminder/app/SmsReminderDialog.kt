@@ -225,7 +225,7 @@ fun SmsReminderDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                QuickTimeTiles(selected = picked) { ms ->
+                TimePickerPanel(selected = if (dateChosen) due else null) { ms ->
                     due = ms
                     dateChosen = true
                     picked = ms

@@ -346,7 +346,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             screenStates.SaveableStateProvider(s.last()) {
             when (s.last()) {
-                Screen.QUICK_TIMES -> QuickTimesScreen(onBack = { back() })
+                Screen.QUICK_TIMES -> TimePickerSettingsScreen(onBack = { back() })
                 Screen.SETUP -> SetupSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.POPUP_SETTINGS -> PopupSettingsScreen(onBack = { back() })
                 Screen.RECORDING_SETTINGS -> RecordingSettingsScreen(

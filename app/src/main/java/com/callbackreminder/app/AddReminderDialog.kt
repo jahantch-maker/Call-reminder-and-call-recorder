@@ -131,7 +131,7 @@ fun AddReminderDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                QuickTimeTiles(selected = picked) { ms ->
+                TimePickerPanel(selected = due) { ms ->
                     due = ms
                     picked = ms
                 }

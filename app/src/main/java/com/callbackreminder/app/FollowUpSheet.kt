@@ -62,7 +62,6 @@ fun FollowUpSheet(
     var newTaskOn by remember { mutableStateOf(false) }
     var reason by remember { mutableStateOf(call.prefillNote) }
     var showPicker by remember { mutableStateOf(false) }
-    val options = remember { QuickTimes.options(ctx) }
 
     val title = call.name.ifBlank { task.title }
     val subtitle = buildString {
@@ -253,20 +252,7 @@ fun FollowUpSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.chunked(3).forEach { rowOptions ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowOptions.forEach { o ->
-                            OptionTile(
-                                title = o.title,
-                                subtitle = o.subtitle,
-                                modifier = Modifier.weight(1f)
-                            ) { moveTo(o.whenMs) }
-                        }
-                        repeat(3 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
+            TimePickerPanel(plusRow = true) { moveTo(it) }
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = { showPicker = true }) {
                 Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -355,7 +341,6 @@ fun TextFollowUpSheet(
     var reason by remember { mutableStateOf(call.prefillNote) }
     var showPicker by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
-    val options = remember { QuickTimes.options(ctx) }
 
     val title = call.name.ifBlank { task.title }
     val length = if (answered) Fmt.duration(call.durationSec) else "no answer"
@@ -541,7 +526,7 @@ fun TextFollowUpSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
-                QuickTimeGrid(options) { callLater(it) }
+                TimePickerPanel(plusRow = true) { callLater(it) }
                 Spacer(Modifier.height(6.dp))
                 TextButton(onClick = { showPicker = true }) {
                     Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))

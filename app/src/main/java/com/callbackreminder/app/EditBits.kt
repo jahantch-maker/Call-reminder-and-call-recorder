@@ -64,41 +64,6 @@ fun rememberDiscardGuard(changed: () -> Boolean, onClose: () -> Unit): () -> Uni
     return remember { { if (isChanged()) asking = true else close() } }
 }
 
-/**
- * Your Quick times as small tiles (the first [max] of them). [selected] outlines the one that set
- * the current time. Tapping one calls [onPick] with its time.
- */
-@Composable
-fun QuickTimeTiles(selected: Long?, max: Int = 8, onPick: (Long) -> Unit) {
-    val ctx = LocalContext.current
-    // Built once when the window opens, so "15 min" counts from then.
-    val options = remember { QuickTimes.options(ctx).take(max) }
-    val cs = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { o ->
-                    val on = selected == o.whenMs
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (on) cs.primary else cs.primaryContainer)
-                            .clickable { onPick(o.whenMs) }
-                            .padding(vertical = 6.dp, horizontal = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        val fg = if (on) cs.onPrimary else cs.onPrimaryContainer
-                        Text(o.title, color = fg, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                        Text(o.subtitle.removePrefix("Today, "), color = fg, fontSize = 9.5.sp, maxLines = 1)
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
 /** A small ☆ / ★ button for a card. */
 @Composable
 fun StarButton(starred: Boolean, onToggle: () -> Unit) {

@@ -197,7 +197,7 @@ val SETTINGS_INDEX = listOf(
     SettingEntry("Weekly off day", "off day friday sunday holiday weekend leave", "off_days"),
     SettingEntry("Setup", "permissions allow phone call log contacts battery overlay", "setup"),
     SettingEntry("After-call popup", "popup outgoing incoming missed whatsapp caller card after call", "popup"),
-    SettingEntry("Quick times", "quick times snooze minutes hours tomorrow", "quick_times"),
+    SettingEntry("Time picker", "time picker grid quick times snooze recent first last gap", "quick_times"),
     SettingEntry("Call recording", "record recording recorder banking switch off", "recording"),
     SettingEntry("Reminder style & ringtone", "reminder style ringtone sound full screen banner ping tone", "reminder"),
     SettingEntry("Text messages", "sms text burst template tracking number reply", "texts"),
