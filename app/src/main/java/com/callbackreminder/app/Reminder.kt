@@ -26,6 +26,12 @@ data class Reminder(
     val events: List<CallEvent> = emptyList(),
     /** Starred as important (★): shown on the card and found with the Starred filter. */
     val starred: Boolean = false,
+    /** The follow-up this call belongs to, shared with its texts (0 = a call on its own). */
+    val linkId: Long = 0L,
+    /** Autopilot: the person's "Done <number>" reply to the linked texts cancels this call. */
+    val autopilot: Boolean = false,
+    /** "Review later" in To review: hidden there until this time. */
+    val reviewLaterUntil: Long = 0L,
 ) {
     /** What we show as the headline: the name, else the number, else a placeholder. */
     val title: String

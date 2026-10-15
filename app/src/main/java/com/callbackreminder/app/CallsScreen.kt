@@ -1,6 +1,5 @@
 package com.callbackreminder.app
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -91,14 +90,16 @@ fun Reminder.personDetail(): String? = number.takeIf { name.isNotBlank() && it.i
 
 /** The Calls tab: every call-back as a slim task row, in one block per day, with Created and Due filters. */
 @Composable
-fun CallsScreen(resumeKey: Int) {
+fun CallsScreen(resumeKey: Int, switcher: (@Composable () -> Unit)? = null) {
     val ctx = LocalContext.current
     val all by ReminderStore.items.collectAsState()
     var tab by rememberSaveable { mutableStateOf(CallsUi.TO_CALL) }
     var historyFor by remember { mutableStateOf<Reminder?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     var rescheduleFor by remember { mutableStateOf<Reminder?>(null) }
-    var textInsteadFor by remember { mutableStateOf<Reminder?>(null) }
+    var reviewLaterFor by remember { mutableStateOf<Reminder?>(null) }
+    var pickReviewLaterFor by remember { mutableStateOf<Reminder?>(null) }
+    var moveTexts by remember { mutableStateOf(true) }
     var editFor by remember { mutableStateOf<Reminder?>(null) }
     var snoozeFor by remember { mutableStateOf<Reminder?>(null) }
     var addTaskFor by remember { mutableStateOf<Reminder?>(null) }
@@ -156,8 +157,12 @@ fun CallsScreen(resumeKey: Int) {
         }
         tab = t
         highlightId = id
+        openId = id
         // The order the list draws its items in: header, chips, then each block's header and rows.
-        val keys = mutableListOf<Any>("header", "tabs")
+        val keys = mutableListOf<Any>("header")
+        if (switcher != null) keys += "switch"
+        keys += "tabs"
+
         val nowMs = System.currentTimeMillis()
         val blocks: List<List<Reminder>> = when (t) {
             CallsUi.TO_REVIEW -> listOf(everything.filter { it.done && it.review }.sortedByDescending { it.doneAt })
@@ -178,30 +183,48 @@ fun CallsScreen(resumeKey: Int) {
     }
 
     val pending = items.filter { !it.done }.sortedBy { it.dueAt }
-    val toReview = items.filter { it.done && it.review }.sortedByDescending { it.doneAt }
+    // "Review later" hides an item until its time comes.
+    val allToReview = items.filter { it.done && it.review }.sortedByDescending { it.doneAt }
+    val toReview = allToReview.filter { it.reviewLaterUntil <= now }
+    val reviewLaterCount = allToReview.size - toReview.size
     val finished = items.filter { it.done && !it.review }.sortedByDescending { it.doneAt }
     val overdue = pending.filter { it.dueAt <= now }
     val ahead = pending.filter { it.dueAt > now }
 
     // Done and Snooze from a swipe or an open row, each with an Undo bar.
+    // Undo puts back the call and, for a follow-up, its texts as they were.
     fun done(r: Reminder) {
         val before = r
+        val linked = FollowUps.snapshot(r.linkId)
         ReminderStore.markDone(r.id)
         if (openId == r.id) openId = null
-        scope.offerUndo(snack, "Done · ${r.headline()}") { ReminderStore.restore(before) }
+        scope.offerUndo(snack, "Done · ${r.headline()}") { ReminderStore.restore(before); linked() }
     }
     fun checked(r: Reminder) {
         val before = r
+        val linked = FollowUps.snapshot(r.linkId)
         ReminderStore.reviewed(r.id)
         if (openId == r.id) openId = null
-        scope.offerUndo(snack, "Checked · ${r.headline()}") { ReminderStore.restore(before) }
+        scope.offerUndo(snack, "Checked · ${r.headline()}") { ReminderStore.restore(before); linked() }
     }
     fun snoozeTo(r: Reminder, ms: Long, logAs: String = if (r.done) "Moved to" else "Snoozed to") {
         val before = r
+        val linked = FollowUps.snapshot(r.linkId)
         ReminderStore.reschedule(r.id, ms, logAs)
+        // A new time moves the task's due date: his texts follow it (Snooze only moves your call).
+        if (logAs == "Moved to" && !before.done) FollowUps.onNewTime(ctx, before, ms, moveTexts)
+        moveTexts = true
         if (openId == r.id) openId = null
-        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { ReminderStore.restore(before) }
+        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { ReminderStore.restore(before); linked() }
     }
+    fun reviewLater(r: Reminder, ms: Long) {
+        val before = r
+        ReminderStore.reviewLater(r.id, ms)
+        if (openId == r.id) openId = null
+        scope.offerUndo(snack, "Back in To review ${Fmt.dueLabel(ms)}") { ReminderStore.restore(before) }
+    }
+    /** A follow-up whose texts are still going gets the "His texts move too" switch on New time. */
+    fun hasOpenTexts(r: Reminder) = r.linkId != 0L && SmsStore.items.value.any { it.linkId == r.linkId && !it.done }
     fun deleteNow(r: Reminder) {
         val before = r
         ReminderStore.delete(r.id)
@@ -234,7 +257,7 @@ fun CallsScreen(resumeKey: Int) {
             onPickTime = { rescheduleFor = r },
             onAddTask = { addTaskFor = r },
             onEdit = { editFor = r },
-            onTextInstead = { textInsteadFor = r },
+            onReviewLater = { reviewLaterFor = r },
             onHistory = { historyFor = r },
             onDelete = { deleteNow(r) },
             onStar = { ReminderStore.setStar(r.id, !r.starred) },
@@ -273,7 +296,7 @@ fun CallsScreen(resumeKey: Int) {
                 ) {
                     Column {
                         Text(
-                            "Call-backs",
+                            if (switcher != null) "Follow-ups" else "Call-backs",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -292,6 +315,8 @@ fun CallsScreen(resumeKey: Int) {
                     TopActions()
                 }
             }
+
+            if (switcher != null) item(key = "switch") { switcher() }
 
             item(key = "tabs") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -373,6 +398,11 @@ fun CallsScreen(resumeKey: Int) {
                     callBlock("review", "Waiting for you", "${toReview.size}", errorColor, toReview) { r, pos ->
                         row(r, pos, CallMode.REVIEW)
                     }
+                    if (reviewLaterCount > 0) {
+                        item(key = "review-later") {
+                            EmptyText("$reviewLaterCount set to Review later. They come back here at their time.")
+                        }
+                    }
                 }
                 else -> {
                     if (finished.isEmpty()) {
@@ -404,6 +434,25 @@ fun CallsScreen(resumeKey: Int) {
         )
     }
 
+    reviewLaterFor?.let { r ->
+        SnoozeSheet(
+            heading = "Review later",
+            about = r.headline(),
+            onPick = { ms -> reviewLaterFor = null; reviewLater(r, ms) },
+            onPickTime = { reviewLaterFor = null; pickReviewLaterFor = r },
+            onDismiss = { reviewLaterFor = null },
+            plusRow = true
+        )
+    }
+
+    pickReviewLaterFor?.let { r ->
+        DateTimePickerFlow(
+            initialMs = now + 3_600_000L,
+            onPicked = { ms -> pickReviewLaterFor = null; reviewLater(r, ms) },
+            onDismiss = { pickReviewLaterFor = null }
+        )
+    }
+
     addTaskFor?.let { r -> AddTaskDialog(r = r, onDismiss = { addTaskFor = null }) }
 
     if (showAdd) {
@@ -416,7 +465,11 @@ fun CallsScreen(resumeKey: Int) {
         )
     }
 
-    editFor?.let { r ->
+    editFor?.takeIf { it.linkId != 0L }?.let { r ->
+        FollowUpDialog(onDismiss = { editFor = null }, linkId = r.linkId)
+    }
+
+    editFor?.takeIf { it.linkId == 0L }?.let { r ->
         AddReminderDialog(
             title = "Edit reminder",
             initialName = r.name,
@@ -440,7 +493,8 @@ fun CallsScreen(resumeKey: Int) {
             about = r.headline(),
             onPick = { ms -> rescheduleFor = null; snoozeTo(r, ms, "Moved to") },
             onPickTime = { rescheduleFor = null; pickTimeFor = r },
-            onDismiss = { rescheduleFor = null }
+            onDismiss = { rescheduleFor = null; moveTexts = true },
+            footer = if (hasOpenTexts(r)) ({ TextsMoveSwitch(moveTexts) { moveTexts = it } }) else null
         )
     }
 
@@ -451,33 +505,13 @@ fun CallsScreen(resumeKey: Int) {
                 pickTimeFor = null
                 snoozeTo(r, ms, "Moved to")
             },
-            onDismiss = { pickTimeFor = null }
+            onDismiss = { pickTimeFor = null; moveTexts = true }
         )
     }
 
     historyFor?.let { r ->
         // Read the live copy so new lines show while the window is open.
         CallHistoryDialog(r = all.firstOrNull { it.id == r.id } ?: r, onDismiss = { historyFor = null })
-    }
-
-    textInsteadFor?.let { r ->
-        SmsReminderDialog(
-            prefill = TextPrefill(
-                name = r.name,
-                number = r.number,
-                message = r.note,
-                heading = "Send as a text instead",
-                info = "The call reminder and its history move into this text.",
-            ),
-            onDismiss = { textInsteadFor = null },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                val live = ReminderStore.get(r.id) ?: r
-                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked, history = live.historyForText())
-                ReminderStore.delete(r.id)
-                textInsteadFor = null
-                Toast.makeText(ctx, "Moved to Texts · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
-            }
-        )
     }
 }
 
@@ -511,7 +545,7 @@ private fun CallRow(
     onPickTime: () -> Unit,
     onAddTask: () -> Unit,
     onEdit: () -> Unit,
-    onTextInstead: () -> Unit,
+    onReviewLater: () -> Unit,
     onHistory: () -> Unit,
     onDelete: () -> Unit,
     onStar: () -> Unit,
@@ -553,13 +587,15 @@ private fun CallRow(
 
     val historyLabel = r.historyLines().size.let { if (it > 0) "History ($it)" else "History" }
 
+    // Snooze only once a task is due: before that, the left swipe gives it a new time.
+    val notDueYet = mode == CallMode.PENDING && !overdue
     SwipeActions(
         enabled = !expanded && mode != CallMode.DONE,
         shape = rowShape(pos),
         doneLabel = if (mode == CallMode.REVIEW) "Mark done" else "Done",
-        snoozeLabel = if (mode == CallMode.REVIEW) "New time" else "Snooze",
+        snoozeLabel = if (mode == CallMode.REVIEW || notDueYet) "New time" else "Snooze",
         onDone = onDone,
-        onSnooze = onSnooze,
+        onSnooze = if (notDueYet) onPickTime else onSnooze,
     ) {
         TaskRow(
             pos = pos,
@@ -595,14 +631,13 @@ private fun CallRow(
                     CallMode.PENDING -> RowActions(
                         actions = listOfNotNull(
                             RowAction("Call", Icons.Rounded.Call, ActionStyle.FILLED, onCall).takeIf { hasNumber },
-                            RowAction("Snooze", Icons.Rounded.Snooze, ActionStyle.OUTLINED, onSnooze),
+                            RowAction("Snooze", Icons.Rounded.Snooze, ActionStyle.OUTLINED, onSnooze).takeIf { overdue },
                             RowAction("New time", Icons.Rounded.Schedule, ActionStyle.OUTLINED, onPickTime),
                             RowAction("Done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
                         ),
                         links = listOfNotNull(
                             RowLink("Add task", onClick = onAddTask).takeIf { noTask },
                             RowLink("Edit", onClick = onEdit),
-                            RowLink("Text instead", onClick = onTextInstead),
                             RowLink(historyLabel, onClick = onHistory),
                             RowLink("Stop repeating") { ReminderStore.stopRepeating(r.id) }.takeIf { r.repeat != null },
                             RowLink("Delete", danger = true, onClick = onDelete),
@@ -616,6 +651,7 @@ private fun CallRow(
                             RowAction("Mark done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
                         ),
                         links = listOf(
+                            RowLink("Review later", onClick = onReviewLater),
                             RowLink("Not done, move back", onClick = onMoveBack),
                             RowLink("Edit", onClick = onEdit),
                             RowLink(historyLabel, onClick = onHistory),

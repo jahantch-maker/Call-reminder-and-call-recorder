@@ -1491,7 +1491,18 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
         BurstTemplates.save(ctx, list)
     }
 
+    var sendNowIfPassed by remember { mutableStateOf(FollowUps.sendNowIfPassed(ctx)) }
+
     SettingsPage(title = "Text messages", onBack = onBack) {
+        SectionCard(
+            title = "When a follow-up gets a new time",
+            subtitle = "His texts move to the same clock times on the new day. If every one of those times has already passed:"
+        ) {
+            SwitchRow("Send one text right away", sendNowIfPassed) {
+                sendNowIfPassed = it
+                FollowUps.setSendNowIfPassed(ctx, it)
+            }
+        }
         SectionCard(
             title = "Burst templates",
             subtitle = "Up to ${BurstTemplate.MAX_TEMPLATES} templates."

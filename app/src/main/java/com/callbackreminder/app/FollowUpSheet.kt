@@ -85,7 +85,10 @@ fun FollowUpSheet(
 
     fun moveTo(whenMs: Long) {
         logCall()
+        val before = ReminderStore.get(task.id) ?: task
         ReminderStore.postpone(task.id, whenMs, reason)
+        // A new due time: the follow-up's texts move with it.
+        FollowUps.onNewTime(ctx, before, whenMs, moveTexts = true)
         finish("Task moved · ${Fmt.dueLabel(whenMs)}")
     }
 

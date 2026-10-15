@@ -111,8 +111,8 @@ object ReviewReminder {
         val calls = ReminderStore.items.value
         return Counts(
             overdueCalls = calls.count { !it.done && it.dueAt <= now },
-            callsToReview = calls.count { it.done && it.review },
-            textsToReview = SmsStore.items.value.count { !it.done && it.review != null },
+            callsToReview = calls.count { it.done && it.review && it.reviewLaterUntil <= now },
+            textsToReview = SmsStore.items.value.count { !it.done && it.review != null && it.reviewLaterUntil <= now },
             toSchedule = ToScheduleStore.items.value.size,
             dossierLeft = if (DossierSettings.separate(ctx)) 0 else DossierStore.leftNow(now),
             needsTime = MyTaskStore.items.value.count { !it.done && !it.timed },

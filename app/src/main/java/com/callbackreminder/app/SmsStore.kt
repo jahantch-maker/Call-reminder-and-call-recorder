@@ -66,6 +66,10 @@ object SmsStore {
                     reviewAt = o.optLong("reviewAt"),
                     code = o.optString("code"),
                     tracked = o.optBoolean("tracked", true),
+                    linkId = o.optLong("linkId"),
+                    slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+                    taskDue = o.optLong("taskDue"),
+                    reviewLaterUntil = o.optLong("reviewLater"),
                 )
             }
         } catch (e: Exception) {
@@ -104,6 +108,10 @@ object SmsStore {
                     .put("reviewAt", r.reviewAt)
                     .put("code", r.code)
                     .put("tracked", r.tracked)
+                    .put("linkId", r.linkId)
+                    .put("slots", JSONArray().apply { r.slots.forEach { put(it) } })
+                    .put("taskDue", r.taskDue)
+                    .put("reviewLater", r.reviewLaterUntil)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -147,6 +155,9 @@ object SmsStore {
         burst: BurstTemplate?,
         tracked: Boolean,
         history: List<SmsLogEntry> = emptyList(),
+        slots: List<Int> = emptyList(),
+        linkId: Long = 0L,
+        taskDue: Long = 0L,
     ): SmsReminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -158,10 +169,13 @@ object SmsStore {
                 message = message.trim(),
                 dueAt = dueAt,
                 createdAt = System.currentTimeMillis(),
-                burstCount = burst?.count ?: 1,
-                burstGapMin = burst?.gapMin ?: 0,
+                burstCount = if (slots.isNotEmpty()) slots.size else burst?.count ?: 1,
+                burstGapMin = if (slots.isNotEmpty()) 0 else burst?.gapMin ?: 0,
                 tracked = tracked,
                 log = history.takeLast(LOG_LIMIT),
+                slots = slots.takeIf { it.size > 1 } ?: emptyList(),
+                linkId = linkId,
+                taskDue = taskDue,
             ),
             dueAt,
             repeat
@@ -186,17 +200,22 @@ object SmsStore {
         repeat: Repeat?,
         burst: BurstTemplate?,
         tracked: Boolean,
+        slots: List<Int> = emptyList(),
+        taskDue: Long? = null,
     ) {
         val cur = get(id) ?: return
         SmsNotifier.cancel(appCtx, id)
+        val timed = slots.takeIf { it.size > 1 } ?: emptyList()
         val r = series(
             cur.copy(
                 name = name.trim(),
                 number = number.trim(),
                 message = message.trim(),
-                burstCount = burst?.count ?: 1,
-                burstGapMin = burst?.gapMin ?: 0,
+                burstCount = if (timed.isNotEmpty()) timed.size else burst?.count ?: 1,
+                burstGapMin = if (timed.isNotEmpty()) 0 else burst?.gapMin ?: 0,
                 tracked = tracked,
+                slots = timed,
+                taskDue = taskDue ?: cur.taskDue,
             ),
             dueAt,
             repeat
@@ -258,9 +277,11 @@ object SmsStore {
 
     /** You confirmed the work is done (from Scheduled or To review): stop everything, move to Done. */
     @Synchronized
-    fun markDone(id: Long) {
+    fun markDone(id: Long, linked: Boolean = true) {
         val cur = get(id)?.takeIf { !it.done } ?: return
         val now = System.currentTimeMillis()
+        // The task is done, so its follow-up's call reminder is done too.
+        if (linked && cur.linkId != 0L) FollowUps.finishCall(cur.linkId)
         SmsScheduler.cancel(appCtx, id)
         SmsNotifier.cancel(appCtx, id)
         SmsSender.InFlight.clear(appCtx, id)
@@ -402,6 +423,47 @@ object SmsStore {
         val r = withLog(cur, entry).copy(attempts = attempts, retryAt = retryAt)
         replace(r)
         SmsScheduler.schedule(appCtx, r)
+    }
+
+    /**
+     * The follow-up got a new due time: its texts start again at [dueAt], from text [fromIndex] (earlier ones
+     * already passed), and the due time in the message becomes [taskDue]. [detail] goes in the history.
+     */
+    @Synchronized
+    fun moveWithTask(id: Long, dueAt: Long, fromIndex: Int, taskDue: Long, detail: String) {
+        val cur = get(id) ?: return
+        SmsNotifier.cancel(appCtx, id)
+        SmsSender.InFlight.clear(appCtx, id)
+        val r = withLog(cur, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MOVED, detail)).copy(
+            dueAt = dueAt,
+            occurrenceAt = dueAt,
+            seriesStart = if (cur.repeat == null) dueAt else cur.seriesStart,
+            done = false,
+            doneAt = 0L,
+            attempts = 0,
+            retryAt = 0L,
+            burstIndex = fromIndex.coerceIn(0, cur.burstCount - 1),
+            review = null,
+            reviewAt = 0L,
+            reviewLaterUntil = 0L,
+            taskDue = taskDue,
+        )
+        replace(r)
+        SmsScheduler.schedule(appCtx, r)
+    }
+
+    /** Only the due time written in the message changes (the texts stay where they are). */
+    @Synchronized
+    fun setTaskDue(id: Long, taskDue: Long, detail: String) {
+        val cur = get(id) ?: return
+        replace(withLog(cur, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MOVED, detail)).copy(taskDue = taskDue))
+    }
+
+    /** "Review later": hidden from To review until [until]. */
+    @Synchronized
+    fun reviewLater(id: Long, until: Long) {
+        val cur = get(id) ?: return
+        replace(cur.copy(reviewLaterUntil = until))
     }
 
     /** Send now on a burst: start the whole burst of the current day right now. */

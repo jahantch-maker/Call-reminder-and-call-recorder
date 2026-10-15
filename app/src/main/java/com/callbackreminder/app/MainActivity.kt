@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhoneCallback
 import androidx.compose.material.icons.rounded.Settings
@@ -183,11 +185,11 @@ class MainActivity : ComponentActivity() {
                 c.toSchedule > 0 -> Tab.HOME
                 c.textsToReview > 0 -> {
                     SmsUi.tabRequest.value = 1
-                    Tab.TEXTS
+                    textsTab()
                 }
                 calls > 0 -> {
                     CallsUi.tabRequest.value = if (c.callsToReview > 0) CallsUi.TO_REVIEW else CallsUi.OVERDUE
-                    Tab.CALLS
+                    callsTab()
                 }
                 else -> Tab.HOME
             }
@@ -252,11 +254,11 @@ private fun tabFor(item: WorkItem): Int = when (item.kind) {
             item.overdue -> CallsUi.OVERDUE
             else -> CallsUi.TO_CALL
         }
-        Tab.CALLS
+        callsTab()
     }
     WorkItem.Kind.TEXT -> {
         SmsUi.showRequest.value = item.id
-        Tab.TEXTS
+        textsTab()
     }
     WorkItem.Kind.MY_TASK -> {
         MyTasksUi.tabRequest.value = MyTasksUi.ONE_TIME
@@ -272,9 +274,22 @@ private fun tabFor(item: WorkItem): Int = when (item.kind) {
 private object Tab {
     const val HOME = 0
     const val MY_TASKS = 1
-    const val CALLS = 2
-    const val TEXTS = 3
-    const val COUNT = 4
+    const val FOLLOW_UPS = 2
+    const val PEOPLE = 3
+    const val PROJECTS = 4
+    const val COUNT = 5
+}
+
+/** The Follow-ups tab, opened on its Calls list. */
+private fun callsTab(): Int {
+    FollowUpsUi.view.value = FollowUpsUi.CALLS
+    return Tab.FOLLOW_UPS
+}
+
+/** The Follow-ups tab, opened on its Texts list. */
+private fun textsTab(): Int {
+    FollowUpsUi.view.value = FollowUpsUi.TEXTS
+    return Tab.FOLLOW_UPS
 }
 
 @Composable
@@ -313,7 +328,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
 
     // A text-message notification was tapped: show the Texts tab.
     LaunchedEffect(openMessagesKey) {
-        if (openMessagesKey > 0) showTab(Tab.TEXTS)
+        if (openMessagesKey > 0) showTab(textsTab())
     }
 
     // "Review now" on the review reminder.
@@ -384,8 +399,8 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                 Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },
-                    onOpenCalls = { showTab(Tab.CALLS) },
-                    onOpenTexts = { showTab(Tab.TEXTS) },
+                    onOpenCalls = { showTab(callsTab()) },
+                    onOpenTexts = { showTab(textsTab()) },
                     onOpenMyTasks = { showTab(Tab.MY_TASKS) },
                     onOpenPerson = {
                         PeopleUi.current.value = it
@@ -438,15 +453,15 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                     onBack = { back() },
                     onOpenCalls = {
                         CallsUi.tabRequest.value = CallsUi.TO_REVIEW
-                        showTab(Tab.CALLS)
+                        showTab(callsTab())
                     },
                     onOpenOverdueCalls = {
                         CallsUi.tabRequest.value = CallsUi.OVERDUE
-                        showTab(Tab.CALLS)
+                        showTab(callsTab())
                     },
                     onOpenTexts = {
                         SmsUi.tabRequest.value = 1
-                        showTab(Tab.TEXTS)
+                        showTab(textsTab())
                     },
                 )
                 Screen.REMINDER_SETTINGS -> ReminderSettingsScreen(onBack = { back() })
@@ -501,6 +516,16 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     val myTasksBadge = myTasks.count { !it.done && it.timed && it.dueAt <= now } +
         remember(dossierTasks, dossierRecords, now) { DossierStore.leftNow(now) }
 
+    // Once, after this update: where Calls and Texts went.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var showIntro by remember { mutableStateOf(!FollowUps.introSeen(ctx)) }
+    if (showIntro) {
+        WhatMovedDialog(onDismiss = {
+            FollowUps.setIntroSeen(ctx)
+            showIntro = false
+        })
+    }
+
     // Recordings and Settings at the top right of every tab.
     val topActions: @Composable () -> Unit = {
         IconButton(onClick = { open(Screen.RECORDINGS) }) {
@@ -518,8 +543,9 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                 val shown = pager.currentPage
                 TabItem(shown, Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size, onTab)
                 TabItem(shown, Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge, onTab)
-                TabItem(shown, Tab.CALLS, Icons.Rounded.PhoneCallback, "Calls", callsBadge, onTab)
-                TabItem(shown, Tab.TEXTS, Icons.Rounded.Sms, "Texts", textsBadge, onTab)
+                TabItem(shown, Tab.FOLLOW_UPS, Icons.Rounded.PhoneCallback, "Follow-ups", callsBadge + textsBadge, onTab)
+                TabItem(shown, Tab.PEOPLE, Icons.Rounded.People, "People", 0, onTab)
+                TabItem(shown, Tab.PROJECTS, Icons.Rounded.Folder, "Projects", 0, onTab, tag = "Soon")
             }
         }
     ) { padding ->
@@ -535,18 +561,26 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
               CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
                     Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey)
-                    Tab.CALLS -> CallsScreen(resumeKey = resumeKey)
-                    Tab.TEXTS -> MessagesScreen(
+                    Tab.FOLLOW_UPS -> FollowUpsScreen(
+                        resumeKey = resumeKey,
+                        onOpenTextSettings = { open(Screen.TEXT_SETTINGS) },
+                        onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                    )
+                    Tab.PEOPLE -> PeopleScreen(
                         resumeKey = resumeKey,
                         onBack = null,
-                        onOpenSettings = { open(Screen.TEXT_SETTINGS) }
+                        onOpenPerson = {
+                            PeopleUi.current.value = it
+                            open(Screen.PERSON)
+                        },
                     )
+                    Tab.PROJECTS -> ProjectsScreen()
                     else -> HomeScreen(
                         resumeKey = resumeKey,
-                        onOpenCalls = { onTab(Tab.CALLS) },
+                        onOpenCalls = { onTab(callsTab()) },
                         onOpenTexts = { t, showId ->
                             if (showId != null) SmsUi.showRequest.value = showId else SmsUi.tabRequest.value = t
-                            onTab(Tab.TEXTS)
+                            onTab(textsTab())
                         },
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
@@ -575,12 +609,27 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
 }
 
 @Composable
-private fun RowScope.TabItem(current: Int, tab: Int, icon: ImageVector, label: String, badge: Int, onTab: (Int) -> Unit) {
+private fun RowScope.TabItem(
+    current: Int,
+    tab: Int,
+    icon: ImageVector,
+    label: String,
+    badge: Int,
+    onTab: (Int) -> Unit,
+    tag: String? = null,
+) {
     NavigationBarItem(
         selected = current == tab,
         onClick = { onTab(tab) },
         icon = {
-            BadgedBox(badge = { if (badge > 0) Badge { Text(if (badge > 99) "99+" else "$badge") } }) {
+            BadgedBox(
+                badge = {
+                    when {
+                        tag != null -> Badge(containerColor = MaterialTheme.colorScheme.tertiary) { Text(tag) }
+                        badge > 0 -> Badge { Text(if (badge > 99) "99+" else "$badge") }
+                    }
+                }
+            ) {
                 Icon(icon, contentDescription = label)
             }
         },
