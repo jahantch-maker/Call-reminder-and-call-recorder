@@ -1,6 +1,8 @@
 package com.callbackreminder.app
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -438,8 +440,9 @@ fun <T> byDay(list: List<T>, at: (T) -> Long): List<Pair<LocalDate, List<T>>> =
     list.groupBy { RowFmt.dayOf(at(it)) }.toList()
 
 /**
- * Swipe right for Done, left for Snooze. The row springs back and the list updates on its own;
- * a light buzz marks the point where letting go will act.
+ * Swipe right for Done, left for Snooze. The row springs back and the list updates on its own.
+ * Icon only, Gmail style: a pale strip with a small icon while dragging, then full colour, a bigger
+ * icon and a light buzz at the lock point (40% of the row). Letting go before that does nothing.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -467,7 +470,8 @@ fun SwipeActions(
                 SwipeToDismissBoxValue.Settled -> {}
             }
             false
-        }
+        },
+        positionalThreshold = { total -> total * 0.4f }
     )
     LaunchedEffect(state.targetValue) {
         if (state.targetValue != SwipeToDismissBoxValue.Settled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -478,26 +482,29 @@ fun SwipeActions(
         backgroundContent = {
             val toDone = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             val toSnooze = state.dismissDirection == SwipeToDismissBoxValue.EndToStart
-            val (bg, fg) = when {
-                toDone -> MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
-                toSnooze -> Color(0xFFF0B850) to Color(0xFF4A2F00)
+            val locked = state.targetValue != SwipeToDismissBoxValue.Settled
+            val green = MaterialTheme.colorScheme.secondary
+            val (bgTarget, fgTarget) = when {
+                toDone && locked -> green to MaterialTheme.colorScheme.onSecondary
+                toDone -> green.copy(alpha = 0.18f) to green
+                toSnooze && locked -> Color(0xFFF0B850) to Color(0xFF4A2F00)
+                toSnooze -> Color(0xFFFBEBC9) to Color(0xFF5A3D00)
                 else -> Color.Transparent to Color.Transparent
             }
+            val bg by animateColorAsState(bgTarget, tween(120), label = "swipeBg")
+            val fg by animateColorAsState(fgTarget, tween(120), label = "swipeFg")
+            val iconSize by animateDpAsState(if (locked) 28.dp else 20.dp, tween(120), label = "swipeIcon")
             Box(
-                Modifier.fillMaxSize().background(bg).padding(horizontal = 20.dp),
+                Modifier.fillMaxSize().background(bg).padding(horizontal = 22.dp),
                 contentAlignment = if (toDone) Alignment.CenterStart else Alignment.CenterEnd
             ) {
                 if (toDone || toSnooze) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (toDone) Icons.Rounded.Check else Icons.Rounded.Snooze,
-                            contentDescription = null,
-                            tint = fg,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (toDone) doneLabel else snoozeLabel, color = fg, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+                    Icon(
+                        if (toDone) Icons.Rounded.Check else Icons.Rounded.Snooze,
+                        contentDescription = if (toDone) doneLabel else snoozeLabel,
+                        tint = fg,
+                        modifier = Modifier.size(iconSize)
+                    )
                 }
             }
         }
