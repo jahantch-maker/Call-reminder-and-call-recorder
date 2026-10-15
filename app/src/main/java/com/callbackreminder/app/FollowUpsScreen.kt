@@ -502,7 +502,7 @@ fun FollowUpDialog(
     var callOn by remember { mutableStateOf(if (editing) editCall != null && !editCall.done else true) }
     var textOn by remember { mutableStateOf(editing && editText != null && !editText.done) }
     var times by remember {
-        mutableStateOf(editText?.takeIf { !it.done }?.let { t -> (0 until t.burstCount).map { t.textAt(it) } } ?: emptyList())
+        mutableStateOf<List<Long>>(editText?.takeIf { !it.done }?.let { t -> (0 until t.burstCount).map { t.textAt(it) } } ?: emptyList())
     }
     var message by remember { mutableStateOf(editText?.message ?: "") }
     var messageTouched by remember { mutableStateOf(editText != null) }
