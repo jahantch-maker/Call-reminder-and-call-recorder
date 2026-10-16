@@ -16,7 +16,8 @@ object FollowUps {
     /** What "Text him" will send: one text per time, the message, and the task number switch. */
     data class TextPlan(val times: List<Long>, val message: String, val tracked: Boolean)
 
-    private fun nextLink(c: Context): Long {
+    /** A new id that ties a call and its texts together. */
+    fun newLink(c: Context): Long {
         val id = prefs(c).getLong("nextLink", 1L)
         prefs(c).edit().putLong("nextLink", id + 1).apply()
         return id
@@ -64,7 +65,7 @@ object FollowUps {
             ToScheduleStore.add(name, number, task)
             return
         }
-        val link = nextLink(c)
+        val link = newLink(c)
         if (callOn) {
             val r = ReminderStore.add(name, number, task, due, createdAs = "Follow-up created", starred = starred)
             ReminderStore.setLink(r.id, link, autopilot)

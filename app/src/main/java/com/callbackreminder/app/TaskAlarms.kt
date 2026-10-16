@@ -31,6 +31,7 @@ object TaskAlarms {
     private const val TASK_BASE = 1_100_000
     private const val DOSSIER_BASE = 1_200_000
     private const val BEFORE_BASE = 1_300_000
+    private const val TASK_BEFORE_BASE = 1_400_000
     private const val NUDGE_ID = 1_099_001
     private const val FLAGS = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
 
@@ -51,32 +52,66 @@ object TaskAlarms {
 
     // ---- One-time tasks ----
 
-    private fun taskAlarm(ctx: Context, id: Long): PendingIntent = PendingIntent.getBroadcast(
+    private fun taskAlarm(ctx: Context, id: Long, at: Long = 0L, before: Boolean = false): PendingIntent = PendingIntent.getBroadcast(
         ctx,
         TASK_BASE + id.toInt(),
         Intent(ctx, TaskReceiver::class.java)
             .setAction(ACTION_TASK_DUE)
             .setData(Uri.parse("callback://task/$id"))
-            .putExtra(EXTRA_ID, id),
+            .putExtra(EXTRA_ID, id)
+            .putExtra(EXTRA_AT, at)
+            .putExtra(EXTRA_BEFORE, before),
         FLAGS
     )
 
-    fun scheduleTask(ctx: Context, t: MyTask) {
-        if (t.done || t.dueAt <= System.currentTimeMillis()) {
+    /** The task's next alarm after [now]: one of its "remind before" times, or the due time. One alarm at a time. */
+    fun scheduleTask(ctx: Context, t: MyTask, now: Long = System.currentTimeMillis()) {
+        if (t.done || t.dueAt <= now) {
             am(ctx).cancel(taskAlarm(ctx, t.id))
             return
         }
-        setAlarm(ctx, t.dueAt, taskAlarm(ctx, t.id), MainActivity.OPEN_MY_TASKS)
+        val at = (t.remindBefore.map { t.dueAt - it * 60_000L } + t.dueAt).filter { it > now }.min()
+        setAlarm(ctx, at, taskAlarm(ctx, t.id, at, before = at != t.dueAt), MainActivity.OPEN_MY_TASKS)
     }
 
     fun cancelTask(ctx: Context, id: Long) = am(ctx).cancel(taskAlarm(ctx, id))
 
-    fun cancelTaskNotification(ctx: Context, id: Long) =
+    fun cancelTaskNotification(ctx: Context, id: Long) {
         NotificationManagerCompat.from(ctx).cancel(TASK_BASE + id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(TASK_BEFORE_BASE + id.toInt())
+    }
+
+    /** "1 hour before", "1 day before" and the like. */
+    fun beforeLabel(min: Int): String = when {
+        min % 1440 == 0 -> (min / 1440).let { if (it == 1) "1 day" else "$it days" }
+        min % 60 == 0 -> (min / 60).let { if (it == 1) "1 hour" else "$it hours" }
+        else -> "$min min"
+    }
+
+    /** The heads-up before a one-time task is due. */
+    @SuppressLint("MissingPermission")
+    fun showTaskBefore(ctx: Context, t: MyTask) {
+        if (!Notifier.canNotify(ctx)) return
+        val text = listOfNotNull(
+            "Due ${Fmt.dueLabel(t.dueAt)}",
+            t.personTitle.takeIf { t.hasPerson }?.let { "with $it" },
+        ).joinToString(" · ")
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+            .setSmallIcon(R.drawable.ic_stat_task)
+            .setContentTitle(t.title)
+            .setContentText(text)
+            .setSubText("Reminder before")
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BEFORE_BASE + t.id.toInt()))
+            .setAutoCancel(true)
+        Notify.post(ctx, NotifType.MY_TASK, TASK_BEFORE_BASE + t.id.toInt(), b)
+    }
 
     @SuppressLint("MissingPermission")
     fun showTask(ctx: Context, t: MyTask) {
         if (!Notifier.canNotify(ctx)) return
+        NotificationManagerCompat.from(ctx).cancel(TASK_BEFORE_BASE + t.id.toInt())
         val text = listOfNotNull(
             t.note.takeIf { it.isNotBlank() },
             t.personTitle.takeIf { t.hasPerson }?.let { "with $it" },
@@ -282,7 +317,14 @@ class TaskReceiver : BroadcastReceiver() {
         when (intent.action) {
             TaskAlarms.ACTION_TASK_DUE -> {
                 val t = MyTaskStore.get(id)?.takeIf { !it.done } ?: return
-                TaskAlarms.showTask(context, t)
+                if (intent.getBooleanExtra(TaskAlarms.EXTRA_BEFORE, false)) {
+                    // A "remind before": show it, then set the next one (another heads-up, or the due time).
+                    val at = intent.getLongExtra(TaskAlarms.EXTRA_AT, 0L)
+                    TaskAlarms.scheduleTask(context, t, maxOf(System.currentTimeMillis(), at) + 1_000L)
+                    TaskAlarms.showTaskBefore(context, t)
+                } else {
+                    TaskAlarms.showTask(context, t)
+                }
             }
             TaskAlarms.ACTION_TASK_DONE -> MyTaskStore.setDone(id, true)
             TaskAlarms.ACTION_DOSSIER -> {

@@ -468,16 +468,17 @@ internal fun MyTaskDialog(
     var showDateTime by remember { mutableStateOf(false) }
     var listMenu by remember { mutableStateOf(false) }
     var newList by remember { mutableStateOf(false) }
+    var before by remember { mutableStateOf(existing?.remindBefore ?: emptyList()) }
 
-    val start = remember { listOf(title, note, due, list, starred, name, number) }
+    val start = remember { listOf(title, note, due, list, starred, name, number, before) }
     val cancel = rememberDiscardGuard(
-        changed = { listOf(title, note, due, list, starred, name, number) != start },
+        changed = { listOf(title, note, due, list, starred, name, number, before) != start },
         onClose = onDismiss,
     )
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
         confirmValueChange = { value ->
-            if (value == SheetValue.Hidden && listOf(title, note, due, list, starred, name, number) != start) {
+            if (value == SheetValue.Hidden && listOf(title, note, due, list, starred, name, number, before) != start) {
                 cancel()
                 false
             } else true
@@ -495,9 +496,9 @@ internal fun MyTaskDialog(
 
     fun save() {
         val t = if (existing == null) {
-            MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred)
+            MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred, remindBefore = before)
         } else {
-            MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred)
+            MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred, remindBefore = before)
             MyTaskStore.get(existing.id) ?: return
         }
         onSaved?.invoke(existing, t)
@@ -553,6 +554,37 @@ internal fun MyTaskDialog(
                     }
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = { showDateTime = true }) { Text("Date & time ›") }
+                }
+                if (due > 0L) {
+                    // Extra heads-ups before the due time; tap to add or remove, as many as you like.
+                    Text(
+                        "REMIND ME BEFORE (optional, pick any)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(10, 30, 60, 120, 180, 1440, 2880).forEach { m ->
+                            val on = m in before
+                            androidx.compose.material3.FilterChip(
+                                selected = on,
+                                onClick = { before = if (on) before - m else (before + m).sorted() },
+                                label = { Text(TaskAlarms.beforeLabel(m)) },
+                            )
+                        }
+                    }
+                    if (before.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        val passed = before.count { due - it * 60_000L <= now }
+                        Text(
+                            "Heads-ups " + before.joinToString(", ") { TaskAlarms.beforeLabel(it) } + " before" +
+                                (if (passed > 0) " · $passed already passed, skipped" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             when {
