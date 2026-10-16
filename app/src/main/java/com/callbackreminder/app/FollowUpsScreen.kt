@@ -483,6 +483,7 @@ fun FollowUpDialog(
     initialNumber: String = "",
     initialTask: String = "",
     taskRequired: Boolean = true,
+    startWithText: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val editCall = remember { FollowUps.call(linkId) }
@@ -500,9 +501,12 @@ fun FollowUpDialog(
         )
     }
     var callOn by remember { mutableStateOf(if (editing) editCall != null && !editCall.done else true) }
-    var textOn by remember { mutableStateOf(editing && editText != null && !editText.done) }
+    var textOn by remember { mutableStateOf((editing && editText != null && !editText.done) || startWithText) }
     var times by remember {
-        mutableStateOf<List<Long>>(editText?.takeIf { !it.done }?.let { t -> (0 until t.burstCount).map { t.textAt(it) } } ?: emptyList())
+        mutableStateOf<List<Long>>(
+            editText?.takeIf { !it.done }?.let { t -> (0 until t.burstCount).map { t.textAt(it) } }
+                ?: if (startWithText) listOfNotNull(due?.let { firstTextTime(it, now) }) else emptyList()
+        )
     }
     var message by remember { mutableStateOf(editText?.message ?: "") }
     var messageTouched by remember { mutableStateOf(editText != null) }
@@ -522,7 +526,7 @@ fun FollowUpDialog(
 
     val problem = when {
         number.isBlank() -> "Pick a person"
-        taskRequired && task.isBlank() -> "Write the task first"
+        taskRequired && !editing && task.isBlank() -> "Write the task first"
         !callOn && !textOn -> "Turn on a call reminder or texts"
         textOn && due == null -> "Texts need a due time"
         textOn && times.isEmpty() -> "Add a time for the texts"
@@ -535,7 +539,7 @@ fun FollowUpDialog(
         onDismissRequest = cancel,
         properties = DialogProperties(dismissOnClickOutside = false, usePlatformDefaultWidth = false),
         modifier = Modifier.padding(horizontal = 16.dp),
-        title = { Text(if (editing) "Edit follow-up" else "New follow-up") },
+        title = { Text(if (editing && startWithText) "Add texts to this follow-up" else if (editing) "Edit follow-up" else "New follow-up") },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -551,7 +555,7 @@ fun FollowUpDialog(
                     onValueChange = { task = it },
                     trailingIcon = voiceMic(task) { task = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (taskRequired) "Task *" else "Task (optional)") },
+                    label = { Text(if (taskRequired && !editing) "Task *" else "Task (optional)") },
                     placeholder = { Text("e.g. Send the March invoice") },
                     maxLines = 4,
                     shape = RoundedCornerShape(14.dp)

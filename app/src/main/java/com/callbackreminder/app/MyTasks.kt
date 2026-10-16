@@ -33,6 +33,8 @@ data class MyTask(
     val starred: Boolean = false,
     /** Place in the list's "My order" (smaller first). */
     val position: Long = createdAt,
+    /** Extra heads-ups before the due time, in minutes (e.g. 60 and 1440 for 1 hour and 1 day before). */
+    val remindBefore: List<Int> = emptyList(),
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
     val timed: Boolean get() = dueAt > 0L
@@ -180,6 +182,7 @@ object MyTaskStore {
                     listId = o.optLong("listId", UNSORTED),
                     starred = o.optBoolean("starred"),
                     position = o.optLong("position", o.optLong("createdAt")),
+                    remindBefore = o.optJSONArray("remindBefore")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -204,6 +207,7 @@ object MyTaskStore {
                     .put("listId", t.listId)
                     .put("starred", t.starred)
                     .put("position", t.position)
+                    .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -308,7 +312,7 @@ object MyTaskStore {
     @Synchronized
     fun add(
         title: String, note: String, dueAt: Long, name: String, number: String,
-        listId: Long = UNSORTED, starred: Boolean = false,
+        listId: Long = UNSORTED, starred: Boolean = false, remindBefore: List<Int> = emptyList(),
     ): MyTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -326,6 +330,7 @@ object MyTaskStore {
             listId = if (list(listId) != null) listId else UNSORTED,
             starred = starred,
             position = minOf(top, now),
+            remindBefore = remindBefore.distinct().sorted(),
         )
         save(_items.value + t)
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -336,12 +341,13 @@ object MyTaskStore {
     @Synchronized
     fun edit(
         id: Long, title: String, note: String, dueAt: Long, name: String, number: String,
-        listId: Long? = null, starred: Boolean? = null,
+        listId: Long? = null, starred: Boolean? = null, remindBefore: List<Int>? = null,
     ) {
         val old = get(id) ?: return
         val t = old.copy(
             title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim(),
             listId = listId ?: old.listId, starred = starred ?: old.starred,
+            remindBefore = remindBefore?.distinct()?.sorted() ?: old.remindBefore,
         )
         save(_items.value.map { if (it.id == id) t else it })
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)

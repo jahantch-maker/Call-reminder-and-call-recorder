@@ -173,6 +173,8 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     var step by remember { mutableStateOf(PostCallStep.CHOOSE) }
     var showPicker by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
+    var alsoText by remember { mutableStateOf(false) }
+    var followUpLink by remember { mutableStateOf<Long?>(null) }
 
     val callerName = call.name.takeIf { it.isNotBlank() }
     val callerNumber = call.number.takeIf { it.isNotBlank() }
@@ -196,13 +198,20 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
 
     fun schedule(whenMs: Long) {
         val name = callerName ?: typedName
-        ReminderStore.add(
+        val r = ReminderStore.add(
             name = name,
             number = callerNumber ?: "",
             note = note,
             dueAt = whenMs,
             createdAs = "Created after a call"
         )
+        // "Also text him": the call and his texts become one follow-up (one card, texts move with New time).
+        if (alsoText && callerNumber != null) {
+            val link = FollowUps.newLink(ctx)
+            ReminderStore.setLink(r.id, link, autopilot = false)
+            followUpLink = link
+            return
+        }
         Toast.makeText(ctx, "Reminder set · ${Fmt.dueLabel(whenMs)}", Toast.LENGTH_SHORT).show()
         onNext()
     }
@@ -324,6 +333,24 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 shape = RoundedCornerShape(14.dp)
             )
 
+            if (callerNumber != null) {
+                Spacer(Modifier.height(10.dp))
+                // On: after the time tap, the follow-up opens with texts to him at their own times.
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Sms, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Also text ${(callerName ?: "him").substringBefore(' ')}", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (alsoText) "After you pick the time, set his text times" else "Off: only your call back",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(checked = alsoText, onCheckedChange = { alsoText = it })
+                }
+            }
+
             Spacer(Modifier.height(18.dp))
             Text(
                 text = "Remind me to call back",
@@ -354,6 +381,16 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             initialMs = QuickTime.OnDay(1, 10).toOption().whenMs, // Tomorrow 10 am
             onPicked = { showPicker = false; schedule(it) },
             onDismiss = { showPicker = false }
+        )
+    }
+
+    followUpLink?.let { link ->
+        // The call back is already saved; this adds his texts to the same follow-up. Cancel keeps just the call.
+        FollowUpDialog(
+            onDismiss = { followUpLink = null; onNext() },
+            linkId = link,
+            taskRequired = false,
+            startWithText = true,
         )
     }
 
