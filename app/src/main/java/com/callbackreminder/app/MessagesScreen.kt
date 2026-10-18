@@ -493,19 +493,10 @@ fun MessagesScreen(
         )
     }
 
-    editFor?.takeIf { it.linkId != 0L }?.let { r ->
-        FollowUpDialog(onDismiss = { editFor = null }, linkId = r.linkId)
-    }
-
-    editFor?.takeIf { it.linkId == 0L }?.let { r ->
-        SmsReminderDialog(
-            initial = r,
-            onDismiss = { editFor = null },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                SmsStore.edit(r.id, name, number, message, dueAt, repeat, burst, tracked)
-                editFor = null
-            }
-        )
+    // Every text opens the follow-up window, where a call can be added too (an older text gets a link first).
+    editFor?.let { r ->
+        val link = remember(r.id) { FollowUps.ensureLink(ctx, null, r) }
+        FollowUpDialog(onDismiss = { editFor = null }, linkId = link)
     }
 
     pickTimeFor?.let { r ->
@@ -790,7 +781,7 @@ private fun SmsRow(
 
 /** Every time this message was due: sent, delivered, failed, skipped. Newest first. */
 @Composable
-private fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
+internal fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("History · ${r.title}" + if (r.code.isEmpty()) "" else " · ${r.code}") },

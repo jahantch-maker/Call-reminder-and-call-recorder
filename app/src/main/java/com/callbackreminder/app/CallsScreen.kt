@@ -465,25 +465,10 @@ fun CallsScreen(resumeKey: Int, switcher: (@Composable () -> Unit)? = null) {
         )
     }
 
-    editFor?.takeIf { it.linkId != 0L }?.let { r ->
-        FollowUpDialog(onDismiss = { editFor = null }, linkId = r.linkId)
-    }
-
-    editFor?.takeIf { it.linkId == 0L }?.let { r ->
-        AddReminderDialog(
-            title = "Edit reminder",
-            initialName = r.name,
-            initialNumber = r.number,
-            initialNote = r.note,
-            initialDue = r.dueAt,
-            initialRepeat = r.repeat,
-            initialStarred = r.starred,
-            onDismiss = { editFor = null },
-            onSave = { name, number, note, dueAt, repeat, starred ->
-                ReminderStore.edit(r.id, name, number, note, dueAt, repeat, starred)
-                editFor = null
-            }
-        )
+    // Every call opens the follow-up window, where texts can be added too (an older call gets a link first).
+    editFor?.let { r ->
+        val link = remember(r.id) { FollowUps.ensureLink(ctx, r, null) }
+        FollowUpDialog(onDismiss = { editFor = null }, linkId = link)
     }
 
     // New time: the time picker (one tap sets it), Custom date & time for anything else.
@@ -617,12 +602,12 @@ private fun CallRow(
             quote = quote,
             action = {
                 if (mode == CallMode.DONE) {
-                    RoundAction(Icons.Rounded.Replay, "Call again", cs.secondaryContainer, cs.onSecondaryContainer, hasNumber, onCall)
+                    RoundAction(Icons.Rounded.Replay, "Call again", cs.secondaryContainer, cs.onSecondaryContainer, hasNumber, onClick = onCall)
                 } else {
                     // The ☆ sits just above the call button.
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         StarButton(r.starred, onStar)
-                        RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber, onCall)
+                        RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber, onClick = onCall)
                     }
                 }
             },
@@ -687,7 +672,7 @@ private fun EmptyText(text: String) {
 
 /** Everything that happened to a task, newest first: created, rang, snoozed, called, moved and why, done. */
 @Composable
-private fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
+internal fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
     val lines = r.historyLines()
     AlertDialog(
         onDismissRequest = onDismiss,

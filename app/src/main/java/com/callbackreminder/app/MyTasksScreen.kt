@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -180,6 +182,7 @@ fun MyTasksScreen(resumeKey: Int) {
 
     var newKind by remember { mutableStateOf<Int?>(null) }
     var editTask by remember { mutableStateOf<MyTask?>(null) }
+    var moveFor by remember { mutableStateOf<MyTask?>(null) }
     var editDossier by remember { mutableStateOf<DossierTask?>(null) }
     var whyFor by remember { mutableStateOf<DossierTask?>(null) }
     var historyFor by remember { mutableStateOf<DossierTask?>(null) }
@@ -243,6 +246,13 @@ fun MyTasksScreen(resumeKey: Int) {
             onTick = { tick(t) },
             onStar = { MyTaskStore.setStar(t.id, !t.starred) },
             onOpen = { editTask = t },
+            onRemoveTime = {
+                val before = t
+                MyTaskStore.edit(t.id, t.title, t.note, 0L, t.name, t.number, remindBefore = emptyList())
+                scope.offerUndo(snack, "Time removed · in To schedule") { MyTaskStore.restore(before) }
+            },
+            onMoveToFollowUps = { moveFor = t },
+            onDelete = { deleteTask(t) },
         )
     }
 
@@ -493,8 +503,11 @@ fun MyTasksScreen(resumeKey: Int) {
                     scope.offerUndo(snack, "Moved to ${MyTaskStore.listName(after.listId)}") { MyTaskStore.restore(before) }
                 }
             },
+            onMoveToFollowUps = { moveFor = it },
         )
     }
+    // Move to Follow-ups: New follow-up filled in from the task; on Save the task leaves My tasks.
+    moveFor?.let { t -> FollowUpDialog(onDismiss = { moveFor = null }, fromMyTask = t) }
     editDossier?.let { t -> DossierTaskDialog(existing = t, onDismiss = { editDossier = null }, onSwitchKind = null) }
 
     whyFor?.let { t ->
@@ -629,28 +642,39 @@ private fun TaskWindow(
     onSave: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp)
+    // Kept clear of the phone's Home/Back buttons; Save stays at the bottom while the form scrolls.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, contentDescription = "Close") }
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, contentDescription = "Close") }
+                    }
+                    Column(
+                        Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        content()
+                    }
+                    Button(
+                        onClick = onSave,
+                        enabled = canSave,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) { Text(saveLabel, fontWeight = FontWeight.Bold) }
                 }
-                content()
-                Button(
-                    onClick = onSave,
-                    enabled = canSave,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) { Text(saveLabel, fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -1062,9 +1086,10 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
     val (done, total) = remember(records, t) { DossierStore.monthScore(t, now) }
     val missed = total - done
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
             LazyColumn(
+                modifier = Modifier.systemBarsPadding(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

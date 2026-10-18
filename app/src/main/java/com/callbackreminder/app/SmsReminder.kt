@@ -82,6 +82,14 @@ data class SmsReminder(
     val taskDue: Long = 0L,
     /** "Review later" in To review: hidden there until this time. */
     val reviewLaterUntil: Long = 0L,
+    /**
+     * The text times as you set them, minutes after [dueAt]. With a burst sent at each time, [slots] holds every
+     * text and this keeps the times you picked. Empty on texts made before bursts at each time existed.
+     */
+    val baseSlots: List<Int> = emptyList(),
+    /** A burst sent at each text time: texts per time (1 = no burst) and minutes apart. */
+    val groupCount: Int = 1,
+    val groupGapMin: Int = 0,
 ) {
     enum class Review(val code: String) {
         /** The person texted back "Done". */
@@ -111,10 +119,29 @@ data class SmsReminder(
     val repeatLabel: String?
         get() = repeat?.label(Repeat.at(seriesStart))
 
+    /** The burst sent at each text time, or null for one text per time. */
+    val eachBurst: BurstTemplate?
+        get() = when {
+            groupCount > 1 -> BurstTemplate(groupCount, groupGapMin)
+            slots.isEmpty() && isBurst -> BurstTemplate(burstCount, burstGapMin)
+            else -> null
+        }
+
+    /** The text times as you set them (without the extra texts of each burst). */
+    val baseTimes: List<Long>
+        get() = when {
+            baseSlots.isNotEmpty() -> baseSlots.map { dueAt + it * 60_000L }
+            slots.isNotEmpty() && groupCount <= 1 -> slots.indices.map { textAt(it) }
+            else -> listOf(dueAt)
+        }
+
     /** Like "5 texts, 5 min apart" (or "2 texts: 9:00 AM, 2:00 PM"), or null for a single text. */
     val burstLabel: String?
         get() = when {
             !isBurst -> null
+            groupCount > 1 && baseSlots.size > 1 ->
+                "Burst at each time: ${BurstTemplate(groupCount, groupGapMin).label} · " + baseTimes.joinToString(", ") { Fmt.timeOnly(it) }
+            groupCount > 1 -> BurstTemplate(groupCount, groupGapMin).label
             slots.isNotEmpty() -> "$burstCount texts: " + slots.indices.joinToString(", ") { Fmt.timeOnly(textAt(it)) }
             else -> BurstTemplate(burstCount, burstGapMin).label
         }

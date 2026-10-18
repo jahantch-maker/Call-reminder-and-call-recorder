@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,9 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -159,6 +163,7 @@ const val CHIP_ORANGE = 2
  * (red when overdue) or an orange "No time yet", the person, and ★ on the right. [handle] shows ⠿ for
  * "My order" dragging.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun GTaskRow(
     t: MyTask,
@@ -169,16 +174,21 @@ internal fun GTaskRow(
     onTick: () -> Unit,
     onStar: () -> Unit,
     onOpen: () -> Unit,
+    onRemoveTime: (() -> Unit)? = null,
+    onMoveToFollowUps: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val overdue = !t.done && t.timed && t.dueAt <= now
     var personMenu by remember { mutableStateOf(false) }
+    var rowMenu by remember { mutableStateOf(false) }
+    val hasMenu = !t.done && (onMoveToFollowUps != null || onDelete != null)
     Row(
         Modifier
             .fillMaxWidth()
             .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), RoundedCornerShape(14.dp)) else Modifier)
-            .clickable(onClick = onOpen)
+            .combinedClickable(onClick = onOpen, onLongClick = if (hasMenu) ({ rowMenu = true }) else null)
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Top
     ) {
@@ -230,6 +240,37 @@ internal fun GTaskRow(
             }
         }
         if (!t.done) StarButton(t.starred, onStar)
+        if (hasMenu) {
+            // Long-press or ⋮: Remove time and Move to Follow-ups without opening the task.
+            Box {
+                IconButton(onClick = { rowMenu = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "More", tint = cs.outline, modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(expanded = rowMenu, onDismissRequest = { rowMenu = false }) {
+                    DropdownMenuItem(text = { Text("Edit") }, onClick = { rowMenu = false; onOpen() })
+                    if (t.timed && onRemoveTime != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove time") },
+                            leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null) },
+                            onClick = { rowMenu = false; onRemoveTime() }
+                        )
+                    }
+                    if (onMoveToFollowUps != null) {
+                        DropdownMenuItem(
+                            text = { Text("Move to Follow-ups") },
+                            leadingIcon = { Icon(Icons.Rounded.Notifications, contentDescription = null) },
+                            onClick = { rowMenu = false; onMoveToFollowUps() }
+                        )
+                    }
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = cs.error) },
+                            onClick = { rowMenu = false; onDelete() }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -451,6 +492,7 @@ internal fun MyTaskDialog(
     listId: Long = MyTaskStore.UNSORTED,
     onDelete: ((MyTask) -> Unit)? = null,
     onSaved: ((before: MyTask?, after: MyTask) -> Unit)? = null,
+    onMoveToFollowUps: ((MyTask) -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val lists by MyTaskStore.lists.collectAsState()
@@ -546,9 +588,6 @@ internal fun MyTaskDialog(
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (due > 0L) {
                         Text("📅 ${Fmt.dueLabel(due)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        IconButton(onClick = { due = 0L; picked = null }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Rounded.Close, contentDescription = "No time", modifier = Modifier.size(18.dp))
-                        }
                     } else {
                         Text("No time yet", color = NoTimeFg, fontWeight = FontWeight.SemiBold)
                     }
@@ -556,6 +595,10 @@ internal fun MyTaskDialog(
                     TextButton(onClick = { showDateTime = true }) { Text("Date & time ›") }
                 }
                 if (due > 0L) {
+                    // Google Tasks style: the time goes, the task stays (No time yet) and its heads-ups clear.
+                    Box(Modifier.padding(end = 8.dp)) {
+                        RemoveTimeButton(label = "Remove time") { due = 0L; picked = null; before = emptyList() }
+                    }
                     // Extra heads-ups before the due time; tap to add or remove, as many as you like.
                     Text(
                         "REMIND ME BEFORE (optional, pick any)",
@@ -665,6 +708,16 @@ internal fun MyTaskDialog(
             }
             if (onSwitchKind != null && existing == null) {
                 TextButton(onClick = onSwitchKind) { Text("Repeats on set days? Make it a Dossier task") }
+            }
+            if (existing != null && onMoveToFollowUps != null) {
+                Box(Modifier.padding(end = 8.dp)) {
+                    ArrowCard(
+                        icon = { Icon(Icons.Rounded.Notifications, contentDescription = null, tint = Color(0xFFF0B850)) },
+                        title = "Move to Follow-ups",
+                        subtitle = "Opens New follow-up filled in",
+                        onClick = { onDismiss(); onMoveToFollowUps(existing) },
+                    )
+                }
             }
         }
     }

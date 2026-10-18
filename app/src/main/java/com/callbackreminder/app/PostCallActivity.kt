@@ -31,6 +31,7 @@ class PostCallActivity : ComponentActivity() {
         ReminderStore.init(this)
         SmsStore.init(this)
         ToScheduleStore.init(this)
+        MyTaskStore.init(this)
         addFrom(intent)
         if (queue.isEmpty()) {
             finish()
