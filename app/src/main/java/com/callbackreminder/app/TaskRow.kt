@@ -68,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
@@ -150,7 +151,10 @@ fun SmallChip(c: RowChip) {
     }
 }
 
-/** The round one-tap button on the right of a row. */
+/**
+ * The round one-tap button on the right of a row. [size] 44.dp is the bigger Follow-ups button; [finished] greys
+ * it out with a ✓ badge (that part of the follow-up is done) but it still works.
+ */
 @Composable
 fun RoundAction(
     icon: ImageVector,
@@ -158,22 +162,42 @@ fun RoundAction(
     container: Color,
     content: Color,
     enabled: Boolean = true,
+    size: Dp = 36.dp,
+    finished: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(if (enabled) container else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = if (enabled) content else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp)
-        )
+    val cs = MaterialTheme.colorScheme
+    val bg = when {
+        !enabled || finished -> cs.surfaceVariant
+        else -> container
+    }
+    val fg = if (!enabled || finished) cs.onSurfaceVariant else content
+    Box(Modifier.size(size + if (finished) 4.dp else 0.dp)) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(bg)
+                .clickable(enabled = enabled, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = description, tint = fg, modifier = Modifier.size(size / 2))
+        }
+        if (finished) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(cs.surface)
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(cs.outline),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = "Finished", tint = cs.surface, modifier = Modifier.size(11.dp))
+            }
+        }
     }
 }
 

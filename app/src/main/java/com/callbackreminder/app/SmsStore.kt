@@ -70,6 +70,9 @@ object SmsStore {
                     slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
                     taskDue = o.optLong("taskDue"),
                     reviewLaterUntil = o.optLong("reviewLater"),
+                    baseSlots = o.optJSONArray("baseSlots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+                    groupCount = o.optInt("groupCount", 1).coerceAtLeast(1),
+                    groupGapMin = o.optInt("groupGap"),
                 )
             }
         } catch (e: Exception) {
@@ -112,6 +115,9 @@ object SmsStore {
                     .put("slots", JSONArray().apply { r.slots.forEach { put(it) } })
                     .put("taskDue", r.taskDue)
                     .put("reviewLater", r.reviewLaterUntil)
+                    .put("baseSlots", JSONArray().apply { r.baseSlots.forEach { put(it) } })
+                    .put("groupCount", r.groupCount)
+                    .put("groupGap", r.groupGapMin)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -158,6 +164,9 @@ object SmsStore {
         slots: List<Int> = emptyList(),
         linkId: Long = 0L,
         taskDue: Long = 0L,
+        baseSlots: List<Int> = emptyList(),
+        group: BurstTemplate? = null,
+        code: String = "",
     ): SmsReminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -176,6 +185,10 @@ object SmsStore {
                 slots = slots.takeIf { it.size > 1 } ?: emptyList(),
                 linkId = linkId,
                 taskDue = taskDue,
+                baseSlots = if (group != null || baseSlots.size > 1) baseSlots else emptyList(),
+                groupCount = group?.count ?: 1,
+                groupGapMin = group?.gapMin ?: 0,
+                code = code,
             ),
             dueAt,
             repeat
@@ -202,6 +215,8 @@ object SmsStore {
         tracked: Boolean,
         slots: List<Int> = emptyList(),
         taskDue: Long? = null,
+        baseSlots: List<Int> = emptyList(),
+        group: BurstTemplate? = null,
     ) {
         val cur = get(id) ?: return
         SmsNotifier.cancel(appCtx, id)
@@ -216,6 +231,9 @@ object SmsStore {
                 tracked = tracked,
                 slots = timed,
                 taskDue = taskDue ?: cur.taskDue,
+                baseSlots = if (group != null || baseSlots.size > 1) baseSlots else emptyList(),
+                groupCount = group?.count ?: 1,
+                groupGapMin = group?.gapMin ?: 0,
             ),
             dueAt,
             repeat
@@ -457,6 +475,13 @@ object SmsStore {
     fun setTaskDue(id: Long, taskDue: Long, detail: String) {
         val cur = get(id) ?: return
         replace(withLog(cur, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MOVED, detail)).copy(taskDue = taskDue))
+    }
+
+    /** Joins this text to a follow-up (an older text gets a link when you edit it). */
+    @Synchronized
+    fun setLink(id: Long, linkId: Long) {
+        val cur = get(id) ?: return
+        replace(cur.copy(linkId = linkId))
     }
 
     /** "Review later": hidden from To review until [until]. */

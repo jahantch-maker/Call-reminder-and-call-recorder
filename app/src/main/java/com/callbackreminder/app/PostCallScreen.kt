@@ -32,13 +32,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +52,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -157,12 +163,12 @@ internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnS
 }
 
 /** Which step of the after-call popup is showing. */
-private enum class PostCallStep { CHOOSE, CALL_BACK }
+private enum class PostCallStep { CHOOSE, FOLLOW_UP, MY_TASK }
 
 /**
- * The after-call popup. First a note box with Schedule later joined under it, and two big blocks: Set a
- * call back reminder (opens the quick times) and Schedule a text (opens the text scheduler). Nothing gets
- * a time from a single stray tap.
+ * The after-call popup. First the note, then two big buttons: Create my task (it goes to My tasks) and Create
+ * follow-up task (a call back and/or texts to him). Each one is set right here in the popup with the quick time
+ * picker; No time and an empty note are both allowed (it then waits in To schedule).
  */
 @Composable
 private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> Unit) {
@@ -172,14 +178,19 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     var note by remember { mutableStateOf(call.prefillNote) }
     var step by remember { mutableStateOf(PostCallStep.CHOOSE) }
     var showPicker by remember { mutableStateOf(false) }
-    var showText by remember { mutableStateOf(false) }
+    var callOn by remember { mutableStateOf(true) }
     var alsoText by remember { mutableStateOf(false) }
-    var followUpLink by remember { mutableStateOf<Long?>(null) }
+    val text = rememberTextPlanState()
+    val lists by MyTaskStore.lists.collectAsState()
+    var list by remember { mutableLongStateOf(MyTaskStore.UNSORTED) }
+    var listMenu by remember { mutableStateOf(false) }
 
     val callerName = call.name.takeIf { it.isNotBlank() }
     val callerNumber = call.number.takeIf { it.isNotBlank() }
     val title = callerName ?: callerNumber ?: "Unknown caller"
     val needsName = callerName == null && callerNumber == null
+    val firstName = (callerName ?: typedName.takeIf { it.isNotBlank() } ?: "him").substringBefore(' ')
+    val person = callerName ?: typedName.takeIf { it.isNotBlank() } ?: callerNumber ?: "them"
 
     val baseLabel = when (call.type) {
         CallLog.Calls.INCOMING_TYPE -> "Incoming call"
@@ -196,29 +207,46 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         else if (call.durationSec > 0) append(" · ").append(Fmt.duration(call.durationSec))
     }
 
-    fun schedule(whenMs: Long) {
-        val name = callerName ?: typedName
-        val r = ReminderStore.add(
-            name = name,
-            number = callerNumber ?: "",
-            note = note,
-            dueAt = whenMs,
-            createdAs = "Created after a call"
+    /** The task line: the note, or "Follow up on call with Ali" when nothing was typed. */
+    fun taskText() = note.trim().ifBlank { "Follow up on call with $person" }
+
+    fun saveFollowUp(due: Long?) {
+        val number = callerNumber ?: ""
+        val task = taskText()
+        val textOn = alsoText && number.isNotBlank()
+        val plan = if (textOn) {
+            // No text time picked yet: a sensible one from the call time.
+            if (text.times.isEmpty() && due != null) {
+                text.times = listOf(FollowUps.firstTextTime(due, System.currentTimeMillis()) ?: (System.currentTimeMillis() + 60_000L))
+            }
+            text.plan(task)
+        } else null
+        val timed = FollowUps.create(
+            ctx, callerName ?: typedName, number, task, due,
+            callOn = callOn && number.isNotBlank(), autopilot = false, text = plan, starred = false,
         )
-        // "Also text him": the call and his texts become one follow-up (one card, texts move with New time).
-        if (alsoText && callerNumber != null) {
-            val link = FollowUps.newLink(ctx)
-            ReminderStore.setLink(r.id, link, autopilot = false)
-            followUpLink = link
-            return
-        }
-        Toast.makeText(ctx, "Reminder set · ${Fmt.dueLabel(whenMs)}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            ctx,
+            if (timed && due != null) "Follow-up set · ${Fmt.dueLabel(due)}" else "Saved to Follow-ups · no time yet (To schedule)",
+            Toast.LENGTH_SHORT
+        ).show()
         onNext()
     }
 
-    fun scheduleLater() {
-        ToScheduleStore.add(name = callerName ?: typedName, number = callerNumber ?: "", note = note)
-        Toast.makeText(ctx, "Saved to To schedule", Toast.LENGTH_SHORT).show()
+    fun saveMyTask(due: Long) {
+        MyTaskStore.add(
+            title = taskText(),
+            note = "",
+            dueAt = due,
+            name = callerName ?: typedName,
+            number = callerNumber ?: "",
+            listId = list,
+        )
+        Toast.makeText(
+            ctx,
+            if (due > 0L) "Added to My tasks · ${Fmt.dueLabel(due)}" else "Added to My tasks · no time yet",
+            Toast.LENGTH_SHORT
+        ).show()
         onNext()
     }
 
@@ -233,51 +261,42 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             Spacer(Modifier.height(8.dp))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (step != PostCallStep.CHOOSE) {
-                IconButton(onClick = { step = PostCallStep.CHOOSE }) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+        if (step == PostCallStep.CHOOSE) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Skip")
                 }
             }
-            Avatar(text = callerName ?: callerNumber ?: "?", size = 48.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            Spacer(Modifier.height(16.dp))
+            if (needsName) {
+                OutlinedTextField(
+                    value = typedName,
+                    onValueChange = { typedName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Who was this? (optional)") },
+                    shape = RoundedCornerShape(14.dp)
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(Modifier.height(10.dp))
             }
-            IconButton(onClick = onNext) {
-                Icon(Icons.Rounded.Close, contentDescription = "Skip")
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        if (needsName) {
-            OutlinedTextField(
-                value = typedName,
-                onValueChange = { typedName = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Who was this? (optional)") },
-                shape = RoundedCornerShape(14.dp)
-            )
-            Spacer(Modifier.height(10.dp))
-        }
-
-        if (step == PostCallStep.CHOOSE) {
-            // The note box and Schedule later read as one piece: the bar hangs off the box's bottom edge.
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -285,33 +304,31 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("What did you discuss? (note)") },
                 maxLines = 4,
-                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
+                shape = RoundedCornerShape(14.dp)
             )
-            ScheduleLaterBar(enabled = note.isNotBlank(), onClick = { scheduleLater() })
-
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "Or set it now",
+                text = "Make it a task",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 BigChoice(
-                    icon = Icons.Rounded.Call,
-                    label = "Set a call back reminder",
-                    container = MaterialTheme.colorScheme.primary,
-                    content = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.weight(1f),
-                    onClick = { step = PostCallStep.CALL_BACK }
-                )
-                BigChoice(
-                    icon = Icons.Rounded.Sms,
-                    label = "Schedule a text",
+                    icon = Icons.Rounded.CheckBox,
+                    label = "Create my task",
                     container = MaterialTheme.colorScheme.secondary,
                     content = MaterialTheme.colorScheme.onSecondary,
                     modifier = Modifier.weight(1f),
-                    onClick = { showText = true }
+                    onClick = { step = PostCallStep.MY_TASK }
+                )
+                BigChoice(
+                    icon = Icons.Rounded.Notifications,
+                    label = "Create follow-up task",
+                    container = MaterialTheme.colorScheme.primary,
+                    content = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.weight(1f),
+                    onClick = { step = PostCallStep.FOLLOW_UP }
                 )
             }
             if (callerNumber != null) {
@@ -323,44 +340,106 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 TextButton(onClick = onNext) { Text("Skip") }
             }
         } else {
+            val followUp = step == PostCallStep.FOLLOW_UP
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { step = PostCallStep.CHOOSE }) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                }
+                Icon(
+                    if (followUp) Icons.Rounded.Notifications else Icons.Rounded.CheckBox,
+                    contentDescription = null,
+                    tint = if (followUp) Color(0xFFF0B850) else MaterialTheme.colorScheme.secondary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (followUp) "Follow-up with $firstName" else "My task",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
                 trailingIcon = voiceMic(note) { note = it },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Note (optional)") },
+                label = { Text("Task (optional)") },
+                placeholder = { Text("Follow up on call with $person") },
+                maxLines = 3,
                 shape = RoundedCornerShape(14.dp)
             )
-
-            if (callerNumber != null) {
-                Spacer(Modifier.height(10.dp))
-                // On: after the time tap, the follow-up opens with texts to him at their own times.
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Sms, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Also text ${(callerName ?: "him").substringBefore(' ')}", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (alsoText) "After you pick the time, set his text times" else "Off: only your call back",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    androidx.compose.material3.Switch(checked = alsoText, onCheckedChange = { alsoText = it })
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = "Remind me to call back",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(10.dp))
-            TimePickerPanel(plusRow = true) { schedule(it) }
 
-            Spacer(Modifier.height(6.dp))
+            if (followUp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SwitchCard(
+                        icon = { Icon(Icons.Rounded.Call, contentDescription = null) },
+                        title = "Remind me to call",
+                        subtitle = if (callerNumber == null) "No number for this call" else "Rings at the time you pick below",
+                        checked = callOn && callerNumber != null,
+                        enabled = callerNumber != null,
+                        onChange = { callOn = it },
+                    )
+                    SwitchCard(
+                        icon = { Icon(Icons.Rounded.Sms, contentDescription = null) },
+                        title = "Also text $firstName",
+                        subtitle = if (alsoText) "On: his texts, with Burst" else "Off: only your call back",
+                        checked = alsoText && callerNumber != null,
+                        enabled = callerNumber != null,
+                        onChange = { alsoText = it },
+                    )
+                    if (alsoText && callerNumber != null) {
+                        TextPlanSection(text, taskText(), null)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = if (alsoText) "CALL TIME" else "WHEN?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (callerName != null || callerNumber != null || typedName.isNotBlank()) {
+                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Text("👤 $person", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                        }
+                    }
+                    Box {
+                        Surface(
+                            onClick = { listMenu = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ) {
+                            Text(
+                                "📁 ${lists.firstOrNull { it.id == list }?.name ?: "Unsorted"} ▾",
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                        DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
+                            lists.forEach { l ->
+                                DropdownMenuItem(text = { Text(l.name) }, onClick = { list = l.id; listMenu = false })
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "WHEN?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            // One tap on a time saves it, right here in the popup.
+            TimePickerPanel(plusRow = true) { if (followUp) saveFollowUp(it) else saveMyTask(it) }
+            Spacer(Modifier.height(8.dp))
+            RemoveTimeButton(label = "No time · set it later") { if (followUp) saveFollowUp(null) else saveMyTask(0L) }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -379,77 +458,9 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     if (showPicker) {
         DateTimePickerFlow(
             initialMs = QuickTime.OnDay(1, 10).toOption().whenMs, // Tomorrow 10 am
-            onPicked = { showPicker = false; schedule(it) },
+            onPicked = { showPicker = false; if (step == PostCallStep.FOLLOW_UP) saveFollowUp(it) else saveMyTask(it) },
             onDismiss = { showPicker = false }
         )
-    }
-
-    followUpLink?.let { link ->
-        // The call back is already saved; this adds his texts to the same follow-up. Cancel keeps just the call.
-        FollowUpDialog(
-            onDismiss = { followUpLink = null; onNext() },
-            linkId = link,
-            taskRequired = false,
-            startWithText = true,
-        )
-    }
-
-    if (showText) {
-        SmsReminderDialog(
-            prefill = TextPrefill(
-                name = callerName ?: typedName,
-                number = callerNumber ?: "",
-                message = note,
-                heading = "Schedule a text",
-            ),
-            onDismiss = { showText = false },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                SmsStore.add(name, number, message, dueAt, repeat, burst, tracked)
-                showText = false
-                Toast.makeText(ctx, "Text scheduled · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
-                onNext()
-            }
-        )
-    }
-}
-
-/**
- * The wide bar under the note box. Locked (grey, dashed) until a note is typed, then orange and tappable.
- * Its hint sits inside it.
- */
-@Composable
-private fun ScheduleLaterBar(enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
-    val container = if (enabled) Color(0xFFFFF1D6) else MaterialTheme.colorScheme.surfaceVariant
-    val content = if (enabled) Color(0xFF6A4300) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        shape = shape,
-        color = container,
-        contentColor = content,
-        border = BorderStroke(if (enabled) 2.dp else 1.dp, if (enabled) Color(0xFFF0B850) else MaterialTheme.colorScheme.outline),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.PendingActions, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Schedule later", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text(
-                    if (enabled) "Save this note now, set a time later" else "Type a note above to use this",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Icon(
-                if (enabled) Icons.AutoMirrored.Rounded.KeyboardArrowRight else Icons.Rounded.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(if (enabled) 26.dp else 18.dp)
-            )
-        }
     }
 }
 

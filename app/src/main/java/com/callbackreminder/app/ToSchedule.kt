@@ -32,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -55,16 +56,48 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task saved with "Schedule later" after a call: who and what, with no time and no type yet. */
+/**
+ * A follow-up with no time yet: saved with No time (or Remove time), or task-only with nothing set. It keeps
+ * everything the follow-up had, so setting a time later brings back its call and texts, history included.
+ */
 data class ToScheduleItem(
     val id: Long,
     val name: String,
     val number: String,
     val note: String,
     val createdAt: Long,
+    val callOn: Boolean = true,
+    val textOn: Boolean = false,
+    val message: String = "",
+    val tracked: Boolean = true,
+    /** The text times as they were (they move with the new time, like New time). */
+    val textTimes: List<Long> = emptyList(),
+    val burstCount: Int = 1,
+    val burstGapMin: Int = 0,
+    val repeat: Repeat? = null,
+    /** The due time before Remove time (0 = never had one). */
+    val oldDue: Long = 0L,
+    val autopilot: Boolean = false,
+    val starred: Boolean = false,
+    val linkId: Long = 0L,
+    /** The texts' task number, kept so his "Done <number>" still matches. */
+    val code: String = "",
+    val callEvents: List<CallEvent> = emptyList(),
+    val textLog: List<SmsLogEntry> = emptyList(),
 ) {
     val title: String
-        get() = name.ifBlank { number }.ifBlank { "Unknown caller" }
+        get() = name.ifBlank { number }.ifBlank { "No person yet" }
+
+    /** No person, or neither a call nor texts: it needs Edit before it can get a time. */
+    val needsDetails: Boolean
+        get() = number.isBlank() || (!callOn && !textOn)
+
+    val burst: BurstTemplate?
+        get() = if (burstCount > 1) BurstTemplate(burstCount, burstGapMin) else null
+
+    /** The bold line: the task, else "Call back Ali". */
+    val headline: String
+        get() = note.ifBlank { message }.ifBlank { "Call back $title" }
 }
 
 /** The To schedule list, kept on the phone like the other lists. */
@@ -94,6 +127,33 @@ object ToScheduleStore {
                     number = o.optString("number"),
                     note = o.optString("note"),
                     createdAt = o.optLong("createdAt"),
+                    callOn = o.optBoolean("callOn", true),
+                    textOn = o.optBoolean("textOn", false),
+                    message = o.optString("message"),
+                    tracked = o.optBoolean("tracked", true),
+                    textTimes = o.optJSONArray("textTimes")?.let { a -> (0 until a.length()).map { a.getLong(it) } } ?: emptyList(),
+                    burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
+                    burstGapMin = o.optInt("burstGap"),
+                    repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+                    oldDue = o.optLong("oldDue"),
+                    autopilot = o.optBoolean("autopilot"),
+                    starred = o.optBoolean("starred"),
+                    linkId = o.optLong("linkId"),
+                    code = o.optString("code"),
+                    callEvents = o.optJSONArray("callEvents")?.let { a ->
+                        (0 until a.length()).map { j ->
+                            val e = a.getJSONObject(j)
+                            CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
+                        }
+                    } ?: emptyList(),
+                    textLog = o.optJSONArray("textLog")?.let { a ->
+                        (0 until a.length()).mapNotNull { j ->
+                            val l = a.getJSONObject(j)
+                            val status = SmsLogEntry.Status.values().firstOrNull { it.code == l.optString("s") }
+                                ?: return@mapNotNull null
+                            SmsLogEntry(l.getLong("at"), status, l.optString("d"))
+                        }
+                    } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -111,58 +171,77 @@ object ToScheduleStore {
                     .put("number", t.number)
                     .put("note", t.note)
                     .put("createdAt", t.createdAt)
+                    .put("callOn", t.callOn)
+                    .put("textOn", t.textOn)
+                    .put("message", t.message)
+                    .put("tracked", t.tracked)
+                    .put("textTimes", JSONArray().apply { t.textTimes.forEach { put(it) } })
+                    .put("burstCount", t.burstCount)
+                    .put("burstGap", t.burstGapMin)
+                    .put("repeat", t.repeat?.toJson())
+                    .put("oldDue", t.oldDue)
+                    .put("autopilot", t.autopilot)
+                    .put("starred", t.starred)
+                    .put("linkId", t.linkId)
+                    .put("code", t.code)
+                    .put("callEvents", JSONArray().apply {
+                        t.callEvents.forEach { e ->
+                            put(JSONObject().put("at", e.at).put("what", e.what).put("due", e.due).put("note", e.note))
+                        }
+                    })
+                    .put("textLog", JSONArray().apply {
+                        t.textLog.forEach { l -> put(JSONObject().put("at", l.at).put("s", l.status.code).put("d", l.detail)) }
+                    })
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
         _items.value = list
     }
 
+    fun get(id: Long): ToScheduleItem? = _items.value.firstOrNull { it.id == id }
+
     @Synchronized
-    fun add(name: String, number: String, note: String) {
-        val id = prefs().getLong("nextId", 1L)
-        prefs().edit().putLong("nextId", id + 1).apply()
-        save(_items.value + ToScheduleItem(id, name.trim(), number.trim(), note.trim(), System.currentTimeMillis()))
-        RecentPeople.record(appCtx, name.trim(), number.trim())
+    fun add(name: String, number: String, note: String): ToScheduleItem =
+        put(ToScheduleItem(0L, name, number, note, 0L))
+
+    /** Saves [t] as a new item (id 0), or over the item with its id. */
+    @Synchronized
+    fun put(t: ToScheduleItem): ToScheduleItem {
+        val id = if (t.id > 0L) t.id else prefs().getLong("nextId", 1L).also { prefs().edit().putLong("nextId", it + 1).apply() }
+        val item = t.copy(
+            id = id,
+            name = t.name.trim(),
+            number = t.number.trim(),
+            note = t.note.trim(),
+            createdAt = if (t.createdAt > 0L) t.createdAt else System.currentTimeMillis(),
+        )
+        val list = _items.value
+        save(if (list.any { it.id == id }) list.map { if (it.id == id) item else it } else list + item)
+        if (item.number.isNotBlank()) RecentPeople.record(appCtx, item.name, item.number)
+        return item
     }
 
     @Synchronized
     fun remove(id: Long) {
         save(_items.value.filter { it.id != id })
     }
-
-    /** The task became a call-back reminder: it leaves this list. */
-    fun toCall(t: ToScheduleItem, dueAt: Long) {
-        ReminderStore.add(
-            name = t.name,
-            number = t.number,
-            note = t.note,
-            dueAt = dueAt,
-            createdAs = "Created from To schedule",
-            earlier = listOf(CallEvent(t.createdAt, "Saved for later after a call")),
-        )
-        remove(t.id)
-    }
-
-    /** The task became a scheduled text: it leaves this list. */
-    fun toText(
-        t: ToScheduleItem,
-        name: String, number: String, message: String, dueAt: Long, repeat: Repeat?, burst: BurstTemplate?, tracked: Boolean,
-    ) {
-        SmsStore.add(
-            name, number, message, dueAt, repeat, burst, tracked,
-            history = listOf(SmsLogEntry(t.createdAt, SmsLogEntry.Status.CALL_EVENT, "Saved for later after a call")),
-        )
-        remove(t.id)
-    }
 }
 
-/** The To schedule page: tasks saved after calls, each waiting for a call-back time or a text. */
+/**
+ * The To schedule page: everything waiting with no time. Follow-ups (from No time, Remove time or a quick save)
+ * and My tasks with no time yet, each with Set time.
+ */
 @Composable
 fun ToScheduleScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val items by ToScheduleStore.items.collectAsState()
-    var callFor by remember { mutableStateOf<ToScheduleItem?>(null) }
-    var textFor by remember { mutableStateOf<ToScheduleItem?>(null) }
+    val myTasks by MyTaskStore.items.collectAsState()
+    val mine = myTasks.filter { !it.done && !it.timed }.sortedByDescending { it.createdAt }
+    var setFor by remember { mutableStateOf<ToScheduleItem?>(null) }
+    var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
+    var setTaskFor by remember { mutableStateOf<MyTask?>(null) }
+    var moveTaskFor by remember { mutableStateOf<MyTask?>(null) }
+    val total = items.size + mine.size
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
@@ -186,9 +265,9 @@ fun ToScheduleScreen(onBack: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
                         )
-                        if (items.isNotEmpty()) {
+                        if (total > 0) {
                             Text(
-                                "${items.size}",
+                                "$total",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(end = 8.dp)
@@ -196,88 +275,141 @@ fun ToScheduleScreen(onBack: () -> Unit) {
                         }
                     }
                     Text(
-                        "Saved after calls. Pick Call back or Text to give each one a time.",
+                        "No time set yet. Give each one a time, or open it to add what is missing.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                     )
                 }
             }
-            if (items.isEmpty()) {
+            if (total == 0) {
                 item(key = "empty") {
                     Text(
-                        "Nothing waiting. After a call, type a note and tap Schedule later to save a task here.",
+                        "Nothing waiting. A follow-up or task saved with No time shows here until it gets a time.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 24.dp, horizontal = 4.dp)
                     )
                 }
             }
-            items(items.sortedByDescending { it.createdAt }, key = { it.id }) { t ->
+            if (items.isNotEmpty()) item(key = "h-fu") { DayHeader("Follow-ups", "${items.size}", MaterialTheme.colorScheme.primary) }
+            items(items.sortedByDescending { it.createdAt }, key = { "fu-${it.id}" }) { t ->
                 ToScheduleCard(
-                    t = t,
-                    onCall = { callFor = t },
-                    onText = { textFor = t },
-                    onDelete = {
-                        ToScheduleStore.remove(t.id)
-                        Toast.makeText(ctx, "Deleted", Toast.LENGTH_SHORT).show()
-                    }
+                    title = t.headline,
+                    person = t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() },
+                    number = t.number.takeIf { t.name.isNotBlank() && it.isNotBlank() },
+                    info = buildList {
+                        add("Saved ${Fmt.dueLabel(t.createdAt)}")
+                        if (t.needsDetails) add("Needs details")
+                        else {
+                            if (t.callOn) add("📞 call")
+                            if (t.textOn) add("💬 texts paused")
+                        }
+                    }.joinToString(" · "),
+                    warn = t.needsDetails,
+                    primaryLabel = if (t.needsDetails) "Add details" else "Set time",
+                    onPrimary = { if (t.needsDetails) editFor = t else setFor = t },
+                    secondaryLabel = "Edit",
+                    onSecondary = { editFor = t },
+                    menu = listOf(
+                        "Move to My tasks" to {
+                            FollowUps.moveToMyTasks(ctx, t)
+                            Toast.makeText(ctx, "Moved to My tasks", Toast.LENGTH_SHORT).show()
+                        },
+                        "Delete" to {
+                            ToScheduleStore.remove(t.id)
+                            Toast.makeText(ctx, "Deleted", Toast.LENGTH_SHORT).show()
+                        },
+                    ),
+                )
+            }
+            if (mine.isNotEmpty()) item(key = "h-my") { DayHeader("My tasks", "${mine.size}", MaterialTheme.colorScheme.secondary) }
+            items(mine, key = { "my-${it.id}" }) { t ->
+                ToScheduleCard(
+                    title = t.title,
+                    person = t.personTitle.takeIf { t.hasPerson },
+                    number = null,
+                    info = "My task · saved ${Fmt.dueLabel(t.createdAt)}",
+                    warn = false,
+                    primaryLabel = "Set time",
+                    onPrimary = { setTaskFor = t },
+                    secondaryLabel = "Move to Follow-ups",
+                    onSecondary = { moveTaskFor = t },
+                    menu = listOf(
+                        "Delete" to {
+                            MyTaskStore.delete(t.id)
+                            Toast.makeText(ctx, "Deleted", Toast.LENGTH_SHORT).show()
+                        },
+                    ),
                 )
             }
         }
     }
 
-    callFor?.let { t ->
-        CallBackTimeSheet(
-            t = t,
-            onPicked = { ms ->
-                ToScheduleStore.toCall(t, ms)
-                callFor = null
-                Toast.makeText(ctx, "Reminder set · ${Fmt.dueLabel(ms)}", Toast.LENGTH_SHORT).show()
+    setFor?.let { t ->
+        SetTimeSheet(
+            heading = "Set time",
+            about = t.headline,
+            onPick = { ms ->
+                setFor = null
+                FollowUps.setTime(ctx, t, ms)
+                Toast.makeText(ctx, "Set · ${Fmt.dueLabel(ms)}", Toast.LENGTH_SHORT).show()
             },
-            onDismiss = { callFor = null }
+            onDismiss = { setFor = null },
         )
     }
-
-    textFor?.let { t ->
-        SmsReminderDialog(
-            prefill = TextPrefill(name = t.name, number = t.number, message = t.note, heading = "Schedule a text"),
-            onDismiss = { textFor = null },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                ToScheduleStore.toText(t, name, number, message, dueAt, repeat, burst, tracked)
-                textFor = null
-                Toast.makeText(ctx, "Text scheduled · ${Fmt.dueLabel(dueAt)}", Toast.LENGTH_SHORT).show()
-            }
+    editFor?.let { t -> FollowUpDialog(onDismiss = { editFor = null }, item = t) }
+    setTaskFor?.let { t ->
+        SetTimeSheet(
+            heading = "Set time",
+            about = t.title,
+            onPick = { ms ->
+                setTaskFor = null
+                MyTaskStore.setDue(t.id, ms)
+                Toast.makeText(ctx, "Set · ${Fmt.dueLabel(ms)}", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { setTaskFor = null },
         )
     }
+    moveTaskFor?.let { t -> FollowUpDialog(onDismiss = { moveTaskFor = null }, fromMyTask = t) }
 }
 
 @Composable
-private fun ToScheduleCard(t: ToScheduleItem, onCall: () -> Unit, onText: () -> Unit, onDelete: () -> Unit) {
+private fun ToScheduleCard(
+    title: String,
+    person: String?,
+    number: String?,
+    info: String,
+    warn: Boolean,
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    secondaryLabel: String,
+    onSecondary: () -> Unit,
+    menu: List<Pair<String, () -> Unit>>,
+) {
     var menuOpen by remember { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
     Card(
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = cs.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(text = t.title)
-                Spacer(Modifier.width(12.dp))
+            Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        t.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (t.name.isNotBlank() && t.number.isNotBlank()) {
-                        Text(
-                            t.number,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (person != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Avatar(text = person, size = 20.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                person + (number?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
                 Column {
@@ -285,134 +417,37 @@ private fun ToScheduleCard(t: ToScheduleItem, onCall: () -> Unit, onText: () -> 
                         Icon(Icons.Rounded.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            onClick = { menuOpen = false; onDelete() }
-                        )
+                        menu.forEach { (label, action) ->
+                            DropdownMenuItem(
+                                text = { Text(label, color = if (label == "Delete") cs.error else cs.onSurface) },
+                                onClick = { menuOpen = false; action() }
+                            )
+                        }
                     }
                 }
             }
-
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(t.note, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodyMedium)
-            }
-
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Rounded.PendingActions,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (warn) cs.error else cs.onSurfaceVariant
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    "Saved ${Fmt.dueLabel(t.createdAt)} · no time yet",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(info, style = MaterialTheme.typography.bodySmall, color = if (warn) cs.error else cs.onSurfaceVariant)
             }
-
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onCall,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Call back", maxLines = 1)
-                }
-                Button(
-                    onClick = onText,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary,
-                        contentColor = MaterialTheme.colorScheme.onSecondary
-                    )
-                ) {
-                    Icon(Icons.Rounded.Sms, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Text", maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-/** The quick times for turning a To schedule task into a call-back reminder. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CallBackTimeSheet(t: ToScheduleItem, onPicked: (Long) -> Unit, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    var showPicker by remember { mutableStateOf(false) }
-
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(text = t.title, size = 48.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        t.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "From To schedule · saved ${Fmt.dueLabel(t.createdAt)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(t.note, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodyMedium)
-            }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Remind me to call back",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(10.dp))
-            TimePickerPanel { onPicked(it) }
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = { showPicker = true }) {
+                Button(onClick = onPrimary, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Pick date & time")
+                    Spacer(Modifier.width(6.dp))
+                    Text(primaryLabel, maxLines = 1)
                 }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                OutlinedButton(onClick = onSecondary, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(secondaryLabel, maxLines = 1)
+                }
             }
         }
-    }
-
-    if (showPicker) {
-        DateTimePickerFlow(
-            initialMs = QuickTime.OnDay(1, 10).toOption().whenMs,
-            onPicked = { showPicker = false; onPicked(it) },
-            onDismiss = { showPicker = false }
-        )
     }
 }

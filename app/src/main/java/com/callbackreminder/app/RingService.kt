@@ -79,6 +79,21 @@ object RingController {
         ReminderStore.get(id)?.takeIf { !it.done }?.let { Notifier.showReminder(ctx, it, quiet = true) }
     }
 
+    /**
+     * The full-screen reminder was put away (Back, Home or swiped off): stop the sound at once and leave each
+     * reminder as a quiet notification, like when its seconds run out.
+     */
+    @Synchronized
+    fun silenceAll(ctx: Context) {
+        val app = ctx.applicationContext
+        val ids = _active.value
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            dismiss(id)
+            ReminderStore.get(id)?.takeIf { !it.done }?.let { Notifier.showReminder(app, it, quiet = true) }
+        }
+    }
+
     @Synchronized
     fun dismiss(id: Long) {
         ringTokens.remove(id)

@@ -111,6 +111,12 @@ class ReviewAlertActivity : ComponentActivity() {
         }
     }
 
+    // Home or the recent-apps button: the sound stops at once and the notification stays, like Later.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isFinishing) leaveNotification()
+    }
+
     private fun leaveNotification() {
         ReviewReminder.notify(this, ReviewReminder.counts(this), quiet = true, fullScreen = false)
         close()

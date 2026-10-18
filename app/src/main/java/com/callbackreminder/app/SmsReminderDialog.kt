@@ -368,15 +368,15 @@ fun SmsReminderDialog(
     }
 }
 
-private const val TRACKING_HELP =
+internal const val TRACKING_HELP =
     "Adds a task number so the person can mark this task done by replying. Turn off for vendors."
 
-private const val BURST_HELP =
+internal const val BURST_HELP =
     "Sends the same text several times, a few minutes apart, using a template you choose."
 
 /** A switch with a small ⓘ next to its name that explains it. */
 @Composable
-private fun SwitchWithHelp(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, onHelp: () -> Unit) {
+internal fun SwitchWithHelp(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, onHelp: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         IconButton(onClick = onHelp, modifier = Modifier.size(32.dp)) {

@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -89,6 +90,14 @@ class ReminderAlertActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
         )
         ReminderStore.init(this)
+
+        // Back puts the reminder away: the sound stops at once and a quiet notification stays.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                RingController.silenceAll(this@ReminderAlertActivity)
+                finish()
+            }
+        })
         handleCallBack(intent.getLongExtra(EXTRA_CALLBACK_ID, -1L))
         intent.removeExtra(EXTRA_CALLBACK_ID)
 
@@ -104,6 +113,18 @@ class ReminderAlertActivity : ComponentActivity() {
         setIntent(intent)
         handleCallBack(intent.getLongExtra(EXTRA_CALLBACK_ID, -1L))
         intent.removeExtra(EXTRA_CALLBACK_ID)
+    }
+
+    // Home or the recent-apps button: same as Back, the sound stops and a quiet notification stays.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        RingController.silenceAll(this)
+    }
+
+    // Swiped away from recent apps.
+    override fun onDestroy() {
+        if (isFinishing && !isChangingConfigurations) RingController.silenceAll(this)
+        super.onDestroy()
     }
 
     /** The "Call back" button on the notification lands here. */
