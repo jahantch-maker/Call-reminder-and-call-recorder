@@ -131,10 +131,10 @@ fun AddReminderDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                TimePickerPanel(selected = due) { ms ->
+                ShortTimeRow(selected = due, onPick = { ms ->
                     due = ms
                     picked = ms
-                }
+                })
 
                 OutlinedButton(
                     onClick = { showDateTime = true },

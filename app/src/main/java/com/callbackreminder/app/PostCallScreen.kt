@@ -436,7 +436,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             }
             Spacer(Modifier.height(10.dp))
             // One tap on a time saves it, right here in the popup.
-            TimePickerPanel(plusRow = true) { if (followUp) saveFollowUp(it) else saveMyTask(it) }
+            ShortTimeRow(selected = null, plusRow = true, onPick = { if (followUp) saveFollowUp(it) else saveMyTask(it) })
             Spacer(Modifier.height(8.dp))
             RemoveTimeButton(label = "No time · set it later") { if (followUp) saveFollowUp(null) else saveMyTask(0L) }
             Row(

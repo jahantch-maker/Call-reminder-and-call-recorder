@@ -225,11 +225,11 @@ fun SmsReminderDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                TimePickerPanel(selected = if (dateChosen) due else null) { ms ->
+                ShortTimeRow(selected = if (dateChosen) due else null, onPick = { ms ->
                     due = ms
                     dateChosen = true
                     picked = ms
-                }
+                })
 
                 OutlinedButton(
                     onClick = { showDateTime = true },

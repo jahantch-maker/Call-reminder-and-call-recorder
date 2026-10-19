@@ -567,7 +567,7 @@ fun SnoozeSheet(
                 overflow = TextOverflow.Ellipsis
             )
             footer?.invoke()
-            TimePickerPanel(plusRow = plusRow, onPick = onPick)
+            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick)
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }
         }

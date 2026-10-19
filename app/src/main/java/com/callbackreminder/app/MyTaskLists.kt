@@ -583,7 +583,7 @@ internal fun MyTaskDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Box(Modifier.padding(end = 8.dp)) {
-                    TimePickerPanel(selected = due.takeIf { it > 0L }) { ms -> due = ms; picked = ms }
+                    ShortTimeRow(selected = due.takeIf { it > 0L }, onPick = { ms -> due = ms; picked = ms })
                 }
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (due > 0L) {
