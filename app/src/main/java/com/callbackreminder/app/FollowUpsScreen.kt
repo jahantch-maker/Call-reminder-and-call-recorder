@@ -739,9 +739,9 @@ fun FollowUpsHeader(status: String, red: Boolean) {
 }
 
 /**
- * A follow-up as one slim row: time, the task in bold, the person, chips. On the right the bigger round buttons
- * say what it has: 📞 blue for the call, 💬 green for the texts, grey with ✓ once that part is finished. Tapping
- * the row opens it in place with every action.
+ * A follow-up as one slim row: time, the task in bold, the person, chips. Small round buttons on the chips line
+ * say what it has: 📞 blue for the call, 💬 green for the texts, grey with ✓ once that part is finished, and WA
+ * opens his WhatsApp chat with the reminder typed. Tapping the row opens it in place with every action.
  */
 @Composable
 private fun FollowUpRow(
@@ -764,6 +764,7 @@ private fun FollowUpRow(
     onMoveBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
     val call = e.call
     val text = e.text
     val overdue = e.callPending && call!!.dueAt <= now
@@ -836,19 +837,24 @@ private fun FollowUpRow(
         chips = chips,
         expanded = expanded,
         onClick = onToggle,
-        action = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        bottomActions = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (call != null) {
                     RoundAction(
                         Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber,
-                        size = 44.dp, finished = !e.callPending && !e.callReview, onClick = onCall
+                        finished = !e.callPending && !e.callReview, onClick = onCall
                     )
                 }
                 if (text != null) {
                     RoundAction(
                         Icons.Rounded.Sms, "Texts", cs.secondary, cs.onSecondary,
-                        size = 44.dp, finished = !e.textActive, onClick = { onTexts(text) }
+                        finished = !e.textActive, onClick = { onTexts(text) }
                     )
+                }
+                if (hasNumber) {
+                    WhatsAppAction {
+                        if (call != null) WhatsApp.forCall(ctx, call) else if (text != null) WhatsApp.forText(ctx, text)
+                    }
                 }
             }
         },
@@ -913,6 +919,7 @@ private fun NoTimeRow(
     onDelete: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
     val chips = buildList {
         if (t.needsDetails) add(RowChip("Needs details", ChipTone.ORANGE, Icons.Rounded.Warning, onEdit))
         if (t.textOn && !t.needsDetails) add(RowChip("Texts paused", ChipTone.ORANGE))
@@ -930,13 +937,16 @@ private fun NoTimeRow(
         chips = chips,
         expanded = expanded,
         onClick = onToggle,
-        action = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        bottomActions = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (t.callOn && t.number.isNotBlank()) {
-                    RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, size = 44.dp, onClick = onCall)
+                    RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, onClick = onCall)
                 }
                 if (t.textOn && t.number.isNotBlank()) {
-                    RoundAction(Icons.Rounded.Sms, "Texts", cs.secondary, cs.onSecondary, size = 44.dp, onClick = onEdit)
+                    RoundAction(Icons.Rounded.Sms, "Texts", cs.secondary, cs.onSecondary, onClick = onEdit)
+                }
+                if (t.number.isNotBlank()) {
+                    WhatsAppAction { WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, t.code, t.headline, 0L, t.name)) }
                 }
             }
         },

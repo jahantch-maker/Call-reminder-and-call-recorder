@@ -359,6 +359,8 @@ class TaskReceiver : BroadcastReceiver() {
                 }.start()
             }
             DailyList.ACTION_SENT -> DailyList.onResult(context, intent, resultCode)
+            DailyList.ACTION_WA_LATER -> DailyList.later(context)
+            DailyList.ACTION_WA_REMIND -> DailyList.showReady(context)
             Backup.ACTION_FIRE -> {
                 val pending = goAsync()
                 Thread {

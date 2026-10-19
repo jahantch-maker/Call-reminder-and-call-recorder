@@ -39,6 +39,7 @@ enum class NotifType(
         locked = "Always on: otherwise the text never goes out."
     ),
     DAILY_LIST("Texts", "Daily list sent", "\"Sent the list to Ali\"", NotifLevel.SILENT),
+    DAILY_LIST_WA("Texts", "Daily lists for WhatsApp", "\"Daily lists ready\": you press Send for each one", NotifLevel.SOUND),
 
     MY_TASK("My tasks", "One-time task due", "With a Done button", NotifLevel.SOUND),
     DOSSIER("My tasks", "Dossier task due", "With a Done button", NotifLevel.SOUND),

@@ -15,11 +15,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The daily list: at each send time (the same for everyone, 9 AM, 1 PM and 6 PM to start with) the app texts
- * each person switched on (on their person page) every follow-up they still owe you, calls and texts alike,
- * each with its task number, overdue ones first. A note in Urdu at the end says to text back the task
- * number when it's done. Nobody with nothing open gets a text. My tasks and dossier are never sent.
- * You only get a quiet "Sent the list to Ali" (or an alert if it failed).
+ * The daily list: at each send time (the same for everyone, 9 AM, 1 PM and 6 PM to start with) each person
+ * switched on (on their person page) gets every follow-up they still owe you, calls and texts alike, each with
+ * its task number, overdue ones first. It is only a reminder: no reply is asked for. Nobody with nothing open
+ * gets one. My tasks and dossier are never sent.
+ * By SMS it goes out by itself and you get a quiet "Sent the list to Ali" (or an alert if it failed).
+ * By WhatsApp the app can't send (no auto-send, so no ban risk): you get one "Daily lists ready" notification
+ * and a send page that opens each chat with the list typed, and you press Send.
  */
 object DailyList {
     const val ACTION_FIRE = "com.callbackreminder.app.DAILY_LIST"
@@ -30,8 +32,15 @@ object DailyList {
     private const val NOTIF_BASE = 1_099_300
     private const val DAY = 86_400_000L
 
-    /** Approved by Jahanzaib (2026-10-19): "After the work is done, text the task number to this number. Example: …" */
-    const val URDU_NOTE = "کام مکمل ہونے کے بعد اسی نمبر پر ٹاسک نمبر بھیج دیں۔ مثال: "
+    const val ACTION_WA_LATER = "com.callbackreminder.app.DAILY_LIST_WA_LATER"
+    const val ACTION_WA_REMIND = "com.callbackreminder.app.DAILY_LIST_WA_REMIND"
+    private const val NOTIF_WA = 1_099_250
+    private const val REQ_WA_LATER = 1_099_251
+    const val WA_LATER_MINUTES = 15
+
+    const val VIA_SMS = "sms"
+    const val VIA_WA = "wa"
+    const val VIA_BOTH = "both"
 
     private fun p(c: Context) = c.getSharedPreferences("daily_list", Context.MODE_PRIVATE)
 
@@ -67,6 +76,12 @@ object DailyList {
 
     fun lastSent(c: Context, key: String) = p(c).getLong("sent_$key", 0L)
 
+    /** How this person gets the list: SMS (as before), WhatsApp or both. */
+    fun via(c: Context, key: String): String = p(c).getString("via_$key", VIA_SMS) ?: VIA_SMS
+    fun setVia(c: Context, key: String, via: String) = p(c).edit().putString("via_$key", via).apply()
+    fun bySms(c: Context, key: String) = via(c, key) != VIA_WA
+    fun byWhatsApp(c: Context, key: String) = via(c, key) != VIA_SMS
+
     fun timesLabel(c: Context): String = times(c).joinToString(", ") { Dossier.timeLabel(it) }.ifEmpty { "no times" }
 
     fun summary(c: Context): String {
@@ -80,8 +95,8 @@ object DailyList {
     private val dayFmt = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
     private val dueFmt = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault())
 
-    /** The list for [key], or null when they owe nothing. */
-    fun build(ctx: Context, key: String, now: Long = System.currentTimeMillis()): String? {
+    /** The list for [key], or null when they owe nothing. On [whatsApp] the heading is bold. */
+    fun build(ctx: Context, key: String, now: Long = System.currentTimeMillis(), whatsApp: Boolean = false): String? {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
         val zone = ZoneId.systemDefault()
@@ -114,11 +129,10 @@ object DailyList {
             val day = Instant.ofEpochMilli(l.due).atZone(zone)
             "${i + 1}) ${l.code} | ${l.text} | Due ${day.format(dueFmt)}" + if (l.due < now) " (late)" else ""
         }
+        val head = (name?.let { "$it, your" } ?: "Your") + " open tasks (" + LocalDate.now(zone).format(dayFmt) + "):"
         return buildString {
-            append(name?.let { "$it, your" } ?: "Your").append(" open tasks (")
-                .append(LocalDate.now(zone).format(dayFmt)).append("):\n")
+            append(if (whatsApp) "*$head*" else head).append("\n")
             append(body.joinToString("\n"))
-            append("\n\n").append(URDU_NOTE).append(sorted.first().code)
         }
     }
 
@@ -158,10 +172,114 @@ object DailyList {
 
     fun fire(ctx: Context) {
         schedule(ctx, System.currentTimeMillis() + 60_000L)
+        val wa = mutableListOf<String>()
+        val sms = mutableListOf<String>()
         people(ctx).forEach { key ->
             val text = build(ctx, key) ?: return@forEach
-            send(ctx, key, text)
+            if (bySms(ctx, key)) {
+                send(ctx, key, text)
+                sms += key
+            }
+            if (byWhatsApp(ctx, key)) wa += key
         }
+        if (wa.isNotEmpty()) startRound(ctx, wa, sms)
+    }
+
+    // ---- WhatsApp: you send each one yourself ----
+
+    /** This round's WhatsApp people (in order), who is sent, and who got it by SMS at the same time. */
+    data class Round(val at: Long, val keys: List<String>, val sent: Set<String>, val sms: List<String>) {
+        val left: List<String> get() = keys.filter { it !in sent }
+    }
+
+    private fun startRound(ctx: Context, wa: List<String>, sms: List<String>) {
+        p(ctx).edit()
+            .putLong("wa_at", System.currentTimeMillis())
+            .putString("wa_keys", wa.joinToString(","))
+            .putString("wa_sent", "")
+            .putString("wa_sms", sms.joinToString(","))
+            .apply()
+        showReady(ctx)
+    }
+
+    fun round(ctx: Context): Round {
+        fun list(k: String) = p(ctx).getString(k, "").orEmpty().split(',').filter { it.isNotBlank() }
+        return Round(p(ctx).getLong("wa_at", 0L), list("wa_keys"), list("wa_sent").toSet(), list("wa_sms"))
+    }
+
+    /** Back from his chat: ticked. When everyone is done the notification goes. */
+    fun markSent(ctx: Context, key: String) {
+        val r = round(ctx)
+        if (key !in r.keys || key in r.sent) return
+        p(ctx).edit()
+            .putString("wa_sent", (r.sent + key).joinToString(","))
+            .putLong("sent_$key", System.currentTimeMillis())
+            .apply()
+        if (round(ctx).left.isEmpty()) cancelReady(ctx)
+    }
+
+    fun nameFor(ctx: Context, key: String): String = numberFor(ctx, key)?.first ?: key
+
+    /** Opens his WhatsApp chat with the list typed. */
+    fun openWhatsApp(ctx: Context, key: String): Boolean {
+        val (_, number) = numberFor(ctx, key) ?: return false
+        val text = build(ctx, key, whatsApp = true) ?: return false
+        return WhatsApp.open(ctx, number, text)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun showReady(ctx: Context) {
+        val r = round(ctx)
+        val left = r.left
+        if (left.isEmpty()) return
+        val names = left.map { nameFor(ctx, it).substringBefore(' ') }
+        val who = names.take(3).joinToString(", ") + if (names.size > 3) " +${names.size - 3}" else ""
+        val open = PendingIntent.getActivity(
+            ctx,
+            NOTIF_WA,
+            Intent(ctx, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_DAILY_WA)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val later = PendingIntent.getBroadcast(
+            ctx,
+            REQ_WA_LATER + 10,
+            Intent(ctx, TaskReceiver::class.java).setAction(ACTION_WA_LATER),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val time = Instant.ofEpochMilli(r.at).atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+        val smsPart = if (r.sms.isNotEmpty()) " · ${r.sms.size} SMS sent" else ""
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setContentTitle("Daily lists ready · $time")
+            .setContentText("${left.size} on WhatsApp: $who$smsPart")
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(open)
+            .setAutoCancel(false)
+            .addAction(0, "Send on WhatsApp", open)
+            .addAction(0, "Later $WA_LATER_MINUTES min", later)
+        Notify.post(ctx, NotifType.DAILY_LIST_WA, NOTIF_WA, b)
+    }
+
+    fun cancelReady(ctx: Context) = androidx.core.app.NotificationManagerCompat.from(ctx).cancel(NOTIF_WA)
+
+    /** "Later 15 min" on the notification: it comes back then if anyone is still waiting. */
+    fun later(ctx: Context) {
+        cancelReady(ctx)
+        val at = System.currentTimeMillis() + WA_LATER_MINUTES * 60_000L
+        val pi = PendingIntent.getBroadcast(
+            ctx,
+            REQ_WA_LATER,
+            Intent(ctx, TaskReceiver::class.java).setAction(ACTION_WA_REMIND),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val show = PendingIntent.getActivity(
+            ctx, REQ_WA_LATER, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        ctx.getSystemService(AlarmManager::class.java).setClockSafely(AlarmManager.AlarmClockInfo(at, show), pi)
     }
 
     // ---- Sending ----

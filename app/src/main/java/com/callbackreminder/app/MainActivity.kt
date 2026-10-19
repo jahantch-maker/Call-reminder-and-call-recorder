@@ -89,6 +89,8 @@ class MainActivity : ComponentActivity() {
         /** The caller card's "Show all his tasks": the person page, with [EXTRA_PERSON] as the key. */
         const val OPEN_PERSON = "person"
         const val EXTRA_PERSON = "person_key"
+        /** The "Daily lists ready" notification: the WhatsApp send page. */
+        const val OPEN_DAILY_WA = "daily_wa"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -180,6 +182,11 @@ class MainActivity : ComponentActivity() {
                 }
                 return
             }
+            OPEN_DAILY_WA -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.HOME, Screen.DAILY_WA)
+                return
+            }
             OPEN_MY_DAY -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 MorningSummary.cancelNotification(this)
@@ -259,6 +266,8 @@ private object Screen {
     const val SEARCH = 25
     const val REVIEW = 26
     const val REVIEW_SESSION = 27
+    const val WHATSAPP_SETTINGS = 28
+    const val DAILY_WA = 29
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -414,12 +423,15 @@ private fun AppRoot(
                     onOpenBackup = { open(Screen.BACKUP_SETTINGS) },
                     onOpenVoiceTyping = { open(Screen.VOICE_SETTINGS) },
                     onOpenOffDays = { open(Screen.OFF_DAYS) },
+                    onOpenWhatsApp = { open(Screen.WHATSAPP_SETTINGS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
                 Screen.BACKUP_SETTINGS -> BackupSettingsScreen(onBack = { back() })
                 Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
                 Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
+                Screen.WHATSAPP_SETTINGS -> WhatsAppSettingsScreen(onBack = { back() })
+                Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },
                     onOpenCalls = { showTab(callsTab()) },

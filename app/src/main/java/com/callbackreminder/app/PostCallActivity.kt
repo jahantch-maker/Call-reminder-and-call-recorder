@@ -25,6 +25,9 @@ class PostCallActivity : ComponentActivity() {
 
     private val queue = mutableStateListOf<CallInfo>()
 
+    // This popup is for a call started from the review session's Call button.
+    private var fromSession = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -44,10 +47,13 @@ class PostCallActivity : ComponentActivity() {
         }
     }
 
-    /** Closing the popup: a running review session takes you back to its Next card. */
+    /**
+     * Closing the popup: a call made from the running review session takes you back to its Next card.
+     * Any other call (your dialer, an incoming one) just closes the popup; a paused session waits on Home.
+     */
     private fun done() {
         val s = ReviewSession.init(this)
-        if (s.active) {
+        if (fromSession && s.status == ReviewSession.Status.RUNNING && s.awaiting.isNotEmpty()) {
             ReviewSession.popupClosed(this)
             try {
                 startActivity(
@@ -81,7 +87,7 @@ class PostCallActivity : ComponentActivity() {
         val s = ReviewSession.init(this)
         if (s.status == ReviewSession.Status.RUNNING && batch.isNotEmpty()) {
             val fromSession = s.awaiting.isNotEmpty() && batch.any { it.followUpId > 0 || it.textTaskId > 0 }
-            if (!fromSession) ReviewSession.pause(this)
+            if (fromSession) this.fromSession = true else ReviewSession.pause(this)
         }
         for (c in batch) {
             val alreadyThere = c.id > 0 && queue.any { it.id == c.id }
