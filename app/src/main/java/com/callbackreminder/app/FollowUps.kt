@@ -71,17 +71,35 @@ object FollowUps {
         return sorted.map { ((it - sorted.first()) / 60_000L).toInt() }
     }
 
-    /** A sensible first text time for a task due at [due]: 9:00 AM that day, else an hour before, else soon. */
+    /**
+     * The first text time for a task called at [due]: 9:00 AM that day; if that has passed or isn't before the call,
+     * the next free half hour from now that is still before the call; else a minute from now.
+     */
     fun firstTextTime(due: Long, now: Long): Long? {
         val zone = ZoneId.systemDefault()
         val nine = Instant.ofEpochMilli(due).atZone(zone).toLocalDate().atTime(java.time.LocalTime.of(9, 0))
             .atZone(zone).toInstant().toEpochMilli()
+        val half = nextHalfHour(now)
         return when {
             nine in (now + 60_000L) until due -> nine
-            due - 3_600_000L > now + 60_000L -> due - 3_600_000L
-            due > now + 120_000L -> now + 60_000L * ((due - now) / 120_000L).coerceAtLeast(1)
+            half < due -> half
+            due > now + 120_000L -> now + 60_000L
             else -> null
         }
+    }
+
+    /** First text time with no call: 9:00 AM today if still ahead, else the next half hour. */
+    fun firstTextTimeNoCall(now: Long): Long {
+        val zone = ZoneId.systemDefault()
+        val nine = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atTime(java.time.LocalTime.of(9, 0))
+            .atZone(zone).toInstant().toEpochMilli()
+        return if (nine > now + 60_000L) nine else nextHalfHour(now)
+    }
+
+    /** The next :00 or :30 at least a minute from now. */
+    fun nextHalfHour(now: Long): Long {
+        val step = 30 * 60_000L
+        return ((now + 60_000L) / step + 1) * step
     }
 
     /**
