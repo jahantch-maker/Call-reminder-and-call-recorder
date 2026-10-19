@@ -45,6 +45,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
             android:exported="true"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
@@ -54,9 +55,13 @@
             </intent-filter>
         </activity>
 
+        <!-- configChanges: split screen, pop-up view and rotation resize the screen instead of
+             restarting it, so an open popup keeps everything typed in it. -->
+
         <!-- The small popup that appears right after a call ends -->
         <activity
             android:name=".PostCallActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
@@ -68,6 +73,7 @@
         <!-- The full-screen ringing reminder: stays until you Call back, Snooze or mark Done -->
         <activity
             android:name=".ReminderAlertActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
@@ -79,6 +85,7 @@
         <!-- The twice-a-day review reminder popup: Review now, Snooze or Later -->
         <activity
             android:name=".ReviewAlertActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"

@@ -553,7 +553,7 @@ fun SnoozeSheet(
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing())
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(heading, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -648,7 +649,7 @@ private fun TaskWindow(
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false)
     ) {
         Box(
-            Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxSize().statusBarsPadding().safeBottomPadding().padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
             Surface(
@@ -852,7 +853,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
     val due = t.dueAt(day) <= System.currentTimeMillis()
 
     ModalBottomSheet(onDismissRequest = cancel, sheetState = sheetState) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column {
                 Text(t.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -1089,7 +1090,7 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
             LazyColumn(
-                modifier = Modifier.systemBarsPadding(),
+                modifier = Modifier.statusBarsPadding().safeBottomPadding(0.dp),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

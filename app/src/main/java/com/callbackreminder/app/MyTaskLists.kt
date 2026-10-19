@@ -550,7 +550,7 @@ internal fun MyTaskDialog(
     ModalBottomSheet(onDismissRequest = cancel, sheetState = sheetState) {
         Column(
             Modifier
-                .padding(start = 20.dp, end = 12.dp, bottom = 16.dp)
+                .padding(start = 20.dp, end = 12.dp, bottom = 16.dp + navBarMissing())
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {

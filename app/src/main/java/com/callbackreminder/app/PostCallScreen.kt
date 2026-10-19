@@ -141,8 +141,7 @@ internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnS
             ) {
                 Column(
                     modifier = Modifier
-                        .navigationBarsPadding()
-                        .imePadding()
+                        .safeBottomPadding(0.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp)
                         .padding(top = 12.dp, bottom = 16.dp)
