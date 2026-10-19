@@ -26,7 +26,7 @@ enum class NotifType(
         locked = "Always on: without it the app can't remind you."
     ),
     MISSED("Calls", "Unanswered reminder", "Left behind when a full-screen reminder times out", NotifLevel.SILENT),
-    TEXT_REPLIED("Calls", "Reply to a moved text", "Someone replied Done to a text you turned into a call", NotifLevel.SOUND),
+    TEXT_REPLIED("Calls", "Reply to a moved text", "Someone texted back the number of a text you turned into a call", NotifLevel.SOUND),
 
     TEXT_SENT("Texts", "Each text sent", "\"Sent to Ali ✓\", also every text of a burst", NotifLevel.SILENT),
     TEXT_REVIEW("Texts", "Text to review", "A Done reply came in, or every text went out with no reply", NotifLevel.SOUND),

@@ -132,6 +132,8 @@ object FollowUps {
         from: ToScheduleItem? = null,
     ): Boolean {
         val textOn = text != null && text.times.isNotEmpty()
+        // Every follow-up gets its task number when saved, so a daily list can show it before any text goes.
+        val code = from?.code?.takeIf { it.isNotEmpty() } ?: SmsStore.newCode()
         if (due == null || (!callOn && !textOn)) {
             ToScheduleStore.put(
                 ToScheduleItem(
@@ -152,7 +154,7 @@ object FollowUps {
                     autopilot = autopilot,
                     starred = starred,
                     linkId = from?.linkId ?: 0L,
-                    code = from?.code.orEmpty(),
+                    code = code,
                     callEvents = from?.callEvents.orEmpty(),
                     textLog = from?.textLog.orEmpty(),
                 )
@@ -166,10 +168,11 @@ object FollowUps {
                 createdAs = if (from != null) "Time set" else "Follow-up created",
                 earlier = from?.callEvents.orEmpty(),
                 starred = starred,
+                code = code,
             )
             ReminderStore.setLink(r.id, link, autopilot)
         }
-        if (text != null && textOn) addTexts(name, number, text, link, due, from?.textLog.orEmpty(), from?.code.orEmpty())
+        if (text != null && textOn) addTexts(name, number, text, link, due, from?.textLog.orEmpty(), code)
         from?.let { ToScheduleStore.remove(it.id) }
         return true
     }
@@ -193,6 +196,7 @@ object FollowUps {
         val call = call(linkId)
         val sms = text(linkId)
         val textOn = text != null && text.times.isNotEmpty()
+        val code = call?.code?.takeIf { it.isNotEmpty() } ?: sms?.code?.takeIf { it.isNotEmpty() } ?: SmsStore.newCode()
         if (due == null || (!callOn && !textOn)) {
             park(c, linkId, name, number, task, callOn, autopilot, text, starred, oldDue = due ?: call?.takeIf { !it.done }?.dueAt ?: sms?.taskDue ?: 0L)
             return false
@@ -201,8 +205,9 @@ object FollowUps {
             if (call != null && !call.done) {
                 ReminderStore.edit(call.id, name, number, task, due, call.repeat, starred)
                 ReminderStore.setLink(call.id, linkId, autopilot)
+                if (call.code != code) ReminderStore.setCode(call.id, code)
             } else {
-                val r = ReminderStore.add(name, number, task, due, createdAs = "Follow-up call added", starred = starred)
+                val r = ReminderStore.add(name, number, task, due, createdAs = "Follow-up call added", starred = starred, code = code)
                 ReminderStore.setLink(r.id, linkId, autopilot)
             }
         } else if (call != null && !call.done) {
@@ -218,8 +223,9 @@ object FollowUps {
                     baseSlots = text.sorted.map { ((it - first) / 60_000L).toInt() },
                     group = text.burst?.takeIf { it.count > 1 },
                 )
+                if (sms.code != code) SmsStore.setCode(sms.id, code)
             } else {
-                addTexts(name, number, text, linkId, due, code = sms?.code.orEmpty())
+                addTexts(name, number, text, linkId, due, code = code)
             }
         } else if (sms != null && !sms.done) {
             SmsStore.delete(sms.id)
@@ -274,7 +280,9 @@ object FollowUps {
                 autopilot = autopilot,
                 starred = starred,
                 linkId = linkId,
-                code = (pendingText ?: texts.maxByOrNull { it.id })?.code.orEmpty(),
+                code = (pendingText ?: texts.maxByOrNull { it.id })?.code?.takeIf { it.isNotEmpty() }
+                    ?: (pendingCall ?: calls.maxByOrNull { it.id })?.code?.takeIf { it.isNotEmpty() }
+                    ?: SmsStore.newCode(),
                 callEvents = events,
                 textLog = log,
             )

@@ -62,6 +62,7 @@ object ReminderStore {
                     linkId = o.optLong("linkId"),
                     autopilot = o.optBoolean("autopilot"),
                     reviewLaterUntil = o.optLong("reviewLater"),
+                    code = o.optString("code").replace("-", ""),
                 )
             }
         } catch (e: Exception) {
@@ -91,6 +92,7 @@ object ReminderStore {
                     .put("linkId", r.linkId)
                     .put("autopilot", r.autopilot)
                     .put("reviewLater", r.reviewLaterUntil)
+                    .put("code", r.code)
                     .put("delays", JSONArray().apply {
                         r.delays.forEach { d ->
                             put(
@@ -131,6 +133,7 @@ object ReminderStore {
         createdAs: String = "Created",
         earlier: List<CallEvent> = emptyList(),
         starred: Boolean = false,
+        code: String = "",
     ): Reminder {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -148,6 +151,7 @@ object ReminderStore {
             occurrenceAt = first,
             events = earlier + CallEvent(System.currentTimeMillis(), "$createdAs, due", first),
             starred = starred,
+            code = code.ifEmpty { TaskCodes.next(appCtx).first() },
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)
@@ -316,6 +320,11 @@ object ReminderStore {
     }
 
     /** Joins this call to a follow-up (its texts share [linkId]). */
+    @Synchronized
+    fun setCode(id: Long, code: String) {
+        save(_items.value.map { if (it.id == id) it.copy(code = code) else it })
+    }
+
     @Synchronized
     fun setLink(id: Long, linkId: Long, autopilot: Boolean) {
         save(_items.value.map { if (it.id == id) it.copy(linkId = linkId, autopilot = autopilot) else it })

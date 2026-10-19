@@ -603,7 +603,7 @@ fun FollowUpDialog(
             SwitchCard(
                 icon = { Icon(Icons.Rounded.Bolt, contentDescription = null) },
                 title = "Autopilot ⓘ",
-                subtitle = if (autopilot) "His “Done” reply cancels my call reminder" else "Off: my call still rings after his “Done”",
+                subtitle = if (autopilot) "His task number reply cancels my call reminder" else "Off: my call still rings after his reply",
                 checked = autopilot,
                 enabled = text.tracked,
                 onChange = { autopilot = it },
@@ -638,10 +638,10 @@ fun FollowUpDialog(
             title = { Text("Autopilot") },
             text = {
                 Text(
-                    "On: when he replies “Done <task number>” to your texts, your call reminder is cancelled and the " +
+                    "On: when he texts back the task number, your call reminder is cancelled and the " +
                         "task waits in To review.\n\nOff: his reply still moves the texts to To review, but your call " +
                         "reminder rings anyway so you can confirm by phone.\n\nNeeds Tracking number on, and " +
-                        "Settings › Text messages › Stop on a \"Done\" reply."
+                        "Settings › Text messages › Stop on a task number reply."
                 )
             },
             confirmButton = { TextButton(onClick = { showAutoHelp = false }) { Text("OK") } }

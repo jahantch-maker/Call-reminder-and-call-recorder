@@ -123,20 +123,26 @@ private fun DaysRow(mask: Int, onChange: (Int) -> Unit) {
 
 // ---------------------------------------------------------------- Daily list
 
-/** One send time for everyone whose Daily list switch is on (on their person page). */
+/** Send times (the same for everyone) for people whose Daily list switch is on (on their person page). */
 @Composable
 fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
     val ctx = LocalContext.current
-    var minute by remember { mutableStateOf(DailyList.minute(ctx)) }
+    var times by remember { mutableStateOf(DailyList.times(ctx)) }
     var days by remember { mutableStateOf(DailyList.days(ctx)) }
-    var editTime by remember { mutableStateOf(false) }
+    // -1 = adding a new time; otherwise the index being changed.
+    var editIndex by remember { mutableStateOf<Int?>(null) }
     val count = remember { DailyList.people(ctx).size }
+
+    fun saveTimes(list: List<Int>) {
+        times = list.distinct().sorted()
+        DailyList.setTimes(ctx, times)
+    }
 
     SettingsPage(title = "Daily list", onBack = onBack) {
         SectionCard(
             title = "Who gets it",
             subtitle = "Switch it on for a person on their page (Home › People › tap a name). " +
-                "They get their own Calls and Texts tasks, never your My tasks or dossier."
+                "They get all their open follow-ups (calls and texts), never your My tasks or dossier."
         ) {
             Text(
                 if (count == 0) "Nobody yet." else "$count ${if (count == 1) "person" else "people"} switched on.",
@@ -147,22 +153,27 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
             FilledTonalButton(onClick = onOpenPeople, modifier = Modifier.fillMaxWidth()) { Text("Open People") }
         }
         SectionCard(
-            title = "Send time",
-            subtitle = if (minute < 12 * 60) "Before noon: the list has today's tasks and anything overdue."
-            else "From noon: the list has tomorrow's tasks and anything overdue."
+            title = "Send times",
+            subtitle = "The same times for everyone. Each list has all their open tasks with the task number, " +
+                "late ones first, and a note in Urdu to text back the number when it's done."
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    Dossier.timeLabel(minute),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                FilledTonalButton(onClick = { editTime = true }) { Text("Change") }
+            times.forEachIndexed { i, m ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        Dossier.timeLabel(m),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { editIndex = i }) { Text("Change") }
+                    if (times.size > 1) TextButton(onClick = { saveTimes(times.filterIndexed { j, _ -> j != i }) }) { Text("Remove") }
+                }
             }
+            Spacer(Modifier.height(4.dp))
+            FilledTonalButton(onClick = { editIndex = -1 }, modifier = Modifier.fillMaxWidth()) { Text("+ Add time") }
         }
-        SectionCard(title = "Days", subtitle = "Sends on ${ReviewReminder.daysLabel(days)}. Nothing is sent to someone with no tasks.") {
+        SectionCard(title = "Days", subtitle = "Sends on ${ReviewReminder.daysLabel(days)}. Nothing is sent to someone with no open tasks.") {
             DaysRow(days) {
                 days = it
                 DailyList.setDays(ctx, it)
@@ -170,16 +181,17 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
         }
     }
 
-    if (editTime) {
+    editIndex?.let { idx ->
+        val start = times.getOrNull(idx) ?: (12 * 60)
         ClockDialog(
-            initial = LocalTime.of(minute / 60, minute % 60),
+            initial = LocalTime.of(start / 60, start % 60),
             is24h = DateFormat.is24HourFormat(ctx),
             onPicked = { t ->
-                minute = t.hour * 60 + t.minute
-                DailyList.setMinute(ctx, minute)
-                editTime = false
+                val m = t.hour * 60 + t.minute
+                saveTimes(if (idx < 0) times + m else times.mapIndexed { j, old -> if (j == idx) m else old })
+                editIndex = null
             },
-            onDismiss = { editTime = false }
+            onDismiss = { editIndex = null }
         )
     }
 }

@@ -383,7 +383,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                             Column(Modifier.weight(1f)) {
                                 Text("Daily list", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 Text(
-                                    if (dailyOn) "Texts $name their Calls and Texts tasks at ${Dossier.timeLabel(DailyList.minute(ctx))}" +
+                                    if (dailyOn) "Texts $name all their open follow-ups at ${DailyList.timesLabel(ctx)}" +
                                         (DailyList.lastSent(ctx, k).takeIf { it > 0L }?.let { " · last sent ${Fmt.dueLabel(it)}" } ?: "")
                                     else "Off: $name gets no daily list",
                                     style = MaterialTheme.typography.bodySmall,
@@ -397,7 +397,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                         }
                         if (dailyOn) {
                             TextButton(onClick = {
-                                preview = DailyList.build(ctx, k) ?: "Nothing to send: $name has no tasks for that day."
+                                preview = DailyList.build(ctx, k) ?: "Nothing to send: $name has no open follow-ups."
                             }) { Text("Preview the list") }
                         }
                     }

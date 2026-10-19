@@ -64,7 +64,7 @@ object SmsStore {
                     burstIndex = o.optInt("burstIndex"),
                     review = SmsReminder.Review.values().firstOrNull { it.code == o.optString("review") },
                     reviewAt = o.optLong("reviewAt"),
-                    code = o.optString("code"),
+                    code = o.optString("code").replace("-", ""),
                     tracked = o.optBoolean("tracked", true),
                     linkId = o.optLong("linkId"),
                     slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
@@ -349,7 +349,7 @@ object SmsStore {
     @Synchronized
     fun markReplied(fromNumber: String, code: String): SmsReminder? {
         val r = _items.value.firstOrNull {
-            it.active && it.tracked && it.code == code && sameNumber(it.number, fromNumber)
+            !it.done && it.review != SmsReminder.Review.REPLIED && it.code == code && sameNumber(it.number, fromNumber)
         } ?: return null
         val now = System.currentTimeMillis()
         SmsScheduler.cancel(appCtx, r.id)
@@ -361,8 +361,21 @@ object SmsStore {
     }
 
     /**
-     * Gives [id] its task number when its first text goes out: today's date ("261011") and the next
-     * serial for that day ("-01", "-02", …). Reminders due in the same minute that were saved earlier get
+     * [n] new task numbers: today's date and the next serials for that day, like "26101804". A number,
+     * once given, never comes back.
+     */
+    fun newCodes(n: Int): List<String> = TaskCodes.next(appCtx, n)
+
+    fun newCode(): String = newCodes(1).first()
+
+    @Synchronized
+    fun setCode(id: Long, code: String) {
+        save(_items.value.map { if (it.id == id) it.copy(code = code) else it })
+    }
+
+    /**
+     * Gives [id] its task number when its first text goes out (follow-ups get theirs when saved): today's
+     * date ("261011") and the next serial for that day ("01", "02", …). Reminders due in the same minute that were saved earlier get
      * theirs first, so the order follows saving. A number, once given, never changes or comes back.
      */
     @Synchronized
@@ -373,11 +386,8 @@ object SmsStore {
         val first = _items.value
             .filter { it.active && it.code.isEmpty() && it.id < id && it.nextTextAt / 60_000L == minute }
             .sortedBy { it.id }
-        val day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"))
-        val key = "serial_$day"
-        var serial = prefs().getInt(key, 0)
-        val codes = (first.map { it.id } + id).associateWith { "$day-${"%02d".format(++serial)}" }
-        prefs().edit().putInt(key, serial).apply()
+        val ids = first.map { it.id } + id
+        val codes = ids.zip(newCodes(ids.size)).toMap()
         save(_items.value.map { r -> codes[r.id]?.let { r.copy(code = it) } ?: r })
         return get(id)
     }
@@ -541,4 +551,18 @@ object BurstTemplates {
     fun stopOnReply(c: Context): Boolean = p(c).getBoolean("stop_on_reply", false)
 
     fun setStopOnReply(c: Context, on: Boolean) = p(c).edit().putBoolean("stop_on_reply", on).apply()
+}
+
+/** Task numbers for texts and calls alike: yyMMdd + the day's serial, like "26101804". Never reused. */
+object TaskCodes {
+    @Synchronized
+    fun next(ctx: Context, n: Int = 1): List<String> {
+        val p = ctx.applicationContext.getSharedPreferences("sms_reminders", Context.MODE_PRIVATE)
+        val day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"))
+        val key = "serial_$day"
+        var serial = p.getInt(key, 0)
+        val codes = (1..n).map { day + "%02d".format(++serial) }
+        p.edit().putInt(key, serial).apply()
+        return codes
+    }
 }
