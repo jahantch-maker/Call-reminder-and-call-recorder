@@ -53,6 +53,7 @@ object TextToCall {
             repeat = repeat,
             createdAs = "Changed from a text to a call",
             earlier = historyFor(live) + extra,
+            code = live.code,
         )
         if (live.tracked && live.code.isNotEmpty()) remember(ctx, live.code, live.number, call.id)
         SmsStore.delete(live.id)
@@ -72,20 +73,32 @@ object TextToCall {
      * to To review (like a replied text) and you get a notification. True when it was handled.
      */
     fun replied(ctx: Context, fromNumber: String, code: String): Boolean {
-        val raw = p(ctx).getString(code, null) ?: return false
+        val key = keyFor(ctx, code) ?: return false
+        val raw = p(ctx).getString(key, null) ?: return false
         val o = try { JSONObject(raw) } catch (e: Exception) { return false }
         if (!SmsStore.sameNumber(o.optString("number"), fromNumber)) return false
         ReminderStore.init(ctx)
         val r = ReminderStore.get(o.optLong("id", -1L))?.takeIf { !it.done } ?: return false
-        p(ctx).edit().remove(code).apply()
-        ReminderStore.logEvent(r.id, "Replied Done $code by text")
+        p(ctx).edit().remove(key).apply()
+        ReminderStore.logEvent(r.id, "Texted back task number $code")
         ReminderStore.markDone(r.id, review = true)
         notifyReplied(ctx, r, code)
         return true
     }
 
+    /** Numbers saved before v0.21 have a dash ("261011-01"); replies come without it. */
+    private fun keyFor(ctx: Context, code: String): String? =
+        p(ctx).all.keys.firstOrNull { it.replace("-", "") == code }
+
+    /** Old text numbers, now on calls, that [fromNumber] can still text back. */
+    fun codesFor(ctx: Context, fromNumber: String): List<String> =
+        p(ctx).all.mapNotNull { (k, v) ->
+            val o = try { JSONObject(v as? String ?: return@mapNotNull null) } catch (e: Exception) { return@mapNotNull null }
+            if (SmsStore.sameNumber(o.optString("number"), fromNumber)) k.replace("-", "") else null
+        }
+
     @SuppressLint("MissingPermission")
-    private fun notifyReplied(ctx: Context, r: Reminder, code: String) {
+    fun notifyReplied(ctx: Context, r: Reminder, code: String) {
         if (!Notifier.canNotify(ctx)) return
         val open = PendingIntent.getActivity(
             ctx,
@@ -97,7 +110,7 @@ object TextToCall {
         )
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_call)
-            .setContentTitle("${r.title} replied Done $code")
+            .setContentTitle("${r.title} texted back $code")
             .setContentText("The call task is waiting in To review")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

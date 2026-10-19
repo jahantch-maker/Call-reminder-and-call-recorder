@@ -66,6 +66,12 @@ class MainActivity : ComponentActivity() {
         const val OPEN_MESSAGES = "messages"
         /** "Review now" on the review reminder: open whatever is waiting. */
         const val OPEN_REVIEW = "review"
+        /** The review session (paused notification, resume popup, back from the after-call popup). */
+        const val OPEN_SESSION = "session"
+        /** With [OPEN_SESSION]: resume a paused session. */
+        const val EXTRA_RESUME = "resume"
+        /** With [OPEN_REVIEW]: start a review session of everything right away. */
+        const val EXTRA_START = "start_review"
         /** A text message reminder to open in Edit (from the "Not done" button after no reply). */
         const val EXTRA_EDIT_SMS = "edit_sms"
 
@@ -93,6 +99,7 @@ class MainActivity : ComponentActivity() {
     private var openTab = Tab.HOME
     // A page to open over the tab (e.g. To review › Dossier), read once.
     private var openScreen: Int? = null
+    private var openScreens: List<Int> = emptyList()
 
     // Bumped every time the app comes back to the front, so permission status refreshes
     // right after the user returns from a system settings page.
@@ -102,6 +109,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ReminderStore.init(this)
+        ReviewSession.init(this)
         RecordingStore.init(this)
         SmsStore.init(this)
         ToScheduleStore.init(this)
@@ -122,6 +130,7 @@ class MainActivity : ComponentActivity() {
                     openTabKey = openTabTick.intValue,
                     openTab = { openTab },
                     openScreen = { openScreen.also { openScreen = null } },
+                    openScreens = { openScreens.also { openScreens = emptyList() } },
                 )
             }
         }
@@ -136,6 +145,15 @@ class MainActivity : ComponentActivity() {
     private fun showTab(tab: Int, screen: Int? = null) {
         openTab = tab
         openScreen = screen
+        openScreens = emptyList()
+        openTabTick.intValue = openTabTick.intValue + 1
+    }
+
+    /** Home, with these pages opened over it in order (Review › Review session). */
+    private fun openStack(screens: List<Int>) {
+        openTab = Tab.HOME
+        openScreen = null
+        openScreens = screens
         openTabTick.intValue = openTabTick.intValue + 1
     }
 
@@ -170,30 +188,25 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REVIEW) {
+            val startNow = intent.getBooleanExtra(EXTRA_START, false)
             intent.removeExtra(EXTRA_OPEN)
+            intent.removeExtra(EXTRA_START)
             ReviewReminder.cancelNotification(this)
-            val c = ReviewReminder.counts(this)
-            val calls = c.overdueCalls + c.callsToReview
-            // Today's dossier opens its own To review page, which links to calls and texts waiting too.
-            if (c.dossierLeft > 0 || c.needsTime > 0) {
-                showTab(Tab.HOME, Screen.DOSSIER_REVIEW)
-                return
+            ReviewUi.fromOutside.value = true
+            if (startNow && ReviewSession.start(this, ReviewSession.MODE_ALL)) {
+                openStack(listOf(Screen.REVIEW, Screen.REVIEW_SESSION))
+            } else {
+                showTab(Tab.HOME, Screen.REVIEW)
             }
-            openTab = when {
-                calls > 0 && c.textsToReview > 0 -> Tab.HOME
-                // To schedule lives on Home.
-                c.toSchedule > 0 -> Tab.HOME
-                c.textsToReview > 0 -> {
-                    SmsUi.tabRequest.value = 1
-                    textsTab()
-                }
-                calls > 0 -> {
-                    CallsUi.tabRequest.value = if (c.callsToReview > 0) CallsUi.TO_REVIEW else CallsUi.OVERDUE
-                    callsTab()
-                }
-                else -> Tab.HOME
-            }
-            openTabTick.intValue = openTabTick.intValue + 1
+            return
+        }
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SESSION) {
+            val resume = intent.getBooleanExtra(EXTRA_RESUME, false)
+            intent.removeExtra(EXTRA_OPEN)
+            intent.removeExtra(EXTRA_RESUME)
+            ReviewSession.init(this)
+            if (resume) ReviewSession.resume(this)
+            openStack(listOf(Screen.REVIEW, Screen.REVIEW_SESSION))
             return
         }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSAGES) {
@@ -244,6 +257,8 @@ private object Screen {
     const val VOICE_SETTINGS = 23
     const val OFF_DAYS = 24
     const val SEARCH = 25
+    const val REVIEW = 26
+    const val REVIEW_SESSION = 27
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -293,7 +308,14 @@ private fun textsTab(): Int {
 }
 
 @Composable
-private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openTab: () -> Int, openScreen: () -> Int?) {
+private fun AppRoot(
+    resumeKey: Int,
+    openMessagesKey: Int,
+    openTabKey: Int,
+    openTab: () -> Int,
+    openScreen: () -> Int?,
+    openScreens: () -> List<Int> = { emptyList() },
+) {
     // Screens opened so far, newest last. Going back pops the last one.
     var stack by rememberSaveable { mutableStateOf(listOf(Screen.HOME)) }
     var tab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
@@ -336,6 +358,7 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
         if (openTabKey > 0) {
             showTab(openTab())
             openScreen()?.let { open(it) }
+            openScreens().forEach { open(it) }
         }
     }
 
@@ -468,6 +491,16 @@ private fun AppRoot(resumeKey: Int, openMessagesKey: Int, openTabKey: Int, openT
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
                 Screen.TO_SCHEDULE -> ToScheduleScreen(onBack = { back() })
+                Screen.REVIEW -> {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    ReviewPage(
+                        resumeKey = resumeKey,
+                        onBack = { back(); leaveIfFromOutside(ctx) },
+                        onOpenSettings = { open(Screen.REVIEW_SETTINGS) },
+                        onOpenSession = { open(Screen.REVIEW_SESSION) },
+                    )
+                }
+                Screen.REVIEW_SESSION -> ReviewSessionScreen(resumeKey = resumeKey, onBack = { back() })
                 else -> MainTabs(
                     tab = tab,
                     onTab = { tab = it },
@@ -590,6 +623,15 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                             onTab(Tab.MY_TASKS)
                         },
                         onOpenDossierReview = { open(Screen.DOSSIER_REVIEW) },
+                        onOpenReview = {
+                            ReviewUi.fromOutside.value = false
+                            open(Screen.REVIEW)
+                        },
+                        onOpenSession = {
+                            ReviewUi.fromOutside.value = false
+                            open(Screen.REVIEW)
+                            open(Screen.REVIEW_SESSION)
+                        },
                         onOpenPeople = { open(Screen.PEOPLE) },
                         onOpenPerson = {
                             PeopleUi.current.value = it

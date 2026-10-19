@@ -373,7 +373,7 @@ fun SearchScreen(
 
     if (showSettings) {
         ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing())) {
                 Text("Search looks in", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.size(8.dp))
                 SearchSource.values().forEach { s ->

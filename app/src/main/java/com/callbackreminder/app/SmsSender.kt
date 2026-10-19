@@ -412,10 +412,10 @@ class SmsActionReceiver : BroadcastReceiver() {
 }
 
 /**
- * Hears incoming texts, only when "Stop when the person replies Done" is on. A text that is exactly
- * "Done 261011-01" (capital D, one space, the task number; spaces around it ignored) moves only that
- * person's reminder with that number to To review. A plain "Done" or anything else is ignored, and
- * nothing else about incoming texts is read or kept.
+ * Hears incoming texts, only when "Stop when the person texts back the task number" is on. A text that is
+ * only task numbers (8 digits like 26101104; spaces anywhere are fine, several numbers are fine) moves each of
+ * that person's open tasks with those numbers to To review. A text with anything else in it (even "Done") is
+ * ignored, and nothing else about incoming texts is read or kept.
  */
 class SmsReplyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -428,19 +428,60 @@ class SmsReplyReceiver : BroadcastReceiver() {
         } ?: return
         val from = parts.firstOrNull()?.originatingAddress ?: return
         val body = parts.joinToString("") { it.messageBody.orEmpty() }
-        val code = DONE_REPLY.matchEntire(body.trim())?.groupValues?.get(1) ?: return
-        SmsStore.init(context)
-        val replied = SmsStore.markReplied(from, code)
-        if (replied != null) {
-            SmsNotifier.showReview(context, replied)
-            FollowUps.onReplied(context, replied)
-        }
-        // The text was changed to a call (Call instead): its old number still counts.
-        else TextToCall.replied(context, from, code)
+        TaskReplies.handle(context, from, body)
+    }
+}
+
+object TaskReplies {
+    /** The task numbers in [body], or null when it holds anything but digits and spaces. */
+    fun digitsOf(body: String): String? {
+        val t = body.trim()
+        if (t.isEmpty() || !t.all { it.isDigit() || it.isWhitespace() }) return null
+        return t.filter { it.isDigit() }.takeIf { it.length >= 8 }
     }
 
-    private companion object {
-        val DONE_REPLY = Regex("""Done (\d{6}-\d{2,})""")
+    /** Cuts [digits] into numbers from [open], all of it; null when some part isn't one of them. */
+    fun split(digits: String, open: Set<String>): List<String>? {
+        val best = arrayOfNulls<List<String>>(digits.length + 1)
+        best[0] = emptyList()
+        for (i in 0 until digits.length) {
+            val so = best[i] ?: continue
+            open.forEach { c -> if (c.isNotEmpty() && digits.startsWith(c, i) && best[i + c.length] == null) best[i + c.length] = so + c }
+        }
+        return best[digits.length]?.distinct()
+    }
+
+    /** Every open task number of the person texting from [from]: texts, calls and old moved texts. */
+    fun openCodes(ctx: Context, from: String): Set<String> {
+        SmsStore.init(ctx)
+        ReminderStore.init(ctx)
+        return (SmsStore.items.value.filter { !it.done && it.review != SmsReminder.Review.REPLIED && it.code.isNotEmpty() && SmsStore.sameNumber(it.number, from) }.map { it.code } +
+            ReminderStore.items.value.filter { !it.done && it.code.isNotEmpty() && SmsStore.sameNumber(it.number, from) }.map { it.code } +
+            TextToCall.codesFor(ctx, from)).toSet()
+    }
+
+    fun handle(ctx: Context, from: String, body: String) {
+        val digits = digitsOf(body) ?: return
+        val codes = split(digits, openCodes(ctx, from)) ?: return
+        codes.forEach { close(ctx, from, it) }
+    }
+
+    private fun close(ctx: Context, from: String, code: String) {
+        val replied = SmsStore.markReplied(from, code)
+        if (replied != null) {
+            SmsNotifier.showReview(ctx, replied)
+            FollowUps.onReplied(ctx, replied)
+            return
+        }
+        val call = ReminderStore.items.value.firstOrNull { !it.done && it.code == code && SmsStore.sameNumber(it.number, from) }
+        if (call != null) {
+            ReminderStore.logEvent(call.id, "Texted back task number $code")
+            ReminderStore.markDone(call.id, review = true)
+            TextToCall.notifyReplied(ctx, call, code)
+            return
+        }
+        // The text was changed to a call (Call instead): its old number still counts.
+        TextToCall.replied(ctx, from, code)
     }
 }
 

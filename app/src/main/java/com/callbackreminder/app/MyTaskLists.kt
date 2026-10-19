@@ -550,7 +550,7 @@ internal fun MyTaskDialog(
     ModalBottomSheet(onDismissRequest = cancel, sheetState = sheetState) {
         Column(
             Modifier
-                .padding(start = 20.dp, end = 12.dp, bottom = 16.dp)
+                .padding(start = 20.dp, end = 12.dp, bottom = 16.dp + navBarMissing())
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -583,7 +583,7 @@ internal fun MyTaskDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Box(Modifier.padding(end = 8.dp)) {
-                    TimePickerPanel(selected = due.takeIf { it > 0L }) { ms -> due = ms; picked = ms }
+                    ShortTimeRow(selected = due.takeIf { it > 0L }, onPick = { ms -> due = ms; picked = ms })
                 }
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (due > 0L) {

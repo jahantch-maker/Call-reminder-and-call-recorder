@@ -15,10 +15,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The daily list: once a day the app texts each person switched on (on their person page) the Calls
- * and Texts tasks they still owe you. A send time before noon lists today's tasks; a later one lists
- * tomorrow's. Overdue ones are always included. My tasks and dossier are never sent. You only get a
- * quiet "Sent the list to Ali" (or an alert if it failed).
+ * The daily list: at each send time (the same for everyone, 9 AM, 1 PM and 6 PM to start with) the app texts
+ * each person switched on (on their person page) every follow-up they still owe you, calls and texts alike,
+ * each with its task number, overdue ones first. A note in Urdu at the end says to text back the task
+ * number when it's done. Nobody with nothing open gets a text. My tasks and dossier are never sent.
+ * You only get a quiet "Sent the list to Ali" (or an alert if it failed).
  */
 object DailyList {
     const val ACTION_FIRE = "com.callbackreminder.app.DAILY_LIST"
@@ -28,6 +29,9 @@ object DailyList {
     private const val REQ_DAILY = 1_099_200
     private const val NOTIF_BASE = 1_099_300
     private const val DAY = 86_400_000L
+
+    /** Approved by Jahanzaib (2026-10-19): "After the work is done, text the task number to this number. Example: …" */
+    const val URDU_NOTE = "کام مکمل ہونے کے بعد اسی نمبر پر ٹاسک نمبر بھیج دیں۔ مثال: "
 
     private fun p(c: Context) = c.getSharedPreferences("daily_list", Context.MODE_PRIVATE)
 
@@ -41,10 +45,16 @@ object DailyList {
         schedule(c)
     }
 
-    /** Minutes after midnight; 8:00 AM to start with. */
-    fun minute(c: Context) = p(c).getInt("minute", 8 * 60)
-    fun setMinute(c: Context, m: Int) {
-        p(c).edit().putInt("minute", m).apply()
+    val DEFAULT_TIMES = listOf(9 * 60, 13 * 60, 18 * 60)
+
+    /** Send times, minutes after midnight, earliest first. */
+    fun times(c: Context): List<Int> {
+        val raw = p(c).getString("times", null) ?: return DEFAULT_TIMES
+        return raw.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it in 0 until 24 * 60 }.distinct().sorted()
+    }
+
+    fun setTimes(c: Context, list: List<Int>) {
+        p(c).edit().putString("times", list.distinct().sorted().joinToString(",")).apply()
         schedule(c)
     }
 
@@ -55,65 +65,60 @@ object DailyList {
         schedule(c)
     }
 
-    /** Morning lists today's tasks; from noon on, tomorrow's. */
-    fun forTomorrow(c: Context) = minute(c) >= 12 * 60
-
     fun lastSent(c: Context, key: String) = p(c).getLong("sent_$key", 0L)
+
+    fun timesLabel(c: Context): String = times(c).joinToString(", ") { Dossier.timeLabel(it) }.ifEmpty { "no times" }
 
     fun summary(c: Context): String {
         val n = people(c).size
-        return Dossier.timeLabel(minute(c)) + " · " + ReviewReminder.daysLabel(days(c)) + " · " +
+        return timesLabel(c) + " · " + ReviewReminder.daysLabel(days(c)) + " · " +
             if (n == 0) "nobody yet" else "$n ${if (n == 1) "person" else "people"}"
     }
 
     // ---- The text ----
 
     private val dayFmt = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
+    private val dueFmt = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault())
 
-    /** The list for [key], or null when they owe nothing for that day. */
+    /** The list for [key], or null when they owe nothing. */
     fun build(ctx: Context, key: String, now: Long = System.currentTimeMillis()): String? {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
         val zone = ZoneId.systemDefault()
-        val target = LocalDate.now(zone).plusDays(if (forTomorrow(ctx)) 1 else 0)
-        val end = target.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val calls = ReminderStore.items.value.filter { !it.done && RecentPeople.key(it.number) == key }
-        // A text they replied Done to is with you now; one with no reply (or never sent) is still theirs.
+        // A text they already answered with its number is with you now; one with no reply is still theirs.
         val texts = SmsStore.items.value.filter {
             !it.done && RecentPeople.key(it.number) == key && it.review != SmsReminder.Review.REPLIED
         }
-        data class Line(val at: Long, val text: String, val code: String)
+        data class Line(val due: Long, val text: String, val code: String)
         val lines = mutableListOf<Line>()
-        calls.filter { it.dueAt < end }.forEach { r ->
-            lines += Line(r.dueAt, r.note.ifBlank { "Call back" }, "")
+        val links = mutableSetOf<Long>()
+        calls.forEach { r ->
+            val code = r.code.ifEmpty { TaskCodes.next(ctx).first().also { ReminderStore.setCode(r.id, it) } }
+            if (r.linkId != 0L) links += r.linkId
+            lines += Line(r.dueAt, r.note.ifBlank { "Call back" }, code)
         }
-        texts.forEach { t ->
-            val at = if (t.review != null) t.reviewAt else t.alarmAt
-            val late = t.review != null
-            if (!late && at >= end) return@forEach
-            lines += Line(if (late) minOf(at, now) else at, t.message, t.code)
+        // A follow-up's texts are the same task as its call: one line.
+        texts.filter { it.linkId == 0L || it.linkId !in links }.groupBy { if (it.linkId != 0L) "l${it.linkId}" else "t${it.id}" }.values.forEach { g ->
+            val t = g.first()
+            val code = t.code.ifEmpty { SmsStore.newCode().also { c -> SmsStore.setCode(t.id, c) } }
+            val due = t.taskDue.takeIf { it > 0L } ?: if (t.review != null) t.reviewAt else t.nextTextAt
+            lines += Line(due, t.message, code)
         }
         if (lines.isEmpty()) return null
         val name = (calls.map { it.createdAt to it.name } + texts.map { it.createdAt to it.name })
             .filter { it.second.isNotBlank() }.maxByOrNull { it.first }?.second
-        val sorted = lines.sortedBy { it.at }
+        // Overdue first (oldest first), then the rest by due time.
+        val sorted = lines.sortedWith(compareBy<Line>({ if (it.due < now) 0 else 1 }, { it.due }))
         val body = sorted.mapIndexed { i, l ->
-            val day = Instant.ofEpochMilli(l.at).atZone(zone).toLocalDate()
-            val overdueDays = ((now - l.at) / DAY).toInt()
-            val whenText = when {
-                l.at < now && overdueDays >= 1 -> "overdue $overdueDays ${if (overdueDays == 1) "day" else "days"}"
-                l.at < now -> "today"
-                day == LocalDate.now(zone) -> "today"
-                day == LocalDate.now(zone).plusDays(1) -> "tomorrow"
-                else -> day.format(dayFmt)
-            }
-            "${i + 1}. " + (if (l.code.isNotEmpty()) "${l.code} " else "") + "${l.text} ($whenText)"
+            val day = Instant.ofEpochMilli(l.due).atZone(zone)
+            "${i + 1}) ${l.code} | ${l.text} | Due ${day.format(dueFmt)}" + if (l.due < now) " (late)" else ""
         }
-        val firstCode = sorted.firstOrNull { it.code.isNotEmpty() }?.code
         return buildString {
-            append(name?.let { "$it, your" } ?: "Your").append(" pending tasks (").append(target.format(dayFmt)).append("):\n")
+            append(name?.let { "$it, your" } ?: "Your").append(" open tasks (")
+                .append(LocalDate.now(zone).format(dayFmt)).append("):\n")
             append(body.joinToString("\n"))
-            if (firstCode != null) append("\nReply \"Done ").append(firstCode).append("\" when finished.")
+            append("\n\n").append(URDU_NOTE).append(sorted.first().code)
         }
     }
 
@@ -134,11 +139,12 @@ object DailyList {
             return
         }
         val zone = ZoneId.systemDefault()
-        val m = minute(ctx)
+        val mins = times(ctx)
         val mask = days(ctx)
         val at = (0..7).map { LocalDate.now(zone).plusDays(it.toLong()) }
             .filter { mask and Dossier.dayOfWeekBit(it.dayOfWeek) != 0 && !OffDays.isOff(it) }
-            .map { it.atTime(m / 60, m % 60).atZone(zone).toInstant().toEpochMilli() }
+            .flatMap { d -> mins.map { m -> d.atTime(m / 60, m % 60).atZone(zone).toInstant().toEpochMilli() } }
+            .sorted()
             .firstOrNull { it > now }
         if (at == null) {
             am.cancel(pi)
@@ -221,7 +227,7 @@ object DailyList {
             val b = NotificationCompat.Builder(ctx, Notify.CH_QUIET)
                 .setSmallIcon(R.drawable.ic_stat_sms)
                 .setContentTitle("Sent the list to $name")
-                .setContentText(if (forTomorrow(ctx)) "Their tasks for tomorrow" else "Their tasks for today")
+                .setContentText("All their open tasks")
                 .setAutoCancel(true)
             Notify.post(ctx, NotifType.DAILY_LIST, notifId(key), b)
         } else {

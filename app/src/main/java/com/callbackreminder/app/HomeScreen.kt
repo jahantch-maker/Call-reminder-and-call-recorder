@@ -87,6 +87,8 @@ fun HomeScreen(
     onOpenToSchedule: () -> Unit,
     onOpenMyTasks: (sub: Int) -> Unit,
     onOpenDossierReview: () -> Unit,
+    onOpenReview: () -> Unit = {},
+    onOpenSession: () -> Unit = {},
     onOpenPeople: () -> Unit,
     onOpenPerson: (key: String) -> Unit,
     onOpenItem: (WorkItem) -> Unit,
@@ -186,6 +188,19 @@ fun HomeScreen(
 
             item(key = "search") { HomeSearchBar(onOpen = onOpenSearch) }
 
+            // The Review card replaces the old To review tile.
+            item(key = "review") {
+                ReviewHomeCard(
+                    resumeKey = resumeKey,
+                    onStart = {
+                        if (ReviewSession.start(ctx, ReviewSession.MODE_ALL)) onOpenSession()
+                        else onOpenReview()
+                    },
+                    onOpen = onOpenReview,
+                    onResume = onOpenSession,
+                )
+            }
+
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
             item(key = "tiles") {
@@ -208,24 +223,6 @@ fun HomeScreen(
                             content = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.weight(1f),
                             onClick = { onOpenTexts(0, null) },
-                        )
-                        CountTile(
-                            icon = Icons.Rounded.PendingActions,
-                            count = "$toReview",
-                            label = "To review",
-                            container = Color(0xFFFFF1C9),
-                            content = Color(0xFF6A4A00),
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                when {
-                                    dossierLeft > 0 || needsTime > 0 -> onOpenDossierReview()
-                                    textsToReview == 0 && callsToReview > 0 -> {
-                                        CallsUi.tabRequest.value = CallsUi.TO_REVIEW
-                                        onOpenCalls()
-                                    }
-                                    else -> onOpenTexts(1, null)
-                                }
-                            },
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -65,7 +65,7 @@ data class SmsReminder(
     val review: Review? = null,
     val reviewAt: Long = 0L,
     /**
-     * Task number like "261011-01" (date of the first text, then that day's serial). Given when the first
+     * Task number like "26101101" (the date, then that day's serial). Given when the first
      * text goes out and never changed after that; empty until then.
      */
     val code: String = "",
@@ -160,7 +160,7 @@ data class SmsReminder(
         get() = if (retryAt > 0L) retryAt else nextTextAt
 
     /**
-     * The text that actually goes out. Tracked: "Reminder 2 (261011-01): …" for a burst, "(261011-01) …"
+     * The text that actually goes out. Tracked: "Reminder 2 (26101101): …" for a burst, "(26101101) …"
      * for a single text. Not tracked: just the message, as typed.
      */
     fun textFor(index: Int): String {
@@ -172,9 +172,9 @@ data class SmsReminder(
         }
     }
 
-    /** The exact reply that stops this reminder, e.g. "Done 261011-01". */
+    /** The exact reply that stops this reminder: just the task number, e.g. "26101101". */
     val doneReply: String
-        get() = "Done $code"
+        get() = code
 
     val lastLog: SmsLogEntry?
         get() = log.lastOrNull { !it.fromCall }

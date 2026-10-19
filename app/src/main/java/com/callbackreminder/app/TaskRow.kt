@@ -553,7 +553,7 @@ fun SnoozeSheet(
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing())
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(heading, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -567,7 +567,7 @@ fun SnoozeSheet(
                 overflow = TextOverflow.Ellipsis
             )
             footer?.invoke()
-            TimePickerPanel(plusRow = plusRow, onPick = onPick)
+            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick)
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }
         }

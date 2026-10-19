@@ -187,13 +187,13 @@ fun SettingsScreen(
             icon = Icons.Rounded.Sms,
             title = "Text messages",
             summary = "${BurstTemplates.load(ctx).size} burst templates · " +
-                if (BurstTemplates.stopOnReply(ctx)) "stops on a \"Done <number>\" reply" else "reply check off",
+                if (BurstTemplates.stopOnReply(ctx)) "stops on a task number reply" else "reply check off",
             onClick = onOpenTextMessages
         )
         NavRow(
             icon = Icons.Rounded.PendingActions,
-            title = "Review reminder",
-            summary = remember { ReviewReminder.summary(ctx) },
+            title = "Review",
+            summary = remember { ReviewReminder.summary(ctx) + " · sections · call session" },
             onClick = onOpenReview
         )
         NavRow(
@@ -888,11 +888,11 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
     var days by remember { mutableStateOf(ReviewReminder.days(ctx)) }
     var editTime by remember { mutableStateOf<Int?>(null) }
 
-    SettingsPage(title = "Review reminder", onBack = onBack) {
+    SettingsPage(title = "Review", onBack = onBack) {
         SectionCard(
             title = "Review reminder",
-            subtitle = "At these times a popup shows how many calls are overdue or waiting for review, " +
-                "and how many texts are waiting for review. When nothing is waiting, it stays quiet."
+            subtitle = "At these times a popup shows what's waiting in each Review section that is switched on, " +
+                "with Start review and Open Review page. When nothing is waiting, it stays quiet."
         ) {
             SwitchRow(label = "Remind me to review", checked = on, onChange = {
                 on = it
@@ -957,6 +957,8 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
                 ) { Text("Show the review popup now") }
             }
         }
+
+        ReviewSectionsSettings()
     }
 
     editTime?.let { i ->
@@ -1571,13 +1573,13 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
         }
 
         SectionCard(
-            title = "Stop when the person replies Done",
-            subtitle = "Texts with Tracking number on carry a task number like 261011-01. If the person texts " +
-                "back exactly Done 261011-01 (capital D, one space, the number), only that reminder stops and " +
-                "moves to To review so you can check the work. A plain \"Done\" doesn't count. The app only " +
-                "checks for this reply; it doesn't keep or show anyone's messages."
+            title = "Stop when the person texts back the task number",
+            subtitle = "Every follow-up has an 8-digit task number like 26101104. When the person texts back only " +
+                "that number (spaces are fine, several numbers in one text are fine), that task moves to To review " +
+                "so you can check the work. Any other words, even \"Done\", don't count. The app only checks for " +
+                "this reply; it doesn't keep or show anyone's messages."
         ) {
-            SwitchRow("Stop on a \"Done\" reply", stopOnReply && canReceive) { on ->
+            SwitchRow("Stop on a task number reply", stopOnReply && canReceive) { on ->
                 if (on && !canReceive) {
                     receivePermission.launch(Manifest.permission.RECEIVE_SMS)
                 } else {

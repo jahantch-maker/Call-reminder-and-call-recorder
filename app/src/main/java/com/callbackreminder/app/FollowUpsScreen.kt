@@ -969,7 +969,7 @@ private fun TextsSheet(
     val cs = MaterialTheme.colorScheme
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+            Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing()),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {

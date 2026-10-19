@@ -139,7 +139,7 @@ object ToScheduleStore {
                     autopilot = o.optBoolean("autopilot"),
                     starred = o.optBoolean("starred"),
                     linkId = o.optLong("linkId"),
-                    code = o.optString("code"),
+                    code = o.optString("code").replace("-", ""),
                     callEvents = o.optJSONArray("callEvents")?.let { a ->
                         (0 until a.length()).map { j ->
                             val e = a.getJSONObject(j)

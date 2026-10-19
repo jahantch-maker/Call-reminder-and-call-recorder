@@ -32,6 +32,8 @@ data class Reminder(
     val autopilot: Boolean = false,
     /** "Review later" in To review: hidden there until this time. */
     val reviewLaterUntil: Long = 0L,
+    /** The 8-digit task number (yyMMddNN) the person texts back when it's done; shared with its texts. */
+    val code: String = "",
 ) {
     /** What we show as the headline: the name, else the number, else a placeholder. */
     val title: String
