@@ -117,6 +117,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit,
     onOpenVoiceTyping: () -> Unit,
     onOpenOffDays: () -> Unit,
+    onOpenWhatsApp: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -219,6 +220,12 @@ fun SettingsScreen(
             title = "Daily list",
             summary = remember { DailyList.summary(ctx) },
             onClick = onOpenDailyList
+        )
+        NavRow(
+            icon = Icons.Rounded.Sms,
+            title = "WhatsApp",
+            summary = remember { WhatsApp.appLabel(WhatsApp.app(ctx)) + " · your reminder message" },
+            onClick = onOpenWhatsApp
         )
         NavRow(
             icon = Icons.Rounded.Backup,

@@ -141,7 +141,7 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
     SettingsPage(title = "Daily list", onBack = onBack) {
         SectionCard(
             title = "Who gets it",
-            subtitle = "Switch it on for a person on their page (Home › People › tap a name). " +
+            subtitle = "Switch it on for a person on their page (Home › People › tap a name) and pick SMS, WhatsApp or both. " +
                 "They get all their open follow-ups (calls and texts), never your My tasks or dossier."
         ) {
             Text(
@@ -155,7 +155,7 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
         SectionCard(
             title = "Send times",
             subtitle = "The same times for everyone. Each list has all their open tasks with the task number, " +
-                "late ones first, and a note in Urdu to text back the number when it's done."
+                "late ones first. SMS ones go by themselves; WhatsApp ones wait in a notification for you to send."
         ) {
             times.forEachIndexed { i, m ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

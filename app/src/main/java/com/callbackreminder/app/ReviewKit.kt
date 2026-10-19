@@ -416,6 +416,12 @@ object ReviewSession {
         showPausedNotification(ctx)
     }
 
+    /** Undo on the session card: back to how the session was before that tap. */
+    fun restore(ctx: Context, before: State) {
+        if (init(ctx).day != before.day) return
+        set(ctx, before)
+    }
+
     /** The after-call popup closed: a call made from the session can now be read. */
     fun popupClosed(ctx: Context) = p(ctx).edit().putLong("popupClosedAt", System.currentTimeMillis()).commit()
     fun popupClosedAt(ctx: Context) = p(ctx).getLong("popupClosedAt", 0L)

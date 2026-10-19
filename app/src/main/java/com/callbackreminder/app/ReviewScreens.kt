@@ -42,7 +42,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -56,6 +59,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,15 +108,37 @@ object ReviewActions {
         }
     }
 
-    fun newTime(ctx: android.content.Context, item: ReviewItem, ms: Long) {
+    /** Everything a Done or New time on [item] changes, put back by the returned Undo. */
+    fun snapshot(item: ReviewItem): () -> Unit = when (item.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(item.id)?.let { r ->
+            val linked = FollowUps.snapshot(r.linkId)
+            val f: () -> Unit = { ReminderStore.restore(r); linked() }
+            f
+        } ?: {}
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(item.id)?.let { t ->
+            val linked = FollowUps.snapshot(t.linkId)
+            val f: () -> Unit = { SmsStore.restore(t); linked() }
+            f
+        } ?: {}
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(item.id)?.let { t -> { MyTaskStore.restore(t) } } ?: {}
+        ReviewItem.Kind.SCHED_FU -> ToScheduleStore.get(item.id)?.let { t -> { ToScheduleStore.put(t); Unit } } ?: {}
+    }
+
+    /** [reason] is the optional "Why not done?", kept in his history. */
+    fun newTime(ctx: android.content.Context, item: ReviewItem, ms: Long, reason: String = "") {
         when (item.kind) {
             ReviewItem.Kind.CALL -> {
                 val before = ReminderStore.get(item.id) ?: return
-                ReminderStore.postpone(item.id, ms, "")
+                ReminderStore.postpone(item.id, ms, reason)
                 FollowUps.onNewTime(ctx, before, ms, moveTexts = true)
             }
             ReviewItem.Kind.CALL_REVIEW -> ReminderStore.reschedule(item.id, ms, "Not done, moved to")
-            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.reschedule(item.id, ms)
+            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> {
+                SmsStore.reschedule(item.id, ms)
+                if (reason.isNotBlank()) {
+                    SmsStore.addLog(item.id, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MARKED_NOT_DONE, "Why not done: ${reason.trim()}"))
+                }
+            }
             ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.setDue(item.id, ms)
             ReviewItem.Kind.SCHED_FU -> {
                 val t = ToScheduleStore.items.value.firstOrNull { it.id == item.id } ?: return
@@ -308,6 +334,7 @@ private fun ReviewRow(
     onDetails: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
     val late = item.at in 1..now
     Surface(shape = RoundedCornerShape(18.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
@@ -332,29 +359,33 @@ private fun ReviewRow(
                         item.chips.forEach { ReviewChip(it) }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    when (item.kind) {
-                        ReviewItem.Kind.SCHED_FU -> {
-                            if (item.number.isBlank()) TextButton(onClick = onDetails) { Text("👤 Set person") }
-                            else TextButton(onClick = onNewTime) { Text("🕘 Set time") }
-                            TextButton(onClick = onDetails) { Text("Edit") }
-                        }
-                        ReviewItem.Kind.SCHED_MY -> TextButton(onClick = onNewTime) { Text("🕘 Set time") }
-                        ReviewItem.Kind.CALL_REVIEW, ReviewItem.Kind.TEXT_REVIEW -> {
-                            TextButton(onClick = onDone) { Text("✓ Accept") }
-                            TextButton(onClick = onNewTime) { Text("Not done · New time") }
-                        }
-                        else -> {
-                            TextButton(onClick = onDone) { Text("✓ Done") }
-                            TextButton(onClick = onNewTime) { Text("🕘 New time") }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        when (item.kind) {
+                            ReviewItem.Kind.SCHED_FU -> {
+                                if (item.number.isBlank()) TextButton(onClick = onDetails) { Text("👤 Set person") }
+                                else TextButton(onClick = onNewTime) { Text("🕘 Set time") }
+                                TextButton(onClick = onDetails) { Text("Edit") }
+                            }
+                            ReviewItem.Kind.SCHED_MY -> TextButton(onClick = onNewTime) { Text("🕘 Set time") }
+                            ReviewItem.Kind.CALL_REVIEW, ReviewItem.Kind.TEXT_REVIEW -> {
+                                TextButton(onClick = onDone) { Text("✓ Accept") }
+                                TextButton(onClick = onNewTime) { Text("Not done · New time") }
+                            }
+                            else -> {
+                                TextButton(onClick = onDone) { Text("✓ Done") }
+                                TextButton(onClick = onNewTime) { Text("🕘 New time") }
+                            }
                         }
                     }
-                }
-            }
-            if (ReviewActions.canCall(item)) {
-                Surface(onClick = onCall, shape = CircleShape, color = CallBlue, modifier = Modifier.size(48.dp)) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Call, contentDescription = "Call", tint = Color(0xFF0B1A4A))
+                    // Small 📞 and WA on the same line, so the row stays as short as its text.
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                        if (ReviewActions.canCall(item)) {
+                            RoundAction(Icons.Rounded.Call, "Call", CallBlue, Color(0xFF0B1A4A), onClick = onCall)
+                        }
+                        if (item.number.isNotBlank()) {
+                            WhatsAppAction { WhatsApp.forItem(ctx, item) }
+                        }
                     }
                 }
             }
@@ -402,6 +433,18 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     val item = remember(s, calls, texts, sched, mine, tick) { if (s.status == ReviewSession.Status.RUNNING) ReviewSession.current(ctx) else null }
     val upNext = remember(s, calls, texts, tick) { if (item?.isCall == true) ReviewSession.upNext(ctx) else emptyList() }
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    // Off to WhatsApp from the card: leaving the app then doesn't pause the session.
+    val toWhatsApp = remember { booleanArrayOf(false) }
+
+    /** Done or a new time from the card, with Undo for a few seconds (puts the task and the session back). */
+    fun handled(item: ReviewItem, message: String, act: () -> Unit) {
+        val before = ReviewSession.state.value
+        val undo = ReviewActions.snapshot(item)
+        act()
+        scope.offerUndo(snack, message) { undo(); ReviewSession.restore(ctx, before) }
+    }
 
     fun back() {
         ReviewSession.pause(ctx)
@@ -413,7 +456,8 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) toWhatsApp[0] = false
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && !toWhatsApp[0]) {
                 val st = ReviewSession.state.value
                 val cur = st.current
                 if (st.status == ReviewSession.Status.RUNNING && st.awaiting.isEmpty() &&
@@ -426,7 +470,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     }
 
     val callsMode = s.mode == ReviewSession.MODE_CALLS
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snack) }) { padding ->
         Column(
             Modifier
                 .fillMaxSize()
@@ -462,8 +506,12 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                             ReviewSession.calling(ctx, item.key)
                             ReviewActions.call(ctx, item)
                         },
+                        onWhatsApp = {
+                            toWhatsApp[0] = true
+                            if (!WhatsApp.forItem(ctx, item)) toWhatsApp[0] = false
+                        },
                         onBackFromCall = { ReviewSession.settle(ctx); tick++ },
-                        onDone = { ReviewActions.done(ctx, item); ReviewSession.markDone(ctx) },
+                        onDone = { handled(item, "Done · ${item.title}") { ReviewActions.done(ctx, item); ReviewSession.markDone(ctx) } },
                         onTime = { ms -> ReviewActions.newTime(ctx, item, ms); ReviewSession.markNewTime(ctx) },
                         onPickTime = { newTimeFor = item },
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
@@ -490,17 +538,60 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     }
 
     newTimeFor?.let { it0 ->
-        TimePickerDialog(
-            title = if (it0.at > 0L) "New time" else "Set time",
-            selected = null,
-            onPick = { ms ->
-                newTimeFor = null
-                ReviewActions.newTime(ctx, it0, ms)
-                ReviewSession.markNewTime(ctx)
-            },
-            onDismiss = { newTimeFor = null },
-        )
+        if (it0.isCall) {
+            // Overdue call or text: the short time row plus an optional "Why not done?".
+            NewTimeReasonDialog(
+                title = "New time" + if (it0.person.isNotBlank()) " · ${it0.person}" else "",
+                onPick = { ms, reason ->
+                    newTimeFor = null
+                    handled(it0, "Moved to ${Fmt.dueLabel(ms)}") {
+                        ReviewActions.newTime(ctx, it0, ms, reason)
+                        ReviewSession.markNewTime(ctx)
+                    }
+                },
+                onDismiss = { newTimeFor = null },
+            )
+        } else {
+            TimePickerDialog(
+                title = if (it0.at > 0L) "New time" else "Set time",
+                selected = null,
+                onPick = { ms ->
+                    newTimeFor = null
+                    ReviewActions.newTime(ctx, it0, ms)
+                    ReviewSession.markNewTime(ctx)
+                },
+                onDismiss = { newTimeFor = null },
+            )
+        }
     }
+}
+
+/** New time on a session card: type why it isn't done (optional), then tap a time and it saves. */
+@Composable
+private fun NewTimeReasonDialog(title: String, onPick: (Long, String) -> Unit, onDismiss: () -> Unit) {
+    var reason by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShortTimeRow(selected = null, showSelected = false, dialogTitle = "New time", onPick = { onPick(it, reason) })
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("Why not done? (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Saved in his history. His texts move to the new time too. Tap a time to save.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -509,6 +600,7 @@ private fun SessionCard(
     item: ReviewItem,
     awaiting: Boolean,
     onCall: () -> Unit,
+    onWhatsApp: () -> Unit,
     onBackFromCall: () -> Unit,
     onDone: () -> Unit,
     onTime: (Long) -> Unit,
@@ -555,7 +647,15 @@ private fun SessionCard(
                         BigButton("Next ›", onClick = onBackFromCall)
                         OutlinedButton(onClick = onCall, modifier = Modifier.fillMaxWidth()) { Text("📞 Call again") }
                     } else {
-                        BigButton("📞 Call now", onClick = onCall)
+                        // One row: call him, WhatsApp him, or settle it without calling.
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (item.number.isNotBlank()) {
+                                SmallTile("📞", "Call", CallBlue, Modifier.weight(1f), onCall)
+                                SmallTile("🟢", "WhatsApp", WhatsAppGreen, Modifier.weight(1f), onWhatsApp)
+                            }
+                            SmallTile("✓", "Done", DoneGreen, Modifier.weight(1f), onDone)
+                            SmallTile("🕘", "New time", NewTimeBlue, Modifier.weight(1f), onPickTime)
+                        }
                     }
                 }
                 ReviewItem.Kind.CALL_REVIEW, ReviewItem.Kind.TEXT_REVIEW -> {
@@ -614,6 +714,18 @@ private fun TileButton(icon: String, label: String, color: Color, modifier: Modi
         }
     }
 }
+
+@Composable
+private fun SmallTile(icon: String, label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = color, modifier = modifier.height(76.dp)) {
+        Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(icon, fontSize = 20.sp, color = Color(0xFF0B1A2A))
+            Text(label, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A2A), fontSize = 12.sp, maxLines = 1)
+        }
+    }
+}
+
+private val NewTimeBlue = Color(0xFFC9D6FF)
 
 /** The end: counts, and the skipped ones still open, with "move them to tomorrow 10:00 AM". */
 @Composable

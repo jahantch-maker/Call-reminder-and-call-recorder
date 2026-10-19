@@ -34,6 +34,12 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- WhatsApp buttons: see which WhatsApp apps are installed (Settings › WhatsApp). -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+    </queries>
+
     <application
         android:name=".CallbackApp"
         android:allowBackup="true"

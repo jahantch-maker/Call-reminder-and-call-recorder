@@ -13,6 +13,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -201,11 +203,32 @@ fun RoundAction(
     }
 }
 
+/** The green WhatsApp round button (same size as [RoundAction]). */
+@Composable
+fun WhatsAppAction(size: Dp = 36.dp, enabled: Boolean = true, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(if (enabled) WhatsAppGreen else cs.surfaceVariant)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("WA", color = if (enabled) WhatsAppInk else cs.onSurfaceVariant, fontWeight = FontWeight.Black, fontSize = (size.value * 0.32f).sp)
+    }
+}
+
+val WhatsAppGreen = Color(0xFF25D366)
+val WhatsAppInk = Color(0xFF053D1E)
+
 /**
  * One task row. [timeTop]/[timeSub] fill the time column; [person]/[personDetail] the line under the task
  * (both null hides it, as on the person page); [action] is the round button, swapped for a close arrow while
- * the row is open and [expandedContent] shows.
+ * the row is open and [expandedContent] shows. [bottomActions] puts small buttons on the chips line instead,
+ * so a row with several buttons stays as short as its text.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskRow(
     pos: RowPos,
@@ -222,6 +245,7 @@ fun TaskRow(
     quote: String? = null,
     highlighted: Boolean = false,
     action: (@Composable () -> Unit)? = null,
+    bottomActions: (@Composable () -> Unit)? = null,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -293,7 +317,21 @@ fun TaskRow(
                         }
                     }
                 }
-                if (chips.isNotEmpty()) {
+                if (bottomActions != null) {
+                    // Small round buttons at the bottom right, on the chips line; chips wrap in the space left.
+                    Spacer(Modifier.height(5.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                        FlowRow(
+                            Modifier.weight(1f).padding(bottom = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            chips.forEach { SmallChip(it) }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        bottomActions()
+                    }
+                } else if (chips.isNotEmpty()) {
                     Spacer(Modifier.height(5.dp))
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
@@ -319,12 +357,13 @@ fun TaskRow(
                     expandedContent()
                 }
             }
-            Spacer(Modifier.width(8.dp))
             if (expanded && expandedContent != null) {
+                Spacer(Modifier.width(8.dp))
                 RoundAction(
                     Icons.Rounded.ExpandLess, "Close", cs.surfaceVariant, cs.onSurfaceVariant, onClick = onClick
                 )
             } else if (action != null) {
+                Spacer(Modifier.width(8.dp))
                 action()
             }
         }

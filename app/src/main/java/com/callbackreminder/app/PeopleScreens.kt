@@ -262,6 +262,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     var newText by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf(false) }
     var dailyOn by remember(key) { mutableStateOf(DailyList.isOn(ctx, key.orEmpty())) }
+    var via by remember(key) { mutableStateOf(DailyList.via(ctx, key.orEmpty())) }
     var preview by remember { mutableStateOf<String?>(null) }
 
     val k = key.orEmpty()
@@ -383,7 +384,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                             Column(Modifier.weight(1f)) {
                                 Text("Daily list", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 Text(
-                                    if (dailyOn) "Texts $name all their open follow-ups at ${DailyList.timesLabel(ctx)}" +
+                                    if (dailyOn) "Sends $name all their open follow-ups at ${DailyList.timesLabel(ctx)}" +
                                         (DailyList.lastSent(ctx, k).takeIf { it > 0L }?.let { " · last sent ${Fmt.dueLabel(it)}" } ?: "")
                                     else "Off: $name gets no daily list",
                                     style = MaterialTheme.typography.bodySmall,
@@ -396,6 +397,19 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                             })
                         }
                         if (dailyOn) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Send by", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                listOf(DailyList.VIA_SMS to "SMS", DailyList.VIA_WA to "WhatsApp", DailyList.VIA_BOTH to "Both").forEach { (v, label) ->
+                                    FilterChip(selected = via == v, onClick = { via = v; DailyList.setVia(ctx, k, v) }, label = { Text(label) })
+                                }
+                            }
+                            if (via != DailyList.VIA_SMS) {
+                                Text(
+                                    "WhatsApp: you press Send yourself from the \"Daily lists ready\" notification.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             TextButton(onClick = {
                                 preview = DailyList.build(ctx, k) ?: "Nothing to send: $name has no open follow-ups."
                             }) { Text("Preview the list") }
