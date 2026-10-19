@@ -192,8 +192,8 @@ fun SettingsScreen(
         )
         NavRow(
             icon = Icons.Rounded.PendingActions,
-            title = "Review reminder",
-            summary = remember { ReviewReminder.summary(ctx) },
+            title = "Review",
+            summary = remember { ReviewReminder.summary(ctx) + " · sections · call session" },
             onClick = onOpenReview
         )
         NavRow(
@@ -888,11 +888,11 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
     var days by remember { mutableStateOf(ReviewReminder.days(ctx)) }
     var editTime by remember { mutableStateOf<Int?>(null) }
 
-    SettingsPage(title = "Review reminder", onBack = onBack) {
+    SettingsPage(title = "Review", onBack = onBack) {
         SectionCard(
             title = "Review reminder",
-            subtitle = "At these times a popup shows how many calls are overdue or waiting for review, " +
-                "and how many texts are waiting for review. When nothing is waiting, it stays quiet."
+            subtitle = "At these times a popup shows what's waiting in each Review section that is switched on, " +
+                "with Start review and Open Review page. When nothing is waiting, it stays quiet."
         ) {
             SwitchRow(label = "Remind me to review", checked = on, onChange = {
                 on = it
@@ -957,6 +957,8 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
                 ) { Text("Show the review popup now") }
             }
         }
+
+        ReviewSectionsSettings()
     }
 
     editTime?.let { i ->

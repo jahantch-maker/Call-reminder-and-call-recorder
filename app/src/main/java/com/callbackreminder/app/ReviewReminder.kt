@@ -18,9 +18,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Twice a day (times and days set in Settings › Review reminder) it pops up how many calls are
- * overdue or waiting for review, how many texts are waiting for review, and (unless the dossier has
- * its own reminder) how many of today's dossier tasks are not ticked. Nothing waiting: no popup.
+ * Twice a day (times and days set in Settings › Review) it pops up what's waiting in each Review page
+ * section that is switched on, with Start review and Open Review page. Nothing waiting: no popup.
  */
 object ReviewReminder {
     const val ACTION_FIRE = "com.callbackreminder.app.REVIEW"
@@ -33,28 +32,14 @@ object ReviewReminder {
     val SNOOZE_MINUTES = listOf(15, 30, 60, 120)
     private const val ALL_DAYS = 0b1111111
 
-    data class Counts(
-        val overdueCalls: Int,
-        val callsToReview: Int,
-        val textsToReview: Int,
-        val toSchedule: Int = 0,
-        /** Today's dossier tasks past their time and not ticked (0 when the dossier has its own reminder). */
-        val dossierLeft: Int = 0,
-        /** My tasks with no time yet ("Needs a time"). */
-        val needsTime: Int = 0,
-    ) {
-        val total: Int get() = overdueCalls + callsToReview + textsToReview + toSchedule + dossierLeft + needsTime
+    /** What's waiting in each section shown on the Review page (Settings › Review). */
+    data class Counts(val sections: List<Pair<ReviewSection, Int>>) {
+        val total: Int get() = sections.sumOf { it.second }
 
-        /** Like "3 calls overdue · 2 texts to review". */
+        /** Like "6 overdue · 2 to schedule · follow-ups". */
         val summary: String
-            get() = listOfNotNull(
-                overdueCalls.takeIf { it > 0 }?.let { "$it ${if (it == 1) "call" else "calls"} overdue" },
-                callsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "call" else "calls"} to review" },
-                textsToReview.takeIf { it > 0 }?.let { "$it ${if (it == 1) "text" else "texts"} to review" },
-                toSchedule.takeIf { it > 0 }?.let { "$it to schedule" },
-                dossierLeft.takeIf { it > 0 }?.let { "$it dossier not ticked" },
-                needsTime.takeIf { it > 0 }?.let { "$it ${if (it == 1) "task needs" else "tasks need"} a time" },
-            ).joinToString(" · ").ifBlank { "Nothing waiting" }
+            get() = sections.filter { it.second > 0 }.joinToString(" · ") { (s, n) -> "$n ${s.title.lowercase()}" }
+                .ifBlank { "Nothing waiting" }
     }
 
     // ---- Settings ----
@@ -101,23 +86,7 @@ object ReviewReminder {
 
     // ---- What is waiting ----
 
-    fun counts(ctx: Context): Counts {
-        ReminderStore.init(ctx)
-        SmsStore.init(ctx)
-        ToScheduleStore.init(ctx)
-        DossierStore.init(ctx)
-        MyTaskStore.init(ctx)
-        val now = System.currentTimeMillis()
-        val calls = ReminderStore.items.value
-        return Counts(
-            overdueCalls = calls.count { !it.done && it.dueAt <= now },
-            callsToReview = calls.count { it.done && it.review && it.reviewLaterUntil <= now },
-            textsToReview = SmsStore.items.value.count { !it.done && it.review != null && it.reviewLaterUntil <= now },
-            toSchedule = ToScheduleStore.items.value.size,
-            dossierLeft = if (DossierSettings.separate(ctx)) 0 else DossierStore.leftNow(now),
-            needsTime = MyTaskStore.items.value.count { !it.done && !it.timed },
-        )
-    }
+    fun counts(ctx: Context): Counts = Counts(ReviewData.shownCounts(ctx))
 
     // ---- Alarms ----
 
@@ -209,10 +178,11 @@ object ReviewReminder {
 
     // ---- Notification ----
 
-    /** Opens the app on whatever is waiting: Calls, Texts, or Home when both have something. */
-    fun reviewIntent(ctx: Context): Intent =
+    /** Opens the Review page; with [start], a review session of everything starts right away. */
+    fun reviewIntent(ctx: Context, start: Boolean = false): Intent =
         Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_REVIEW)
+            .putExtra(MainActivity.EXTRA_START, start)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
     @SuppressLint("MissingPermission")
@@ -243,7 +213,7 @@ object ReviewReminder {
             .setSilent(quiet || fullScreen)
             .setContentIntent(review)
             .setAutoCancel(true)
-            .addAction(0, "Review now", review)
+            .addAction(0, "Open Review", review)
             .addAction(0, "Snooze 30 min", snooze)
         if (fullScreen) {
             val popup = PendingIntent.getActivity(

@@ -65,6 +65,7 @@ class BootReceiver : BroadcastReceiver() {
         BankingPause.resume(context)
         ReviewReminder.schedule(context)
         TaskAlarms.rescheduleAll(context)
+        ReviewSession.rearm(context)
     }
 }
 

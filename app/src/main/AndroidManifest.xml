@@ -192,6 +192,11 @@
             android:name=".TaskReceiver"
             android:exported="false" />
 
+        <!-- The review session's resume reminder and End on its paused notification -->
+        <receiver
+            android:name=".ReviewSessionReceiver"
+            android:exported="false" />
+
         <!-- Re-arms reminders after a phone restart or app update -->
         <receiver
             android:name=".BootReceiver"

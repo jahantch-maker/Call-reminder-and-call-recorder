@@ -39,9 +39,27 @@ class PostCallActivity : ComponentActivity() {
         }
         setContent {
             CallbackTheme {
-                PostCallScreen(queue = queue, onFinished = { finish() })
+                PostCallScreen(queue = queue, onFinished = { done() })
             }
         }
+    }
+
+    /** Closing the popup: a running review session takes you back to its Next card. */
+    private fun done() {
+        val s = ReviewSession.init(this)
+        if (s.active) {
+            ReviewSession.popupClosed(this)
+            try {
+                startActivity(
+                    Intent(this, MainActivity::class.java)
+                        .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_SESSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                )
+            } catch (e: Exception) {
+                // The session waits on Home.
+            }
+        }
+        finish()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -58,7 +76,14 @@ class PostCallActivity : ComponentActivity() {
             )
             return
         }
-        for (c in CallBatch.read(i)) {
+        val batch = CallBatch.read(i)
+        // A call you didn't start from the review session (like an incoming one) pauses it.
+        val s = ReviewSession.init(this)
+        if (s.status == ReviewSession.Status.RUNNING && batch.isNotEmpty()) {
+            val fromSession = s.awaiting.isNotEmpty() && batch.any { it.followUpId > 0 || it.textTaskId > 0 }
+            if (!fromSession) ReviewSession.pause(this)
+        }
+        for (c in batch) {
             val alreadyThere = c.id > 0 && queue.any { it.id == c.id }
             if (!alreadyThere) queue.add(c)
         }

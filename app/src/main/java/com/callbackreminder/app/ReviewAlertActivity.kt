@@ -37,6 +37,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -86,6 +87,38 @@ class ReviewAlertActivity : ComponentActivity() {
             override fun handleOnBackPressed() = leaveNotification()
         })
 
+        if (intent.getBooleanExtra(EXTRA_RESUME, false)) {
+            ReminderStore.init(this)
+            SmsStore.init(this)
+            val st = ReviewSession.init(this)
+            if (st.status != ReviewSession.Status.PAUSED) {
+                finish()
+                return
+            }
+            if (savedInstanceState == null) startSound()
+            setContent {
+                CallbackTheme(dark = true) {
+                    ResumeSessionScreen(
+                        state = st,
+                        next = ReviewSession.nextName(this),
+                        onResume = {
+                            close()
+                            runCatching { ReviewSession.openIntent(this, 1_501_020, resume = true).send() }
+                        },
+                        onLater = {
+                            ReviewSession.remindLater(this, 15)
+                            close()
+                        },
+                        onEnd = {
+                            ReviewSession.clear(this)
+                            close()
+                        },
+                    )
+                }
+            }
+            return
+        }
+
         val counts = ReviewReminder.counts(this)
         if (savedInstanceState == null) startSound()
         if (ReminderStyle.mode(this) == ReminderStyle.Mode.FULL_SCREEN_THEN_NOTIFY) {
@@ -96,6 +129,11 @@ class ReviewAlertActivity : ComponentActivity() {
             CallbackTheme(dark = true) {
                 ReviewScreen(
                     counts = counts,
+                    onStart = {
+                        ReviewReminder.cancelNotification(this)
+                        startActivity(ReviewReminder.reviewIntent(this, start = true))
+                        close()
+                    },
                     onReview = {
                         ReviewReminder.cancelNotification(this)
                         startActivity(ReviewReminder.reviewIntent(this))
@@ -118,6 +156,11 @@ class ReviewAlertActivity : ComponentActivity() {
     }
 
     private fun leaveNotification() {
+        if (intent.getBooleanExtra(EXTRA_RESUME, false)) {
+            // The paused notification is still there.
+            close()
+            return
+        }
         ReviewReminder.notify(this, ReviewReminder.counts(this), quiet = true, fullScreen = false)
         close()
     }
@@ -199,8 +242,10 @@ class ReviewAlertActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val PING_GAP_MS = 1_200L
+    companion object {
+        /** The "Resume your review session?" popup instead of the 1 PM / 6 PM one. */
+        const val EXTRA_RESUME = "resume_session"
+        private const val PING_GAP_MS = 1_200L
     }
 }
 
@@ -209,6 +254,7 @@ private val GlassWhite = Color(0x24FFFFFF)
 @Composable
 private fun ReviewScreen(
     counts: ReviewReminder.Counts,
+    onStart: () -> Unit,
     onReview: () -> Unit,
     onSnooze: (Int) -> Unit,
     onLater: () -> Unit,
@@ -252,23 +298,27 @@ private fun ReviewScreen(
 
             Surface(shape = RoundedCornerShape(16.dp), color = GlassWhite, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CountLine("Calls overdue", counts.overdueCalls)
-                    CountLine("Calls to review", counts.callsToReview)
-                    CountLine("Texts to review", counts.textsToReview)
-                    CountLine("To schedule", counts.toSchedule)
-                    CountLine("Dossier not ticked", counts.dossierLeft)
-                    CountLine("Tasks needing a time", counts.needsTime)
+                    counts.sections.forEach { (sec, n) -> CountLine("${sec.emoji} ${sec.title}", n) }
                 }
             }
 
             Spacer(Modifier.height(8.dp))
             Button(
-                onClick = onReview,
+                onClick = onStart,
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 shape = RoundedCornerShape(30.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300), contentColor = Color(0xFF2A1C00)),
             ) {
-                Text("Review now", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("▶ Start review (${counts.total})", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+                onClick = onReview,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(27.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+            ) {
+                Text("Open Review page", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -320,5 +370,52 @@ private fun CountLine(label: String, count: Int) {
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+/** "Resume your review session?" after it has been paused for a while (Settings › Review). */
+@Composable
+private fun ResumeSessionScreen(
+    state: ReviewSession.State,
+    next: String?,
+    onResume: () -> Unit,
+    onLater: () -> Unit,
+    onEnd: () -> Unit,
+) {
+    val mins = ((System.currentTimeMillis() - state.pausedAt) / 60_000L).coerceAtLeast(1)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF1B2A6B), Color(0xFF0B0E17))))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .safeBottomPadding(0.dp)
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Resume your review session?", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(
+                "Paused $mins min ago · ${state.handled} of ${state.total} done." + (next?.let { "\nNext: $it" } ?: ""),
+                color = Color.White.copy(alpha = 0.85f), fontSize = 17.sp, textAlign = TextAlign.Center
+            )
+            Button(
+                onClick = onResume,
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(30.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8FA8FF), contentColor = Color(0xFF0B1A4A)),
+            ) { Text("▶ Resume", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+            OutlinedButton(
+                onClick = onLater,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(27.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+            ) { Text("Remind in 15 min", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onEnd) { Text("End session", color = Color(0xFFFF8A80), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+        }
     }
 }
