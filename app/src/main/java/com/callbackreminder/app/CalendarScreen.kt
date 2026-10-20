@@ -31,6 +31,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -128,6 +140,9 @@ object CalendarUi {
 
     /** The bottom toggle: Best fit (busy hours grow) or Working hours (fill the screen). Opens on Best fit. */
     val bestFit = mutableStateOf(true)
+
+    /** Pinch level: 1 = normal, smaller squeezes the hours (down to the whole day), bigger stretches them. */
+    val zoom = mutableFloatStateOf(1f)
 }
 
 private val TimeCol = 28.dp
@@ -244,6 +259,25 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
         scope.offerUndo(snack, "Snoozed to ${Fmt.dueLabel(ms)}", undo)
     }
 
+    /** Undo text after a slide or stretch, with ⚠ when it now overlaps your own items. */
+    fun clashNote(id: Long): String {
+        val t = MyTaskStore.get(id) ?: return ""
+        val n = CalendarData.clashes(ctx, t.dueAt, t.durationMin, id).size
+        return if (n > 0) " · ⚠ clashes with $n" else ""
+    }
+
+    fun moveTask(id: Long, start: Long) {
+        val before = MyTaskStore.get(id) ?: return
+        MyTaskStore.setDue(id, start)
+        scope.offerUndo(snack, "Moved to ${Fmt.timeOnly(start)}" + clashNote(id)) { MyTaskStore.restore(before) }
+    }
+
+    fun resizeTask(id: Long, len: Int) {
+        val before = MyTaskStore.get(id) ?: return
+        MyTaskStore.setLength(id, len)
+        scope.offerUndo(snack, "Now ${CalendarData.lengthLabel(len.toLong())}" + clashNote(id)) { MyTaskStore.restore(before) }
+    }
+
     Box(Modifier.fillMaxSize().background(cs.background)) {
         Column(Modifier.fillMaxSize()) {
             CalHeader(
@@ -305,6 +339,19 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
                         onHour = { hourList = it },
                         onBlock = { openBlock = it },
                         onAdd = { start, len -> addAt = start to len },
+                        onMoveTask = { id, start -> moveTask(id, start) },
+                        onResizeTask = { id, len -> resizeTask(id, len) },
+                        onMoveFollowUp = { f, at -> snoozeFuTo(f, at) },
+                        onFixed = { b ->
+                            scope.launch {
+                                snack.currentSnackbarData?.dismiss()
+                                snack.showSnackbar(
+                                    if (b.kind == CalBlock.Kind.GOOGLE) "Google events are read only. Change them in Google Calendar."
+                                    else if (b.kind == CalBlock.Kind.DOSSIER) "Dossier blocks are fixed. Tap it › Change times."
+                                    else "Done tasks don't move."
+                                )
+                            }
+                        },
                     )
                 }
                 FitToggle(
@@ -618,7 +665,23 @@ private fun laneWidths(total: Dp, wideF: Float): Pair<Dp, Dp> {
     return (lanes - fu) to fu
 }
 
-/** The day itself: hours, own blocks, free gaps, follow-up cards (or marks), and the now line. */
+/** One item being slid (long-press) or stretched (resize handle). */
+private class DragOp(val key: String, val resize: Boolean, val originPx: Float, val downY: Float) {
+    var dy by mutableFloatStateOf(0f)
+}
+
+/** Rounds to the nearest 15 minutes, like Google Calendar's drag. */
+private fun snap15(ms: Long): Long {
+    val step = 15 * 60_000L
+    return (ms + step / 2) / step * step
+}
+
+/**
+ * The day itself: hours, own blocks, free gaps, follow-up cards (or marks), and the now line.
+ * Two fingers pinch the hours (fully squeezed shows marks, half shows one-line cards, stretched shows
+ * full cards); tapping an hour zooms in. Long-press slides a My task or a follow-up (Snooze) in
+ * 15-minute steps; the handle under a My task changes its length.
+ */
 @Composable
 private fun DayBody(
     date: LocalDate,
@@ -634,32 +697,54 @@ private fun DayBody(
     onHour: (List<CalFollowUp>) -> Unit,
     onBlock: (CalBlock) -> Unit,
     onAdd: (Long, Int) -> Unit,
+    onMoveTask: (Long, Long) -> Unit,
+    onResizeTask: (Long, Int) -> Unit,
+    onMoveFollowUp: (CalFollowUp, Long) -> Unit,
+    onFixed: (CalBlock) -> Unit,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val cc = CalColors(cs.background.luminance() < 0.5f)
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val wh by WorkHours.version.collectAsState()
     val ws = remember(wh) { WorkHours.start(ctx) }
     val we = remember(wh) { WorkHours.end(ctx) }
     val isOff = OffDays.isOff(date)
     val dayStart = CalendarData.at(date, 0)
+    var zoomState by CalendarUi.zoom
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val viewH = maxHeight - ToggleSpace
+        val viewPx = with(density) { maxHeight.toPx() }
         val (mineW, fuW) = laneWidths(maxWidth, wideF)
         val fuX = TimeCol + mineW + LaneGap
-        val cardH = lerp(36.dp, 46.dp, wideF)
+        val cardFull = lerp(36.dp, 46.dp, wideF)
 
         val firstWork = ws / 60
         val lastWork = ((we + 59) / 60).coerceIn(firstWork + 1, 24)
         val workH = (viewH / (lastWork - firstWork).toFloat()).coerceAtLeast(26.dp)
         val byHour = remember(data.followUps) { data.followUps.groupBy { ((it.at - dayStart) / 3_600_000L).toInt().coerceIn(0, 23) } }
-        val heights = (0 until 24).map { h ->
+        val base = (0 until 24).map { h ->
             val n = byHour[h]?.size ?: 0
-            val fit = maxOf(BaseHour, (cardH + CardGap) * n.toFloat() + CardPad * 2)
+            val fit = maxOf(BaseHour, (cardFull + CardGap) * n.toFloat() + CardPad * 2)
             lerp(workH, fit, mix)
         }
+        val baseTotal = base.fold(0.dp) { acc, h -> acc + h }
+        // Fully squeezed = the whole day on one screen.
+        val minZoom = (viewH / baseTotal).coerceAtMost(1f)
+        val maxZoom = 3f
+        val z = zoomState.coerceIn(minZoom, maxZoom)
+        // Below 1 the cards shrink with the hours: one-line cards, then marks (fully squeezed).
+        val s = minOf(z, 1f)
+        val cardH = cardFull * s
+        val gap = CardGap * s
+        val pad = CardPad * s
+        val oneLine = cardH < 30.dp
+        val cardsF = mix * ((z - 0.42f) / 0.18f).coerceIn(0f, 1f)
+
+        val heights = base.map { it * z }
         val tops = heights.runningFold(0.dp) { acc, h -> acc + h }
         val totalH = tops.last()
 
@@ -670,40 +755,131 @@ private fun DayBody(
             return tops[h] + heights[h] * ((m % 60) / 60f)
         }
 
+        fun timeOf(y: Dp): Long {
+            val yy = y.coerceIn(0.dp, totalH)
+            var h = 0
+            while (h < 23 && tops[h + 1] <= yy) h++
+            val frac = ((yy - tops[h]) / heights[h]).coerceIn(0f, 1f)
+            return dayStart + (h * 60 + (frac * 60f).toLong()) * 60_000L
+        }
+
         val scroll = rememberScrollState()
         // Open at the current hour today, else at the start of working hours.
         LaunchedEffect(date) {
             val target = if (date == LocalDate.now()) yOf(now - 3_600_000L) else tops[firstWork]
             scroll.scrollTo(with(density) { target.roundToPx() })
         }
-        // Working hours: bring them into view while the hours shrink.
+        // Switching the toggle resets the pinch; Working hours brings them into view.
+        val lastMode = remember { mutableStateOf(bestFit) }
         LaunchedEffect(bestFit) {
+            if (lastMode.value != bestFit) {
+                lastMode.value = bestFit
+                if (zoomState != 1f) {
+                    androidx.compose.animation.core.animate(zoomState, 1f, animationSpec = calSpec(motion, 300)) { v, _ -> zoomState = v }
+                }
+            }
             if (!bestFit) {
                 delay(40)
                 scroll.animateScrollTo(with(density) { (workH * firstWork.toFloat()).roundToPx() }, calSpec(motion, 300))
             }
         }
+        // Keeps the spot under the fingers still while pinching.
+        var pendingScroll by remember { mutableStateOf<Int?>(null) }
+        LaunchedEffect(pendingScroll) { pendingScroll?.let { scroll.scrollTo(it) } }
 
-        var drag by remember { mutableStateOf(0f) }
+        fun pinch(factor: Float, focusY: Float) {
+            val old = zoomState.coerceIn(minZoom, maxZoom)
+            val nz = (old * factor).coerceIn(minZoom, maxZoom)
+            if (nz == old) return
+            zoomState = nz
+            pendingScroll = ((scroll.value + focusY) * (nz / old) - focusY).roundToInt().coerceAtLeast(0)
+        }
+
+        fun zoomInto(h: Int) {
+            val from = zoomState.coerceIn(minZoom, maxZoom)
+            val to = (maxOf(from, 1f) * 1.6f).coerceAtMost(maxZoom)
+            if (to <= from + 0.01f) return
+            val baseTop = base.take(h).fold(0.dp) { acc, v -> acc + v }
+            scope.launch {
+                androidx.compose.animation.core.animate(from, to, animationSpec = calSpec(motion, 320)) { v, _ ->
+                    zoomState = v
+                    pendingScroll = with(density) { (baseTop * v).roundToPx() }
+                }
+            }
+        }
+
+        // Sliding and stretching.
+        var drag by remember { mutableStateOf<DragOp?>(null) }
+        var edge by remember { mutableIntStateOf(0) }
+        // After a drop, the new spot is kept until the day's items reload, so nothing jumps back.
+        var dropped by remember { mutableStateOf<Pair<String, Long>?>(null) }
+        LaunchedEffect(data.blocks, data.followUps) { dropped = null }
+        // Auto-scroll while an item is held near the top or bottom edge.
+        LaunchedEffect(drag) {
+            val op = drag ?: return@LaunchedEffect
+            while (drag === op) {
+                if (edge != 0) {
+                    val moved = scroll.scrollBy(edge * 14f)
+                    op.dy += moved
+                }
+                delay(16)
+            }
+        }
+        fun trackEdge(op: DragOp, localY: Float) {
+            val y = op.originPx + localY - scroll.value
+            edge = when {
+                y < 56f -> -1
+                y > viewPx - with(density) { ToggleSpace.toPx() } -> 1
+                else -> 0
+            }
+        }
+        var lastStep by remember { mutableStateOf(0L) }
+        fun stepBuzz(ms: Long) {
+            if (ms != lastStep) {
+                lastStep = ms
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+
+        var swipe by remember { mutableStateOf(0f) }
         Box(
             Modifier
                 .fillMaxSize()
+                .pointerInput(minZoom) {
+                    // Two fingers: pinch the hours (seen before the scroll can take them).
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var prev = 0f
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val down = event.changes.filter { it.pressed }
+                            if (down.size >= 2) {
+                                val a = down[0].position
+                                val b = down[1].position
+                                val span = maxOf(abs(a.y - b.y), (a - b).getDistance() * 0.6f).coerceAtLeast(1f)
+                                if (prev > 0f) pinch(span / prev, (a.y + b.y) / 2f)
+                                prev = span
+                                event.changes.forEach { it.consume() }
+                            } else prev = 0f
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
-                        onDragStart = { drag = 0f },
+                        onDragStart = { swipe = 0f },
                         onDragEnd = {
-                            if (drag < -90f) onSwipe(true) else if (drag > 90f) onSwipe(false)
-                            drag = 0f
+                            if (swipe < -90f) onSwipe(true) else if (swipe > 90f) onSwipe(false)
+                            swipe = 0f
                         },
-                    ) { change, amount -> drag += amount; change.consume() }
+                    ) { change, amount -> swipe += amount; change.consume() }
                 }
-                .verticalScroll(scroll)
+                .verticalScroll(scroll, enabled = drag == null)
         ) {
             Box(Modifier.fillMaxWidth().height(totalH + ToggleSpace)) {
-                // Hours: lines, labels, outside-working-hours shade and Best fit's light band on busy hours.
+                // Hours: lines, labels (tap to zoom in), outside-working-hours shade and Best fit's band on busy hours.
                 for (h in 0 until 24) {
                     val inWork = !isOff && h * 60 < we && (h + 1) * 60 > ws
-                    val grown = heights[h] > BaseHour + 1.dp && mix > 0.01f
+                    val grown = base[h] > BaseHour + 1.dp && mix > 0.01f
                     Box(
                         Modifier
                             .offset(y = tops[h])
@@ -717,10 +893,16 @@ private fun DayBody(
                                 }
                             )
                     ) {
-                        HorizontalDivider(Modifier.padding(start = TimeCol - 4.dp), color = cs.outlineVariant.copy(alpha = 0.6f))
-                        Column(Modifier.width(TimeCol).padding(top = 1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        HorizontalDivider(Modifier.padding(start = TimeCol - 4.dp), color = cs.outlineVariant.copy(alpha = if (heights[h] > 14.dp) 0.6f else 0.3f))
+                        Column(
+                            Modifier.width(TimeCol).fillMaxHeight().clickable { zoomInto(h) }.padding(top = 1.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             val h12 = if (h % 12 == 0) 12 else h % 12
-                            Text(h12.toString(), fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
+                            // Fully squeezed: every other hour, so the labels don't pile up.
+                            if (heights[h] > 12.dp || h % 2 == 0) {
+                                Text(h12.toString(), fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
+                            }
                             if (heights[h] > 22.dp) {
                                 Text(if (h < 12) "am" else "pm", fontSize = 8.sp, lineHeight = 8.sp, color = cs.outline)
                             }
@@ -729,11 +911,11 @@ private fun DayBody(
                 }
 
                 // Free gaps inside working hours: dashed, with ＋ Add.
-                data.gaps.forEach { (s, e) ->
-                    val top = yOf(s)
-                    val hgt = yOf(e) - top
-                    if (hgt > 10.dp) {
-                        val minutes = ((e - s) / 60_000L).toInt()
+                data.gaps.forEach { (gs, ge) ->
+                    val top = yOf(gs)
+                    val hgt = yOf(ge) - top
+                    if (hgt > 6.dp) {
+                        val minutes = ((ge - gs) / 60_000L).toInt()
                         val dash = cs.secondary
                         Box(
                             Modifier
@@ -748,16 +930,18 @@ private fun DayBody(
                                         cornerRadius = CornerRadius(8.dp.toPx())
                                     )
                                 }
-                                .clickable { onAdd(s, minutes.coerceIn(15, 180)) },
+                                .clickable { onAdd(gs, minutes.coerceIn(15, 180)) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                if (hgt > 26.dp && wideF < 0.5f) "＋ Add · ${CalendarData.lengthLabel(minutes.toLong())} free" else "＋",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = cs.secondary,
-                                maxLines = 1
-                            )
+                            if (hgt > 14.dp) {
+                                Text(
+                                    if (hgt > 26.dp && wideF < 0.5f) "＋ Add · ${CalendarData.lengthLabel(minutes.toLong())} free" else "＋",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = cs.secondary,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -766,10 +950,30 @@ private fun DayBody(
                 val placed = remember(data.blocks) { placeBlocks(data.blocks) }
                 placed.forEach { p ->
                     val b = p.block
+                    val k = "b${b.kind}${b.id}"
+                    val len = b.end - b.start
                     val top = yOf(b.start)
-                    val hgt = maxOf(yOf(minOf(b.end, dayStart + 86_400_000L)) - top, 22.dp)
+                    val hgt = maxOf(yOf(minOf(b.end, dayStart + 86_400_000L)) - top, 18.dp)
                     val colW = (mineW - 4.dp) / p.cols.toFloat()
+                    val op = drag?.takeIf { it.key == k }
+                    // Where it shows now: following a slide (snapped), or just dropped.
+                    val shownStart = when {
+                        op != null && !op.resize -> snap15(timeOf(top + with(density) { op.dy.toDp() }))
+                        dropped?.first == k -> dropped!!.second
+                        else -> b.start
+                    }
+                    val shownLen = when {
+                        op != null && op.resize ->
+                            (snap15(timeOf(top + hgt + with(density) { op.dy.toDp() })) - b.start).coerceAtLeast(15 * 60_000L)
+                        dropped?.first == "r$k" -> dropped!!.second
+                        else -> len
+                    }
+                    val shownTop = yOf(shownStart)
+                    val shownH = maxOf(yOf(minOf(shownStart + shownLen, dayStart + 86_400_000L)) - shownTop, 18.dp)
+                    val lifted = op != null
+                    val movable = b.kind == CalBlock.Kind.TASK && !b.done
                     key(b.kind, b.id) {
+                        val lift by animateFloatAsState(if (lifted) 1f else 0f, calSpec(motion, 160), label = "lift")
                         val ap = rememberAppear(motion)
                         BlockCard(
                             b = b,
@@ -777,71 +981,230 @@ private fun DayBody(
                             slim = wideF > 0.5f,
                             cc = cc,
                             modifier = Modifier
+                                .zIndex(if (lifted) 2f else 0f)
                                 .offset(x = TimeCol + 2.dp + colW * p.col.toFloat(), y = top + 1.dp)
                                 .width(colW - 2.dp)
-                                .height(hgt - 2.dp)
-                                .graphicsLayer { alpha = ap; scaleX = 0.94f + 0.06f * ap; scaleY = 0.94f + 0.06f * ap },
+                                .height(shownH - 2.dp)
+                                .pointerInput(k, movable, top, totalH) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { at ->
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (movable) {
+                                                drag = DragOp(k, false, top.toPx(), at.y)
+                                                lastStep = b.start
+                                            } else onFixed(b)
+                                        },
+                                        onDrag = { change, _ ->
+                                            val d = drag
+                                            if (d != null && d.key == k) {
+                                                change.consume()
+                                                d.dy = change.position.y - d.downY
+                                                trackEdge(d, change.position.y)
+                                                stepBuzz(snap15(timeOf(top + d.dy.toDp())))
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            val d = drag
+                                            if (d != null && d.key == k) {
+                                                val to = snap15(timeOf(top + d.dy.toDp()))
+                                                if (to != b.start) {
+                                                    dropped = k to to
+                                                    onMoveTask(b.id, to)
+                                                }
+                                            }
+                                            drag = null
+                                            edge = 0
+                                        },
+                                        onDragCancel = { drag = null; edge = 0 },
+                                    )
+                                }
+                                .graphicsLayer {
+                                    alpha = ap
+                                    val grow = 0.94f + 0.06f * ap + 0.03f * lift
+                                    scaleX = grow
+                                    scaleY = if (lifted) 1f else grow
+                                    translationY = (shownTop - top).toPx()
+                                    shadowElevation = 10.dp.toPx() * lift
+                                    shape = RoundedCornerShape(8.dp)
+                                },
                             onClick = { onBlock(b) }
                         )
+                        // The resize handle at the bottom of a My task.
+                        if (movable && wideF < 0.5f && hgt > 26.dp && (op == null || op.resize)) {
+                            Box(
+                                Modifier
+                                    .zIndex(3f)
+                                    .offset(x = TimeCol + 2.dp + colW * p.col.toFloat(), y = top + hgt - 14.dp)
+                                    .width(colW - 2.dp)
+                                    .height(14.dp)
+                                    .pointerInput(k, top, hgt, totalH) {
+                                        detectVerticalDragGestures(
+                                            onDragStart = { at ->
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                drag = DragOp(k, true, (top + hgt - 14.dp).toPx(), at.y)
+                                                lastStep = b.end
+                                            },
+                                            onVerticalDrag = { change, _ ->
+                                                val d = drag
+                                                if (d != null && d.key == k) {
+                                                    change.consume()
+                                                    d.dy = change.position.y - d.downY
+                                                    trackEdge(d, change.position.y)
+                                                    stepBuzz(snap15(timeOf(top + hgt + d.dy.toDp())))
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                val d = drag
+                                                if (d != null && d.key == k) {
+                                                    val end = snap15(timeOf(top + hgt + d.dy.toDp()))
+                                                    val newLen = ((end - b.start) / 60_000L).toInt().coerceAtLeast(15)
+                                                    if (newLen.toLong() != len / 60_000L) {
+                                                        dropped = "r$k" to newLen * 60_000L
+                                                        onResizeTask(b.id, newLen)
+                                                    }
+                                                }
+                                                drag = null
+                                                edge = 0
+                                            },
+                                            onDragCancel = { drag = null; edge = 0 },
+                                        )
+                                    }
+                                    .graphicsLayer { translationY = (shownTop + shownH - top - hgt).toPx() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(width = if (op != null) 34.dp else 22.dp, height = 4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(cc.taskEdge.copy(alpha = if (op != null) 1f else 0.55f))
+                                )
+                            }
+                        }
+                        // While sliding or stretching: the new time beside the hours.
+                        if (op != null) {
+                            val label = if (op.resize) Fmt.timeOnly(shownStart + shownLen) + " · " + CalendarData.lengthLabel(shownLen / 60_000L)
+                            else Fmt.timeOnly(shownStart)
+                            TimeBubble(label, Modifier.zIndex(4f).offset(x = 2.dp, y = (if (op.resize) shownTop + shownH else shownTop) - 9.dp))
+                        }
                     }
                 }
 
-                // Follow-ups: Best fit shows each as its own card inside its hour; Working hours shows marks.
+                // Follow-ups: each its own card inside its hour; marks when squeezed or in Working hours.
                 for (h in 0 until 24) {
                     val list = byHour[h].orEmpty()
-                    if (list.isNotEmpty() && mix > 0.02f) {
-                        var prevBottom = tops[h] + CardPad - CardGap
+                    if (list.isNotEmpty() && cardsF > 0.02f) {
+                        var prevBottom = tops[h] + pad - gap
                         list.forEachIndexed { i, f ->
-                            val want = tops[h] + heights[h] * (((f.at - dayStart) / 60_000L % 60) / 60f) + CardPad
-                            val latest = tops[h] + heights[h] - CardPad - (cardH + CardGap) * (list.size - i).toFloat() + CardGap
-                            val y = minOf(maxOf(want, prevBottom + CardGap), maxOf(latest, prevBottom + CardGap))
+                            val want = tops[h] + heights[h] * (((f.at - dayStart) / 60_000L % 60) / 60f) + pad
+                            val latest = tops[h] + heights[h] - pad - (cardH + gap) * (list.size - i).toFloat() + gap
+                            val y = minOf(maxOf(want, prevBottom + gap), maxOf(latest, prevBottom + gap))
                             prevBottom = y + cardH
+                            val k = "f" + f.key
+                            val op = drag?.takeIf { it.key == k }
+                            val shownY = when {
+                                op != null -> yOf(snap15(timeOf(y + with(density) { op.dy.toDp() })))
+                                dropped?.first == k -> yOf(dropped!!.second)
+                                else -> y
+                            }
                             key(f.key) {
+                                val lift by animateFloatAsState(if (op != null) 1f else 0f, calSpec(motion, 160), label = "fulift")
                                 val ap = rememberAppear(motion)
                                 FollowUpCard(
                                     f = f,
                                     wideF = wideF,
                                     cc = cc,
+                                    oneLine = oneLine,
                                     modifier = Modifier
+                                        .zIndex(if (op != null) 2f else 0f)
                                         .offset(x = fuX, y = y)
                                         .width(fuW)
-                                        .height(cardH)
-                                        .graphicsLayer { alpha = mix * ap; scaleX = 0.94f + 0.06f * ap; scaleY = 0.94f + 0.06f * ap },
-                                    enabled = mix > 0.5f,
+                                        .height(maxOf(cardH, 18.dp))
+                                        .pointerInput(k, cardsF > 0.5f, y, totalH) {
+                                            if (cardsF <= 0.5f) return@pointerInput
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = { at ->
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    drag = DragOp(k, false, y.toPx(), at.y)
+                                                    lastStep = f.at
+                                                },
+                                                onDrag = { change, _ ->
+                                                    val d = drag
+                                                    if (d != null && d.key == k) {
+                                                        change.consume()
+                                                        d.dy = change.position.y - d.downY
+                                                        trackEdge(d, change.position.y)
+                                                        stepBuzz(snap15(timeOf(y + d.dy.toDp())))
+                                                    }
+                                                },
+                                                onDragEnd = {
+                                                    val d = drag
+                                                    if (d != null && d.key == k) {
+                                                        // Sliding a follow-up = Snooze; never into the past.
+                                                        val to = maxOf(
+                                                            snap15(timeOf(y + d.dy.toDp())),
+                                                            CalendarData.roundUp(System.currentTimeMillis(), 15)
+                                                        )
+                                                        if (to != snap15(f.at)) {
+                                                            dropped = k to to
+                                                            onMoveFollowUp(f, to)
+                                                        }
+                                                    }
+                                                    drag = null
+                                                    edge = 0
+                                                },
+                                                onDragCancel = { drag = null; edge = 0 },
+                                            )
+                                        }
+                                        .graphicsLayer {
+                                            alpha = cardsF * ap
+                                            val grow = 0.94f + 0.06f * ap + 0.04f * lift
+                                            scaleX = grow
+                                            scaleY = grow
+                                            translationY = (shownY - y).toPx()
+                                            shadowElevation = 10.dp.toPx() * lift
+                                            shape = RoundedCornerShape(8.dp)
+                                        },
+                                    enabled = cardsF > 0.5f,
                                     onClick = { onFollowUp(f) },
                                     onCall = { onCall(f) },
                                 )
+                                if (op != null) {
+                                    TimeBubble("Snooze to " + Fmt.timeOnly(snap15(timeOf(y + with(density) { op.dy.toDp() }))), Modifier.zIndex(4f).offset(x = 2.dp, y = shownY - 9.dp))
+                                }
                             }
                         }
                     }
-                    if (list.isNotEmpty() && mix < 0.98f) {
+                    if (list.isNotEmpty() && cardsF < 0.98f) {
                         Row(
                             Modifier
-                                .offset(x = fuX, y = tops[h] + 3.dp)
+                                .offset(x = fuX, y = tops[h] + (if (heights[h] > 16.dp) 3.dp else 0.dp))
                                 .width(fuW)
-                                .alpha(1f - mix)
+                                .alpha(1f - cardsF)
                                 .clip(RoundedCornerShape(6.dp))
-                                .clickable(enabled = mix < 0.5f) { onHour(list) }
-                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                .clickable(enabled = cardsF < 0.5f) { onHour(list) }
+                                .padding(horizontal = 4.dp, vertical = if (heights[h] > 16.dp) 2.dp else 0.dp),
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             list.take(8).forEach { f ->
                                 Box(
                                     Modifier
-                                        .size(width = 10.dp, height = 7.dp)
+                                        .size(width = 10.dp, height = if (heights[h] > 16.dp) 7.dp else 5.dp)
                                         .clip(RoundedCornerShape(3.dp))
                                         .background(if (f.isCall) cc.callEdge else cc.textEdge)
                                 )
                             }
-                            Text(
-                                if (wideF > 0.5f) "${list.size} · ${list.first().title}" else "${list.size}",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = cs.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (heights[h] > 12.dp) {
+                                Text(
+                                    if (wideF > 0.5f) "${list.size} · ${list.first().title}" else "${list.size}",
+                                    fontSize = 9.sp,
+                                    lineHeight = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = cs.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
@@ -854,7 +1217,55 @@ private fun DayBody(
                 }
             }
         }
+        // Zoom level hint while pinched away from normal.
+        AnimatedVisibility(
+            visible = abs(z - 1f) > 0.05f,
+            enter = fadeIn(calSpec(motion, 200)),
+            exit = fadeOut(calSpec(motion, 200)),
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp)
+        ) {
+            Surface(
+                onClick = {
+                    scope.launch {
+                        androidx.compose.animation.core.animate(zoomState.coerceIn(minZoom, maxZoom), 1f, animationSpec = calSpec(motion, 300)) { v, _ -> zoomState = v }
+                    }
+                },
+                shape = RoundedCornerShape(10.dp),
+                color = cs.inverseSurface.copy(alpha = 0.85f),
+                contentColor = cs.inverseOnSurface,
+            ) {
+                Text(
+                    when {
+                        z <= minZoom + 0.01f -> "Whole day · tap to reset"
+                        z < 1f -> "Squeezed · tap to reset"
+                        else -> "Stretched · tap to reset"
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
     }
+}
+
+/** The small time label shown beside the hours while sliding or stretching. */
+@Composable
+private fun TimeBubble(text: String, modifier: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Text(
+        text,
+        fontSize = 10.sp,
+        lineHeight = 11.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = cs.onPrimary,
+        maxLines = 1,
+        modifier = modifier
+            .shadow(4.dp, RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(9.dp))
+            .background(cs.primary)
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+    )
 }
 
 /** 0 to 1 the first time a card shows: it fades and grows in. */
@@ -950,6 +1361,7 @@ private fun FollowUpCard(
     enabled: Boolean,
     onClick: () -> Unit,
     onCall: () -> Unit,
+    oneLine: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val bg = if (f.isCall) cc.callBg else cc.textBg
@@ -965,15 +1377,15 @@ private fun FollowUpCard(
         Box(Modifier.width(3.dp).fillMaxHeight().background(if (f.overdue) cs.error else edge))
         Column(Modifier.weight(1f).padding(start = 6.dp, end = 2.dp)) {
             Text(
-                (if (f.isCall) "" else "💬 ") + f.title,
-                fontSize = if (wideF > 0.5f) 12.5.sp else 11.sp,
-                lineHeight = if (wideF > 0.5f) 14.sp else 12.sp,
+                (if (oneLine) Fmt.timeOnly(f.at) + " " else "") + (if (f.isCall) "" else "💬 ") + f.title,
+                fontSize = if (oneLine) 10.sp else if (wideF > 0.5f) 12.5.sp else 11.sp,
+                lineHeight = if (oneLine) 11.sp else if (wideF > 0.5f) 14.sp else 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
+            if (!oneLine) Text(
                 Fmt.timeOnly(f.at) + if (f.person.isNotBlank()) " · ${f.person}" else "",
                 fontSize = 9.5.sp,
                 lineHeight = 11.sp,
@@ -982,7 +1394,7 @@ private fun FollowUpCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (wideF > 0.3f && f.number.isNotBlank()) {
+        if (wideF > 0.3f && f.number.isNotBlank() && !oneLine) {
             Box(
                 Modifier
                     .alpha(((wideF - 0.3f) / 0.7f).coerceIn(0f, 1f))

@@ -422,6 +422,12 @@ object MyTaskStore {
         if (!t.done) TaskAlarms.scheduleTask(appCtx, t)
     }
 
+    /** A new length (the Calendar's resize handle). */
+    @Synchronized
+    fun setLength(id: Long, minutes: Int) {
+        save(_items.value.map { if (it.id == id) it.copy(durationMin = minutes.coerceIn(5, 24 * 60)) else it })
+    }
+
     /** "My order" after a drag: [ids] top to bottom. */
     @Synchronized
     fun reorder(ids: List<Long>) {
