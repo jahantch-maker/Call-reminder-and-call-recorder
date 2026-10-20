@@ -81,10 +81,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val LateRed = Color(0xFFFF8A80)
-private val LateBg = Color(0xFF5C1A1A)
-private val PausedBg = Color(0xFF4A3A0E)
-private val PausedFg = Color(0xFFFFD36B)
+// Each has a light and a dark version, so the Review pages read well in both modes.
+private val LateRed: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
+private val LateBg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF5C1A1A) else Color(0xFFFFE3E6)
+private val PausedBg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF4A3A0E) else Color(0xFFFFF0D4)
+private val PausedFg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFFD36B) else Color(0xFF7A4B00)
+/** Text on a [PausedFg] button. */
+private val PausedInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF2A1C00) else Color.White
 private val DoneGreen = Color(0xFF4FD6B0)
 
 /** Done, New time, Call and the rest, the same on the Review page and in the session. */
@@ -315,7 +318,7 @@ private fun SessionBanner(s: ReviewSession.State, onResume: () -> Unit, onEnd: (
                 Button(
                     onClick = onResume,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = Color(0xFF2A1C00))
+                    colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk)
                 ) { Text("▶ Resume", fontWeight = FontWeight.Bold) }
                 OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f)) { Text("End", color = PausedFg) }
             }
@@ -790,7 +793,8 @@ private fun SessionSummary(s: ReviewSession.State, onClose: () -> Unit) {
 private fun CountBox(n: String, label: String, color: Color, modifier: Modifier) {
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, modifier = modifier) {
         Column(Modifier.padding(vertical = 16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(n, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = color)
+            // The bright tile colours are too pale as text on white, so light mode uses a deeper shade.
+            Text(n, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (LocalDarkTheme.current) color else androidx.compose.ui.graphics.lerp(color, Color.Black, 0.45f))
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -826,7 +830,7 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
                     Button(
                         onClick = { ReviewSession.resume(ctx); onResume() },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = Color(0xFF2A1C00))
+                        colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk)
                     ) { Text("▶ Resume", fontWeight = FontWeight.Bold) }
                     OutlinedButton(onClick = { ReviewSession.clear(ctx) }, modifier = Modifier.weight(1f)) { Text("End", color = PausedFg) }
                 }
@@ -834,27 +838,57 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
         }
         return
     }
-    Surface(onClick = onOpen, shape = RoundedCornerShape(20.dp), color = Color(0xFF1E2A5E), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The accent gradient card. Deeper in dark mode so white text stays readable.
+    val cs = MaterialTheme.colorScheme
+    val dark = LocalDarkTheme.current
+    val g1 = if (dark) androidx.compose.ui.graphics.lerp(cs.primary, Color.Black, 0.35f) else cs.primary
+    val g2 = if (dark) androidx.compose.ui.graphics.lerp(LocalAccent2.current, Color.Black, 0.3f) else LocalAccent2.current
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(22.dp),
+        color = Color.Transparent,
+        shadowElevation = 4.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier
+                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(g1, g2)))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📋 Review", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp, modifier = Modifier.weight(1f))
+                Text("📋 Review", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 if (total > 0) {
                     Text(
                         "$total",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFFE53950)).padding(horizontal = 8.dp, vertical = 1.dp)
+                        color = cs.error,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color.White).padding(horizontal = 8.dp, vertical = 1.dp)
                     )
                 }
             }
             Text(
                 counts.filter { it.second > 0 }.joinToString(" · ") { (sec, n) -> "$n ${sec.title.lowercase()}" }.ifBlank { "Nothing waiting" },
-                color = Color.White.copy(alpha = 0.85f),
+                color = Color.White.copy(alpha = 0.9f),
                 style = MaterialTheme.typography.bodyMedium
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onStart, enabled = total > 0, modifier = Modifier.weight(1f)) { Text("▶ Start review") }
-                OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) { Text("Open", color = Color.White) }
+                Button(
+                    onClick = onStart,
+                    enabled = total > 0,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = g1,
+                        disabledContainerColor = Color.White.copy(alpha = 0.35f),
+                        disabledContentColor = Color.White.copy(alpha = 0.8f)
+                    )
+                ) { Text("▶ Start review", fontWeight = FontWeight.Bold) }
+                OutlinedButton(
+                    onClick = onOpen,
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f))
+                ) { Text("Open", color = Color.White, fontWeight = FontWeight.Bold) }
             }
         }
     }

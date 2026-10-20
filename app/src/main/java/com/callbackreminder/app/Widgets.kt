@@ -77,7 +77,7 @@ enum class WidgetKind(val title: String, val setup: Boolean) {
 data class WidgetConfig(
     val filter: Int = WidgetPrefs.FILTER_TODAY,
     val listId: Long = WidgetPrefs.ALL_LISTS,
-    val look: Int = WidgetPrefs.LOOK_DARK,
+    val look: Int = WidgetPrefs.LOOK_APP,
     /** 0 = solid … 80 = mostly see-through. */
     val seeThrough: Int = 0,
     val textSize: Int = WidgetPrefs.TEXT_NORMAL,
@@ -101,7 +101,9 @@ object WidgetPrefs {
     const val LOOK_DARK = 0
     const val LOOK_LIGHT = 1
     const val LOOK_WALLPAPER = 2
-    val LOOKS = listOf(LOOK_DARK to "Dark", LOOK_LIGHT to "Light", LOOK_WALLPAPER to "Wallpaper")
+    /** Follows Settings › Appearance (light or dark, and the accent colour). */
+    const val LOOK_APP = 3
+    val LOOKS = listOf(LOOK_APP to "Same as app", LOOK_DARK to "Dark", LOOK_LIGHT to "Light", LOOK_WALLPAPER to "Wallpaper")
 
     const val TEXT_SMALL = 0
     const val TEXT_NORMAL = 1
@@ -117,7 +119,7 @@ object WidgetPrefs {
         return WidgetConfig(
             filter = p.getInt("w${id}_filter", FILTER_TODAY),
             listId = p.getLong("w${id}_list", ALL_LISTS),
-            look = p.getInt("w${id}_look", LOOK_DARK),
+            look = p.getInt("w${id}_look", LOOK_APP),
             seeThrough = p.getInt("w${id}_see", 0),
             textSize = p.getInt("w${id}_text", TEXT_NORMAL),
         )
@@ -171,17 +173,21 @@ data class WidgetColors(
     val outline: Color,
     val tertiaryC: Color,
     val onTertiaryC: Color,
+    /** Dark panel or light panel, for the Calendar card tints. */
+    val dark: Boolean = true,
 )
 
 object WidgetLook {
     fun colors(c: Context, cfg: WidgetConfig): WidgetColors = when {
-        cfg.look == WidgetPrefs.LOOK_LIGHT -> fromScheme(false)
+        cfg.look == WidgetPrefs.LOOK_LIGHT -> fromScheme(c, false)
+        cfg.look == WidgetPrefs.LOOK_DARK -> fromScheme(c, true)
         cfg.look == WidgetPrefs.LOOK_WALLPAPER && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> wallpaper(c)
-        else -> fromScheme(true)
+        else -> fromScheme(c, Appearance.isDark(c))
     }
 
-    private fun fromScheme(dark: Boolean): WidgetColors {
-        val s = if (dark) DarkColors else LightColors
+    /** The app's own colours (its accent from Settings › Appearance) on a light or dark panel. */
+    private fun fromScheme(c: Context, dark: Boolean): WidgetColors {
+        val s = appScheme(c, dark)
         val orange = if (dark) OrangeDark else OrangeLight
         return WidgetColors(
             bg = s.surface,
@@ -204,14 +210,15 @@ object WidgetLook {
             outline = s.outline,
             tertiaryC = s.tertiaryContainer,
             onTertiaryC = s.onTertiaryContainer,
+            dark = dark,
         )
     }
 
     /** Material You: tones picked by the phone from your wallpaper, kept dark so the app's colours still read. */
     private fun wallpaper(c: Context): WidgetColors {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return fromScheme(true)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return fromScheme(c, true)
         fun col(id: Int) = Color(c.getColor(id))
-        val dark = fromScheme(true)
+        val dark = fromScheme(c, true)
         return dark.copy(
             bg = col(android.R.color.system_accent2_800),
             row = col(android.R.color.system_accent2_700),
@@ -322,6 +329,7 @@ object WidgetSync {
             DossierStore.tasks.map { },
             DossierStore.records.map { },
             CardColours.version.map { },
+            Appearance.version.map { },
             GoogleCal.version.map { },
             WorkHours.version.map { },
         )

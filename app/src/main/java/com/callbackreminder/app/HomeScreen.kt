@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.DropdownMenu
@@ -64,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
@@ -146,6 +146,15 @@ fun HomeScreen(
     val people = Work.people(now, calls, texts, myTasks)
         .sortedWith(compareByDescending<PersonSummary> { it.overdue }.thenByDescending { it.pending })
 
+    val startOfToday = today.atStartOfDay(zone).toInstant().toEpochMilli()
+    val doneToday = calls.count { it.done && it.doneAt >= startOfToday } +
+        texts.count { it.done && it.doneAt >= startOfToday } +
+        myTasks.count { it.done && it.doneAt >= startOfToday }
+    val dueTodayOpen = open.count { it.at < endOfToday }
+    val monthScore = remember(dossier, records, dossierDay) {
+        dossier.map { DossierStore.monthScore(it, now) }.fold(0 to 0) { acc, p -> (acc.first + p.first) to (acc.second + p.second) }
+    }
+
     val nextUp = open.filter { !it.inReview && it.at < endOfToday }.sortedBy { it.at }
     val filtered = if (!filtering) emptyList() else open.filter { w ->
         (personFilter == null || w.personKey == personFilter) &&
@@ -205,57 +214,25 @@ fun HomeScreen(
 
             item(key = "widgets_tip") { WidgetsTip() }
 
+            item(key = "rings") {
+                TodayRings(
+                    doneToday = doneToday,
+                    dueToday = doneToday + dueTodayOpen,
+                    dossierDone = dossierDone,
+                    dossierTotal = dossierToday.size,
+                    monthDone = monthScore.first,
+                    monthTotal = monthScore.second,
+                    onDone = { onOpenMyTasks(MyTasksUi.ONE_TIME) },
+                    onDossier = { onOpenMyTasks(MyTasksUi.DOSSIER) },
+                )
+            }
+
             item(key = "tiles") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CountTile(
-                            icon = Icons.Rounded.PhoneCallback,
-                            count = "${callsDue.size}",
-                            label = "Calls due",
-                            container = Color(0xFFFFE3E6),
-                            content = Color(0xFF7A1020),
-                            modifier = Modifier.weight(1f),
-                            onClick = onOpenCalls,
-                        )
-                        CountTile(
-                            icon = Icons.Rounded.Sms,
-                            count = "${textsToday.size}",
-                            label = "Texts today",
-                            container = MaterialTheme.colorScheme.secondaryContainer,
-                            content = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onOpenTexts(0, null) },
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CountTile(
-                            icon = Icons.Rounded.TaskAlt,
-                            count = "$myTasksToday",
-                            label = "My tasks",
-                            container = Color(0xFFEDE4FF),
-                            content = Color(0xFF3F1F8C),
-                            modifier = Modifier.weight(1f),
-                            onClick = { onOpenMyTasks(MyTasksUi.ONE_TIME) },
-                        )
-                        CountTile(
-                            icon = Icons.Rounded.Checklist,
-                            count = "$dossierDone/${dossierToday.size}",
-                            label = "Dossier",
-                            container = Color(0xFFD9F3EC),
-                            content = Color(0xFF0B5A4C),
-                            modifier = Modifier.weight(1f),
-                            onClick = { onOpenMyTasks(MyTasksUi.DOSSIER) },
-                        )
-                        CountTile(
-                            icon = Icons.Rounded.EditCalendar,
-                            count = "${toSchedule.size}",
-                            label = "To schedule",
-                            container = Color(0xFFFFE6C2),
-                            content = Color(0xFF6A3B00),
-                            modifier = Modifier.weight(1f),
-                            onClick = onOpenToSchedule,
-                        )
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SmallTile(Icons.Rounded.PhoneCallback, "${callsDue.size}", "Calls due", Tones.red, Modifier.weight(1f), onOpenCalls)
+                    SmallTile(Icons.Rounded.Sms, "${textsToday.size}", "Texts", Tones.blue, Modifier.weight(1f)) { onOpenTexts(0, null) }
+                    SmallTile(Icons.Rounded.TaskAlt, "$myTasksToday", "My tasks", Tones.purple, Modifier.weight(1f)) { onOpenMyTasks(MyTasksUi.ONE_TIME) }
+                    SmallTile(Icons.Rounded.EditCalendar, "${toSchedule.size}", "Schedule", Tones.amber, Modifier.weight(1f), onOpenToSchedule)
                 }
             }
 
@@ -331,7 +308,9 @@ fun HomeScreen(
             }
 
             if (nextUp.isEmpty()) {
-                item(key = "next-empty") { AllClear() }
+                item(key = "next-empty") {
+                    EmptyPicture(Icons.Rounded.EventAvailable, "Nothing left for today", "Tap ＋ to add a call-back or a text message.")
+                }
             }
             if (nextUp.isNotEmpty()) item(key = "next-list") { WorkBlock(nextUp, now, showPerson = true, onOpen = onOpenItem) }
         }
@@ -342,7 +321,7 @@ fun HomeScreen(
         open = dialOpen,
         onOpenChange = { dialOpen = it },
         options = listOf(
-            DialOption("My task", Icons.Rounded.TaskAlt, Color(0xFF3F1F8C)) { newTask = true },
+            DialOption("My task", Icons.Rounded.TaskAlt, Tones.purple.fg) { newTask = true },
             DialOption("Follow-up", Icons.Rounded.Call, MaterialTheme.colorScheme.primary) { newCall = true },
         ),
     )
@@ -430,7 +409,8 @@ private fun HomeFilterRow(
 /** "Overdue by age": four bars (1 day, 2-3, 4-7, 7+ days). Tapping a bar lists those tasks. */
 @Composable
 private fun OverdueChart(counts: List<Int>, onBar: (Int) -> Unit) {
-    val colors = listOf(Color(0xFFF0B850), Color(0xFFEE8A3C), Color(0xFFD93A4A), Color(0xFF8E1B27))
+    val colors = if (LocalDarkTheme.current) listOf(Color(0xFFF5C76A), Color(0xFFF29A55), Color(0xFFEF5B6A), Color(0xFFC2394A))
+    else listOf(Color(0xFFF0B850), Color(0xFFEE8A3C), Color(0xFFD93A4A), Color(0xFF8E1B27))
     val max = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -503,34 +483,6 @@ private fun greeting(t: LocalTime): String = when {
 }
 
 @Composable
-private fun CountTile(
-    icon: ImageVector,
-    count: String,
-    label: String,
-    container: Color,
-    content: Color,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = container, contentColor = content)
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(
-                count,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-    }
-}
-
-@Composable
 private fun KindIcon(icon: ImageVector, container: Color, content: Color, size: Int) {
     Box(
         modifier = Modifier
@@ -570,28 +522,6 @@ private fun CreateOption(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-@Composable
-private fun AllClear() {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            Icons.Rounded.EventAvailable,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(36.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("Nothing left for today", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-            "Tap + to add a call-back or a text message.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -719,4 +649,105 @@ private fun WidgetsTip() {
             dismissButton = { TextButton(onClick = { howTo = false }) { Text("Later") } },
         )
     }
+}
+
+
+/**
+ * The slim "Today" strip: three small rings for Done today, Dossier and the month score. It replaces the big
+ * pastel tiles so Home keeps its room for the task list.
+ */
+@Composable
+private fun TodayRings(
+    doneToday: Int,
+    dueToday: Int,
+    dossierDone: Int,
+    dossierTotal: Int,
+    monthDone: Int,
+    monthTotal: Int,
+    onDone: () -> Unit,
+    onDossier: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val dark = LocalDarkTheme.current
+    val teal = if (dark) Color(0xFF3FD6B8) else Color(0xFF0E9F87)
+    val amber = if (dark) Color(0xFFFFC14D) else Color(0xFFE09A12)
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = cs.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp)) {
+            val pct = if (monthTotal == 0) 0 else monthDone * 100 / monthTotal
+            RingItem(frac(doneToday, dueToday), cs.primary, "$doneToday/$dueToday", "Done today", Modifier.weight(1f), onDone)
+            RingItem(frac(dossierDone, dossierTotal), teal, "$dossierDone/$dossierTotal", "Dossier", Modifier.weight(1f), onDossier)
+            RingItem(if (monthTotal == 0) 0f else pct / 100f, amber, "$pct%", "Month score", Modifier.weight(1f), onDossier)
+        }
+    }
+}
+
+private fun frac(a: Int, b: Int): Float = if (b <= 0) 0f else (a.toFloat() / b).coerceIn(0f, 1f)
+
+@Composable
+private fun RingItem(progress: Float, color: Color, value: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val sweep by androidx.compose.animation.core.animateFloatAsState(
+        progress, androidx.compose.animation.core.tween(700), label = "ring"
+    )
+    val track = cs.outlineVariant.copy(alpha = 0.5f)
+    Row(
+        modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.foundation.Canvas(Modifier.size(34.dp)) {
+            val w = 4.5.dp.toPx()
+            val inset = w / 2
+            val sz = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
+            val tl = androidx.compose.ui.geometry.Offset(inset, inset)
+            val st = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawArc(track, 0f, 360f, false, tl, sz, style = st)
+            if (sweep > 0f) drawArc(color, -90f, 360f * sweep, false, tl, sz, style = st)
+        }
+        Spacer(Modifier.width(6.dp))
+        Column {
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Text(label, fontSize = 10.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
+
+/** One of the four small count tiles under the rings; colours follow the light or dark mode. */
+@Composable
+private fun SmallTile(icon: ImageVector, count: String, label: String, tone: Tone, modifier: Modifier, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = tone.bg, contentColor = tone.fg)
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(count, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            }
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+}
+
+/** Counts everything due today or late across the app and fires the once-a-day "Day cleared" burst at zero. */
+@Composable
+fun DayClearedWatcher() {
+    val calls by ReminderStore.items.collectAsState()
+    val texts by SmsStore.items.collectAsState()
+    val myTasks by MyTaskStore.items.collectAsState()
+    val dossier by DossierStore.tasks.collectAsState()
+    val records by DossierStore.records.collectAsState()
+    val left = remember(calls, texts, myTasks, dossier, records) {
+        val now = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
+        val end = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        Work.open(now, calls, texts, myTasks, dossier, records).count { !it.inReview && it.at < end }
+    }
+    WatchDayCleared(left)
 }

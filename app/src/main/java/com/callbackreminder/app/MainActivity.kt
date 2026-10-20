@@ -14,6 +14,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
@@ -139,6 +141,7 @@ class MainActivity : ComponentActivity() {
         handleOpen(intent)
         setContent {
             CallbackTheme {
+              androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
                 AppRoot(
                     resumeKey = resumeTick.intValue,
                     openMessagesKey = openMessagesTick.intValue,
@@ -147,6 +150,9 @@ class MainActivity : ComponentActivity() {
                     openScreen = { openScreen.also { openScreen = null } },
                     openScreens = { openScreens.also { openScreens = emptyList() } },
                 )
+                DayClearedWatcher()
+                DayClearedOverlay()
+              }
             }
         }
         CrashLog.offer(this)
@@ -301,6 +307,7 @@ private object Screen {
     const val WHATSAPP_SETTINGS = 28
     const val DAILY_WA = 29
     const val CALENDAR_SETTINGS = 30
+    const val APPEARANCE = 31
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -459,6 +466,7 @@ private fun AppRoot(
                     onOpenOffDays = { open(Screen.OFF_DAYS) },
                     onOpenWhatsApp = { open(Screen.WHATSAPP_SETTINGS) },
                     onOpenCalendar = { open(Screen.CALENDAR_SETTINGS) },
+                    onOpenAppearance = { open(Screen.APPEARANCE) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
@@ -467,6 +475,7 @@ private fun AppRoot(
                 Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
                 Screen.WHATSAPP_SETTINGS -> WhatsAppSettingsScreen(onBack = { back() })
                 Screen.CALENDAR_SETTINGS -> CalendarSettingsScreen(onBack = { back() })
+                Screen.APPEARANCE -> AppearanceSettingsScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },
@@ -643,9 +652,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                 if (tiny) {
                     TinyTabBar(shown, tabs, onTab)
                 } else {
-                    NavigationBar {
-                        tabs.forEach { t -> TabItem(shown, t.tab, t.icon, t.label, t.badge, onTab, tag = t.tag) }
-                    }
+                    FloatingTabBar(shown, tabs, onTab)
                 }
             }
         }
@@ -762,19 +769,22 @@ private class TabSpec(val tab: Int, val icon: ImageVector, val label: String, va
 private fun TinyTabBar(current: Int, tabs: List<TabSpec>, onTab: (Int) -> Unit) {
     val cs = MaterialTheme.colorScheme
     androidx.compose.material3.Surface(
-        color = androidx.compose.material3.NavigationBarDefaults.containerColor,
-        tonalElevation = 3.dp,
+        color = cs.surface.copy(alpha = 0.94f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+        shadowElevation = 6.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant),
+        modifier = Modifier
+            .windowInsetsPadding(androidx.compose.material3.NavigationBarDefaults.windowInsets)
+            .padding(start = 10.dp, end = 10.dp, bottom = 2.dp),
     ) {
         androidx.compose.foundation.layout.Row(
-            Modifier
-                .windowInsetsPadding(androidx.compose.material3.NavigationBarDefaults.windowInsets)
-                .height(40.dp),
+            Modifier.height(40.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             tabs.forEach { t ->
                 val on = t.tab == current
                 val pill by androidx.compose.animation.animateColorAsState(
-                    if (on) cs.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                    if (on) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
                     tween(220),
                     label = "pill"
                 )
@@ -795,11 +805,89 @@ private fun TinyTabBar(current: Int, tabs: List<TabSpec>, onTab: (Int) -> Unit) 
                             Icon(
                                 t.icon,
                                 contentDescription = t.label,
-                                tint = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant,
+                                tint = if (on) cs.primary else cs.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The bottom bar in the new look: it floats above the page with rounded corners and a soft shadow. It is no
+ * taller than the old bar (64 dp), so lists keep their space. The tab you're on gets a filled pill in the
+ * accent colour; every label stays visible.
+ */
+@Composable
+private fun FloatingTabBar(current: Int, tabs: List<TabSpec>, onTab: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    androidx.compose.material3.Surface(
+        color = cs.surface.copy(alpha = 0.94f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant),
+        modifier = Modifier
+            .windowInsetsPadding(androidx.compose.material3.NavigationBarDefaults.windowInsets)
+            .padding(start = 10.dp, end = 10.dp, bottom = 2.dp),
+    ) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.height(64.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            tabs.forEach { t ->
+                val on = t.tab == current
+                val pill by androidx.compose.animation.animateColorAsState(
+                    if (on) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                    tween(220),
+                    label = "tabPill"
+                )
+                val tint by androidx.compose.animation.animateColorAsState(
+                    if (on) cs.primary else cs.onSurfaceVariant,
+                    tween(220),
+                    label = "tabTint"
+                )
+                val grow by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0.92f, tween(220), label = "tabGrow")
+                androidx.compose.foundation.layout.Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { onTab(t.tab) },
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                ) {
+                    Box(
+                        Modifier
+                            .graphicsLayer { scaleX = grow; scaleY = grow }
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(15.dp))
+                            .background(pill)
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.Center
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                when {
+                                    t.tag != null -> Badge(containerColor = cs.tertiary) { Text(t.tag) }
+                                    t.badge > 0 -> Badge { Text(if (t.badge > 99) "99+" else "${t.badge}") }
+                                }
+                            }
+                        ) {
+                            Icon(t.icon, contentDescription = t.label, tint = tint, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Text(
+                        t.label,
+                        maxLines = 1,
+                        fontSize = 11.sp,
+                        fontWeight = if (on) androidx.compose.ui.text.font.FontWeight.ExtraBold else androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        color = tint,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                 }
             }
         }

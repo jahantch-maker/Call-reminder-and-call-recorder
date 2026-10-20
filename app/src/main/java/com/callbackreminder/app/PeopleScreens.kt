@@ -77,7 +77,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val Teal = Color(0xFF0FA68E)
-private val Amber = Color(0xFFB36B00)
+private val Amber: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFFC266) else Color(0xFFB36B00)
 
 @Composable
 private fun rememberTicker(resumeKey: Int): Long {
@@ -103,17 +103,17 @@ private fun kindIcon(k: WorkItem.Kind): ImageVector = when (k) {
 private fun kindColors(k: WorkItem.Kind): Pair<Color, Color> = when (k) {
     WorkItem.Kind.CALL -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
     WorkItem.Kind.TEXT -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
-    WorkItem.Kind.MY_TASK -> Color(0xFFEDE4FF) to Color(0xFF3F1F8C)
-    WorkItem.Kind.DOSSIER -> Color(0xFFD9F3EC) to Color(0xFF0B5A4C)
+    WorkItem.Kind.MY_TASK -> Tones.purple.bg to Tones.purple.fg
+    WorkItem.Kind.DOSSIER -> Tones.green.bg to Tones.green.fg
 }
 
 /** "Delayed 3×" in red or amber, or "On time" in green. */
 @Composable
 private fun DelayPill(delayed: Int) {
     val (bg, fg, text) = when {
-        delayed >= 3 -> Triple(Color(0xFFFFE3E6), Color(0xFF9A1B2B), "Delayed $delayed×")
-        delayed > 0 -> Triple(Color(0xFFFFF1D6), Amber, "Delayed $delayed×")
-        else -> Triple(Color(0xFFD9F3EC), Color(0xFF0B5A4C), "On time")
+        delayed >= 3 -> Triple(Tones.red.bg, Tones.red.fg, "Delayed $delayed×")
+        delayed > 0 -> Triple(Tones.amber.bg, Tones.amber.fg, "Delayed $delayed×")
+        else -> Triple(Tones.green.bg, Tones.green.fg, "On time")
     }
     Surface(shape = RoundedCornerShape(12.dp), color = bg) {
         Text(
@@ -368,9 +368,9 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             item(key = "counts") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MiniTile("${pending.size}", "Pending", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, Modifier.weight(1f))
-                    MiniTile("${pending.count { it.overdue }}", "Overdue", Color(0xFFFFE3E6), Color(0xFF9A1B2B), Modifier.weight(1f))
-                    MiniTile("${person?.delayed ?: 0}×", "Delayed", Color(0xFFFFF1D6), Amber, Modifier.weight(1f))
-                    MiniTile("${done.size}", "Done", Color(0xFFD9F3EC), Color(0xFF0B5A4C), Modifier.weight(1f))
+                    MiniTile("${pending.count { it.overdue }}", "Overdue", Tones.red.bg, Tones.red.fg, Modifier.weight(1f))
+                    MiniTile("${person?.delayed ?: 0}×", "Delayed", Tones.amber.bg, Tones.amber.fg, Modifier.weight(1f))
+                    MiniTile("${done.size}", "Done", Tones.green.bg, Tones.green.fg, Modifier.weight(1f))
                 }
             }
             item(key = "daily") {

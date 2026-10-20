@@ -92,8 +92,8 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.ZoneId
 
-private val NoTimeBg = Color(0xFFFFF1D6)
-private val NoTimeFg = Color(0xFF8A5300)
+private val NoTimeBg: Color @Composable get() = Tones.amber.bg
+private val NoTimeFg: Color @Composable get() = Tones.amber.fg
 
 /** The list tabs under "Tasks": All, Unsorted, your lists, ＋ New list. [selected] -1 is All. */
 @Composable
