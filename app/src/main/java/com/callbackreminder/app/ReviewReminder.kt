@@ -129,6 +129,12 @@ object ReviewReminder {
         am.setClockSafely(AlarmManager.AlarmClockInfo(at, openApp(ctx)), pi)
     }
 
+    /** A review session started: a snoozed review reminder still waiting would ask again for nothing. */
+    fun cancelSnooze(ctx: Context) {
+        ctx.getSystemService(AlarmManager::class.java).cancel(pending(ctx, REQ_SNOOZE))
+        cancelNotification(ctx)
+    }
+
     fun snooze(ctx: Context, minutes: Int) {
         cancelNotification(ctx)
         val at = System.currentTimeMillis() + minutes * 60_000L
@@ -146,6 +152,8 @@ object ReviewReminder {
     /** A review time arrived: show the popup if anything is waiting, and set the next one. */
     fun fire(ctx: Context) {
         schedule(ctx)
+        // A session is running or paused: it has its own resume reminder.
+        if (ReviewSession.init(ctx).active) return
         val counts = counts(ctx)
         if (counts.total == 0 || !Notify.on(ctx, NotifType.REVIEW)) return
         show(ctx, counts)

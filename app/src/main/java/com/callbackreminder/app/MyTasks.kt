@@ -37,12 +37,17 @@ data class MyTask(
     val remindBefore: List<Int> = emptyList(),
     /** How long it takes, in minutes (the Calendar books this much time from [dueAt]). */
     val durationMin: Int = MyTaskStore.DEFAULT_LENGTH,
+    /** What happened to it, oldest first (kept since v0.31; older tasks start empty). */
+    val events: List<TaskEvent> = emptyList(),
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
     val endAt: Long get() = dueAt + durationMin * 60_000L
     val timed: Boolean get() = dueAt > 0L
     val personTitle: String get() = name.ifBlank { number }
 }
+
+/** One line in a My task's History: created, time moved, done, not done. */
+data class TaskEvent(val at: Long, val text: String)
 
 /**
  * A repeat task you tick every day it comes up (My tasks › Dossier). It repeats on the chosen
@@ -205,6 +210,9 @@ object MyTaskStore {
                     position = o.optLong("position", o.optLong("createdAt")),
                     remindBefore = o.optJSONArray("remindBefore")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
                     durationMin = o.optInt("durationMin", DEFAULT_LENGTH),
+                    events = o.optJSONArray("events")?.let { a ->
+                        (0 until a.length()).map { a.getJSONObject(it).let { e -> TaskEvent(e.optLong("a"), e.optString("t")) } }
+                    } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -231,6 +239,7 @@ object MyTaskStore {
                     .put("position", t.position)
                     .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
                     .put("durationMin", t.durationMin)
+                    .put("events", JSONArray().apply { t.events.forEach { put(JSONObject().put("a", it.at).put("t", it.text)) } })
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -360,6 +369,7 @@ object MyTaskStore {
             position = minOf(top, now),
             remindBefore = remindBefore.distinct().sorted(),
             durationMin = durationMin.coerceIn(5, 24 * 60),
+            events = listOf(TaskEvent(now, if (dueAt > 0L) "Created · due ${Fmt.dueLabel(dueAt)}" else "Created · no time")),
         )
         save(_items.value + t)
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -379,6 +389,7 @@ object MyTaskStore {
             listId = listId ?: old.listId, starred = starred ?: old.starred,
             remindBefore = remindBefore?.distinct()?.sorted() ?: old.remindBefore,
             durationMin = durationMin?.coerceIn(5, 24 * 60) ?: old.durationMin,
+            events = old.events + listOfNotNull(timeEvent(old.dueAt, dueAt)),
         )
         save(_items.value.map { if (it.id == id) t else it })
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -389,7 +400,9 @@ object MyTaskStore {
     @Synchronized
     fun setDone(id: Long, done: Boolean) {
         val old = get(id) ?: return
-        val t = old.copy(done = done, doneAt = if (done) System.currentTimeMillis() else 0L)
+        if (old.done == done) return
+        val now = System.currentTimeMillis()
+        val t = old.copy(done = done, doneAt = if (done) now else 0L, events = old.events + TaskEvent(now, if (done) "Done" else "Not done, opened again"))
         save(_items.value.map { if (it.id == id) t else it })
         TaskAlarms.cancelTaskNotification(appCtx, id)
         if (done) TaskAlarms.cancelTask(appCtx, id) else TaskAlarms.scheduleTask(appCtx, t)
@@ -416,10 +429,21 @@ object MyTaskStore {
     @Synchronized
     fun setDue(id: Long, dueAt: Long) {
         val old = get(id) ?: return
-        val t = old.copy(dueAt = dueAt)
+        val t = old.copy(dueAt = dueAt, events = old.events + listOfNotNull(timeEvent(old.dueAt, dueAt)))
         save(_items.value.map { if (it.id == id) t else it })
         TaskAlarms.cancelTaskNotification(appCtx, id)
         if (!t.done) TaskAlarms.scheduleTask(appCtx, t)
+    }
+
+    /** A History line for a time change (null when the time stayed the same). */
+    private fun timeEvent(old: Long, new: Long): TaskEvent? {
+        if (old == new) return null
+        val now = System.currentTimeMillis()
+        return when {
+            new <= 0L -> TaskEvent(now, "Time removed (To schedule)")
+            old <= 0L -> TaskEvent(now, "Time set · ${Fmt.dueLabel(new)}")
+            else -> TaskEvent(now, "Time moved · ${Fmt.dueLabel(old)} → ${Fmt.dueLabel(new)}")
+        }
     }
 
     /** A new length (the Calendar's resize handle). */

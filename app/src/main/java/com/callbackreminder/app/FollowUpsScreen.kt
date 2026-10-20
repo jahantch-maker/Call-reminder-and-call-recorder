@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -99,6 +100,9 @@ object FollowUpsUi {
 
     /** Another screen asked for a view (e.g. Home's Calls tile). */
     val view = MutableStateFlow<Int?>(null)
+
+    /** "Show in Follow-ups ›": this follow-up (its row key) is scrolled to and outlined for a moment. */
+    val showEntry = MutableStateFlow<String?>(null)
 }
 
 /**
@@ -124,6 +128,17 @@ fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSche
     val textEdit by SmsUi.editRequest.collectAsState()
     LaunchedEffect(callShow, callTab) { if (callShow != null || callTab != null) view = FollowUpsUi.CALLS }
     LaunchedEffect(textShow, textTab, textEdit) { if (textShow != null || textTab != null || textEdit != null) view = FollowUpsUi.TEXTS }
+    // "Show in Follow-ups ›": Everything, Open or Done as the follow-up is, then the list scrolls to it.
+    val entryShow by FollowUpsUi.showEntry.collectAsState()
+    var reveal by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(entryShow) {
+        val key = entryShow ?: return@LaunchedEffect
+        FollowUpsUi.showEntry.value = null
+        val e = entries(ReminderStore.items.value, SmsStore.items.value).firstOrNull { it.key == key } ?: return@LaunchedEffect
+        view = FollowUpsUi.ALL
+        done = !e.open
+        reveal = key
+    }
 
     val bar: @Composable () -> Unit = {
         FollowUpsBar(
@@ -146,6 +161,8 @@ fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSche
             showDone = done,
             sort = sort,
             onOpenToSchedule = onOpenToSchedule,
+            reveal = reveal,
+            onRevealed = { reveal = null },
         )
     }
 }
@@ -284,6 +301,8 @@ private fun FollowUpsAll(
     showDone: Boolean,
     sort: Int,
     onOpenToSchedule: () -> Unit,
+    reveal: String? = null,
+    onRevealed: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
@@ -462,6 +481,15 @@ private fun FollowUpsAll(
     ) { padding ->
         Box(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        var outlined by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(reveal) {
+            val key = reveal ?: return@LaunchedEffect
+            onRevealed()
+            outlined = key
+            listState.revealKey(key)
+            kotlinx.coroutines.delay(3_000L)
+            if (outlined == key) outlined = null
+        }
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(
@@ -532,7 +560,11 @@ private fun FollowUpsAll(
                 if (list.isEmpty()) return
                 item(key = "group-$key") { DayHeader(title, count, color) }
                 itemsIndexed(list, key = { _, e -> e.key }) { i, e ->
-                    Box(Modifier.animateItem()) { row(e, rowPos(i, list.size)) }
+                    Box(
+                        Modifier
+                            .animateItem()
+                            .then(if (outlined == e.key) Modifier.border(2.5.dp, cs.primary, RoundedCornerShape(18.dp)) else Modifier)
+                    ) { row(e, rowPos(i, list.size)) }
                 }
             }
 

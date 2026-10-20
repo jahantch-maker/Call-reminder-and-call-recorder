@@ -115,6 +115,9 @@ object MyTasksUi {
 
     /** Search tapped a task: open its list and outline it for a moment. */
     val showTask = MutableStateFlow<Long?>(null)
+
+    /** The outlined task's row is on screen (the list stops scrolling down to find it). */
+    val seen = MutableStateFlow(0L)
     val showDossier = MutableStateFlow<Long?>(null)
 }
 
@@ -303,6 +306,12 @@ fun MyTasksScreen(resumeKey: Int) {
     ) { padding ->
         Box(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        // An outlined task further down: scroll until its row shows (it then brings itself fully into view).
+        LaunchedEffect(highlightId) {
+            val id = highlightId?.takeIf { it > 0L } ?: return@LaunchedEffect
+            MyTasksUi.seen.value = 0L
+            listState.revealUntil { MyTasksUi.seen.value == id }
+        }
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(

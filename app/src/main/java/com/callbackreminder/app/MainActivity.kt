@@ -403,6 +403,19 @@ private fun AppRoot(
         if (openMessagesKey > 0) showTab(textsTab())
     }
 
+    // A task tapped on Home, People or a person page opens right there; "Show in … ›" goes to its tab.
+    val openTask by TaskOpenUi.request.collectAsState()
+    openTask?.let { t ->
+        TaskEditorDialog(
+            task = t,
+            onDismiss = { TaskOpenUi.request.value = null },
+            onShowInList = { mine ->
+                TaskOpenUi.request.value = null
+                showTab(if (mine) Tab.MY_TASKS else Tab.FOLLOW_UPS)
+            },
+        )
+    }
+
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {
         if (openTabKey > 0) {
@@ -520,13 +533,13 @@ private fun AppRoot(
                 Screen.PERSON -> PersonScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },
-                    onOpenItem = { showTab(tabFor(it)) },
+                    onOpenItem = { if (!TaskOpenUi.open(it)) showTab(tabFor(it)) },
                 )
                 Screen.MY_DAY -> MyDayScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },
                     onStart = { showTab(Tab.HOME) },
-                    onOpenItem = { showTab(tabFor(it)) },
+                    onOpenItem = { if (!TaskOpenUi.open(it)) showTab(tabFor(it)) },
                 )
                 Screen.DOSSIER_SETTINGS -> DossierSettingsScreen(onBack = { back() })
                 Screen.DOSSIER_REVIEW -> DossierReviewScreen(
@@ -720,7 +733,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                             PeopleUi.current.value = it
                             open(Screen.PERSON)
                         },
-                        onOpenItem = { onTab(tabFor(it)) },
+                        onOpenItem = { if (!TaskOpenUi.open(it)) onTab(tabFor(it)) },
                         onOpenSearch = {
                             SearchUi.initial.value = it
                             open(Screen.SEARCH)

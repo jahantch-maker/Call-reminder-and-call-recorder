@@ -103,24 +103,28 @@ fun FollowUpSheet(
             Spacer(Modifier.height(8.dp))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(text = title, size = 48.dp)
-            Spacer(Modifier.width(12.dp))
+        // Task first: the task is the big title, the person a small line under it.
+        Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = task.note.ifBlank { "Call back ${task.title}" },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(text = title, size = 22.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "$title · $subtitle",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             IconButton(onClick = onNext) {
                 Icon(Icons.Rounded.Close, contentDescription = "Skip")
@@ -152,7 +156,7 @@ fun FollowUpSheet(
             }
         }
 
-        // The task this call was about.
+        // When the task was due.
         Spacer(Modifier.height(12.dp))
         Surface(
             shape = RoundedCornerShape(14.dp),
@@ -165,11 +169,6 @@ fun FollowUpSheet(
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    task.note.ifBlank { "Call back ${task.title}" },
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     buildString {
@@ -390,24 +389,28 @@ fun TextFollowUpSheet(
             Spacer(Modifier.height(8.dp))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(text = title, size = 48.dp)
-            Spacer(Modifier.width(12.dp))
+        // Task first: the task is the big title, the person a small line under it.
+        Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = task.message,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(text = title, size = 22.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "$title · $subtitle",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             IconButton(onClick = { close() }) {
                 Icon(Icons.Rounded.Close, contentDescription = "Close")
@@ -453,7 +456,6 @@ fun TextFollowUpSheet(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(task.message, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 4)
                 if (task.reviewAt > 0L) {
                     Text(
                         "In To review since ${Fmt.dueLabel(task.reviewAt)}",
