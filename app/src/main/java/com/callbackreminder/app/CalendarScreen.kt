@@ -15,6 +15,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -67,6 +71,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
@@ -82,6 +87,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -223,6 +229,26 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
     var openBlock by remember { mutableStateOf<CalBlock?>(null) }
     var hourList by remember { mutableStateOf<List<CalFollowUp>?>(null) }
     var snoozeFu by remember { mutableStateOf<CalFollowUp?>(null) }
+    val gVersion by GoogleCal.version.collectAsState()
+    val googleOn = remember(gVersion) { GoogleCal.enabled(ctx) }
+    var syncing by remember { mutableStateOf(false) }
+    var pickCals by remember { mutableStateOf(false) }
+    // First time Google is on (also right after this update): the calendar list opens once, all off.
+    LaunchedEffect(googleOn) { if (googleOn && !GoogleCal.picked(ctx)) pickCals = true }
+    fun syncGoogle() {
+        if (syncing) return
+        if (GoogleCal.onIds(ctx).isEmpty()) {
+            pickCals = true
+            return
+        }
+        syncing = true
+        scope.launch {
+            GoogleCal.syncNow(ctx)
+            syncing = false
+            snack.currentSnackbarData?.dismiss()
+            snack.showSnackbar("Google Calendar updated")
+        }
+    }
     var addAt by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var editTask by remember { mutableStateOf<MyTask?>(null) }
     var editDossier by remember { mutableStateOf<DossierTask?>(null) }
@@ -291,6 +317,8 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
                 onToday = { dateDay = today.toEpochDay() },
                 onSearch = onOpenSearch,
                 onSettings = onOpenSettings,
+                refreshing = syncing,
+                onRefresh = if (googleOn) ({ syncGoogle() }) else null,
             )
             DayStrip(date = date, today = today, motion = motion) { dateDay = it.toEpochDay() }
             GoogleAsk()
@@ -384,6 +412,12 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
         ) { DatePicker(state = state) }
     }
 
+    if (pickCals) {
+        GoogleCalendarsSheet(onDismiss = {
+            GoogleCal.setPicked(ctx)
+            pickCals = false
+        })
+    }
     openFu?.let { f ->
         FollowUpActions(
             f = f,
@@ -491,6 +525,8 @@ private fun CalHeader(
     onToday: () -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     Row(
@@ -521,14 +557,29 @@ private fun CalHeader(
                 Text("Today", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
             }
         }
-        Spacer(Modifier.weight(1f))
         Text(
             "${if (freeMin > 0) CalendarData.lengthLabel(freeMin) else "0 m"} free · $fuCount FU",
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = cs.onSurfaceVariant,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f).padding(start = 6.dp)
         )
+        if (onRefresh != null) {
+            // ↻ spins while Google syncs, then stops where it is with a small ease.
+            val spin = rememberInfiniteTransition(label = "sync")
+            val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "syncAngle")
+            IconButton(onClick = onRefresh, enabled = !refreshing, modifier = Modifier.size(38.dp)) {
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = "Refresh Google Calendar",
+                    tint = if (refreshing) cs.primary else cs.onSurface,
+                    modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = if (refreshing) angle else 0f }
+                )
+            }
+        }
         IconButton(onClick = onSearch, modifier = Modifier.size(38.dp)) {
             Icon(Icons.Rounded.Search, contentDescription = "Search", modifier = Modifier.size(20.dp))
         }
@@ -1449,10 +1500,11 @@ private fun FitToggle(bestFit: Boolean, motion: Boolean, onChange: (Boolean) -> 
     }
 }
 
-/** Tap a follow-up: Call / Done / Snooze. */
+/** Tap a follow-up: Call / Done / Snooze / WhatsApp (his chat opens with the message typed). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () -> Unit, onDone: () -> Unit, onSnooze: () -> Unit) {
+    val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp + navBarMissing()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1472,6 +1524,13 @@ private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () ->
                 }
                 OutlinedButton(onClick = onDone, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("✓ Done") }
                 OutlinedButton(onClick = onSnooze, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Snooze") }
+                if (f.number.isNotBlank()) {
+                    WhatsAppAction(size = 48.dp) {
+                        val sent = if (f.isCall) ReminderStore.get(f.id)?.let { WhatsApp.forCall(ctx, it) }
+                        else SmsStore.get(f.id)?.let { WhatsApp.forText(ctx, it) }
+                        if (sent == null) WhatsApp.open(ctx, f.number, WhatsApp.message(ctx, "", f.title, f.at, f.person))
+                    }
+                }
             }
         }
     }
@@ -1657,7 +1716,77 @@ fun WorkHoursSetup(first: Boolean, onSaved: () -> Unit) {
     }
 }
 
-/** Settings › Calendar: working hours (required) and the Google Calendar switch. */
+/** Opens once (and from ↻ when nothing is on yet): pick which Google calendars show. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GoogleCalendarsSheet(onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp + navBarMissing()).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("Which calendars to show?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "All are off. Turn on the ones you want. You can change this later in Calendar settings.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            GoogleCalendarSwitches()
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Done") }
+        }
+    }
+}
+
+/** Every account on the phone with its calendars as switches (Holidays and Birthdays are their own). */
+@Composable
+private fun GoogleCalendarSwitches() {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val motion = motionOn(ctx)
+    val g by GoogleCal.version.collectAsState()
+    val all by produceState(initialValue = emptyList<GCalendar>(), g) {
+        value = kotlinx.coroutines.withContext(Dispatchers.IO) { GoogleCal.calendars(ctx) }
+    }
+    val on = remember(g) { GoogleCal.onIds(ctx) }
+    if (all.isEmpty()) {
+        Text("No calendars found on this phone.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+        return
+    }
+    Column(Modifier.fillMaxWidth()) {
+        all.groupBy { it.account }.forEach { (account, list) ->
+            Text(
+                account.ifBlank { "On this phone" },
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = cs.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+            )
+            list.forEach { cal ->
+                val checked = cal.id in on
+                val alpha by animateFloatAsState(if (checked) 1f else 0.55f, calSpec(motion, 220), label = "calOn")
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .clickable { GoogleCal.setCalendarOn(ctx, cal.id, !checked) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(12.dp).clip(CircleShape).background(Color(cal.color or 0xFF000000.toInt())).alpha(alpha))
+                    Text(
+                        cal.name,
+                        modifier = Modifier.weight(1f).padding(horizontal = 10.dp).alpha(alpha),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Switch(checked = checked, onCheckedChange = { GoogleCal.setCalendarOn(ctx, cal.id, it) })
+                }
+            }
+        }
+    }
+}
+
+/** Settings › Calendar: working hours (required), the Google Calendar switch and which calendars show. */
 @Composable
 fun CalendarSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -1693,6 +1822,14 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
             SwitchRow("Show Google Calendar", googleOn) { on ->
                 if (on && !GoogleCal.hasPermission(ctx)) launcher.launch(Manifest.permission.READ_CALENDAR)
                 else GoogleCal.setEnabled(ctx, on)
+            }
+        }
+        AnimatedVisibility(visible = googleOn, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            SectionCard(
+                title = "Google calendars",
+                subtitle = "Only the calendars switched on here show in the Calendar. Other accounts, Holidays and Birthdays stay out unless you turn them on. A calendar added later starts off."
+            ) {
+                GoogleCalendarSwitches()
             }
         }
     }

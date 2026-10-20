@@ -1,14 +1,20 @@
 package com.callbackreminder.app
 
 import android.Manifest
+import android.accounts.Account
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
+import android.os.Bundle
 import androidx.compose.runtime.compositionLocalOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -57,6 +63,15 @@ data class GEvent(
     val color: Int,
 )
 
+/** One calendar on the phone (an account's own calendar, its Holidays, Birthdays …), for the on/off switches. */
+data class GCalendar(
+    val id: Long,
+    val account: String,
+    val accountType: String,
+    val name: String,
+    val color: Int,
+)
+
 /**
  * Reads the Google Calendar that is synced to this phone (Android's calendar store), with the
  * Read calendar permission. No Google sign-in; nothing is written back.
@@ -64,6 +79,8 @@ data class GEvent(
 object GoogleCal {
     private const val KEY_ON = "gcal_on"
     private const val KEY_ASKED = "gcal_asked"
+    private const val KEY_CALS = "gcal_cals"
+    private const val KEY_PICKED = "gcal_picked"
     private const val CACHE_MS = 60_000L
 
     private val cache = HashMap<LocalDate, Pair<Long, List<GEvent>>>()
@@ -86,6 +103,81 @@ object GoogleCal {
 
     fun setAsked(c: Context) = AppSettings.set(c, KEY_ASKED, true)
 
+    /**
+     * The calendars you switched on in Calendar settings › Google calendars. Everything else stays out
+     * (other accounts, Holidays, Birthdays), and a calendar added to the phone later starts off.
+     */
+    fun onIds(c: Context): Set<Long> =
+        AppSettings.getString(c, KEY_CALS).split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+
+    fun setCalendarOn(c: Context, id: Long, on: Boolean) {
+        val ids = onIds(c).toMutableSet()
+        if (on) ids.add(id) else ids.remove(id)
+        AppSettings.setString(c, KEY_CALS, ids.joinToString(","))
+        refresh()
+    }
+
+    /** False until the calendar list has been shown once (it opens by itself the first time). */
+    fun picked(c: Context) = AppSettings.get(c, KEY_PICKED, false)
+    fun setPicked(c: Context) = AppSettings.set(c, KEY_PICKED, true)
+
+    /** Every calendar on the phone, grouped by account (sorted by account, then name). */
+    fun calendars(c: Context): List<GCalendar> {
+        if (!hasPermission(c)) return emptyList()
+        val cols = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.CALENDAR_COLOR,
+        )
+        return try {
+            c.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, cols, null, null, null)?.use { cur ->
+                val out = ArrayList<GCalendar>()
+                while (cur.moveToNext()) {
+                    out.add(
+                        GCalendar(
+                            id = cur.getLong(0),
+                            account = cur.getString(1).orEmpty(),
+                            accountType = cur.getString(2).orEmpty(),
+                            name = cur.getString(3).orEmpty().ifBlank { "(No name)" },
+                            color = cur.getInt(4),
+                        )
+                    )
+                }
+                out.sortedWith(compareBy({ it.account.lowercase() }, { it.name.lowercase() }))
+            } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * The ↻ button: asks Android to sync the switched-on accounts with Google now, waits until that sync
+     * finishes (at most 20 s), then reloads.
+     */
+    suspend fun syncNow(c: Context) = withContext(Dispatchers.IO) {
+        val on = onIds(c)
+        val accounts = calendars(c)
+            .filter { it.id in on && it.accountType != CalendarContract.ACCOUNT_TYPE_LOCAL && it.account.isNotBlank() }
+            .map { Account(it.account, it.accountType) }
+            .distinct()
+        val extras = Bundle().apply {
+            putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+            putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+        }
+        accounts.forEach { runCatching { ContentResolver.requestSync(it, CalendarContract.AUTHORITY, extras) } }
+        delay(1_500L)
+        val until = System.currentTimeMillis() + 20_000L
+        fun busy() = accounts.any { a ->
+            runCatching {
+                ContentResolver.isSyncActive(a, CalendarContract.AUTHORITY) || ContentResolver.isSyncPending(a, CalendarContract.AUTHORITY)
+            }.getOrDefault(false)
+        }
+        while (System.currentTimeMillis() < until && busy()) delay(500L)
+        refresh()
+    }
+
     @Synchronized
     fun refresh() {
         cache.clear()
@@ -96,14 +188,16 @@ object GoogleCal {
     @Synchronized
     fun events(c: Context, date: LocalDate): List<GEvent> {
         if (!enabled(c)) return emptyList()
+        val ids = onIds(c)
+        if (ids.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
         cache[date]?.let { (at, list) -> if (now - at < CACHE_MS) return list }
-        val list = query(c, date)
+        val list = query(c, date, ids)
         cache[date] = now to list
         return list
     }
 
-    private fun query(c: Context, date: LocalDate): List<GEvent> {
+    private fun query(c: Context, date: LocalDate, ids: Set<Long>): List<GEvent> {
         val from = CalendarData.at(date, 0)
         val to = CalendarData.at(date.plusDays(1), 0)
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
@@ -121,7 +215,9 @@ object GoogleCal {
             CalendarContract.Instances.SELF_ATTENDEE_STATUS,
         )
         return try {
-            c.contentResolver.query(uri, cols, "${CalendarContract.Instances.VISIBLE} = 1", null, CalendarContract.Instances.BEGIN)
+            c.contentResolver.query(
+                uri, cols, "${CalendarContract.Instances.CALENDAR_ID} IN (${ids.joinToString(",")})", null, CalendarContract.Instances.BEGIN
+            )
                 ?.use { cur ->
                     val out = ArrayList<GEvent>()
                     while (cur.moveToNext()) {
