@@ -122,6 +122,10 @@ enum class TitleStyle { NORMAL, NO_TASK, DONE }
 @Composable
 private fun isDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
+/** The orange chip and Snooze colours (fill to text), also used by the home screen widgets. */
+internal val OrangeDark = Color(0xFF4A3510) to Color(0xFFFFD58A)
+internal val OrangeLight = Color(0xFFFFF1D6) to Color(0xFF7A4B00)
+
 @Composable
 fun chipColors(tone: ChipTone): Pair<Color, Color> {
     val cs = MaterialTheme.colorScheme
@@ -130,7 +134,7 @@ fun chipColors(tone: ChipTone): Pair<Color, Color> {
         ChipTone.MUTED -> cs.surfaceVariant to cs.onSurfaceVariant
         ChipTone.RED -> cs.errorContainer to cs.onErrorContainer
         ChipTone.GREEN -> cs.secondaryContainer to cs.onSecondaryContainer
-        ChipTone.ORANGE -> if (isDark()) Color(0xFF4A3510) to Color(0xFFFFD58A) else Color(0xFFFFF1D6) to Color(0xFF7A4B00)
+        ChipTone.ORANGE -> if (isDark()) OrangeDark else OrangeLight
     }
 }
 

@@ -2,4 +2,18 @@
     <string name="app_name">Callback Reminder</string>
     <string name="rec_a11y_label">Callback Reminder call recording</string>
     <string name="rec_a11y_desc">Lets Callback Reminder keep the microphone working while it records a call. It does not read or change anything on your screen.</string>
+    <string name="widget_follow_ups_label">Follow-ups</string>
+    <string name="widget_follow_ups_desc">Your follow-ups with Call, Text, WhatsApp, Done and Snooze</string>
+    <string name="widget_my_tasks_label">My tasks</string>
+    <string name="widget_my_tasks_desc">One of your task lists with Done</string>
+    <string name="widget_review_label">Review</string>
+    <string name="widget_review_desc">To review, To schedule and Overdue counts with Start review</string>
+    <string name="widget_daily_label">Daily ticks</string>
+    <string name="widget_daily_desc">Today\'s Dossier items to tick and your score</string>
+    <string name="widget_quick_add_label">Quick add</string>
+    <string name="widget_quick_add_desc">Add a follow-up or a task, or speak it</string>
+    <string name="widget_cal_tasks_label">My tasks calendar</string>
+    <string name="widget_cal_tasks_desc">Today\'s tasks and Google meetings by hour, with free gaps</string>
+    <string name="widget_cal_follow_ups_label">Follow-ups calendar</string>
+    <string name="widget_cal_follow_ups_desc">Today\'s follow-ups by hour, tap to call</string>
 </resources>

@@ -98,6 +98,12 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PERSON = "person_key"
         /** The "Daily lists ready" notification: the WhatsApp send page. */
         const val OPEN_DAILY_WA = "daily_wa"
+        /** Home screen widgets: the Follow-ups tab, To schedule and the Calendar tab. */
+        const val OPEN_FOLLOW_UPS = "follow_ups"
+        const val OPEN_TO_SCHEDULE = "to_schedule"
+        const val OPEN_CALENDAR = "calendar"
+        /** With [OPEN_MY_TASKS]: the task to show (outlined for a moment). */
+        const val EXTRA_TASK = "task_id"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -171,6 +177,9 @@ class MainActivity : ComponentActivity() {
         when (asked) {
             OPEN_MY_TASKS, OPEN_DOSSIER -> {
                 MyTasksUi.tabRequest.value = if (asked == OPEN_DOSSIER) MyTasksUi.DOSSIER else MyTasksUi.ONE_TIME
+                val task = intent?.getLongExtra(EXTRA_TASK, -1L) ?: -1L
+                if (task >= 0) MyTasksUi.showTask.value = task
+                intent?.removeExtra(EXTRA_TASK)
                 intent?.removeExtra(EXTRA_OPEN)
                 showTab(Tab.MY_TASKS)
                 return
@@ -192,6 +201,22 @@ class MainActivity : ComponentActivity() {
             OPEN_DAILY_WA -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 showTab(Tab.HOME, Screen.DAILY_WA)
+                return
+            }
+            OPEN_FOLLOW_UPS -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                FollowUpsUi.view.value = FollowUpsUi.ALL
+                showTab(Tab.FOLLOW_UPS)
+                return
+            }
+            OPEN_TO_SCHEDULE -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.HOME, Screen.TO_SCHEDULE)
+                return
+            }
+            OPEN_CALENDAR -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.CALENDAR)
                 return
             }
             OPEN_MY_DAY -> {

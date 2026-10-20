@@ -498,10 +498,12 @@ internal fun MyTaskDialog(
     /** A new task's time and length to start with (the Calendar's "＋ Add" in a free gap). */
     initialDue: Long = 0L,
     initialLength: Int = MyTaskStore.DEFAULT_LENGTH,
+    /** A new task's text to start with (the widget's 🎤). */
+    initialTitle: String = "",
 ) {
     val ctx = LocalContext.current
     val lists by MyTaskStore.lists.collectAsState()
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
+    var title by remember { mutableStateOf(existing?.title ?: initialTitle) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var showNote by remember { mutableStateOf(existing?.note?.isNotBlank() == true) }
     var due by remember { mutableLongStateOf(existing?.dueAt ?: initialDue) }

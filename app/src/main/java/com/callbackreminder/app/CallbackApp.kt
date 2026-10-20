@@ -12,5 +12,6 @@ class CallbackApp : Application() {
         OffDays.init(this)
         Notifier.createChannels(this)
         SmsNotifier.createChannel(this)
+        WidgetSync.start(this)
     }
 }

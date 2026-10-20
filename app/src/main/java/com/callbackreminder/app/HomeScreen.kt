@@ -203,6 +203,8 @@ fun HomeScreen(
 
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
+            item(key = "widgets_tip") { WidgetsTip() }
+
             item(key = "tiles") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -656,5 +658,65 @@ private fun Banner(title: String, body: String, button: String, onClick: () -> U
             Spacer(Modifier.height(12.dp))
             Button(onClick = onClick) { Text(button) }
         }
+    }
+}
+
+/** One-time card: the app now has home screen widgets. Show me explains how to add one; Dismiss hides it for good. */
+@Composable
+private fun WidgetsTip() {
+    val ctx = LocalContext.current
+    var shown by remember { mutableStateOf(!WidgetPrefs.tipDismissed(ctx)) }
+    var howTo by remember { mutableStateOf(false) }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = shown,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+    ) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    "New: home screen widgets",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Follow-ups, My tasks, Review, Daily ticks, Quick add and two calendars, right on your home screen.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { howTo = true }) { Text("Show me") }
+                    TextButton(onClick = { WidgetPrefs.dismissTip(ctx); shown = false }) { Text("Dismiss") }
+                }
+            }
+        }
+    }
+    if (howTo) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { howTo = false },
+            title = { Text("Add a widget") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("1.  Long-press an empty spot on your home screen.")
+                    Text("2.  Tap Widgets.")
+                    Text("3.  Find Callback Reminder, then drag the widget you want onto the screen.")
+                    Text(
+                        "It asks how it should look when you drop it. Long-press it later to change that.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { howTo = false; WidgetPrefs.dismissTip(ctx); shown = false }) { Text("Got it") }
+            },
+            dismissButton = { TextButton(onClick = { howTo = false }) { Text("Later") } },
+        )
     }
 }
