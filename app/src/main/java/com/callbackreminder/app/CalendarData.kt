@@ -274,6 +274,7 @@ data class CalFollowUp(
     val number: String,
     val at: Long,
     val overdue: Boolean,
+    val done: Boolean = false,
 ) {
     val key: String get() = (if (isCall) "c" else "t") + "$id@$at"
 }
@@ -287,13 +288,17 @@ object CalendarData {
 
     fun dateOf(ms: Long): LocalDate = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
 
-    /** Everything that books time on [date] (done My tasks included, so you see them), sorted by start. */
+    /**
+     * Everything that books time on [date], sorted by start. Done My tasks stay (greyed) unless Calendar
+     * settings › Done tasks says they leave; done Dossier ticks always stay.
+     */
     fun blocks(c: Context, date: LocalDate, excludeTaskId: Long = -1L): List<CalBlock> {
         val from = at(date, 0)
         val to = at(date.plusDays(1), 0)
         val out = ArrayList<CalBlock>()
+        val doneLeaves = CardColours.doneLeaves(c)
         MyTaskStore.items.value.forEach { t ->
-            if (t.timed && t.id != excludeTaskId && t.dueAt < to && t.endAt > from) {
+            if (t.timed && t.id != excludeTaskId && t.dueAt < to && t.endAt > from && !(t.done && doneLeaves)) {
                 out += CalBlock(CalBlock.Kind.TASK, t.id, t.title, t.personTitle, t.dueAt, t.endAt, t.done)
             }
         }
@@ -313,21 +318,29 @@ object CalendarData {
     }
 
     /** The follow-ups on [date]: open calls at their due time, and each set time of active texts. */
-    fun followUps(date: LocalDate, now: Long = System.currentTimeMillis()): List<CalFollowUp> {
+    /** The day's follow-ups; done ones too (greyed) unless Calendar settings › Done tasks says they leave. */
+    fun followUps(c: Context, date: LocalDate, now: Long = System.currentTimeMillis()): List<CalFollowUp> {
         val from = at(date, 0)
         val to = at(date.plusDays(1), 0)
+        val showDone = !CardColours.doneLeaves(c)
         val out = ArrayList<CalFollowUp>()
         ReminderStore.items.value.forEach { r ->
-            if (!r.done && !r.review && r.dueAt in from until to) {
+            val done = r.done && !r.review
+            if ((!r.done || (done && showDone)) && !r.review && r.dueAt in from until to) {
                 out += CalFollowUp(
-                    true, r.id, r.note.ifBlank { "Call back" }, r.name.ifBlank { r.number }, r.number, r.dueAt, r.dueAt <= now
+                    true, r.id, r.note.ifBlank { "Call back" }, r.name.ifBlank { r.number }, r.number, r.dueAt,
+                    !done && r.dueAt <= now, done
                 )
             }
         }
         SmsStore.items.value.forEach { s ->
-            if (s.active) {
+            val done = s.done && s.review == null
+            if (s.active || (done && showDone)) {
                 s.baseTimes.filter { it in from until to }.forEach { t ->
-                    out += CalFollowUp(false, s.id, s.message.lineSequence().firstOrNull().orEmpty().ifBlank { "Text" }, s.title, s.number, t, false)
+                    out += CalFollowUp(
+                        false, s.id, s.message.lineSequence().firstOrNull().orEmpty().ifBlank { "Text" }, s.title, s.number, t,
+                        false, done && !s.active
+                    )
                 }
             }
         }
