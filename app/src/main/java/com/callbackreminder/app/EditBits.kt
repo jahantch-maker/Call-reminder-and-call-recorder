@@ -42,15 +42,18 @@ val StarGold = Color(0xFFF5B400)
  * Cancel and Back for an edit window. When [changed] says nothing was changed it closes at once;
  * otherwise it asks "Discard changes?" and only Discard closes it (throwing the edits away).
  * Returns the function to call from Cancel, Back and the window's dismiss request.
+ * [onKeep] runs on "Keep editing": a bottom sheet slid away before asking must be brought back up,
+ * or its hidden window keeps covering the app and nothing responds to taps.
  */
 @Composable
-fun rememberDiscardGuard(changed: () -> Boolean, onClose: () -> Unit): () -> Unit {
+fun rememberDiscardGuard(changed: () -> Boolean, onClose: () -> Unit, onKeep: () -> Unit = {}): () -> Unit {
     var asking by remember { mutableStateOf(false) }
     val isChanged by rememberUpdatedState(changed)
     val close by rememberUpdatedState(onClose)
+    val keep by rememberUpdatedState(onKeep)
     if (asking) {
         AlertDialog(
-            onDismissRequest = { asking = false },
+            onDismissRequest = { asking = false; keep() },
             title = { Text("Discard changes?") },
             text = { Text("You changed this. Discard puts it back exactly as it was.") },
             confirmButton = {
@@ -58,7 +61,7 @@ fun rememberDiscardGuard(changed: () -> Boolean, onClose: () -> Unit): () -> Uni
                     Text("Discard", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { asking = false }) { Text("Keep editing") } },
+            dismissButton = { TextButton(onClick = { asking = false; keep() }) { Text("Keep editing") } },
         )
     }
     return remember { { if (isChanged()) asking = true else close() } }

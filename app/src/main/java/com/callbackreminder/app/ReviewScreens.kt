@@ -813,7 +813,9 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
     val mine by MyTaskStore.items.collectAsState()
     LaunchedEffect(resumeKey) { ReviewSession.init(ctx) }
     val counts = remember(calls, texts, sched, mine, resumeKey) { ReviewData.shownCounts(ctx) }
-    val total = counts.sumOf { it.second }
+    // The red number is what "Start review" goes through; shown sections left out of the session
+    // (like "Still due today") stay in the plain line under it only.
+    val total = remember(counts) { counts.filter { ReviewPrefs.session(ctx, it.first) }.sumOf { it.second } }
 
     if (s.active) {
         Surface(shape = RoundedCornerShape(20.dp), color = PausedBg, modifier = Modifier.fillMaxWidth()) {

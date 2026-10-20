@@ -54,6 +54,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -96,6 +97,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.DayOfWeek
@@ -210,10 +212,28 @@ fun MyTasksScreen(resumeKey: Int) {
     val viewPending = inView.filter { !it.done && (!starredOnly || it.starred) }
     val viewDone = inView.filter { it.done && (!starredOnly || it.starred) }.sortedByDescending { it.doneAt }
 
+    // Ticking done plays first (circle fills, ✓ pops, buzz, strike), then the row slides away and only
+    // then is it marked done; marking it at once moved it out of the list before anything could be seen.
+    var ticking by remember { mutableStateOf(setOf<Long>()) }
+    var leaving by remember { mutableStateOf(setOf<Long>()) }
     fun tick(t: MyTask) {
         val before = t
-        MyTaskStore.setDone(t.id, !t.done)
-        scope.offerUndo(snack, if (t.done) "Not done · ${t.title}" else "Done · ${t.title}") { MyTaskStore.restore(before) }
+        if (t.done) {
+            MyTaskStore.setDone(t.id, false)
+            scope.offerUndo(snack, "Not done · ${t.title}") { MyTaskStore.restore(before) }
+            return
+        }
+        if (t.id in ticking) return
+        ticking = ticking + t.id
+        scope.launch {
+            delay(450L)
+            leaving = leaving + t.id
+            delay(280L)
+            MyTaskStore.setDone(t.id, true)
+            ticking = ticking - t.id
+            leaving = leaving - t.id
+            scope.offerUndo(snack, "Done · ${t.title}") { MyTaskStore.restore(before) }
+        }
     }
     fun deleteTask(t: MyTask) {
         MyTaskStore.delete(t.id)
@@ -242,8 +262,16 @@ fun MyTasksScreen(resumeKey: Int) {
 
     @Composable
     fun row(t: MyTask, showList: Boolean, handle: Modifier? = null) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = t.id !in leaving,
+            enter = androidx.compose.animation.EnterTransition.None,
+            exit = androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { it / 3 } +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(240)) +
+                androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(280)),
+        ) {
         GTaskRow(
             t = t,
+            finishing = t.id in ticking,
             now = now,
             listName = if (showList) MyTaskStore.listName(t.listId) else null,
             highlighted = t.id == highlightId,
@@ -259,6 +287,7 @@ fun MyTasksScreen(resumeKey: Int) {
             onMoveToFollowUps = { moveFor = t },
             onDelete = { deleteTask(t) },
         )
+        }
     }
 
     Scaffold(
@@ -880,13 +909,20 @@ private fun nextDay(t: DossierTask, after: LocalDate): LocalDate? {
 private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var reason by remember { mutableStateOf(rec?.reason.orEmpty()) }
-    val cancel = rememberDiscardGuard(changed = { reason != rec?.reason.orEmpty() }, onClose = onDismiss)
+    val sheetScope = rememberCoroutineScope()
+    val sheetRef = remember { arrayOfNulls<SheetState>(1) }
+    val cancel = rememberDiscardGuard(
+        changed = { reason != rec?.reason.orEmpty() },
+        onClose = onDismiss,
+        onKeep = { sheetRef[0]?.let { s -> sheetScope.launch { s.show() } } },
+    )
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
         confirmValueChange = {
             if (it == SheetValue.Hidden && reason != rec?.reason.orEmpty()) { cancel(); false } else true
         }
     )
+    sheetRef[0] = sheetState
     val due = t.dueAt(day) <= System.currentTimeMillis()
 
     ModalBottomSheet(onDismissRequest = cancel, sheetState = sheetState) {

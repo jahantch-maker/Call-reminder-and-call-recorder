@@ -53,11 +53,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.ZoneId
@@ -173,6 +176,8 @@ internal fun GTaskRow(
     listName: String?,
     highlighted: Boolean = false,
     handle: Modifier? = null,
+    /** Just ticked: shown done (filled circle, struck through) while it plays out, before it leaves. */
+    finishing: Boolean = false,
     onTick: () -> Unit,
     onStar: () -> Unit,
     onOpen: () -> Unit,
@@ -194,15 +199,20 @@ internal fun GTaskRow(
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Top
     ) {
-        Box(Modifier.padding(top = 1.dp)) { TickCircle(done = t.done, onClick = onTick) }
+        Box(Modifier.padding(top = 1.dp)) { TickCircle(done = t.done || finishing, onClick = onTick) }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            val struck = t.done || finishing
+            val titleColor by androidx.compose.animation.animateColorAsState(
+                if (struck) cs.onSurfaceVariant else if (highlighted) cs.primary else cs.onSurface,
+                androidx.compose.animation.core.tween(220), label = "taskTitle"
+            )
             Text(
                 t.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (t.done) cs.onSurfaceVariant else if (highlighted) cs.primary else cs.onSurface,
-                textDecoration = if (t.done) TextDecoration.LineThrough else null
+                color = titleColor,
+                textDecoration = if (struck) TextDecoration.LineThrough else null
             )
             if (t.note.isNotBlank() && !t.done) {
                 Text(t.note, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -525,9 +535,12 @@ internal fun MyTaskDialog(
     var before by remember { mutableStateOf(existing?.remindBefore ?: emptyList()) }
 
     val start = remember { listOf(title, note, due, list, starred, name, number, before, length) }
+    val sheetScope = rememberCoroutineScope()
+    val sheetRef = remember { arrayOfNulls<SheetState>(1) }
     val cancel = rememberDiscardGuard(
         changed = { listOf(title, note, due, list, starred, name, number, before, length) != start },
         onClose = onDismiss,
+        onKeep = { sheetRef[0]?.let { s -> sheetScope.launch { s.show() } } },
     )
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
@@ -538,6 +551,7 @@ internal fun MyTaskDialog(
             } else true
         }
     )
+    sheetRef[0] = sheetState
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
