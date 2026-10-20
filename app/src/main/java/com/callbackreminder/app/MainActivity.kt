@@ -632,7 +632,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
         bottomBar = {
             val shown = pager.currentPage
             val tabs = listOf(
-                TabSpec(Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size),
+                TabSpec(Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size + myTasks.count { !it.done && !it.timed }),
                 TabSpec(Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge),
                 TabSpec(Tab.FOLLOW_UPS, Icons.Rounded.PhoneCallback, "Follow-ups", callsBadge + textsBadge),
                 TabSpec(Tab.CALENDAR, Icons.Rounded.CalendarMonth, "Calendar", 0),

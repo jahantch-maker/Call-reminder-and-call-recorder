@@ -232,7 +232,7 @@ fun HomeScreen(
                     SmallTile(Icons.Rounded.PhoneCallback, "${callsDue.size}", "Calls due", Tones.red, Modifier.weight(1f), onOpenCalls)
                     SmallTile(Icons.Rounded.Sms, "${textsToday.size}", "Texts", Tones.blue, Modifier.weight(1f)) { onOpenTexts(0, null) }
                     SmallTile(Icons.Rounded.TaskAlt, "$myTasksToday", "My tasks", Tones.purple, Modifier.weight(1f)) { onOpenMyTasks(MyTasksUi.ONE_TIME) }
-                    SmallTile(Icons.Rounded.EditCalendar, "${toSchedule.size}", "Schedule", Tones.amber, Modifier.weight(1f), onOpenToSchedule)
+                    SmallTile(Icons.Rounded.EditCalendar, "${toSchedule.size + needsTime}", "Schedule", Tones.amber, Modifier.weight(1f), onOpenToSchedule)
                 }
             }
 

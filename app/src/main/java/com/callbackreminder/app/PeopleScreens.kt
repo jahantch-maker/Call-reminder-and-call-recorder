@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -264,6 +266,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     var dailyOn by remember(key) { mutableStateOf(DailyList.isOn(ctx, key.orEmpty())) }
     var via by remember(key) { mutableStateOf(DailyList.via(ctx, key.orEmpty())) }
     var preview by remember { mutableStateOf<String?>(null) }
+    var sendNow by remember { mutableStateOf<String?>(null) }
 
     val k = key.orEmpty()
     fun mine(number: String) = k.isNotEmpty() && Work.personKey(number) == k
@@ -414,6 +417,16 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                                 preview = DailyList.build(ctx, k) ?: "Nothing to send: $name has no open follow-ups."
                             }) { Text("Preview the list") }
                         }
+                        // Send the whole list right now, daily list on or off.
+                        FilledTonalButton(
+                            onClick = {
+                                val text = DailyList.build(ctx, k)
+                                if (text == null) Toast.makeText(ctx, "Nothing to send: $name has no open follow-ups", Toast.LENGTH_SHORT).show()
+                                else sendNow = text
+                            },
+                            enabled = number.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp)
+                        ) { Text("📤 Send list now", fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -450,6 +463,30 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             title = { Text("Daily list for $name") },
             text = { Text(text) },
             confirmButton = { TextButton(onClick = { preview = null }) { Text("Close") } },
+        )
+    }
+
+    sendNow?.let { text ->
+        AlertDialog(
+            onDismissRequest = { sendNow = null },
+            title = { Text("Send list to $name") },
+            text = {
+                Text(text, modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()))
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        sendNow = null
+                        if (!DailyList.openWhatsApp(ctx, k)) Toast.makeText(ctx, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
+                    }) { Text("WhatsApp") }
+                    Button(onClick = {
+                        sendNow = null
+                        DailyList.send(ctx, k, text)
+                        Toast.makeText(ctx, "Sending the list to $name by SMS", Toast.LENGTH_SHORT).show()
+                    }) { Text("SMS") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { sendNow = null }) { Text("Cancel") } },
         )
     }
 

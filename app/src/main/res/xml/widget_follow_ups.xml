@@ -3,6 +3,7 @@
     android:configure="com.callbackreminder.app.WidgetSetupActivity"
     android:description="@string/widget_follow_ups_desc"
     android:initialLayout="@layout/widget_loading"
+    android:previewImage="@drawable/widget_preview_follow_ups"
     android:minWidth="250dp"
     android:minHeight="180dp"
     android:minResizeWidth="110dp"
