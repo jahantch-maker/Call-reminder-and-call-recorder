@@ -216,7 +216,7 @@ object WidgetLook {
 
     /** Material You: tones picked by the phone from your wallpaper, kept dark so the app's colours still read. */
     private fun wallpaper(c: Context): WidgetColors {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return fromScheme(true)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return fromScheme(c, true)
         fun col(id: Int) = Color(c.getColor(id))
         val dark = fromScheme(c, true)
         return dark.copy(
