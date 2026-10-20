@@ -227,7 +227,7 @@ object WidgetLook {
 }
 
 /** What the widgets show, worked out the same way as the screens in the app. */
-object WidgetData {
+internal object WidgetData {
     fun ensure(c: Context) {
         ReminderStore.init(c)
         SmsStore.init(c)
