@@ -51,6 +51,8 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -159,25 +161,49 @@ private val CardPad = 4.dp
 private val ToggleSpace = 64.dp
 
 // Colours that match the mockups: Dossier purple, My task blue, call blue, text green, Google amber.
-private class CalColors(dark: Boolean) {
-    val taskBg = if (dark) Color(0xFF22346F) else Color(0xFFE3EAFF)
-    val taskInk = if (dark) Color(0xFFDCE4FF) else Color(0xFF0B2A8F)
-    val taskEdge = if (dark) Color(0xFF8BA6FF) else Color(0xFF2F5BEA)
-    val dosBg = if (dark) Color(0xFF3B2A52) else Color(0xFFF1E7FB)
-    val dosInk = if (dark) Color(0xFFEBDDF8) else Color(0xFF3F1F8C)
-    val dosEdge = Color(0xFFC792EA)
-    val gBg = if (dark) Color(0xFF3A2D12) else Color(0xFFFFF1D6)
-    val gInk = if (dark) Color(0xFFFFE2A8) else Color(0xFF7A4B00)
-    val gEdge = Color(0xFFFFB547)
-    val callBg = if (dark) Color(0xFF1F2C55) else Color(0xFFE6ECFF)
-    val callInk = if (dark) Color(0xFFDCE4FF) else Color(0xFF1B2F7A)
-    val callEdge = Color(0xFF5C7CFA)
-    val textBg = if (dark) Color(0xFF12352E) else Color(0xFFDDF5EE)
-    val textInk = if (dark) Color(0xFFC8F4EA) else Color(0xFF05453A)
-    val textEdge = Color(0xFF0FA68E)
+/** The Calendar's card colours: the four picked in Calendar settings › Card colours, plus the fixed bits. */
+private class CalColors(
+    dark: Boolean,
+    task: CardColours.Swatch,
+    fu: CardColours.Swatch,
+    dos: CardColours.Swatch,
+    google: CardColours.Swatch,
+) {
+    val taskBg = task.fillColor
+    val taskInk = CardColours.INK
+    val taskEdge = task.edgeColor
+    val dosBg = dos.fillColor
+    val dosInk = CardColours.INK
+    val dosEdge = dos.edgeColor
+    val gBg = google.fillColor
+    val gInk = CardColours.INK
+    val gEdge = google.edgeColor
+    val callBg = fu.fillColor
+    val callInk = CardColours.INK
+    val callEdge = fu.edgeColor
+    val textBg = fu.fillColor
+    val textInk = CardColours.INK
+    val textEdge = fu.edgeColor
     val band = if (dark) Color(0x1A5C7CFA) else Color(0x125C7CFA)
     val offHours = if (dark) Color(0x22000000) else Color(0x0A000000)
     val now = Color(0xFFE53935)
+}
+
+/** [CalColors] for the current theme and colour picks; redraws when the picks change. */
+@Composable
+private fun rememberCalColors(): CalColors {
+    val ctx = LocalContext.current
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val v by CardColours.version.collectAsState()
+    return remember(dark, v) {
+        CalColors(
+            dark,
+            CardColours.swatch(ctx, CardColours.Kind.TASK),
+            CardColours.swatch(ctx, CardColours.Kind.FOLLOW_UP),
+            CardColours.swatch(ctx, CardColours.Kind.DOSSIER),
+            CardColours.swatch(ctx, CardColours.Kind.GOOGLE),
+        )
+    }
 }
 
 /** True unless the phone's "Remove animations" is on. */
@@ -311,7 +337,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
                 date = date,
                 isToday = date == today,
                 freeMin = day.freeMin,
-                fuCount = day.followUps.size,
+                fuCount = day.followUps.count { !it.done },
                 motion = motion,
                 onPickDate = { showDate = true },
                 onToday = { dateDay = today.toEpochDay() },
@@ -327,7 +353,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = TimeCol + 4.dp, end = 8.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val cc = CalColors(cs.background.luminance() < 0.5f)
+                    val cc = rememberCalColors()
                     day.allDay.forEach { e ->
                         Text(
                             "All day · ${e.title}",
@@ -495,14 +521,15 @@ private fun rememberDay(date: LocalDate, now: Long): DayData {
     val g by GoogleCal.version.collectAsState()
     val wh by WorkHours.version.collectAsState()
     val off by OffDays.mask.collectAsState()
+    val cv by CardColours.version.collectAsState()
     val nowMin = now / 60_000L
-    val loaded by produceState<Pair<List<CalBlock>, List<GEvent>>?>(null, date, tasks, dossier, records, g, off) {
+    val loaded by produceState<Pair<List<CalBlock>, List<GEvent>>?>(null, date, tasks, dossier, records, g, off, cv) {
         value = withContext(Dispatchers.IO) {
             CalendarData.blocks(ctx, date) to GoogleCal.events(ctx, date).filter { it.allDay }
         }
     }
     val blocks = loaded?.first ?: emptyList()
-    val followUps = remember(date, calls, texts, nowMin) { CalendarData.followUps(date, now) }
+    val followUps = remember(date, calls, texts, nowMin, cv) { CalendarData.followUps(ctx, date, now) }
     val gaps = remember(blocks, wh, off, nowMin, date) { CalendarData.freeGaps(ctx, date, blocks, now) }
     return DayData(
         blocks = blocks,
@@ -756,7 +783,7 @@ private fun DayBody(
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val cc = CalColors(cs.background.luminance() < 0.5f)
+    val cc = rememberCalColors()
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -1172,7 +1199,7 @@ private fun DayBody(
                                         .width(fuW)
                                         .height(maxOf(cardH, 18.dp))
                                         .pointerInput(k, cardsF > 0.5f, y, totalH) {
-                                            if (cardsF <= 0.5f) return@pointerInput
+                                            if (cardsF <= 0.5f || f.done) return@pointerInput
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = { at ->
                                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1363,7 +1390,7 @@ private fun BlockCard(b: CalBlock, clash: Boolean, slim: Boolean, cc: CalColors,
     val (bg, ink, edge) = when (b.kind) {
         CalBlock.Kind.TASK -> Triple(cc.taskBg, cc.taskInk, cc.taskEdge)
         CalBlock.Kind.DOSSIER -> Triple(cc.dosBg, cc.dosInk, cc.dosEdge)
-        CalBlock.Kind.GOOGLE -> Triple(cc.gBg, cc.gInk, if (b.color != 0) Color(b.color) else cc.gEdge)
+        CalBlock.Kind.GOOGLE -> Triple(cc.gBg, cc.gInk, cc.gEdge)
     }
     Box(
         modifier
@@ -1421,21 +1448,23 @@ private fun FollowUpCard(
     val edge = if (f.isCall) cc.callEdge else cc.textEdge
     Row(
         modifier
+            .alpha(if (f.done) 0.55f else 1f)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled && !f.done, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.width(3.dp).fillMaxHeight().background(if (f.overdue) cs.error else edge))
         Column(Modifier.weight(1f).padding(start = 6.dp, end = 2.dp)) {
             Text(
-                (if (oneLine) Fmt.timeOnly(f.at) + " " else "") + (if (f.isCall) "" else "💬 ") + f.title,
+                (if (oneLine) Fmt.timeOnly(f.at) + " " else "") + (if (f.done) "✓ " else "") + (if (f.isCall) "" else "💬 ") + f.title,
                 fontSize = if (oneLine) 10.sp else if (wideF > 0.5f) 12.5.sp else 11.sp,
                 lineHeight = if (oneLine) 11.sp else if (wideF > 0.5f) 14.sp else 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = ink,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (f.done) TextDecoration.LineThrough else null
             )
             if (!oneLine) Text(
                 Fmt.timeOnly(f.at) + if (f.person.isNotBlank()) " · ${f.person}" else "",
@@ -1446,7 +1475,7 @@ private fun FollowUpCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (wideF > 0.3f && f.number.isNotBlank() && !oneLine) {
+        if (wideF > 0.3f && f.number.isNotBlank() && !oneLine && !f.done) {
             Box(
                 Modifier
                     .alpha(((wideF - 0.3f) / 0.7f).coerceIn(0f, 1f))
@@ -1541,7 +1570,7 @@ private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () ->
 @Composable
 private fun HourSheet(list: List<CalFollowUp>, onDismiss: () -> Unit, onOpen: (CalFollowUp) -> Unit, onCall: (CalFollowUp) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val cc = CalColors(cs.background.luminance() < 0.5f)
+    val cc = rememberCalColors()
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp + navBarMissing()).verticalScroll(rememberScrollState()),
@@ -1786,6 +1815,100 @@ private fun GoogleCalendarSwitches() {
     }
 }
 
+/** Stay greyed | Leave the calendar, with a sliding thumb. */
+@Composable
+private fun DoneTasksChoice() {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val motion = motionOn(ctx)
+    val v by CardColours.version.collectAsState()
+    val leave = remember(v) { CardColours.doneLeaves(ctx) }
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceVariant).padding(3.dp)
+    ) {
+        val segW = maxWidth / 2
+        val x by animateDpAsState(if (leave) segW else 0.dp, calSpec(motion, 240), label = "doneThumb")
+        Box(Modifier.offset(x = x).width(segW).height(40.dp).clip(RoundedCornerShape(11.dp)).background(cs.primary))
+        Row(Modifier.fillMaxWidth()) {
+            listOf("Stay greyed" to false, "Leave the calendar" to true).forEach { (label, value) ->
+                val on = leave == value
+                val fg by animateColorAsState(if (on) cs.onPrimary else cs.onSurfaceVariant, calSpec(motion, 240), label = "doneFg")
+                Box(
+                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
+                        .clickable { CardColours.setDoneLeaves(ctx, value) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/** Each kind of card: its name and colour, the 12 dots (✓ on the chosen one) and a live sample card. */
+@Composable
+private fun CardColourPicker() {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val motion = motionOn(ctx)
+    val v by CardColours.version.collectAsState()
+    val samples = mapOf(
+        CardColours.Kind.TASK to ("Site visit RG2" to "10:00 - 11:00 AM"),
+        CardColours.Kind.FOLLOW_UP to ("📞 Ask for vendor quote · Hasnain" to "2:30 PM"),
+        CardColours.Kind.DOSSIER to ("RG2 visit" to "9:00 - 10:00 AM"),
+        CardColours.Kind.GOOGLE to ("Weekly review" to "4:00 - 5:00 PM"),
+    )
+    Column(Modifier.fillMaxWidth()) {
+        CardColours.Kind.entries.forEachIndexed { n, kind ->
+            val picked = remember(v) { CardColours.index(ctx, kind) }
+            val sw = CardColours.PALETTE[picked]
+            val fill by animateColorAsState(sw.fillColor, calSpec(motion, 260), label = "ccFill")
+            val edge by animateColorAsState(sw.edgeColor, calSpec(motion, 260), label = "ccEdge")
+            if (n > 0) HorizontalDivider(Modifier.padding(vertical = 10.dp), color = cs.outlineVariant)
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(kind.label, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, modifier = Modifier.weight(1f))
+                Text(sw.name, fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                CardColours.PALETTE.forEachIndexed { i, c ->
+                    val on = i == picked
+                    // A 0 dp border would still draw a hairline, so the ring fades instead of shrinking.
+                    val ring by animateFloatAsState(if (on) 1f else 0f, calSpec(motion, 200), label = "ccRing")
+                    val tick by animateFloatAsState(if (on) 1f else 0f, calSpec(motion, 180), label = "ccTick")
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .border(2.dp, cs.onSurface.copy(alpha = ring), CircleShape)
+                            .padding(3.dp)
+                            .clip(CircleShape)
+                            .background(c.fillColor)
+                            .border(1.5.dp, c.edgeColor, CircleShape)
+                            .clickable { CardColours.set(ctx, kind, i) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("✓", color = CardColours.INK, fontWeight = FontWeight.Black, fontSize = 12.sp, modifier = Modifier.alpha(tick))
+                    }
+                }
+            }
+            val (title, time) = samples.getValue(kind)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp).height(IntrinsicSize.Min)
+                    .clip(RoundedCornerShape(10.dp)).background(fill)
+            ) {
+                Box(Modifier.width(4.dp).fillMaxHeight().background(edge))
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text(title, color = CardColours.INK, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(time, color = CardColours.INK.copy(alpha = 0.75f), fontSize = 11.sp)
+                }
+            }
+        }
+        TextButton(onClick = { CardColours.reset(ctx) }, modifier = Modifier.padding(top = 4.dp)) {
+            Text("↺ Reset to defaults", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
 /** Settings › Calendar: working hours (required), the Google Calendar switch and which calendars show. */
 @Composable
 fun CalendarSettingsScreen(onBack: () -> Unit) {
@@ -1831,6 +1954,18 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
             ) {
                 GoogleCalendarSwitches()
             }
+        }
+        SectionCard(
+            title = "Done tasks",
+            subtitle = "What happens to a My task or follow-up when you mark it done. Dossier ticks always stay, greyed."
+        ) {
+            DoneTasksChoice()
+        }
+        SectionCard(
+            title = "Card colours",
+            subtitle = "Tap a colour for each kind of card. Also used by the calendar widgets."
+        ) {
+            CardColourPicker()
         }
     }
 }
