@@ -72,12 +72,27 @@ object WhatsApp {
         return e164?.filter { it.isDigit() } ?: digits
     }
 
-    /** Opens his chat with [text] typed. Returns false (with a short note) if it couldn't. */
+    /**
+     * Opens his chat with [text] typed, on the number that has WhatsApp when he has two or more ([WaNumbers]):
+     * asks once when the app can't tell. Returns false (with a short note) if it couldn't.
+     */
     fun open(c: Context, number: String, text: String): Boolean {
         if (number.isBlank()) {
             Toast.makeText(c, "No number for WhatsApp", Toast.LENGTH_SHORT).show()
             return false
         }
+        val to = WaNumbers.resolve(c, number) { picked ->
+            Toast.makeText(c, "Opening WhatsApp on $picked", Toast.LENGTH_SHORT).show()
+        }
+        if (to == null) {
+            WaNumberActivity.pickAndOpen(c, number, text)
+            return true
+        }
+        return launch(c, to, text)
+    }
+
+    /** Opens the chat on exactly [number], no questions. */
+    fun launch(c: Context, number: String, text: String): Boolean {
         val uri = Uri.parse("https://api.whatsapp.com/send?phone=${international(c, number)}&text=${Uri.encode(text)}")
         val pkg = app(c)
         val base = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

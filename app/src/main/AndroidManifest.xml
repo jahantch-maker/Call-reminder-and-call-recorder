@@ -306,6 +306,16 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Callback.Popup" />
 
+        <!-- "Which number has WhatsApp?": a small sheet over whatever is open, for people with two or more numbers -->
+        <activity
+            android:name=".WaNumberActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Callback.Popup" />
+
         <!-- A widget's setup page: when it is dropped on the home screen, and on long-press -->
         <activity
             android:name=".WidgetSetupActivity"
