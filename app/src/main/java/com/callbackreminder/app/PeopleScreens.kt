@@ -332,6 +332,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                     if (number.isNotBlank() && number != name) {
                         Text(number, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    WhatsAppNumberLine(number, resumeKey)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { dial(ctx, number) }, enabled = number.isNotBlank()) {
@@ -519,6 +520,46 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             personName = person?.name.orEmpty(),
             personNumber = number,
         )
+    }
+}
+
+/**
+ * The green "WA 0321 7654321 · Work  Change" line under the person's number, for people with two or more
+ * numbers in contacts: which one the WhatsApp buttons open. Change opens the picker (calls and SMS stay).
+ */
+@Composable
+private fun WhatsAppNumberLine(number: String, resumeKey: Int) {
+    val ctx = LocalContext.current
+    // Contacts are read off the main thread, again each time you come back (after Change).
+    val state by androidx.compose.runtime.produceState<Pair<WaLookup, String?>?>(null, number, resumeKey) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val l = WaNumbers.lookup(ctx, number)
+            val current = WaNumbers.chosen(ctx, number) ?: l.options.singleOrNull { it.onWhatsApp }?.number
+            l to current
+        }
+    }
+    val (l, current) = state ?: (null to null)
+    androidx.compose.animation.AnimatedVisibility(visible = l != null && l.options.size >= 2) {
+        val opt = l?.options?.firstOrNull { current != null && WaNumbers.sameNumber(ctx, it.number, current) }
+        Row(
+            Modifier
+                .padding(top = 8.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(WhatsAppGreen.copy(alpha = 0.16f))
+                .clickable { WaNumberActivity.change(ctx, number) }
+                .padding(start = 12.dp, end = 5.dp, top = 5.dp, bottom = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("WA", color = WhatsAppGreen, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelMedium)
+            Text(current ?: "WhatsApp number not picked", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.bodyMedium)
+            opt?.label?.let { Text("· $it", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+            Text(
+                if (current != null) "Change" else "Pick",
+                color = WhatsAppGreen, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface).padding(horizontal = 10.dp, vertical = 3.dp)
+            )
+        }
     }
 }
 
