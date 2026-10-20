@@ -12,8 +12,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 37
-        versionName = "0.26.0"
+        versionCode = 38
+        versionName = "0.27.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.
@@ -35,7 +35,7 @@ android {
         // debug builds skip Android's and R8's optimizations and visibly stutter.
         release {
             isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("shared")
         }
     }
@@ -60,4 +60,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Home screen widgets
+    implementation("androidx.glance:glance-appwidget:1.1.1")
 }

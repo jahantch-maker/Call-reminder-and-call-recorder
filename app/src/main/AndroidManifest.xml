@@ -216,5 +216,107 @@
             </intent-filter>
         </receiver>
 
+        <!-- Home screen widgets (drawn with Glance). Added from the home screen: long-press › Widgets. -->
+        <receiver
+            android:name=".FollowUpsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_follow_ups_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_follow_ups" />
+        </receiver>
+        <receiver
+            android:name=".MyTasksWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_my_tasks_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_my_tasks" />
+        </receiver>
+        <receiver
+            android:name=".ReviewWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_review_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_review" />
+        </receiver>
+        <receiver
+            android:name=".DailyTicksWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_daily_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_daily" />
+        </receiver>
+        <receiver
+            android:name=".QuickAddWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_quick_add_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_add" />
+        </receiver>
+        <receiver
+            android:name=".TasksCalendarWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_cal_tasks_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_cal_tasks" />
+        </receiver>
+        <receiver
+            android:name=".FollowUpsCalendarWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_cal_follow_ups_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_cal_follow_ups" />
+        </receiver>
+
+        <!-- What widget buttons open: a call or text straight away, or a small popup over the home screen -->
+        <activity
+            android:name=".WidgetActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Callback.Popup" />
+
+        <!-- A widget's setup page: when it is dropped on the home screen, and on long-press -->
+        <activity
+            android:name=".WidgetSetupActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Callback">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

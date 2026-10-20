@@ -220,7 +220,7 @@ private fun MenuHeading(text: String) {
 }
 
 /** One follow-up in the list: a call, its texts, or both. */
-private class FuEntry(val call: Reminder?, val text: SmsReminder?) {
+internal class FuEntry(val call: Reminder?, val text: SmsReminder?) {
     val key: String = when {
         call?.linkId?.let { it != 0L } == true -> "link-${call.linkId}"
         text?.linkId?.let { it != 0L } == true -> "link-${text.linkId}"
@@ -262,7 +262,7 @@ private class FuEntry(val call: Reminder?, val text: SmsReminder?) {
         }
 }
 
-private fun entries(calls: List<Reminder>, texts: List<SmsReminder>): List<FuEntry> {
+internal fun entries(calls: List<Reminder>, texts: List<SmsReminder>): List<FuEntry> {
     val out = mutableListOf<FuEntry>()
     val links = (calls.map { it.linkId } + texts.map { it.linkId }).filter { it != 0L }.toSet()
     links.forEach { link ->
