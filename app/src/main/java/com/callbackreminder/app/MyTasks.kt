@@ -35,8 +35,11 @@ data class MyTask(
     val position: Long = createdAt,
     /** Extra heads-ups before the due time, in minutes (e.g. 60 and 1440 for 1 hour and 1 day before). */
     val remindBefore: List<Int> = emptyList(),
+    /** How long it takes, in minutes (the Calendar books this much time from [dueAt]). */
+    val durationMin: Int = MyTaskStore.DEFAULT_LENGTH,
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
+    val endAt: Long get() = dueAt + durationMin * 60_000L
     val timed: Boolean get() = dueAt > 0L
     val personTitle: String get() = name.ifBlank { number }
 }
@@ -61,19 +64,35 @@ data class DossierTask(
     /** The first day it counts. Days before it are never Missed. */
     val startDate: String,
     val createdAt: Long,
+    /** When the time block ends, as minutes after midnight ([minute] is its start). */
+    val endMinute: Int = minOf(minute + 30, 24 * 60),
+    /** Weekday repeats: 1 = every week, 2 = every other week, and so on (counted from [startDate]). */
+    val everyWeeks: Int = 1,
+    /** Also comes up on the weekly off day (when that day is one of its repeat days). */
+    val onOffDay: Boolean = false,
 ) {
     val start: LocalDate get() = runCatching { LocalDate.parse(startDate) }.getOrElse { LocalDate.now() }
 
+    /** Length of the time block in minutes (at least 5; an end before the start runs to midnight). */
+    val lengthMin: Int get() = (if (endMinute > minute) endMinute - minute else 24 * 60 - minute).coerceAtLeast(5)
+
     fun isOn(date: LocalDate): Boolean {
         if (date.isBefore(start)) return false
-        // Weekly off day: the task doesn't come up, so it is never Missed.
-        if (OffDays.isOff(date)) return false
+        // Weekly off day: the task doesn't come up, so it is never Missed (unless it's set to).
+        if (!onOffDay && OffDays.isOff(date)) return false
         return if (monthDay > 0) {
             date.dayOfMonth == minOf(monthDay, YearMonth.from(date).lengthOfMonth())
         } else {
-            days and (1 shl (date.dayOfWeek.value - 1)) != 0
+            if (days and (1 shl (date.dayOfWeek.value - 1)) == 0) return false
+            if (everyWeeks <= 1) return true
+            val weekOf = { d: LocalDate -> d.minusDays((d.dayOfWeek.value - 1).toLong()) }
+            val weeks = java.time.temporal.ChronoUnit.WEEKS.between(weekOf(start), weekOf(date))
+            weeks % everyWeeks == 0L
         }
     }
+
+    /** Like "9:00 AM - 10:30 AM". */
+    val rangeLabel: String get() = Dossier.timeLabel(minute) + " - " + Dossier.timeLabel(endMinute % (24 * 60))
 
     fun dueAt(date: LocalDate): Long =
         date.atTime(minute / 60, minute % 60).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -81,7 +100,9 @@ data class DossierTask(
     val timeLabel: String get() = Dossier.timeLabel(minute)
 
     /** Like "Daily, Mon-Sat", "Weekly, every Tuesday" or "Monthly on the 14th". */
-    val frequency: String get() = Dossier.frequency(days, monthDay)
+    val frequency: String get() = Dossier.frequency(days, monthDay).let {
+        if (monthDay == 0 && everyWeeks > 1) "$it, every $everyWeeks weeks" else it
+    }
 }
 
 /** One task on one day: ticked (with the time), or a reason why not. */
@@ -183,6 +204,7 @@ object MyTaskStore {
                     starred = o.optBoolean("starred"),
                     position = o.optLong("position", o.optLong("createdAt")),
                     remindBefore = o.optJSONArray("remindBefore")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+                    durationMin = o.optInt("durationMin", DEFAULT_LENGTH),
                 )
             }
         } catch (e: Exception) {
@@ -208,6 +230,7 @@ object MyTaskStore {
                     .put("starred", t.starred)
                     .put("position", t.position)
                     .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
+                    .put("durationMin", t.durationMin)
             )
         }
         prefs().edit().putString("list", arr.toString()).apply()
@@ -217,6 +240,10 @@ object MyTaskStore {
     // ---- Lists ----
 
     const val UNSORTED = 0L
+
+    /** A new task's length when you don't pick one (the Calendar's "How long?"). */
+    const val DEFAULT_LENGTH = 30
+    val LENGTH_CHOICES = listOf(15, 30, 60, 90, 120, 180)
 
     private val _lists = MutableStateFlow(listOf(TaskList(UNSORTED, "Unsorted")))
     /** Unsorted first, then your lists in your order. */
@@ -313,6 +340,7 @@ object MyTaskStore {
     fun add(
         title: String, note: String, dueAt: Long, name: String, number: String,
         listId: Long = UNSORTED, starred: Boolean = false, remindBefore: List<Int> = emptyList(),
+        durationMin: Int = DEFAULT_LENGTH,
     ): MyTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -331,6 +359,7 @@ object MyTaskStore {
             starred = starred,
             position = minOf(top, now),
             remindBefore = remindBefore.distinct().sorted(),
+            durationMin = durationMin.coerceIn(5, 24 * 60),
         )
         save(_items.value + t)
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -342,12 +371,14 @@ object MyTaskStore {
     fun edit(
         id: Long, title: String, note: String, dueAt: Long, name: String, number: String,
         listId: Long? = null, starred: Boolean? = null, remindBefore: List<Int>? = null,
+        durationMin: Int? = null,
     ) {
         val old = get(id) ?: return
         val t = old.copy(
             title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim(),
             listId = listId ?: old.listId, starred = starred ?: old.starred,
             remindBefore = remindBefore?.distinct()?.sorted() ?: old.remindBefore,
+            durationMin = durationMin?.coerceIn(5, 24 * 60) ?: old.durationMin,
         )
         save(_items.value.map { if (it.id == id) t else it })
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -453,6 +484,10 @@ object DossierStore {
                     remindBefore = o.optInt("remindBefore", 0),
                     startDate = o.optString("startDate").ifBlank { LocalDate.now().toString() },
                     createdAt = o.optLong("createdAt"),
+                    endMinute = o.optInt("endMinute", -1).takeIf { it >= 0 }
+                        ?: minOf(o.optInt("minute", 9 * 60) + 30, 24 * 60),
+                    everyWeeks = o.optInt("everyWeeks", 1).coerceAtLeast(1),
+                    onOffDay = o.optBoolean("onOffDay"),
                 )
             }
         } catch (e: Exception) {
@@ -475,6 +510,9 @@ object DossierStore {
                     .put("remindBefore", t.remindBefore)
                     .put("startDate", t.startDate)
                     .put("createdAt", t.createdAt)
+                    .put("endMinute", t.endMinute)
+                    .put("everyWeeks", t.everyWeeks)
+                    .put("onOffDay", t.onOffDay)
             )
         }
         prefs().edit().putString("tasks", arr.toString()).apply()
@@ -525,7 +563,10 @@ object DossierStore {
     }
 
     @Synchronized
-    fun add(title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int, starred: Boolean = false): DossierTask {
+    fun add(
+        title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int, starred: Boolean = false,
+        endMinute: Int = minOf(minute + 30, 24 * 60), everyWeeks: Int = 1, onOffDay: Boolean = false,
+    ): DossierTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
         val now = System.currentTimeMillis()
@@ -540,6 +581,9 @@ object DossierStore {
             starred = starred,
             startDate = firstDay(minute, now).toString(),
             createdAt = now,
+            endMinute = endMinute,
+            everyWeeks = everyWeeks.coerceAtLeast(1),
+            onOffDay = onOffDay,
         )
         saveTasks(_tasks.value + t)
         TaskAlarms.scheduleDossier(appCtx, t)
@@ -549,7 +593,7 @@ object DossierStore {
     @Synchronized
     fun edit(
         id: Long, title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int,
-        starred: Boolean? = null,
+        starred: Boolean? = null, endMinute: Int? = null, everyWeeks: Int? = null, onOffDay: Boolean? = null,
     ) {
         val old = get(id) ?: return
         val t = old.copy(
@@ -560,6 +604,9 @@ object DossierStore {
             days = days,
             monthDay = monthDay,
             remindBefore = remindBefore,
+            endMinute = endMinute ?: old.endMinute,
+            everyWeeks = (everyWeeks ?: old.everyWeeks).coerceAtLeast(1),
+            onOffDay = onOffDay ?: old.onOffDay,
         )
         saveTasks(_tasks.value.map { if (it.id == id) t else it })
         TaskAlarms.scheduleDossier(appCtx, t)

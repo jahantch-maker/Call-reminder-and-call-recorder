@@ -13,6 +13,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.pager.HorizontalPager
@@ -21,6 +27,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.People
@@ -268,6 +275,7 @@ private object Screen {
     const val REVIEW_SESSION = 27
     const val WHATSAPP_SETTINGS = 28
     const val DAILY_WA = 29
+    const val CALENDAR_SETTINGS = 30
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -299,9 +307,10 @@ private object Tab {
     const val HOME = 0
     const val MY_TASKS = 1
     const val FOLLOW_UPS = 2
-    const val PEOPLE = 3
-    const val PROJECTS = 4
-    const val COUNT = 5
+    const val CALENDAR = 3
+    const val PEOPLE = 4
+    const val PROJECTS = 5
+    const val COUNT = 6
 }
 
 /** The Follow-ups tab, opened on its Calls list. */
@@ -424,6 +433,7 @@ private fun AppRoot(
                     onOpenVoiceTyping = { open(Screen.VOICE_SETTINGS) },
                     onOpenOffDays = { open(Screen.OFF_DAYS) },
                     onOpenWhatsApp = { open(Screen.WHATSAPP_SETTINGS) },
+                    onOpenCalendar = { open(Screen.CALENDAR_SETTINGS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
@@ -431,6 +441,7 @@ private fun AppRoot(
                 Screen.VOICE_SETTINGS -> VoiceTypingSettingsScreen(onBack = { back() })
                 Screen.OFF_DAYS -> WeeklyOffDayScreen(onBack = { back() })
                 Screen.WHATSAPP_SETTINGS -> WhatsAppSettingsScreen(onBack = { back() })
+                Screen.CALENDAR_SETTINGS -> CalendarSettingsScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },
@@ -445,6 +456,7 @@ private fun AppRoot(
                     onOpenSetting = { key ->
                         when (key) {
                             "off_days" -> Screen.OFF_DAYS
+                            "calendar" -> Screen.CALENDAR_SETTINGS
                             "setup" -> Screen.SETUP
                             "popup" -> Screen.POPUP_SETTINGS
                             "quick_times" -> Screen.QUICK_TIMES
@@ -584,13 +596,32 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
-                val shown = pager.currentPage
-                TabItem(shown, Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size, onTab)
-                TabItem(shown, Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge, onTab)
-                TabItem(shown, Tab.FOLLOW_UPS, Icons.Rounded.PhoneCallback, "Follow-ups", callsBadge + textsBadge, onTab)
-                TabItem(shown, Tab.PEOPLE, Icons.Rounded.People, "People", 0, onTab)
-                TabItem(shown, Tab.PROJECTS, Icons.Rounded.Folder, "Projects", 0, onTab, tag = "Soon")
+            val shown = pager.currentPage
+            val tabs = listOf(
+                TabSpec(Tab.HOME, Icons.Rounded.Home, "Home", toSchedule.size),
+                TabSpec(Tab.MY_TASKS, Icons.Rounded.TaskAlt, "My tasks", myTasksBadge),
+                TabSpec(Tab.FOLLOW_UPS, Icons.Rounded.PhoneCallback, "Follow-ups", callsBadge + textsBadge),
+                TabSpec(Tab.CALENDAR, Icons.Rounded.CalendarMonth, "Calendar", 0),
+                TabSpec(Tab.PEOPLE, Icons.Rounded.People, "People", 0),
+                TabSpec(Tab.PROJECTS, Icons.Rounded.Folder, "Projects", 0, tag = "Soon"),
+            )
+            // The Calendar is full screen: there the bar shrinks to a tiny row of icons.
+            AnimatedContent(
+                targetState = shown == Tab.CALENDAR,
+                transitionSpec = {
+                    androidx.compose.animation.fadeIn(tween(240, easing = FastOutSlowInEasing)) togetherWith
+                        androidx.compose.animation.fadeOut(tween(180)) using
+                        androidx.compose.animation.SizeTransform(clip = false) { _, _ -> tween(260, easing = FastOutSlowInEasing) }
+                },
+                label = "bar"
+            ) { tiny ->
+                if (tiny) {
+                    TinyTabBar(shown, tabs, onTab)
+                } else {
+                    NavigationBar {
+                        tabs.forEach { t -> TabItem(shown, t.tab, t.icon, t.label, t.badge, onTab, tag = t.tag) }
+                    }
+                }
             }
         }
     ) { padding ->
@@ -620,6 +651,14 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         },
                     )
                     Tab.PROJECTS -> ProjectsScreen()
+                    Tab.CALENDAR -> CalendarScreen(
+                        resumeKey = resumeKey,
+                        onOpenSearch = {
+                            SearchUi.initial.value = ""
+                            open(Screen.SEARCH)
+                        },
+                        onOpenSettings = { open(Screen.CALENDAR_SETTINGS) },
+                    )
                     else -> HomeScreen(
                         resumeKey = resumeKey,
                         onOpenCalls = { onTab(callsTab()) },
@@ -689,4 +728,55 @@ private fun RowScope.TabItem(
         },
         label = { Text(label, maxLines = 1) }
     )
+}
+
+private class TabSpec(val tab: Int, val icon: ImageVector, val label: String, val badge: Int, val tag: String? = null)
+
+/** The bar inside the Calendar: icons only, about 40 dp high, so the day gets the screen. */
+@Composable
+private fun TinyTabBar(current: Int, tabs: List<TabSpec>, onTab: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    androidx.compose.material3.Surface(
+        color = androidx.compose.material3.NavigationBarDefaults.containerColor,
+        tonalElevation = 3.dp,
+    ) {
+        androidx.compose.foundation.layout.Row(
+            Modifier
+                .windowInsetsPadding(androidx.compose.material3.NavigationBarDefaults.windowInsets)
+                .height(40.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            tabs.forEach { t ->
+                val on = t.tab == current
+                val pill by androidx.compose.animation.animateColorAsState(
+                    if (on) cs.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                    tween(220),
+                    label = "pill"
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .clickable { onTab(t.tab) },
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                            .background(pill)
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
+                    ) {
+                        BadgedBox(badge = { if (t.badge > 0) Badge { Text(if (t.badge > 99) "99+" else "${t.badge}") } }) {
+                            Icon(
+                                t.icon,
+                                contentDescription = t.label,
+                                tint = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.BeachAccess
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Checklist
@@ -118,6 +119,7 @@ fun SettingsScreen(
     onOpenVoiceTyping: () -> Unit,
     onOpenOffDays: () -> Unit,
     onOpenWhatsApp: () -> Unit,
+    onOpenCalendar: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -152,6 +154,13 @@ fun SettingsScreen(
             title = "Weekly off day",
             summary = OffDays.label(offDays),
             onClick = onOpenOffDays
+        )
+        val workHours by WorkHours.version.collectAsState()
+        NavRow(
+            icon = Icons.Rounded.CalendarMonth,
+            title = "Calendar",
+            summary = "Working hours " + remember(workHours) { WorkHours.label(ctx) },
+            onClick = onOpenCalendar
         )
         NavRow(
             icon = Icons.Rounded.VerifiedUser,

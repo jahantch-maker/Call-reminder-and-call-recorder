@@ -195,6 +195,7 @@ class SettingEntry(val title: String, val words: String, val key: String)
 
 val SETTINGS_INDEX = listOf(
     SettingEntry("Weekly off day", "off day friday sunday holiday weekend leave", "off_days"),
+    SettingEntry("Calendar", "calendar working hours office time free slots google calendar meetings", "calendar"),
     SettingEntry("Setup", "permissions allow phone call log contacts battery overlay", "setup"),
     SettingEntry("After-call popup", "popup outgoing incoming missed whatsapp caller card after call", "popup"),
     SettingEntry("Time picker", "time picker grid quick times snooze recent first last gap", "quick_times"),

@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Finds the phone number of a WhatsApp contact so you can call back on your SIM -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Calendar tab: shows the events of the Google Calendar synced to this phone (read only). -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Sends your scheduled text messages from your own SIM -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- Only used when "Stop when the person replies Done" is on: checks incoming texts for "Done" -->
