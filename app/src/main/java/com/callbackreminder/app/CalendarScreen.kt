@@ -1872,13 +1872,14 @@ private fun CardColourPicker() {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 CardColours.PALETTE.forEachIndexed { i, c ->
                     val on = i == picked
-                    val ring by animateDpAsState(if (on) 2.dp else 0.dp, calSpec(motion, 200), label = "ccRing")
+                    // A 0 dp border would still draw a hairline, so the ring fades instead of shrinking.
+                    val ring by animateFloatAsState(if (on) 1f else 0f, calSpec(motion, 200), label = "ccRing")
                     val tick by animateFloatAsState(if (on) 1f else 0f, calSpec(motion, 180), label = "ccTick")
                     Box(
                         Modifier
                             .weight(1f)
                             .aspectRatio(1f)
-                            .border(ring, cs.onSurface, CircleShape)
+                            .border(2.dp, cs.onSurface.copy(alpha = ring), CircleShape)
                             .padding(3.dp)
                             .clip(CircleShape)
                             .background(c.fillColor)
