@@ -75,10 +75,16 @@ data class ReviewItem(
     /** Due time (0 = none). */
     val at: Long,
     val chips: List<String> = emptyList(),
+    /** The task number (#yyMMddNN) of a follow-up, "" when it has none. */
+    val code: String = "",
+    /** A My task's length, for its free slots. */
+    val lengthMin: Int = MyTaskStore.DEFAULT_LENGTH,
 ) {
     enum class Kind { CALL, TEXT, CALL_REVIEW, TEXT_REVIEW, SCHED_FU, SCHED_MY, MY_TASK }
 
     val isCall: Boolean get() = kind == Kind.CALL || kind == Kind.TEXT
+    val isReplied: Boolean get() = kind == Kind.CALL_REVIEW || kind == Kind.TEXT_REVIEW
+    val isMine: Boolean get() = kind == Kind.MY_TASK || kind == Kind.SCHED_MY
 }
 
 object ReviewData {
@@ -93,11 +99,44 @@ object ReviewData {
         }
     }
 
-    fun tomorrowAt(hour: Int, now: Long = System.currentTimeMillis()): Long {
-        val zone = ZoneId.systemDefault()
-        return java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate().plusDays(1)
-            .atTime(hour, 0).atZone(zone).toInstant().toEpochMilli()
+    /** The first working day after [now]'s day (the weekly off day skipped). */
+    private fun nextWorkDay(now: Long): LocalDate {
+        var d = CalendarData.dateOf(now).plusDays(1)
+        repeat(7) { if (!OffDays.isOff(d)) return d; d = d.plusDays(1) }
+        return CalendarData.dateOf(now).plusDays(1)
     }
+
+    /** Your work start on the next working day: never a suggestion outside working hours. */
+    fun nextWorkStart(ctx: Context, now: Long = System.currentTimeMillis()): Long =
+        CalendarData.at(nextWorkDay(now), WorkHours.start(ctx))
+
+    /**
+     * The same clock time on the next working day, or null when there is no time or the time is outside your
+     * working hours (those are left for you to set).
+     */
+    fun sameTimeNextDay(ctx: Context, at: Long, now: Long = System.currentTimeMillis()): Long? {
+        if (at <= 0L) return null
+        val t = java.time.Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalTime()
+        val minute = t.hour * 60 + t.minute
+        if (WorkHours.isSet(ctx) && (minute < WorkHours.start(ctx) || minute >= WorkHours.end(ctx))) return null
+        return CalendarData.at(nextWorkDay(now), minute)
+    }
+
+    /** Up to [count] free starts for a My task of [lengthMin], from now over the next two weeks (working hours only). */
+    fun freeSlots(ctx: Context, lengthMin: Int, excludeTaskId: Long, count: Int = 6, now: Long = System.currentTimeMillis()): List<Long> {
+        val out = ArrayList<Long>()
+        var d = CalendarData.dateOf(now)
+        repeat(14) {
+            if (out.size >= count) return out
+            out += CalendarData.bestSlots(ctx, d, lengthMin, excludeTaskId, count - out.size).filter { it > now }
+            d = d.plusDays(1)
+        }
+        return out.take(count)
+    }
+
+    /** When a replied task put to "Review later" comes back: your next review reminder, else tomorrow's work start. */
+    fun nextReviewAt(ctx: Context, now: Long = System.currentTimeMillis()): Long =
+        ReviewReminder.nextAt(ctx, now) ?: nextWorkStart(ctx, now)
 
     /** Every section with what's waiting in it right now (all sections, shown or not). */
     fun build(ctx: Context, now: Long = System.currentTimeMillis()): Map<ReviewSection, List<ReviewItem>> {
@@ -113,16 +152,16 @@ object ReviewData {
 
         val replied = calls.filter { it.done && it.review && it.reviewLaterUntil <= now }.map {
             ReviewItem("cr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id,
-                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("To check"))
+                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("To check"), code = it.code)
         } + texts.filter { !it.done && it.review == SmsReminder.Review.REPLIED && it.reviewLaterUntil <= now }.map {
             ReviewItem("tr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id,
-                it.message, it.title, it.number, it.reviewAt, listOf("Replied ${it.code}"))
+                it.message, it.title, it.number, it.reviewAt, listOf("✅ Replied Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
         }
 
         val overdueCalls = calls.filter { !it.done && it.dueAt <= now }.map {
             ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
                 it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt,
-                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "Delayed ${n}×" }))
+                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "Delayed ${n}×" }), code = it.code)
         }
         // A text follow-up with no call of its own: overdue once its texts went with no reply, or its due passed.
         val overdueTexts = texts.filter { t ->
@@ -131,7 +170,7 @@ object ReviewData {
         }.map { t ->
             val at = t.taskDue.takeIf { it > 0L } ?: t.reviewAt
             ReviewItem("t:${t.id}", ReviewSection.OVERDUE, ReviewItem.Kind.TEXT, t.id, t.message, t.title, t.number, at,
-                listOf(lateLabel(at, now), "💬 No reply"))
+                listOf(lateLabel(at, now), "💬 No reply"), code = t.code)
         }
 
         val schedFu = ToScheduleStore.items.value.sortedBy { it.createdAt }.map {
@@ -142,15 +181,16 @@ object ReviewData {
         val my = MyTaskStore.items.value.filter { !it.done }
         val schedMy = my.filter { !it.timed }.sortedBy { it.createdAt }.map {
             ReviewItem("ms:${it.id}", ReviewSection.SCHED_MY, ReviewItem.Kind.SCHED_MY, it.id,
-                it.title, if (it.hasPerson) it.personTitle else "", it.number, 0L, listOf("☑ My task"))
+                it.title, if (it.hasPerson) it.personTitle else "", it.number, 0L, listOf("☑ My task"), lengthMin = it.durationMin)
         }
         val myLate = my.filter { it.timed && it.dueAt <= now }.sortedBy { it.dueAt }.map {
             ReviewItem("ml:${it.id}", ReviewSection.MY_LATE, ReviewItem.Kind.MY_TASK, it.id,
-                it.title, if (it.hasPerson) it.personTitle else "", it.number, it.dueAt, listOf(lateLabel(it.dueAt, now), "☑ My task"))
+                it.title, if (it.hasPerson) it.personTitle else "", it.number, it.dueAt, listOf(lateLabel(it.dueAt, now), "☑ My task"),
+                lengthMin = it.durationMin)
         }
         val dueToday = calls.filter { !it.done && it.dueAt in (now + 1)..endOfDay }.sortedBy { it.dueAt }.map {
             ReviewItem("c:${it.id}", ReviewSection.DUE_TODAY, ReviewItem.Kind.CALL, it.id,
-                it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt, listOf("Later today"))
+                it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt, listOf("Later today"), code = it.code)
         }
 
         return mapOf(
@@ -179,6 +219,22 @@ object ReviewData {
             else -> listOfNotNull(ReviewSection.values().firstOrNull { it.key == mode })
         }
         return sections.flatMap { all[it].orEmpty() }.distinctBy { it.key }
+    }
+
+    /** A replied task put to "Review later" (hidden from [build] until then), while it still waits for your check. */
+    fun findLater(ctx: Context, key: String): ReviewItem? {
+        val id = key.substringAfter(':').toLongOrNull() ?: return null
+        return when {
+            key.startsWith("cr:") -> ReminderStore.get(id)?.takeIf { it.done && it.review }?.let {
+                ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id, it.note.ifBlank { "Call back" }, it.title,
+                    it.number, it.reviewLaterUntil, listOf("To check"), code = it.code)
+            }
+            key.startsWith("tr:") -> SmsStore.get(id)?.takeIf { !it.done && it.review == SmsReminder.Review.REPLIED }?.let {
+                ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id, it.message, it.title, it.number,
+                    it.reviewLaterUntil, listOf("Replied Done ${it.code}"), code = it.code)
+            }
+            else -> null
+        }
     }
 
     /** One item by its queue key, as it is now (null when it has gone, e.g. done elsewhere). */
@@ -212,6 +268,8 @@ object ReviewSession {
         val newTime: Int = 0,
         val skipped: List<String> = emptyList(),
         val noAnswer: List<String> = emptyList(),
+        /** Replied tasks put to "Review later" (back at the next review time). */
+        val later: List<String> = emptyList(),
         val awaiting: String = "",
         val awaitingAt: Long = 0L,
         val startedAt: Long = 0L,
@@ -248,6 +306,7 @@ object ReviewSession {
                 newTime = s.getInt("newTime", 0),
                 skipped = list("skipped"),
                 noAnswer = list("noAnswer"),
+                later = list("later"),
                 awaiting = s.getString("awaiting", "")!!,
                 awaitingAt = s.getLong("awaitingAt", 0L),
                 startedAt = s.getLong("startedAt", 0L),
@@ -276,6 +335,7 @@ object ReviewSession {
             .putInt("newTime", s.newTime)
             .putString("skipped", s.skipped.joinToString(","))
             .putString("noAnswer", s.noAnswer.joinToString(","))
+            .putString("later", s.later.joinToString(","))
             .putString("awaiting", s.awaiting)
             .putLong("awaitingAt", s.awaitingAt)
             .putLong("startedAt", s.startedAt)
@@ -289,6 +349,7 @@ object ReviewSession {
         val items = ReviewData.queue(ctx, mode)
         if (items.isEmpty()) return false
         cancelReminder(ctx)
+        ReviewReminder.cancelSnooze(ctx)
         set(ctx, State(status = Status.RUNNING, mode = mode, queue = items.map { it.key }, startedAt = System.currentTimeMillis(), day = today()))
         return true
     }
@@ -321,6 +382,17 @@ object ReviewSession {
     fun markDone(ctx: Context) = init(ctx).let { advance(ctx, it.copy(done = it.done + 1)) }
     fun markNewTime(ctx: Context) = init(ctx).let { advance(ctx, it.copy(newTime = it.newTime + 1)) }
     fun skip(ctx: Context) = init(ctx).let { s -> advance(ctx, s.copy(skipped = s.skipped + listOfNotNull(s.current))) }
+
+    /** Skip on a replied task: hidden from Review and sessions until the next review time, then back in Replied. */
+    fun reviewLater(ctx: Context, item: ReviewItem) {
+        val until = ReviewData.nextReviewAt(ctx)
+        when (item.kind) {
+            ReviewItem.Kind.CALL_REVIEW -> ReminderStore.reviewLater(item.id, until)
+            ReviewItem.Kind.TEXT_REVIEW -> SmsStore.reviewLater(item.id, until)
+            else -> {}
+        }
+        init(ctx).let { s -> advance(ctx, s.copy(later = s.later + item.key)) }
+    }
 
     /** Call now: remember which item the call is about, so its outcome is read when you come back. */
     fun calling(ctx: Context, key: String) {
@@ -430,7 +502,7 @@ object ReviewSession {
         val s = init(ctx)
         val key = s.current ?: return null
         val item = ReviewData.find(ctx, key) ?: return null
-        return listOf(item.person, item.title).filter { it.isNotBlank() }.joinToString(" · ")
+        return listOf(item.title, item.person).filter { it.isNotBlank() }.joinToString(" · ")
     }
 
     // ---- Resume reminder ----

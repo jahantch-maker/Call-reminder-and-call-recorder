@@ -1,5 +1,6 @@
 package com.callbackreminder.app
 
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -191,9 +192,19 @@ internal fun GTaskRow(
     var personMenu by remember { mutableStateOf(false) }
     var rowMenu by remember { mutableStateOf(false) }
     val hasMenu = !t.done && (onMoveToFollowUps != null || onDelete != null)
+    // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    if (highlighted) {
+        LaunchedEffect(t.id) {
+            MyTasksUi.seen.value = t.id
+            kotlinx.coroutines.delay(60L)
+            runCatching { bring.bringIntoView() }
+        }
+    }
     Row(
         Modifier
             .fillMaxWidth()
+            .bringIntoViewRequester(bring)
             .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), RoundedCornerShape(14.dp)) else Modifier)
             .combinedClickable(onClick = onOpen, onLongClick = if (hasMenu) ({ rowMenu = true }) else null)
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -510,6 +521,8 @@ internal fun MyTaskDialog(
     initialLength: Int = MyTaskStore.DEFAULT_LENGTH,
     /** A new task's text to start with (the widget's 🎤). */
     initialTitle: String = "",
+    /** Opened in place (a person page, Home, the review session): "Show in My tasks ›", History and WA. */
+    extras: TaskExtras? = null,
 ) {
     val ctx = LocalContext.current
     val lists by MyTaskStore.lists.collectAsState()
@@ -581,7 +594,14 @@ internal fun MyTaskDialog(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (existing != null) {
-                Text("Edit task", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Edit task", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    if (extras != null) {
+                        TaskExtraButtons(extras)
+                        extras.onShowInList?.let { go -> ShowInListLink(extras.listName) { onDismiss(); go() } }
+                    }
+                }
             }
             OutlinedTextField(
                 value = title,

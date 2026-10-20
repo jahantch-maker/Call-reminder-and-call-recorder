@@ -82,6 +82,8 @@ fun FormDialog(
     dismissLabel: String = "Cancel",
     titleAction: (@Composable () -> Unit)? = null,
     summary: (@Composable () -> Unit)? = null,
+    /** Small buttons at the left of the Cancel / Save bar (History, WhatsApp), so the window stays the same size. */
+    bottomStart: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(
@@ -135,6 +137,10 @@ fun FormDialog(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (bottomStart != null) {
+                            bottomStart()
+                            Spacer(Modifier.weight(1f))
+                        }
                         TextButton(onClick = onDismiss) { Text(dismissLabel) }
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel, fontWeight = FontWeight.Bold) }
@@ -444,6 +450,8 @@ fun FollowUpDialog(
     startWithText: Boolean = false,
     fromMyTask: MyTask? = null,
     onMoveToMyTasks: (() -> Unit)? = null,
+    /** Opened in place (a person page, Home, the review session): "Show in Follow-ups ›", History and WA. */
+    extras: TaskExtras? = null,
 ) {
     val ctx = LocalContext.current
     val editCall = remember { FollowUps.call(linkId) }
@@ -545,7 +553,9 @@ fun FollowUpDialog(
         title = heading,
         onDismiss = cancel,
         confirmEnabled = problem == null,
+        bottomStart = extras?.let { x -> { TaskExtraButtons(x) } },
         titleAction = {
+            extras?.onShowInList?.let { go -> ShowInListLink(extras.listName) { onDismiss(); go() } }
             IconButton(onClick = { starred = !starred }) {
                 Icon(
                     if (starred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
