@@ -58,12 +58,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -493,14 +495,22 @@ internal fun MyTaskDialog(
     onDelete: ((MyTask) -> Unit)? = null,
     onSaved: ((before: MyTask?, after: MyTask) -> Unit)? = null,
     onMoveToFollowUps: ((MyTask) -> Unit)? = null,
+    /** A new task's time and length to start with (the Calendar's "＋ Add" in a free gap). */
+    initialDue: Long = 0L,
+    initialLength: Int = MyTaskStore.DEFAULT_LENGTH,
 ) {
     val ctx = LocalContext.current
     val lists by MyTaskStore.lists.collectAsState()
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var showNote by remember { mutableStateOf(existing?.note?.isNotBlank() == true) }
-    var due by remember { mutableLongStateOf(existing?.dueAt ?: 0L) }
-    var showTime by remember { mutableStateOf(existing?.timed == true) }
+    var due by remember { mutableLongStateOf(existing?.dueAt ?: initialDue) }
+    var showTime by remember { mutableStateOf(existing?.timed == true || initialDue > 0L) }
+    var length by remember { mutableIntStateOf(existing?.durationMin ?: initialLength) }
+    var customLength by remember { mutableStateOf(false) }
+    var pickAnother by remember { mutableStateOf(false) }
+    // "Keep both" on the clash warning: remembered for that time and length only.
+    var keptClash by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var picked by remember { mutableStateOf<Long?>(null) }
     var list by remember { mutableLongStateOf(existing?.listId ?: listId.takeIf { it >= 0 } ?: MyTaskStore.UNSORTED) }
     var starred by remember { mutableStateOf(existing?.starred ?: false) }
@@ -512,15 +522,15 @@ internal fun MyTaskDialog(
     var newList by remember { mutableStateOf(false) }
     var before by remember { mutableStateOf(existing?.remindBefore ?: emptyList()) }
 
-    val start = remember { listOf(title, note, due, list, starred, name, number, before) }
+    val start = remember { listOf(title, note, due, list, starred, name, number, before, length) }
     val cancel = rememberDiscardGuard(
-        changed = { listOf(title, note, due, list, starred, name, number, before) != start },
+        changed = { listOf(title, note, due, list, starred, name, number, before, length) != start },
         onClose = onDismiss,
     )
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
         confirmValueChange = { value ->
-            if (value == SheetValue.Hidden && listOf(title, note, due, list, starred, name, number, before) != start) {
+            if (value == SheetValue.Hidden && listOf(title, note, due, list, starred, name, number, before, length) != start) {
                 cancel()
                 false
             } else true
@@ -538,9 +548,9 @@ internal fun MyTaskDialog(
 
     fun save() {
         val t = if (existing == null) {
-            MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred, remindBefore = before)
+            MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
         } else {
-            MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred, remindBefore = before)
+            MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
             MyTaskStore.get(existing.id) ?: return
         }
         onSaved?.invoke(existing, t)
@@ -582,8 +592,55 @@ internal fun MyTaskDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Box(Modifier.padding(end = 8.dp)) {
-                    ShortTimeRow(selected = due.takeIf { it > 0L }, onPick = { ms -> due = ms; picked = ms })
+                val pickBusy = remember(length, existing?.id) { PickBusy(length, existing?.id ?: -1L) }
+                CompositionLocalProvider(LocalPickBusy provides pickBusy) {
+                    Box(Modifier.padding(end = 8.dp)) {
+                        ShortTimeRow(selected = due.takeIf { it > 0L }, onPick = { ms -> due = ms; picked = ms })
+                    }
+                }
+                // How long it takes: the Calendar books this much time and checks it for clashes.
+                Text(
+                    "HOW LONG?",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    MyTaskStore.LENGTH_CHOICES.forEach { m ->
+                        androidx.compose.material3.FilterChip(
+                            selected = length == m,
+                            onClick = { length = m },
+                            label = { Text(lengthChip(m)) },
+                        )
+                    }
+                    val custom = length !in MyTaskStore.LENGTH_CHOICES
+                    androidx.compose.material3.FilterChip(
+                        selected = custom,
+                        onClick = { customLength = true },
+                        label = { Text(if (custom) "✎ " + lengthChip(length) else "✎") },
+                    )
+                }
+                val clashes = remember(due, length, existing?.id) {
+                    if (due > 0L) CalendarData.clashes(ctx, due, length, existing?.id ?: -1L) else emptyList()
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = clashes.isNotEmpty() && keptClash != (due to length),
+                    enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(260)) +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260)) +
+                        androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 6 },
+                    exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200)) +
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+                ) {
+                    ClashWarning(
+                        clashes = clashes,
+                        onNextFree = {
+                            CalendarData.nextFree(ctx, due, length, existing?.id ?: -1L)?.let { due = it; picked = it }
+                        },
+                        onPickAnother = { pickAnother = true },
+                        onKeepBoth = { keptClash = due to length },
+                    )
                 }
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (due > 0L) {
@@ -729,6 +786,19 @@ internal fun MyTaskDialog(
             onDismiss = { showDateTime = false }
         )
     }
+    if (pickAnother) {
+        CompositionLocalProvider(LocalPickBusy provides PickBusy(length, existing?.id ?: -1L)) {
+            TimePickerDialog(
+                title = "Pick another time",
+                selected = due.takeIf { it > 0L },
+                onPick = { ms -> due = ms; picked = ms; pickAnother = false },
+                onDismiss = { pickAnother = false },
+            )
+        }
+    }
+    if (customLength) {
+        LengthDialog(initial = length, onDismiss = { customLength = false }) { length = it; customLength = false }
+    }
     if (newList) {
         ListNameDialog(title = "New list", initial = "", onDismiss = { newList = false }) { n ->
             list = MyTaskStore.addList(n).id
@@ -757,3 +827,79 @@ internal fun allGroups(tasks: List<MyTask>, now: Long): List<Pair<String, List<M
 internal fun sortedForList(tasks: List<MyTask>, byDate: Boolean): List<MyTask> =
     if (byDate) tasks.filter { it.timed }.sortedBy { it.dueAt } + tasks.filter { !it.timed }.sortedBy { it.createdAt }
     else tasks.sortedWith(compareBy<MyTask> { it.position }.thenByDescending { it.createdAt })
+
+/** Like "15m", "1h", "1½h" or "2h 15m" for the How long? chips. */
+internal fun lengthChip(m: Int): String = when {
+    m < 60 -> "${m}m"
+    m % 60 == 0 -> "${m / 60}h"
+    m % 60 == 30 && m < 180 -> "${m / 60}½h"
+    else -> "${m / 60}h ${m % 60}m"
+}
+
+/** The red warning under the time when your own items already book it, with the three ways out. */
+@Composable
+internal fun ClashWarning(clashes: List<CalBlock>, onNextFree: () -> Unit, onPickAnother: () -> Unit, onKeepBoth: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = cs.errorContainer,
+        contentColor = cs.onErrorContainer,
+        modifier = Modifier.fillMaxWidth().padding(end = 8.dp)
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⚠ Clashes with", fontWeight = FontWeight.Bold)
+            clashes.take(3).forEach { b ->
+                Text(
+                    "• ${b.title} · ${Fmt.timeOnly(b.start)} - ${Fmt.timeOnly(b.end)}" + when (b.kind) {
+                        CalBlock.Kind.DOSSIER -> " (Dossier)"
+                        CalBlock.Kind.GOOGLE -> " (Google)"
+                        else -> ""
+                    },
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (clashes.size > 3) Text("and ${clashes.size - 3} more", fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                Button(onClick = onNextFree, shape = RoundedCornerShape(10.dp)) { Text("Move to next free") }
+                OutlinedButton(onClick = onPickAnother, shape = RoundedCornerShape(10.dp)) { Text("Pick another") }
+                TextButton(onClick = onKeepBoth) { Text("Keep both") }
+            }
+        }
+    }
+}
+
+/** ✎ on How long?: hours and minutes. */
+@Composable
+internal fun LengthDialog(initial: Int, onDismiss: () -> Unit, onPicked: (Int) -> Unit) {
+    var hours by remember { mutableStateOf((initial / 60).toString()) }
+    var mins by remember { mutableStateOf((initial % 60).toString()) }
+    val total = (hours.toIntOrNull() ?: 0) * 60 + (mins.toIntOrNull() ?: 0)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How long?") },
+        text = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = hours,
+                    onValueChange = { v -> hours = v.filter { it.isDigit() }.take(2) },
+                    label = { Text("Hours") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = mins,
+                    onValueChange = { v -> mins = v.filter { it.isDigit() }.take(3) },
+                    label = { Text("Minutes") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = total in 5..(24 * 60), onClick = { onPicked(total) }) { Text("OK") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}

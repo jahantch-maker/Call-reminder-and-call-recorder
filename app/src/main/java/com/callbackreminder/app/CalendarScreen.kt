@@ -1,0 +1,1286 @@
+package com.callbackreminder.app
+
+import android.Manifest
+import android.content.ContentUris
+import android.content.Context
+import android.content.Intent
+import android.provider.CalendarContract
+import android.provider.Settings
+import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
+
+/** The Calendar's view state, kept while you move between tabs. */
+object CalendarUi {
+    /** Swiped left: the follow-ups lane is wide, your own work slim. */
+    val wide = mutableStateOf(false)
+
+    /** The bottom toggle: Best fit (busy hours grow) or Working hours (fill the screen). Opens on Best fit. */
+    val bestFit = mutableStateOf(true)
+}
+
+private val TimeCol = 28.dp
+private val BaseHour = 54.dp
+private val CardGap = 3.dp
+private val CardPad = 4.dp
+private val ToggleSpace = 64.dp
+
+// Colours that match the mockups: Dossier purple, My task blue, call blue, text green, Google amber.
+private class CalColors(dark: Boolean) {
+    val taskBg = if (dark) Color(0xFF22346F) else Color(0xFFE3EAFF)
+    val taskInk = if (dark) Color(0xFFDCE4FF) else Color(0xFF0B2A8F)
+    val taskEdge = if (dark) Color(0xFF8BA6FF) else Color(0xFF2F5BEA)
+    val dosBg = if (dark) Color(0xFF3B2A52) else Color(0xFFF1E7FB)
+    val dosInk = if (dark) Color(0xFFEBDDF8) else Color(0xFF3F1F8C)
+    val dosEdge = Color(0xFFC792EA)
+    val gBg = if (dark) Color(0xFF3A2D12) else Color(0xFFFFF1D6)
+    val gInk = if (dark) Color(0xFFFFE2A8) else Color(0xFF7A4B00)
+    val gEdge = Color(0xFFFFB547)
+    val callBg = if (dark) Color(0xFF1F2C55) else Color(0xFFE6ECFF)
+    val callInk = if (dark) Color(0xFFDCE4FF) else Color(0xFF1B2F7A)
+    val callEdge = Color(0xFF5C7CFA)
+    val textBg = if (dark) Color(0xFF12352E) else Color(0xFFDDF5EE)
+    val textInk = if (dark) Color(0xFFC8F4EA) else Color(0xFF05453A)
+    val textEdge = Color(0xFF0FA68E)
+    val band = if (dark) Color(0x1A5C7CFA) else Color(0x125C7CFA)
+    val offHours = if (dark) Color(0x22000000) else Color(0x0A000000)
+    val now = Color(0xFFE53935)
+}
+
+/** True unless the phone's "Remove animations" is on. */
+private fun motionOn(ctx: Context): Boolean =
+    runCatching { Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) }.getOrDefault(1f) > 0f
+
+private fun <T> calSpec(on: Boolean, ms: Int = 280): FiniteAnimationSpec<T> =
+    if (on) tween(durationMillis = ms, easing = FastOutSlowInEasing) else snap()
+
+/**
+ * The Calendar tab: one day, 24 hours, your own work on the left (My tasks with a time, Dossier blocks,
+ * Google Calendar events) and follow-ups on the right, each its own card. Swipe left to widen the
+ * follow-ups, right to go back. The bottom toggle switches Best fit and Working hours.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val motion = remember(resumeKey) { motionOn(ctx) }
+    val whVersion by WorkHours.version.collectAsState()
+    val whSet = remember(whVersion) { WorkHours.isSet(ctx) }
+
+    if (!whSet) {
+        WorkHoursSetup(first = true, onSaved = {})
+        return
+    }
+
+    var dateDay by rememberSaveable { mutableLongStateOf(LocalDate.now().toEpochDay()) }
+    val date = LocalDate.ofEpochDay(dateDay)
+    var wide by CalendarUi.wide
+    var bestFit by CalendarUi.bestFit
+    val wideF by animateFloatAsState(if (wide) 1f else 0f, calSpec(motion, 300), label = "lanes")
+    val mix by animateFloatAsState(if (bestFit) 1f else 0f, calSpec(motion, 320), label = "fit")
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(resumeKey) {
+        now = System.currentTimeMillis()
+        GoogleCal.refresh()
+        while (true) {
+            delay(30_000L)
+            now = System.currentTimeMillis()
+        }
+    }
+
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var showDate by remember { mutableStateOf(false) }
+    var openFu by remember { mutableStateOf<CalFollowUp?>(null) }
+    var openBlock by remember { mutableStateOf<CalBlock?>(null) }
+    var hourList by remember { mutableStateOf<List<CalFollowUp>?>(null) }
+    var snoozeFu by remember { mutableStateOf<CalFollowUp?>(null) }
+    var addAt by remember { mutableStateOf<Pair<Long, Int>?>(null) }
+    var editTask by remember { mutableStateOf<MyTask?>(null) }
+    var editDossier by remember { mutableStateOf<DossierTask?>(null) }
+
+    val day = rememberDay(date, now)
+    val today = LocalDate.now()
+
+    fun callFu(f: CalFollowUp) {
+        if (f.isCall) ReminderStore.items.value.firstOrNull { it.id == f.id }?.let { r ->
+            if (!r.done && r.dueAt <= System.currentTimeMillis()) FollowUp.mark(ctx, r)
+        }
+        dial(ctx, f.number)
+    }
+
+    fun undoFor(f: CalFollowUp): () -> Unit {
+        val r = if (f.isCall) ReminderStore.items.value.firstOrNull { it.id == f.id } else null
+        val t = if (!f.isCall) SmsStore.items.value.firstOrNull { it.id == f.id } else null
+        val link = FollowUps.snapshot(r?.linkId ?: t?.linkId ?: 0L)
+        return {
+            r?.let { ReminderStore.restore(it) }
+            t?.let { SmsStore.restore(it) }
+            link()
+        }
+    }
+
+    fun doneFu(f: CalFollowUp) {
+        val undo = undoFor(f)
+        if (f.isCall) ReminderStore.markDone(f.id) else SmsStore.markDone(f.id)
+        scope.offerUndo(snack, "Done · ${f.title}", undo)
+    }
+
+    fun snoozeFuTo(f: CalFollowUp, ms: Long) {
+        val undo = undoFor(f)
+        if (f.isCall) ReminderStore.reschedule(f.id, ms, "Snoozed to") else SmsStore.reschedule(f.id, ms)
+        scope.offerUndo(snack, "Snoozed to ${Fmt.dueLabel(ms)}", undo)
+    }
+
+    Box(Modifier.fillMaxSize().background(cs.background)) {
+        Column(Modifier.fillMaxSize()) {
+            CalHeader(
+                date = date,
+                isToday = date == today,
+                freeMin = day.freeMin,
+                fuCount = day.followUps.size,
+                motion = motion,
+                onPickDate = { showDate = true },
+                onToday = { dateDay = today.toEpochDay() },
+                onSearch = onOpenSearch,
+                onSettings = onOpenSettings,
+            )
+            DayStrip(date = date, today = today, motion = motion) { dateDay = it.toEpochDay() }
+            GoogleAsk()
+            if (day.allDay.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = TimeCol + 4.dp, end = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val cc = CalColors(cs.background.luminance() < 0.5f)
+                    day.allDay.forEach { e ->
+                        Text(
+                            "All day · ${e.title}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = cc.gInk,
+                            maxLines = 1,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(cc.gBg).padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+            LaneHeaders(wideF = wideF, onMine = { wide = false }, onFollowUps = { wide = !wide })
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                AnimatedContent(
+                    targetState = dateDay,
+                    transitionSpec = {
+                        val forward = targetState > initialState
+                        val spec = calSpec<androidx.compose.ui.unit.IntOffset>(motion, 260)
+                        val fade = calSpec<Float>(motion, 200)
+                        (slideInHorizontally(spec) { if (forward) it / 3 else -it / 3 } + fadeIn(fade)) togetherWith
+                            (slideOutHorizontally(spec) { if (forward) -it / 3 else it / 3 } + fadeOut(fade))
+                    },
+                    label = "day"
+                ) { epochDay ->
+                    val d = LocalDate.ofEpochDay(epochDay)
+                    DayBody(
+                        date = d,
+                        data = rememberDay(d, now),
+                        now = now,
+                        wideF = wideF,
+                        mix = mix,
+                        bestFit = bestFit,
+                        motion = motion,
+                        onSwipe = { toWide -> wide = toWide },
+                        onFollowUp = { openFu = it },
+                        onCall = { callFu(it) },
+                        onHour = { hourList = it },
+                        onBlock = { openBlock = it },
+                        onAdd = { start, len -> addAt = start to len },
+                    )
+                }
+                FitToggle(
+                    bestFit = bestFit,
+                    motion = motion,
+                    onChange = { bestFit = it },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)
+                )
+                SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = ToggleSpace))
+            }
+        }
+    }
+
+    if (showDate) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let {
+                        dateDay = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
+                    }
+                    showDate = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDate = false }) { Text("Cancel") } }
+        ) { DatePicker(state = state) }
+    }
+
+    openFu?.let { f ->
+        FollowUpActions(
+            f = f,
+            onDismiss = { openFu = null },
+            onCall = { openFu = null; callFu(f) },
+            onDone = { openFu = null; doneFu(f) },
+            onSnooze = { openFu = null; snoozeFu = f },
+        )
+    }
+    hourList?.let { list ->
+        HourSheet(list = list, onDismiss = { hourList = null }, onOpen = { hourList = null; openFu = it }, onCall = { callFu(it) })
+    }
+    snoozeFu?.let { f ->
+        SnoozeSheet(
+            heading = "Snooze",
+            about = f.title,
+            onPick = { ms -> snoozeFu = null; snoozeFuTo(f, ms) },
+            onPickTime = { snoozeFu = null },
+            onDismiss = { snoozeFu = null },
+            plusRow = true
+        )
+    }
+    openBlock?.let { b ->
+        BlockActions(
+            b = b,
+            date = date,
+            onDismiss = { openBlock = null },
+            onEditTask = { openBlock = null; editTask = MyTaskStore.get(b.id) },
+            onEditDossier = { openBlock = null; editDossier = DossierStore.get(b.id) },
+            onTaskDone = {
+                openBlock = null
+                MyTaskStore.get(b.id)?.let { before ->
+                    MyTaskStore.setDone(b.id, !before.done)
+                    scope.offerUndo(snack, (if (before.done) "Not done · " else "Done · ") + before.title) { MyTaskStore.restore(before) }
+                }
+            },
+            onCallPerson = { number -> openBlock = null; dial(ctx, number) },
+        )
+    }
+    addAt?.let { (start, len) ->
+        MyTaskDialog(
+            existing = null,
+            onDismiss = { addAt = null },
+            onSwitchKind = null,
+            initialDue = start,
+            initialLength = len,
+        )
+    }
+    editTask?.let { t ->
+        MyTaskDialog(existing = t, onDismiss = { editTask = null }, onSwitchKind = null)
+    }
+    editDossier?.let { t ->
+        DossierTaskDialog(existing = t, onDismiss = { editDossier = null }, onSwitchKind = null)
+    }
+}
+
+/** Everything one day shows. */
+private class DayData(
+    val blocks: List<CalBlock>,
+    val allDay: List<GEvent>,
+    val followUps: List<CalFollowUp>,
+    val gaps: List<Pair<Long, Long>>,
+    val freeMin: Long,
+)
+
+/** Reads a day's items (Google off the main thread) and redraws when any of them change. */
+@Composable
+private fun rememberDay(date: LocalDate, now: Long): DayData {
+    val ctx = LocalContext.current
+    val tasks by MyTaskStore.items.collectAsState()
+    val dossier by DossierStore.tasks.collectAsState()
+    val records by DossierStore.records.collectAsState()
+    val calls by ReminderStore.items.collectAsState()
+    val texts by SmsStore.items.collectAsState()
+    val g by GoogleCal.version.collectAsState()
+    val wh by WorkHours.version.collectAsState()
+    val off by OffDays.mask.collectAsState()
+    val nowMin = now / 60_000L
+    val loaded by produceState<Pair<List<CalBlock>, List<GEvent>>?>(null, date, tasks, dossier, records, g, off) {
+        value = withContext(Dispatchers.IO) {
+            CalendarData.blocks(ctx, date) to GoogleCal.events(ctx, date).filter { it.allDay }
+        }
+    }
+    val blocks = loaded?.first ?: emptyList()
+    val followUps = remember(date, calls, texts, nowMin) { CalendarData.followUps(date, now) }
+    val gaps = remember(blocks, wh, off, nowMin, date) { CalendarData.freeGaps(ctx, date, blocks, now) }
+    return DayData(
+        blocks = blocks,
+        allDay = loaded?.second ?: emptyList(),
+        followUps = followUps,
+        gaps = gaps,
+        freeMin = gaps.sumOf { (it.second - it.first) / 60_000L },
+    )
+}
+
+/** One line: date ▾ · Today · "1 h free · 9 FU" · 🔍 ⚙ */
+@Composable
+private fun CalHeader(
+    date: LocalDate,
+    isToday: Boolean,
+    freeMin: Long,
+    fuCount: Int,
+    motion: Boolean,
+    onPickDate: () -> Unit,
+    onToday: () -> Unit,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 8.dp, end = 2.dp, top = 2.dp).height(42.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onPickDate).padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AnimatedContent(targetState = date, transitionSpec = { fadeIn(calSpec(motion, 200)) togetherWith fadeOut(calSpec(motion, 150)) }, label = "title") { d ->
+                Text(
+                    d.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp
+                )
+            }
+            Text(" ▾", fontSize = 13.sp, color = cs.onSurfaceVariant)
+        }
+        AnimatedVisibility(visible = !isToday, enter = fadeIn(calSpec(motion)), exit = fadeOut(calSpec(motion))) {
+            Surface(
+                onClick = onToday,
+                shape = RoundedCornerShape(8.dp),
+                color = cs.primaryContainer,
+                contentColor = cs.onPrimaryContainer,
+                modifier = Modifier.padding(start = 2.dp)
+            ) {
+                Text("Today", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            "${if (freeMin > 0) CalendarData.lengthLabel(freeMin) else "0 m"} free · $fuCount FU",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = cs.onSurfaceVariant,
+            maxLines = 1
+        )
+        IconButton(onClick = onSearch, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Rounded.Search, contentDescription = "Search", modifier = Modifier.size(20.dp))
+        }
+        IconButton(onClick = onSettings, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Rounded.Tune, contentDescription = "Calendar settings", modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** The slim week row: M 19, T 20 … with the off day tagged. Swipe it sideways for the next or last week. */
+@Composable
+private fun DayStrip(date: LocalDate, today: LocalDate, motion: Boolean, onPick: (LocalDate) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val off by OffDays.mask.collectAsState()
+    val monday = date.minusDays((date.dayOfWeek.value - 1).toLong())
+    var drag by remember { mutableStateOf(0f) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp)
+            .pointerInput(date) {
+                detectHorizontalDragGestures(
+                    onDragStart = { drag = 0f },
+                    onDragEnd = {
+                        if (drag < -120f) onPick(date.plusWeeks(1)) else if (drag > 120f) onPick(date.minusWeeks(1))
+                        drag = 0f
+                    },
+                ) { change, amount -> drag += amount; change.consume() }
+            }
+    ) {
+        (0..6).forEach { i ->
+            val d = monday.plusDays(i.toLong())
+            val on = d == date
+            val isOff = off and (1 shl (d.dayOfWeek.value - 1)) != 0
+            val bg by animateColorAsState(if (on) cs.primary else Color.Transparent, calSpec(motion, 220), label = "daybg")
+            val fg by animateColorAsState(if (on) cs.onPrimary else cs.onSurface, calSpec(motion, 220), label = "dayfg")
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { onPick(d) }.padding(vertical = 1.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    d.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isOff) Color(0xFFC62828) else cs.onSurfaceVariant
+                )
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(bg)
+                        .then(if (d == today && !on) Modifier.border(1.5.dp, cs.primary, CircleShape) else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(d.dayOfMonth.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
+                }
+                Box(Modifier.height(11.dp), contentAlignment = Alignment.Center) {
+                    if (isOff) Text("OFF", fontSize = 7.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFC62828))
+                }
+            }
+        }
+    }
+}
+
+/** Once: "Show your Google Calendar here?" with Allow / Not now. */
+@Composable
+private fun GoogleAsk() {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val g by GoogleCal.version.collectAsState()
+    var hidden by remember { mutableStateOf(false) }
+    val show = remember(g, hidden) { !hidden && !GoogleCal.asked(ctx) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        GoogleCal.setEnabled(ctx, ok)
+        hidden = true
+    }
+    AnimatedVisibility(visible = show, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFFFFF1D6),
+            contentColor = Color(0xFF7A4B00),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Show your Google Calendar meetings here?", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    if (GoogleCal.hasPermission(ctx)) {
+                        GoogleCal.setEnabled(ctx, true)
+                        hidden = true
+                    } else launcher.launch(Manifest.permission.READ_CALENDAR)
+                }) { Text("Allow", fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { GoogleCal.setAsked(ctx); hidden = true }) { Text("Not now", color = cs.onSurfaceVariant) }
+            }
+        }
+    }
+}
+
+/** MY WORK | FOLLOW-UPS ⇆ over the lanes; tap to switch which lane is wide. */
+@Composable
+private fun LaneHeaders(wideF: Float, onMine: () -> Unit, onFollowUps: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    BoxWithConstraints(Modifier.fillMaxWidth().height(22.dp)) {
+        val (mineW, fuW) = laneWidths(maxWidth, wideF)
+        Row(Modifier.fillMaxSize().padding(start = TimeCol), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (wideF > 0.5f) "MINE" else "MY WORK",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.6.sp,
+                color = cs.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.width(mineW).clickable(onClick = onMine).padding(start = 6.dp)
+            )
+            Spacer(Modifier.width(LaneGap))
+            Text(
+                if (wideF > 0.5f) "FOLLOW-UPS  ⇢ swipe back" else "FOLLOW-UPS ⇠",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.6.sp,
+                color = cs.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.width(fuW).clickable(onClick = onFollowUps).padding(start = 4.dp)
+            )
+        }
+    }
+}
+
+private val LaneGap = 4.dp
+
+/** My work and follow-ups widths: follow-ups take about a third, or most of it when swiped wide. */
+private fun laneWidths(total: Dp, wideF: Float): Pair<Dp, Dp> {
+    val lanes = total - TimeCol - LaneGap - 4.dp
+    val fu = lanes * (0.34f + (0.70f - 0.34f) * wideF)
+    return (lanes - fu) to fu
+}
+
+/** The day itself: hours, own blocks, free gaps, follow-up cards (or marks), and the now line. */
+@Composable
+private fun DayBody(
+    date: LocalDate,
+    data: DayData,
+    now: Long,
+    wideF: Float,
+    mix: Float,
+    bestFit: Boolean,
+    motion: Boolean,
+    onSwipe: (Boolean) -> Unit,
+    onFollowUp: (CalFollowUp) -> Unit,
+    onCall: (CalFollowUp) -> Unit,
+    onHour: (List<CalFollowUp>) -> Unit,
+    onBlock: (CalBlock) -> Unit,
+    onAdd: (Long, Int) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val cc = CalColors(cs.background.luminance() < 0.5f)
+    val density = LocalDensity.current
+    val wh by WorkHours.version.collectAsState()
+    val ws = remember(wh) { WorkHours.start(ctx) }
+    val we = remember(wh) { WorkHours.end(ctx) }
+    val isOff = OffDays.isOff(date)
+    val dayStart = CalendarData.at(date, 0)
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val viewH = maxHeight - ToggleSpace
+        val (mineW, fuW) = laneWidths(maxWidth, wideF)
+        val fuX = TimeCol + mineW + LaneGap
+        val cardH = lerp(36.dp, 46.dp, wideF)
+
+        val firstWork = ws / 60
+        val lastWork = ((we + 59) / 60).coerceIn(firstWork + 1, 24)
+        val workH = (viewH / (lastWork - firstWork).toFloat()).coerceAtLeast(26.dp)
+        val byHour = remember(data.followUps) { data.followUps.groupBy { ((it.at - dayStart) / 3_600_000L).toInt().coerceIn(0, 23) } }
+        val heights = (0 until 24).map { h ->
+            val n = byHour[h]?.size ?: 0
+            val fit = maxOf(BaseHour, (cardH + CardGap) * n.toFloat() + CardPad * 2)
+            lerp(workH, fit, mix)
+        }
+        val tops = heights.runningFold(0.dp) { acc, h -> acc + h }
+        val totalH = tops.last()
+
+        fun yOf(ms: Long): Dp {
+            val m = ((ms - dayStart) / 60_000L).coerceIn(0, 24 * 60)
+            if (m >= 24 * 60) return totalH
+            val h = (m / 60).toInt()
+            return tops[h] + heights[h] * ((m % 60) / 60f)
+        }
+
+        val scroll = rememberScrollState()
+        // Open at the current hour today, else at the start of working hours.
+        LaunchedEffect(date) {
+            val target = if (date == LocalDate.now()) yOf(now - 3_600_000L) else tops[firstWork]
+            scroll.scrollTo(with(density) { target.roundToPx() })
+        }
+        // Working hours: bring them into view while the hours shrink.
+        LaunchedEffect(bestFit) {
+            if (!bestFit) {
+                delay(40)
+                scroll.animateScrollTo(with(density) { (workH * firstWork.toFloat()).roundToPx() }, calSpec(motion, 300))
+            }
+        }
+
+        var drag by remember { mutableStateOf(0f) }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { drag = 0f },
+                        onDragEnd = {
+                            if (drag < -90f) onSwipe(true) else if (drag > 90f) onSwipe(false)
+                            drag = 0f
+                        },
+                    ) { change, amount -> drag += amount; change.consume() }
+                }
+                .verticalScroll(scroll)
+        ) {
+            Box(Modifier.fillMaxWidth().height(totalH + ToggleSpace)) {
+                // Hours: lines, labels, outside-working-hours shade and Best fit's light band on busy hours.
+                for (h in 0 until 24) {
+                    val inWork = !isOff && h * 60 < we && (h + 1) * 60 > ws
+                    val grown = heights[h] > BaseHour + 1.dp && mix > 0.01f
+                    Box(
+                        Modifier
+                            .offset(y = tops[h])
+                            .fillMaxWidth()
+                            .height(heights[h])
+                            .background(
+                                when {
+                                    grown -> cc.band.copy(alpha = cc.band.alpha * mix)
+                                    !inWork -> cc.offHours
+                                    else -> Color.Transparent
+                                }
+                            )
+                    ) {
+                        HorizontalDivider(Modifier.padding(start = TimeCol - 4.dp), color = cs.outlineVariant.copy(alpha = 0.6f))
+                        Column(Modifier.width(TimeCol).padding(top = 1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val h12 = if (h % 12 == 0) 12 else h % 12
+                            Text(h12.toString(), fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
+                            if (heights[h] > 22.dp) {
+                                Text(if (h < 12) "am" else "pm", fontSize = 8.sp, lineHeight = 8.sp, color = cs.outline)
+                            }
+                        }
+                    }
+                }
+
+                // Free gaps inside working hours: dashed, with ＋ Add.
+                data.gaps.forEach { (s, e) ->
+                    val top = yOf(s)
+                    val hgt = yOf(e) - top
+                    if (hgt > 10.dp) {
+                        val minutes = ((e - s) / 60_000L).toInt()
+                        val dash = cs.secondary
+                        Box(
+                            Modifier
+                                .offset(x = TimeCol + 2.dp, y = top + 1.dp)
+                                .width(mineW - 4.dp)
+                                .height(hgt - 2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .drawBehind {
+                                    drawRoundRect(
+                                        color = dash.copy(alpha = 0.7f),
+                                        style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))),
+                                        cornerRadius = CornerRadius(8.dp.toPx())
+                                    )
+                                }
+                                .clickable { onAdd(s, minutes.coerceIn(15, 180)) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (hgt > 26.dp && wideF < 0.5f) "＋ Add · ${CalendarData.lengthLabel(minutes.toLong())} free" else "＋",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = cs.secondary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // Own work: side by side when they overlap, red edge and ⚠ on a clash.
+                val placed = remember(data.blocks) { placeBlocks(data.blocks) }
+                placed.forEach { p ->
+                    val b = p.block
+                    val top = yOf(b.start)
+                    val hgt = maxOf(yOf(minOf(b.end, dayStart + 86_400_000L)) - top, 22.dp)
+                    val colW = (mineW - 4.dp) / p.cols.toFloat()
+                    key(b.kind, b.id) {
+                        val ap = rememberAppear(motion)
+                        BlockCard(
+                            b = b,
+                            clash = p.clash,
+                            slim = wideF > 0.5f,
+                            cc = cc,
+                            modifier = Modifier
+                                .offset(x = TimeCol + 2.dp + colW * p.col.toFloat(), y = top + 1.dp)
+                                .width(colW - 2.dp)
+                                .height(hgt - 2.dp)
+                                .graphicsLayer { alpha = ap; scaleX = 0.94f + 0.06f * ap; scaleY = 0.94f + 0.06f * ap },
+                            onClick = { onBlock(b) }
+                        )
+                    }
+                }
+
+                // Follow-ups: Best fit shows each as its own card inside its hour; Working hours shows marks.
+                for (h in 0 until 24) {
+                    val list = byHour[h].orEmpty()
+                    if (list.isNotEmpty() && mix > 0.02f) {
+                        var prevBottom = tops[h] + CardPad - CardGap
+                        list.forEachIndexed { i, f ->
+                            val want = tops[h] + heights[h] * (((f.at - dayStart) / 60_000L % 60) / 60f) + CardPad
+                            val latest = tops[h] + heights[h] - CardPad - (cardH + CardGap) * (list.size - i).toFloat() + CardGap
+                            val y = minOf(maxOf(want, prevBottom + CardGap), maxOf(latest, prevBottom + CardGap))
+                            prevBottom = y + cardH
+                            key(f.key) {
+                                val ap = rememberAppear(motion)
+                                FollowUpCard(
+                                    f = f,
+                                    wideF = wideF,
+                                    cc = cc,
+                                    modifier = Modifier
+                                        .offset(x = fuX, y = y)
+                                        .width(fuW)
+                                        .height(cardH)
+                                        .graphicsLayer { alpha = mix * ap; scaleX = 0.94f + 0.06f * ap; scaleY = 0.94f + 0.06f * ap },
+                                    enabled = mix > 0.5f,
+                                    onClick = { onFollowUp(f) },
+                                    onCall = { onCall(f) },
+                                )
+                            }
+                        }
+                    }
+                    if (list.isNotEmpty() && mix < 0.98f) {
+                        Row(
+                            Modifier
+                                .offset(x = fuX, y = tops[h] + 3.dp)
+                                .width(fuW)
+                                .alpha(1f - mix)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable(enabled = mix < 0.5f) { onHour(list) }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            list.take(8).forEach { f ->
+                                Box(
+                                    Modifier
+                                        .size(width = 10.dp, height = 7.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (f.isCall) cc.callEdge else cc.textEdge)
+                                )
+                            }
+                            Text(
+                                if (wideF > 0.5f) "${list.size} · ${list.first().title}" else "${list.size}",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = cs.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                // Now.
+                if (date == LocalDate.now()) {
+                    val y = yOf(now)
+                    Box(Modifier.offset(x = TimeCol - 4.dp, y = y - 4.dp).size(8.dp).clip(CircleShape).background(cc.now))
+                    Box(Modifier.offset(x = TimeCol, y = y - 1.dp).fillMaxWidth().height(2.dp).background(cc.now))
+                }
+            }
+        }
+    }
+}
+
+/** 0 to 1 the first time a card shows: it fades and grows in. */
+@Composable
+private fun rememberAppear(motion: Boolean): Float {
+    val a = remember { Animatable(if (motion) 0f else 1f) }
+    LaunchedEffect(Unit) { a.animateTo(1f, calSpec(motion, 260)) }
+    return a.value
+}
+
+private class Placed(val block: CalBlock, val col: Int, val cols: Int, val clash: Boolean)
+
+/** Columns for overlapping own items (like Google Calendar), and which of them clash. */
+private fun placeBlocks(blocks: List<CalBlock>): List<Placed> {
+    val out = ArrayList<Placed>()
+    val sorted = blocks.sortedWith(compareBy<CalBlock> { it.start }.thenByDescending { it.end })
+    var group = ArrayList<Pair<CalBlock, Int>>()
+    var colEnds = ArrayList<Long>()
+    var groupEnd = Long.MIN_VALUE
+    fun flush() {
+        val cols = colEnds.size.coerceAtLeast(1)
+        group.forEach { (b, c) ->
+            val clash = !b.done && group.any { (o, _) -> o !== b && !o.done && o.overlaps(b.start, b.end) }
+            out += Placed(b, c, cols, clash)
+        }
+        group = ArrayList()
+        colEnds = ArrayList()
+    }
+    sorted.forEach { b ->
+        if (b.start >= groupEnd && group.isNotEmpty()) flush()
+        val col = colEnds.indexOfFirst { it <= b.start }.takeIf { it >= 0 } ?: colEnds.size.also { colEnds.add(0L) }
+        colEnds[col] = b.end
+        group.add(b to col)
+        groupEnd = if (group.size == 1) b.end else maxOf(groupEnd, b.end)
+    }
+    if (group.isNotEmpty()) flush()
+    return out
+}
+
+@Composable
+private fun BlockCard(b: CalBlock, clash: Boolean, slim: Boolean, cc: CalColors, modifier: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val (bg, ink, edge) = when (b.kind) {
+        CalBlock.Kind.TASK -> Triple(cc.taskBg, cc.taskInk, cc.taskEdge)
+        CalBlock.Kind.DOSSIER -> Triple(cc.dosBg, cc.dosInk, cc.dosEdge)
+        CalBlock.Kind.GOOGLE -> Triple(cc.gBg, cc.gInk, if (b.color != 0) Color(b.color) else cc.gEdge)
+    }
+    Box(
+        modifier
+            .alpha(if (b.done) 0.55f else 1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .then(if (clash) Modifier.border(2.dp, cs.error, RoundedCornerShape(8.dp)) else Modifier)
+            .clickable(onClick = onClick)
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(if (clash) cs.error else edge))
+        Column(Modifier.padding(start = 7.dp, end = 4.dp, top = 2.dp)) {
+            Text(
+                (if (clash) "⚠ " else "") + (if (b.done) "✓ " else "") + b.title,
+                fontSize = if (slim) 10.sp else 12.sp,
+                lineHeight = if (slim) 11.sp else 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = ink,
+                maxLines = if (slim) 2 else 3,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (b.done) TextDecoration.LineThrough else null
+            )
+            if (!slim) {
+                Text(
+                    Fmt.timeOnly(b.start) + " - " + Fmt.timeOnly(b.end) + when (b.kind) {
+                        CalBlock.Kind.DOSSIER -> " · Dossier"
+                        CalBlock.Kind.GOOGLE -> " · Google"
+                        CalBlock.Kind.TASK -> if (b.sub.isNotBlank()) " · ${b.sub}" else ""
+                    },
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    color = ink.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/** One follow-up: the task first, the person small. Wide lane adds a 📞 button for a one-tap call. */
+@Composable
+private fun FollowUpCard(
+    f: CalFollowUp,
+    wideF: Float,
+    cc: CalColors,
+    modifier: Modifier,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onCall: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val bg = if (f.isCall) cc.callBg else cc.textBg
+    val ink = if (f.isCall) cc.callInk else cc.textInk
+    val edge = if (f.isCall) cc.callEdge else cc.textEdge
+    Row(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(if (f.overdue) cs.error else edge))
+        Column(Modifier.weight(1f).padding(start = 6.dp, end = 2.dp)) {
+            Text(
+                (if (f.isCall) "" else "💬 ") + f.title,
+                fontSize = if (wideF > 0.5f) 12.5.sp else 11.sp,
+                lineHeight = if (wideF > 0.5f) 14.sp else 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                Fmt.timeOnly(f.at) + if (f.person.isNotBlank()) " · ${f.person}" else "",
+                fontSize = 9.5.sp,
+                lineHeight = 11.sp,
+                color = if (f.overdue) cs.error else ink.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (wideF > 0.3f && f.number.isNotBlank()) {
+            Box(
+                Modifier
+                    .alpha(((wideF - 0.3f) / 0.7f).coerceIn(0f, 1f))
+                    .padding(end = 4.dp)
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(edge)
+                    .clickable(enabled = enabled, onClick = onCall),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+/** ⊟ Working hours | ⇕ Best fit, with a sliding thumb. */
+@Composable
+private fun FitToggle(bestFit: Boolean, motion: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val segW = 128.dp
+    val x by animateDpAsState(if (bestFit) segW else 0.dp, calSpec(motion, 260), label = "thumb")
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = cs.surface,
+        shadowElevation = 6.dp,
+        modifier = modifier
+    ) {
+        Box(Modifier.padding(4.dp)) {
+            Box(
+                Modifier
+                    .offset(x = x)
+                    .width(segW)
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(cs.primary)
+            )
+            Row {
+                listOf(false to "⊟ Working hours", true to "⇕ Best fit").forEach { (fit, label) ->
+                    val on = fit == bestFit
+                    val color by animateColorAsState(if (on) cs.onPrimary else cs.onSurfaceVariant, calSpec(motion, 220), label = "tg")
+                    Box(
+                        Modifier.width(segW).height(36.dp).clip(RoundedCornerShape(18.dp)).clickable { onChange(fit) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(label, color = color, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Tap a follow-up: Call / Done / Snooze. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () -> Unit, onDone: () -> Unit, onSnooze: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp + navBarMissing()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(f.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(
+                (if (f.isCall) "📞 Call" else "💬 Text") + " · " + Fmt.dueLabel(f.at) + if (f.person.isNotBlank()) " · ${f.person}" else "",
+                color = if (f.overdue) cs.error else cs.onSurfaceVariant,
+                fontSize = 13.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (f.number.isNotBlank()) {
+                    Button(onClick = onCall, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                        Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Call")
+                    }
+                }
+                OutlinedButton(onClick = onDone, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("✓ Done") }
+                OutlinedButton(onClick = onSnooze, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Snooze") }
+            }
+        }
+    }
+}
+
+/** Working hours view: tap an hour's marks to see its follow-ups. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HourSheet(list: List<CalFollowUp>, onDismiss: () -> Unit, onOpen: (CalFollowUp) -> Unit, onCall: (CalFollowUp) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val cc = CalColors(cs.background.luminance() < 0.5f)
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp + navBarMissing()).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("${list.size} follow-ups", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            list.forEach { f ->
+                FollowUpCard(
+                    f = f,
+                    wideF = 1f,
+                    cc = cc,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    enabled = true,
+                    onClick = { onOpen(f) },
+                    onCall = { onCall(f) },
+                )
+            }
+        }
+    }
+}
+
+/** Tap your own item: a My task (Done, Edit, Call), a Dossier block (tick, change times) or a Google event (read only). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BlockActions(
+    b: CalBlock,
+    date: LocalDate,
+    onDismiss: () -> Unit,
+    onEditTask: () -> Unit,
+    onEditDossier: () -> Unit,
+    onTaskDone: () -> Unit,
+    onCallPerson: (String) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp + navBarMissing()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(b.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                Fmt.timeOnly(b.start) + " - " + Fmt.timeOnly(b.end) + " · " + when (b.kind) {
+                    CalBlock.Kind.TASK -> "My task"
+                    CalBlock.Kind.DOSSIER -> "Dossier · ${b.sub}"
+                    CalBlock.Kind.GOOGLE -> "Google Calendar" + if (b.sub.isNotBlank()) " · ${b.sub}" else ""
+                },
+                fontSize = 13.sp,
+                color = cs.onSurfaceVariant
+            )
+            when (b.kind) {
+                CalBlock.Kind.TASK -> {
+                    val t = MyTaskStore.get(b.id)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onTaskDone, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                            Text(if (b.done) "Not done" else "✓ Done")
+                        }
+                        OutlinedButton(onClick = onEditTask, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Edit") }
+                        if (t != null && t.hasPerson) {
+                            OutlinedButton(onClick = { onCallPerson(t.number) }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                                Text("Call")
+                            }
+                        }
+                    }
+                }
+                CalBlock.Kind.DOSSIER -> {
+                    val open = Dossier.openDay()
+                    val canTick = !Dossier.isLocked(date) && !date.isAfter(open)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (canTick) {
+                            Button(
+                                onClick = {
+                                    if (b.done) DossierStore.untick(b.id, date) else DossierStore.tick(b.id, date)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp)
+                            ) { Text(if (b.done) "Untick" else "✓ Done") }
+                        }
+                        OutlinedButton(onClick = onEditDossier, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                            Text("Change times")
+                        }
+                    }
+                    Text(
+                        "Dossier blocks are fixed. Change their Start and End in the Dossier task.",
+                        fontSize = 12.sp,
+                        color = cs.onSurfaceVariant
+                    )
+                }
+                CalBlock.Kind.GOOGLE -> {
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                ctx.startActivity(
+                                    Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, b.id))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Open in Google Calendar") }
+                    Text("Read only here. Change it in Google Calendar.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Working hours: asked the first time the Calendar opens (required), and in Settings › Calendar.
+ * The free time and the best free slots only look inside these hours.
+ */
+@Composable
+fun WorkHoursSetup(first: Boolean, onSaved: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var start by remember { mutableIntStateOf(WorkHours.start(ctx)) }
+    var end by remember { mutableIntStateOf(WorkHours.end(ctx)) }
+    var editing by remember { mutableStateOf<Boolean?>(null) }
+    Column(
+        Modifier.fillMaxSize().background(cs.background).statusBarsPadding().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("📅", fontSize = 44.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("Your working hours", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "The Calendar needs them once. Free time and the best free slots for your tasks are found inside these hours.",
+            textAlign = TextAlign.Center,
+            color = cs.onSurfaceVariant
+        )
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(true, false).forEach { isStart ->
+                OutlinedButton(
+                    onClick = { editing = isStart },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (isStart) "Start" else "End", fontSize = 12.sp)
+                        Text(Dossier.timeLabel((if (isStart) start else end) % (24 * 60)), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = { WorkHours.set(ctx, start, end); onSaved() },
+            enabled = end > start,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(14.dp)
+        ) { Text(if (first) "Save and open Calendar" else "Save", fontWeight = FontWeight.Bold) }
+        if (end <= start) {
+            Text("End must be after Start.", color = cs.error, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+    editing?.let { isStart ->
+        val m = if (isStart) start else end
+        ClockDialog(
+            initial = LocalTime.of((m / 60) % 24, m % 60),
+            is24h = DateFormat.is24HourFormat(ctx),
+            onPicked = { t ->
+                val v = t.hour * 60 + t.minute
+                if (isStart) start = v else end = if (v == 0) 24 * 60 else v
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+}
+
+/** Settings › Calendar: working hours (required) and the Google Calendar switch. */
+@Composable
+fun CalendarSettingsScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val wh by WorkHours.version.collectAsState()
+    val g by GoogleCal.version.collectAsState()
+    var editHours by remember { mutableStateOf(false) }
+    val googleOn = remember(g) { GoogleCal.enabled(ctx) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        GoogleCal.setEnabled(ctx, ok)
+    }
+    if (editHours) {
+        androidx.activity.compose.BackHandler { editHours = false }
+        WorkHoursSetup(first = false, onSaved = { editHours = false })
+        return
+    }
+    SettingsPage(title = "Calendar", onBack = onBack) {
+        SectionCard(
+            title = "Working hours (required)",
+            subtitle = "Free time, the best free slots and the free count only look inside these hours. Your off day has none."
+        ) {
+            Row(
+                Modifier.fillMaxWidth().clickable { editHours = true }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Hours", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(remember(wh) { WorkHours.label(ctx) }, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        SectionCard(
+            title = "Google Calendar",
+            subtitle = "Shows the meetings and events of the Google Calendar on this phone, read only. Nothing is written back. Google Tasks need a Google sign-in, so they are not shown."
+        ) {
+            SwitchRow("Show Google Calendar", googleOn) { on ->
+                if (on && !GoogleCal.hasPermission(ctx)) launcher.launch(Manifest.permission.READ_CALENDAR)
+                else GoogleCal.setEnabled(ctx, on)
+            }
+        }
+    }
+}

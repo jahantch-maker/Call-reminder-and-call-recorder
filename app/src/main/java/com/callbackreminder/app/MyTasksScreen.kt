@@ -798,7 +798,8 @@ private fun DossierRow(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    t.timeLabel,
+                    t.timeLabel + "\n– " + Dossier.timeLabel(t.endMinute % (24 * 60)),
+                    textAlign = TextAlign.End,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = if (wasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -908,7 +909,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
 
 /** New dossier task, or Edit: the title, the days it repeats on, the time (required) and "remind me before". */
 @Composable
-private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onSwitchKind: (() -> Unit)?) {
+internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onSwitchKind: (() -> Unit)?) {
     val ctx = LocalContext.current
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
@@ -919,10 +920,14 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
     var remind by remember { mutableStateOf((existing?.remindBefore ?: 0) > 0) }
     var remindMin by remember { mutableIntStateOf(existing?.remindBefore?.takeIf { it > 0 } ?: 15) }
     var starred by remember { mutableStateOf(existing?.starred ?: false) }
+    var endMinute by remember { mutableStateOf(existing?.endMinute) }
+    var everyWeeks by remember { mutableIntStateOf(existing?.everyWeeks ?: 1) }
+    var onOffDay by remember { mutableStateOf(existing?.onOffDay ?: false) }
     var showClock by remember { mutableStateOf(false) }
-    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred) }
+    var showEndClock by remember { mutableStateOf(false) }
+    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay) }
     val cancel = rememberDiscardGuard(
-        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred) != start },
+        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay) != start },
         onClose = onDismiss,
     )
 
@@ -930,14 +935,16 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
         title = if (existing == null) "New task" else "Edit dossier task",
         onDismiss = cancel,
         saveLabel = "Save dossier task",
-        canSave = title.isNotBlank() && minute != null && (monthly || days != 0),
+        canSave = title.isNotBlank() && minute != null && endMinute != null && (monthly || days != 0),
         onSave = {
             minute?.let { m ->
                 val d = if (monthly) Dossier.ALL_DAYS else days
                 val md = if (monthly) monthDay else 0
                 val rb = if (remind) remindMin else 0
-                if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred)
-                else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred)
+                val end = endMinute ?: minOf(m + 30, 24 * 60)
+                val weeks = if (monthly) 1 else everyWeeks
+                if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred, end, weeks, onOffDay)
+                else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred, end, weeks, onOffDay)
                 onDismiss()
             }
         }
@@ -997,6 +1004,16 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
                 style = MaterialTheme.typography.bodySmall,
                 color = if (days == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Text("Every", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                (1..4).forEach { n ->
+                    FilterChip(
+                        selected = everyWeeks == n,
+                        onClick = { everyWeeks = n },
+                        label = { Text(if (n == 1) "Every week" else "$n weeks") }
+                    )
+                }
+            }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(onClick = { monthDay = if (monthDay <= 1) 31 else monthDay - 1 }) {
@@ -1022,23 +1039,43 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
             }
         }
 
-        OutlinedButton(
-            onClick = { showClock = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                val m = minute
-                if (m == null) {
-                    Text("Pick a time (required)", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
-                } else {
-                    Text(Dossier.timeLabel(m), fontWeight = FontWeight.SemiBold)
+        // A fixed time block: Start and End book this time in the Calendar every day it comes up.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(true, false).forEach { isStart ->
+                OutlinedButton(
+                    onClick = { if (isStart) showClock = true else showEndClock = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (isStart) "Start" else "End", style = MaterialTheme.typography.labelMedium)
+                        val m = if (isStart) minute else endMinute
+                        if (m == null) {
+                            Text("Pick (required)", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text(Dossier.timeLabel(m % (24 * 60)), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
-                Text("The Done notification comes at this time", style = MaterialTheme.typography.bodySmall)
             }
+        }
+        Text(
+            "The Done notification comes at Start. The Calendar keeps Start to End booked.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Also on my off day", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (onOffDay) "Comes up on your off day too, when it's one of its days" else "Pauses on your weekly off day",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = onOffDay, onCheckedChange = { onOffDay = it })
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1067,11 +1104,34 @@ private fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onS
             initial = LocalTime.of(m / 60, m % 60),
             is24h = DateFormat.is24HourFormat(ctx),
             onPicked = { t ->
-                minute = t.hour * 60 + t.minute
+                val newStart = t.hour * 60 + t.minute
+                // Keep the block's length when the start moves; a new task gets 30 minutes.
+                val len = minute?.let { old -> endMinute?.let { it - old } }?.takeIf { it > 0 } ?: 30
+                minute = newStart
+                endMinute = minOf(newStart + len, 24 * 60)
                 showClock = false
             },
             onDismiss = { showClock = false }
         )
+    }
+    if (showEndClock) {
+        val m = endMinute ?: minOf((minute ?: (9 * 60)) + 30, 24 * 60)
+        ClockDialog(
+            initial = LocalTime.of((m / 60) % 24, m % 60),
+            is24h = DateFormat.is24HourFormat(ctx),
+            onPicked = { t ->
+                val e = t.hour * 60 + t.minute
+                // Midnight as the end means the end of the day.
+                endMinute = if (e == 0) 24 * 60 else e
+                showEndClock = false
+            },
+            onDismiss = { showEndClock = false }
+        )
+    }
+    val s = minute
+    val e = endMinute
+    if (s != null && e != null && e <= s && !showClock && !showEndClock) {
+        LaunchedEffect(s, e) { endMinute = minOf(s + 30, 24 * 60) }
     }
 }
 
@@ -1100,7 +1160,7 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
                         Column(Modifier.weight(1f)) {
                             Text(t.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2)
                             Text(
-                                "${t.frequency} · ${t.timeLabel}",
+                                "${t.frequency} · ${t.rangeLabel}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

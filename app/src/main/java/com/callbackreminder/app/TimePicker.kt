@@ -119,6 +119,10 @@ private val OffBg = Color(0xFFFDECEC)
 private val PlusBg = Color(0xFFFFF1D6)
 private val PlusFg = Color(0xFF7A4B00)
 private val LastDot = Color(0xFFFF6B3D)
+private val FitGreen = Color(0xFF2E9E5B)
+private val FitGreenBg = Color(0xFFE3F6EA)
+private val FitGreenInk = Color(0xFF145A32)
+private val BusyBg = Color(0x22D93A4A)
 
 /**
  * The quick time picker: Recent picks, 7 day bubbles (Today to 6 days ahead), then the time grid
@@ -264,12 +268,53 @@ fun TimePickerPanel(
         }
 
         val day = days[dayIndex]
+        // A task editor with a length: busy times crossed out, green outline where it fits, best free slots.
+        val busy = LocalPickBusy.current
+        val dayBlocks = remember(day, busy) { busy?.let { CalendarData.blocks(ctx, day, it.excludeTaskId) } }
+        val window = remember(day, busy) { busy?.let { WorkHours.window(ctx, day) } }
+        if (busy != null) {
+            val best = remember(day, busy) { CalendarData.bestSlots(ctx, day, busy.lengthMin, busy.excludeTaskId) }
+            PanelLabel("BEST FREE SLOTS · ${CalendarData.lengthLabel(busy.lengthMin.toLong())}")
+            if (best.isEmpty()) {
+                Text(
+                    if (window == null) "No working hours on this day" else "No free time left in working hours",
+                    fontSize = 13.sp,
+                    color = cs.onSurfaceVariant
+                )
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    best.forEach { ms ->
+                        val on = (selected ?: picked) == ms
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (on) FitGreen else FitGreenBg)
+                                .border(1.5.dp, FitGreen, RoundedCornerShape(10.dp))
+                                .clickable { pick(ms) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                Fmt.timeOnly(ms),
+                                color = if (on) Color.White else FitGreenInk,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                    repeat(3 - best.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
         TimeChipGrid(
             slots = slots,
             isPast = { m -> msOf(day, m) <= now || (latest != null && msOf(day, m) > latest) },
             isOn = { m -> (selected ?: picked) == msOf(day, m) },
             lastMinute = lastMinute,
-            onPick = { m -> pick(msOf(day, m)) }
+            onPick = { m -> pick(msOf(day, m)) },
+            isBusy = { m -> dayBlocks?.any { !it.done && it.overlaps(msOf(day, m), msOf(day, m) + 60_000L) } == true },
+            fits = { m -> busy != null && dayBlocks != null && CalendarData.fits(dayBlocks, window, msOf(day, m), busy.lengthMin) },
         )
     }
 }
@@ -506,6 +551,10 @@ fun TimeChipGrid(
     isOn: (Int) -> Boolean = { false },
     lastMinute: Int? = null,
     onPick: ((Int) -> Unit)? = null,
+    /** Your own busy time (Calendar): crossed out, still pickable (a clash warning follows). */
+    isBusy: (Int) -> Boolean = { false },
+    /** The task's whole length fits here: a green outline. */
+    fits: (Int) -> Boolean = { false },
 ) {
     val cs = MaterialTheme.colorScheme
     val groups = listOf(
@@ -527,6 +576,8 @@ fun TimeChipGrid(
                         row.forEach { m ->
                             val past = isPast(m)
                             val on = isOn(m)
+                            val busy = !past && isBusy(m)
+                            val fit = !past && !busy && fits(m)
                             Box(
                                 Modifier
                                     .weight(1f)
@@ -536,9 +587,11 @@ fun TimeChipGrid(
                                         when {
                                             on -> cs.primary
                                             past -> cs.surfaceVariant.copy(alpha = 0.5f)
+                                            busy -> BusyBg
                                             else -> cs.primaryContainer
                                         }
                                     )
+                                    .then(if (fit && !on) Modifier.border(2.dp, FitGreen, RoundedCornerShape(9.dp)) else Modifier)
                                     .then(if (onPick != null && !past) Modifier.clickable { onPick(m) } else Modifier),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -548,9 +601,11 @@ fun TimeChipGrid(
                                     // Whole hours a little bolder so the eye finds them.
                                     fontWeight = if (m % 60 == 0 && !past) FontWeight.Bold else FontWeight.Medium,
                                     textAlign = TextAlign.Center,
+                                    textDecoration = if (busy && !on) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
                                     color = when {
                                         on -> cs.onPrimary
                                         past -> cs.outline.copy(alpha = 0.6f)
+                                        busy -> cs.error.copy(alpha = 0.75f)
                                         else -> cs.onPrimaryContainer
                                     }
                                 )
