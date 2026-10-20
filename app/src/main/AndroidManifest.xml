@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Calendar tab: shows the events of the Google Calendar synced to this phone (read only). -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
     <!-- Sends your scheduled text messages from your own SIM -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- Only used when "Stop when the person replies Done" is on: checks incoming texts for "Done" -->
