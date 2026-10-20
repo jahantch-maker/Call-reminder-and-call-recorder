@@ -61,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -120,7 +121,7 @@ fun rowShape(pos: RowPos): Shape {
 enum class TitleStyle { NORMAL, NO_TASK, DONE }
 
 @Composable
-private fun isDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+private fun isDark(): Boolean = LocalDarkTheme.current
 
 /** The orange chip and Snooze colours (fill to text), also used by the home screen widgets. */
 internal val OrangeDark = Color(0xFF4A3510) to Color(0xFFFFD58A)
@@ -265,18 +266,33 @@ fun TaskRow(
         if (pos == RowPos.MIDDLE || pos == RowPos.LAST) {
             HorizontalDivider(color = cs.surfaceVariant, thickness = 1.dp)
         }
+        val edge = cs.error
         Row(
             Modifier
                 .fillMaxWidth()
+                // Overdue rows get a thin red edge on the left, like the new-look mockups.
+                .then(
+                    if (timeRed) Modifier.drawBehind {
+                        val w = 3.dp.toPx()
+                        val inset = 10.dp.toPx()
+                        drawRoundRect(
+                            color = edge,
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, inset),
+                            size = androidx.compose.ui.geometry.Size(w, (size.height - 2 * inset).coerceAtLeast(0f)),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w, w)
+                        )
+                    } else Modifier
+                )
                 .clickable(onClick = onClick)
                 .animateContentSize(tween(180))
                 .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Column(Modifier.width(56.dp)) {
+            Column(Modifier.width(58.dp)) {
                 Text(
                     timeTop,
                     fontSize = 13.sp,
+                    letterSpacing = (-0.3).sp,
                     lineHeight = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (timeRed) cs.error else cs.onSurface,
@@ -555,7 +571,7 @@ fun SwipeActions(
                 toDone && locked -> green to MaterialTheme.colorScheme.onSecondary
                 toDone -> green.copy(alpha = 0.18f) to green
                 toSnooze && locked -> Color(0xFFF0B850) to Color(0xFF4A2F00)
-                toSnooze -> Color(0xFFFBEBC9) to Color(0xFF5A3D00)
+                toSnooze -> Tones.amber.bg to Tones.amber.fg
                 else -> Color.Transparent to Color.Transparent
             }
             val bg by animateColorAsState(bgTarget, tween(120), label = "swipeBg")

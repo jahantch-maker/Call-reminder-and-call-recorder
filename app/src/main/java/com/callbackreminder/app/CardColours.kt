@@ -2,6 +2,7 @@ package com.callbackreminder.app
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,13 @@ object CardColours {
     data class Swatch(val name: String, val fill: Long, val edge: Long) {
         val fillColor get() = Color(fill)
         val edgeColor get() = Color(edge)
+
+        /** Card fill for the mode: a soft tint in light, a deep tint of the same colour in dark. */
+        fun fill(dark: Boolean): Color = if (dark) lerp(Color(0xFF14161F), Color(edge), 0.38f) else lerp(Color(fill), Color.White, 0.45f)
+        /** Text on [fill]: dark ink in light, a light pastel in dark. */
+        fun ink(dark: Boolean): Color = if (dark) lerp(Color(fill), Color.White, 0.55f) else lerp(Color(edge), Color(0xFF101014), 0.55f)
+        /** The 4 dp edge on the card's left: the strong tone in light, the bright pastel in dark. */
+        fun edge(dark: Boolean): Color = if (dark) Color(fill) else Color(edge)
     }
 
     /** 8 soft pastels, then 4 stronger tones, all clearly different from each other. */

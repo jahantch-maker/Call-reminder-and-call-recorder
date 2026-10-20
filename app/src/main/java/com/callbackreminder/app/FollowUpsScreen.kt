@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PhoneCallback
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
@@ -458,7 +460,10 @@ private fun FollowUpsAll(
             )
         }
     ) { padding ->
+        Box(Modifier.fillMaxSize()) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -533,7 +538,9 @@ private fun FollowUpsAll(
 
             if (showDone) {
                 if (finished.isEmpty()) {
-                    item(key = "empty-done") { EmptyNote("Finished follow-ups show here, newest first.") }
+                    item(key = "empty-done") {
+                        EmptyPicture(Icons.Rounded.DoneAll, "No finished follow-ups yet", "Finished follow-ups show here, newest first.")
+                    }
                 }
                 byDay(finished) { it.finishedAt }.forEach { (day, list) ->
                     block("done-$day", RowFmt.dayTitle(day), "${list.size} done", cs.onSurfaceVariant, list)
@@ -541,7 +548,13 @@ private fun FollowUpsAll(
             } else {
                 if (all.isEmpty() && noTime.isEmpty()) {
                     item(key = "empty") {
-                        EmptyNote("Nothing to follow up. Tap ＋ Follow-up to remind yourself to call someone, text them, or both.")
+                        EmptyPicture(
+                            Icons.Rounded.PhoneCallback,
+                            "Nothing to follow up",
+                            "Remind yourself to call someone, text them, or both.",
+                            button = "＋ Follow-up",
+                            onButton = { showNew = true }
+                        )
                     }
                 }
                 when (sort) {
@@ -583,6 +596,8 @@ private fun FollowUpsAll(
                     }
                 }
             }
+        }
+        SlimTitleBar(listState, "Follow-ups", padding.calculateTopPadding(), Modifier.align(Alignment.TopCenter))
         }
     }
 
@@ -689,16 +704,6 @@ private fun FollowUpsAll(
     }
 }
 
-@Composable
-private fun EmptyNote(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(vertical = 24.dp, horizontal = 4.dp)
-    )
-}
-
 /** The time picker in a sheet for a follow-up waiting with no time: one tap sets it. */
 @Composable
 fun SetTimeSheet(heading: String, about: String, onPick: (Long) -> Unit, onDismiss: () -> Unit) {
@@ -727,12 +732,8 @@ fun FollowUpsHeader(status: String, red: Boolean) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Follow-ups", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                status,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (red) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Follow-ups", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            DateStatusLine(status, red)
         }
         TopActions()
     }
@@ -1090,10 +1091,10 @@ fun ProjectsScreen() {
         ) {
             Text("Projects", fontSize = 44.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(10.dp))
-            Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF1D6)) {
+            Surface(shape = RoundedCornerShape(10.dp), color = Tones.amber.bg) {
                 Text(
                     "Coming soon",
-                    color = Color(0xFF7A4B00),
+                    color = Tones.amber.fg,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)

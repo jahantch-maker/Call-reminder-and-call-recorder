@@ -169,21 +169,21 @@ private class CalColors(
     dos: CardColours.Swatch,
     google: CardColours.Swatch,
 ) {
-    val taskBg = task.fillColor
-    val taskInk = CardColours.INK
-    val taskEdge = task.edgeColor
-    val dosBg = dos.fillColor
-    val dosInk = CardColours.INK
-    val dosEdge = dos.edgeColor
-    val gBg = google.fillColor
-    val gInk = CardColours.INK
-    val gEdge = google.edgeColor
-    val callBg = fu.fillColor
-    val callInk = CardColours.INK
-    val callEdge = fu.edgeColor
-    val textBg = fu.fillColor
-    val textInk = CardColours.INK
-    val textEdge = fu.edgeColor
+    val taskBg = task.fill(dark)
+    val taskInk = task.ink(dark)
+    val taskEdge = task.edge(dark)
+    val dosBg = dos.fill(dark)
+    val dosInk = dos.ink(dark)
+    val dosEdge = dos.edge(dark)
+    val gBg = google.fill(dark)
+    val gInk = google.ink(dark)
+    val gEdge = google.edge(dark)
+    val callBg = fu.fill(dark)
+    val callInk = fu.ink(dark)
+    val callEdge = fu.edge(dark)
+    val textBg = fu.fill(dark)
+    val textInk = fu.ink(dark)
+    val textEdge = fu.edge(dark)
     val band = if (dark) Color(0x1A5C7CFA) else Color(0x125C7CFA)
     val offHours = if (dark) Color(0x22000000) else Color(0x0A000000)
     val now = Color(0xFFE53935)
@@ -193,7 +193,7 @@ private class CalColors(
 @Composable
 private fun rememberCalColors(): CalColors {
     val ctx = LocalContext.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val dark = LocalDarkTheme.current
     val v by CardColours.version.collectAsState()
     return remember(dark, v) {
         CalColors(
@@ -651,7 +651,7 @@ private fun DayStrip(date: LocalDate, today: LocalDate, motion: Boolean, onPick:
                     d.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isOff) Color(0xFFC62828) else cs.onSurfaceVariant
+                    color = if (isOff) cs.error else cs.onSurfaceVariant
                 )
                 Box(
                     Modifier
@@ -664,7 +664,7 @@ private fun DayStrip(date: LocalDate, today: LocalDate, motion: Boolean, onPick:
                     Text(d.dayOfMonth.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
                 }
                 Box(Modifier.height(11.dp), contentAlignment = Alignment.Center) {
-                    if (isOff) Text("OFF", fontSize = 7.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFC62828))
+                    if (isOff) Text("OFF", fontSize = 7.5.sp, fontWeight = FontWeight.ExtraBold, color = cs.error)
                 }
             }
         }
@@ -686,8 +686,8 @@ private fun GoogleAsk() {
     AnimatedVisibility(visible = show, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = Color(0xFFFFF1D6),
-            contentColor = Color(0xFF7A4B00),
+            color = Tones.amber.bg,
+            contentColor = Tones.amber.fg,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1862,8 +1862,10 @@ private fun CardColourPicker() {
         CardColours.Kind.entries.forEachIndexed { n, kind ->
             val picked = remember(v) { CardColours.index(ctx, kind) }
             val sw = CardColours.PALETTE[picked]
-            val fill by animateColorAsState(sw.fillColor, calSpec(motion, 260), label = "ccFill")
-            val edge by animateColorAsState(sw.edgeColor, calSpec(motion, 260), label = "ccEdge")
+            val darkNow = LocalDarkTheme.current
+            val fill by animateColorAsState(sw.fill(darkNow), calSpec(motion, 260), label = "ccFill")
+            val edge by animateColorAsState(sw.edge(darkNow), calSpec(motion, 260), label = "ccEdge")
+            val sampleInk = sw.ink(darkNow)
             if (n > 0) HorizontalDivider(Modifier.padding(vertical = 10.dp), color = cs.outlineVariant)
             Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(kind.label, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, modifier = Modifier.weight(1f))
@@ -1898,8 +1900,8 @@ private fun CardColourPicker() {
             ) {
                 Box(Modifier.width(4.dp).fillMaxHeight().background(edge))
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Text(title, color = CardColours.INK, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(time, color = CardColours.INK.copy(alpha = 0.75f), fontSize = 11.sp)
+                    Text(title, color = sampleInk, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(time, color = sampleInk.copy(alpha = 0.75f), fontSize = 11.sp)
                 }
             }
         }

@@ -599,7 +599,7 @@ fun FollowUpDialog(
         // C. Remind me to call (blue): its time lives inside the card.
         FeatureCard(
             tint = CallCardBg,
-            icon = { Icon(Icons.Rounded.Call, contentDescription = null, tint = CallBlue) },
+            icon = { Icon(Icons.Rounded.Call, contentDescription = null, tint = if (LocalDarkTheme.current) CallBlue else Color(0xFF3D5AFE)) },
             title = "Remind me to call",
             subtitle = if (!hasPerson) "Pick a person first" else "Rings at the call time",
             checked = callEff,
@@ -629,7 +629,7 @@ fun FollowUpDialog(
         TextGreenTheme {
             FeatureCard(
                 tint = TextCardBg,
-                icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = TextGreen) },
+                icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87)) },
                 title = "Text $first",
                 subtitle = if (!hasPerson) "Pick a person first" else "Reminder texts from your SIM",
                 checked = textEff,

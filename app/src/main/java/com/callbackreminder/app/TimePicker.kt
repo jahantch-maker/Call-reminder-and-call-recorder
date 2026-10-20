@@ -114,14 +114,14 @@ object RecentPicks {
     }
 }
 
-private val OffRed = Color(0xFFC62828)
-private val OffBg = Color(0xFFFDECEC)
-private val PlusBg = Color(0xFFFFF1D6)
-private val PlusFg = Color(0xFF7A4B00)
+private val OffRed: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
+private val OffBg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF47161E) else Color(0xFFFDECEC)
+private val PlusBg: Color @Composable get() = Tones.amber.bg
+private val PlusFg: Color @Composable get() = Tones.amber.fg
 private val LastDot = Color(0xFFFF6B3D)
 private val FitGreen = Color(0xFF2E9E5B)
-private val FitGreenBg = Color(0xFFE3F6EA)
-private val FitGreenInk = Color(0xFF145A32)
+private val FitGreenBg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF123A24) else Color(0xFFE3F6EA)
+private val FitGreenInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFBDF5D2) else Color(0xFF145A32)
 private val BusyBg = Color(0x22D93A4A)
 
 /**
@@ -368,10 +368,10 @@ fun TextGreenTheme(content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     MaterialTheme(
         colorScheme = cs.copy(
-            primary = TextGreen,
-            onPrimary = Color(0xFF00382B),
-            primaryContainer = Color(0xFF0F4A3A),
-            onPrimaryContainer = Color(0xFFBFF3DF),
+            primary = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87),
+            onPrimary = if (LocalDarkTheme.current) Color(0xFF00382B) else Color.White,
+            primaryContainer = if (LocalDarkTheme.current) Color(0xFF0F4A3A) else Color(0xFFD5F4EC),
+            onPrimaryContainer = if (LocalDarkTheme.current) Color(0xFFBFF3DF) else Color(0xFF05584A),
         ),
         typography = MaterialTheme.typography,
         shapes = MaterialTheme.shapes,

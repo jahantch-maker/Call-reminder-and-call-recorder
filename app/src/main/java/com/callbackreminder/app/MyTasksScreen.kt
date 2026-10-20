@@ -29,6 +29,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.EventRepeat
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
@@ -84,6 +87,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -113,7 +117,7 @@ object MyTasksUi {
 }
 
 private val Teal = Color(0xFF0FA68E)
-private val Amber = Color(0xFFB36B00)
+private val Amber: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFFC266) else Color(0xFFB36B00)
 private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
 
 /** Refreshes "overdue" and "was due" labels while a screen is open. */
@@ -268,7 +272,10 @@ fun MyTasksScreen(resumeKey: Int) {
             ) { Icon(Icons.Rounded.Add, contentDescription = "New task") }
         }
     ) { padding ->
+        Box(Modifier.fillMaxSize()) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -280,16 +287,14 @@ fun MyTasksScreen(resumeKey: Int) {
             item(key = "header") {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("My tasks", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        Text(
+                        Text("My tasks", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                        DateStatusLine(
                             when {
                                 overdue.isNotEmpty() -> "${overdue.size} overdue"
                                 pending.isEmpty() && allTodays.isEmpty() -> "Nothing waiting"
                                 else -> "${pending.size} to do · dossier $doneToday of ${allTodays.size} done"
                             },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (overdue.isNotEmpty()) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            red = overdue.isNotEmpty()
                         )
                     }
                     TopActions()
@@ -358,14 +363,17 @@ fun MyTasksScreen(resumeKey: Int) {
                 }
                 if (viewPending.isEmpty()) {
                     item(key = "empty-one") {
-                        HintText(
-                            when {
-                                starredOnly -> "No starred tasks here."
-                                viewDone.isNotEmpty() -> "All done here. Well done!"
-                                else -> "Your own to-dos, apart from follow-ups. Tap ＋ to add one. A time is optional: " +
-                                    "tasks without one wait in To review."
-                            }
-                        )
+                        when {
+                            starredOnly -> HintText("No starred tasks here.")
+                            viewDone.isNotEmpty() -> EmptyPicture(Icons.Rounded.DoneAll, "All done here", "Well done! Nothing left on this list.")
+                            else -> EmptyPicture(
+                                Icons.Rounded.TaskAlt,
+                                "No tasks yet",
+                                "Your own to-dos, apart from follow-ups. A time is optional: tasks without one wait in To review.",
+                                button = "＋ New task",
+                                onButton = { newKind = sub }
+                            )
+                        }
                     }
                 }
                 if (current == null) {
@@ -422,10 +430,13 @@ fun MyTasksScreen(resumeKey: Int) {
                 item(key = "dossier-star") { StarredFilterChip(dossierStarred) { dossierStarred = it } }
                 if (shownDossier.isEmpty()) {
                     item(key = "empty-dossier") {
-                        HintText(
-                            if (dossierStarred) "No starred dossier tasks."
-                            else "The tasks you do on set days, like checking the cash book every morning. " +
-                                "Tick each one when it's done, or say why not. Tap ＋ to add one."
+                        if (dossierStarred) HintText("No starred dossier tasks.")
+                        else EmptyPicture(
+                            Icons.Rounded.EventRepeat,
+                            "No dossier tasks",
+                            "The tasks you do on set days, like checking the cash book every morning. Tick each one when it's done, or say why not.",
+                            button = "＋ New dossier task",
+                            onButton = { newKind = sub }
                         )
                     }
                 }
@@ -474,6 +485,8 @@ fun MyTasksScreen(resumeKey: Int) {
                     }
                 }
             }
+        }
+        SlimTitleBar(listState, "My tasks", padding.calculateTopPadding(), Modifier.align(Alignment.TopCenter))
         }
     }
 
@@ -611,23 +624,46 @@ private fun KindTabs(selected: Int, oneTimeLabel: String, dossierLabel: String, 
     }
 }
 
-/** The round tick box. */
+/** The round tick box. Ticking fills it with a soft pop, draws the check in and gives a light buzz. */
 @Composable
 internal fun TickCircle(done: Boolean, missed: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = when {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val fill by androidx.compose.animation.animateColorAsState(
+        when {
             done -> Teal
             missed -> MaterialTheme.colorScheme.errorContainer
             else -> Color.Transparent
         },
+        androidx.compose.animation.core.tween(220), label = "tickFill"
+    )
+    val pop = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
+    var first by androidx.compose.runtime.remember { mutableStateOf(true) }
+    LaunchedEffect(done) {
+        if (first) { first = false; return@LaunchedEffect }
+        if (done) {
+            pop.snapTo(0.8f)
+            pop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.35f, stiffness = 600f))
+        }
+    }
+    Surface(
+        onClick = {
+            if (!done) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            onClick()
+        },
+        enabled = enabled,
+        shape = CircleShape,
+        color = fill,
         border = if (done || missed) null else BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.size(28.dp)
+        modifier = Modifier.size(28.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }
     ) {
         Box(contentAlignment = Alignment.Center) {
-            if (done) Icon(Icons.Rounded.Check, contentDescription = "Done", tint = Color.White, modifier = Modifier.size(18.dp))
+            androidx.compose.animation.AnimatedVisibility(
+                visible = done,
+                enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = "Done", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
             if (missed) Icon(Icons.Rounded.Close, contentDescription = "Missed", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
         }
     }

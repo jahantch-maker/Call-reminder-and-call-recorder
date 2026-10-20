@@ -178,8 +178,8 @@ private fun Frame(col: WidgetColors, cfg: WidgetConfig, content: @Composable Col
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .cornerRadius(22.dp)
-            .background(col.bg.copy(alpha = 1f - cfg.seeThrough.coerceIn(0, 80) / 100f))
+            .cornerRadius(26.dp)
+            .background(col.bg.copy(alpha = 0.94f * (1f - cfg.seeThrough.coerceIn(0, 80) / 100f)))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         content = content,
     )
@@ -221,7 +221,7 @@ private fun Header(
     info: String? = null,
 ) {
     Row(GlanceModifier.fillMaxWidth().padding(start = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = ts(col.on, 15f, s, bold = true), maxLines = 1)
+        Text(title, style = ts(col.on, 16f, s, bold = true), maxLines = 1)
         if (count != null) {
             Box(GlanceModifier.padding(start = 6.dp)) {
                 Chip(count, if (countRed) col.errorC else col.primaryC, if (countRed) col.onErrorC else col.onPrimaryC, s)
@@ -368,7 +368,9 @@ private fun FuRow(c: Context, widgetId: Int, e: FuEntry, col: WidgetColors, s: F
         }
     }
 
-    Box(GlanceModifier.fillMaxWidth().padding(bottom = 5.dp)) {
+    // Overdue rows show a thin red edge on the left, like the rows in the app.
+    Box(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp)) {
+      Box(GlanceModifier.fillMaxWidth().cornerRadius(16.dp).background(if (overdue) col.error else col.row).padding(start = if (overdue) 3.dp else 0.dp)) {
         Row(GlanceModifier.fillMaxWidth().cornerRadius(14.dp).background(col.row).padding(start = 9.dp, top = 8.dp, end = 8.dp, bottom = 7.dp)) {
             TimeColumn(e.at, RowFmt.timeSub(e.at, now), overdue, col, s)
             Column(GlanceModifier.defaultWeight()) {
@@ -396,6 +398,7 @@ private fun FuRow(c: Context, widgetId: Int, e: FuEntry, col: WidgetColors, s: F
                 }
             }
         }
+      }
     }
 }
 
@@ -683,7 +686,8 @@ private fun TasksCalendarBody(c: Context, cfg: WidgetConfig, col: WidgetColors, 
     val earlier = blocks.count { it.end <= hourStart(day, first) }
     val task = CardColours.swatch(c, CardColours.Kind.TASK)
     val google = CardColours.swatch(c, CardColours.Kind.GOOGLE)
-    val ink = CardColours.INK
+    val ink = task.ink(col.dark)
+    val googleInk = google.ink(col.dark)
     Frame(col, cfg) {
         Header(
             c, 0, col, s, "My tasks", null, false, null,
@@ -701,7 +705,7 @@ private fun TasksCalendarBody(c: Context, cfg: WidgetConfig, col: WidgetColors, 
                 HourRow(col, s, h) {
                     carried.take(2).forEach { b ->
                         val sw = if (b.kind == CalBlock.Kind.GOOGLE) google else task
-                        CarryLine("${b.title} until ${Fmt.timeOnly(b.end)}", if (b.done) col.outline else sw.edgeColor, col, s)
+                        CarryLine("${b.title} until ${Fmt.timeOnly(b.end)}", if (b.done) col.outline else sw.edge(col.dark), col, s)
                     }
                     free.take(1).forEach { g ->
                         Row(
@@ -735,9 +739,9 @@ private fun TasksCalendarBody(c: Context, cfg: WidgetConfig, col: WidgetColors, 
                         }
                         CalCard(
                             b.title, sub,
-                            if (b.done) col.row else sw.fillColor,
-                            if (b.done) col.outline else sw.edgeColor,
-                            if (b.done) col.onVar else ink, s, b.done, open,
+                            if (b.done) col.row else sw.fill(col.dark),
+                            if (b.done) col.outline else sw.edge(col.dark),
+                            if (b.done) col.onVar else if (b.kind == CalBlock.Kind.GOOGLE) googleInk else ink, s, b.done, open,
                         )
                     }
                     if (starts.size > shown.size) CarryLine("+${starts.size - shown.size} more · open Calendar", col.outline, col, s)
@@ -755,7 +759,7 @@ private fun FollowUpsCalendarBody(c: Context, cfg: WidgetConfig, col: WidgetColo
     val first = WidgetData.firstHour(now, list.filter { !it.done }.map { it.at })
     val earlier = list.count { it.at < hourStart(day, first) }
     val fu = CardColours.swatch(c, CardColours.Kind.FOLLOW_UP)
-    val ink = CardColours.INK
+    val ink = fu.ink(col.dark)
     Frame(col, cfg) {
         Header(
             c, 0, col, s, "Follow-ups", null, false, null,
@@ -781,11 +785,11 @@ private fun FollowUpsCalendarBody(c: Context, cfg: WidgetConfig, col: WidgetColo
                         CalCard(
                             f.title,
                             (if (f.isCall) "📞 " else "💬 ") + "${Fmt.timeOnly(f.at)} · ${f.person}",
-                            if (f.done) col.row else fu.fillColor,
-                            if (f.done) col.outline else if (f.overdue) col.error else fu.edgeColor,
+                            if (f.done) col.row else fu.fill(col.dark),
+                            if (f.done) col.outline else if (f.overdue) col.error else fu.edge(col.dark),
                             if (f.done) col.onVar else ink, s, f.done,
                             actionStartActivity(WidgetIntents.popup(c, mode, f.id, f.at)),
-                            call, fu.edgeColor,
+                            call, fu.edge(col.dark),
                         )
                     }
                     if (starts.size > shown.size) CarryLine("+${starts.size - shown.size} more · open Calendar", col.outline, col, s)

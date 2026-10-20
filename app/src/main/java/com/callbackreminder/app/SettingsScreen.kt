@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BatteryFull
@@ -120,6 +121,7 @@ fun SettingsScreen(
     onOpenOffDays: () -> Unit,
     onOpenWhatsApp: () -> Unit,
     onOpenCalendar: () -> Unit = {},
+    onOpenAppearance: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -149,6 +151,13 @@ fun SettingsScreen(
     val offDays by OffDays.mask.collectAsState()
 
     SettingsPage(title = "Settings", onBack = onBack) {
+        val look by Appearance.version.collectAsState()
+        NavRow(
+            icon = Icons.Rounded.Palette,
+            title = "Appearance",
+            summary = remember(look) { AppearanceUi.summary(ctx) },
+            onClick = onOpenAppearance
+        )
         NavRow(
             icon = Icons.Rounded.BeachAccess,
             title = "Weekly off day",
