@@ -95,6 +95,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.Instant
 
 internal val NoTimeBg: Color @Composable get() = Tones.amber.bg
 internal val NoTimeFg: Color @Composable get() = Tones.amber.fg
@@ -543,7 +544,7 @@ internal fun MyTaskDialog(
             Modifier
                 .padding(start = 20.dp, end = 12.dp, bottom = 16.dp + navBarMissing())
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             if (existing != null) {
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -575,27 +576,28 @@ internal fun MyTaskDialog(
                 )
             }
             if (showTime) {
-                Text(
-                    "WHEN? (optional)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // WHEN: the time with 📅 Pick beside it (✕ removes the time), +15m to +2h and Recent. Free slots are in Pick.
                 val pickBusy = remember(length, existing?.id) { PickBusy(length, existing?.id ?: -1L) }
                 CompositionLocalProvider(LocalPickBusy provides pickBusy) {
                     Box(Modifier.padding(end = 8.dp)) {
-                        ShortTimeRow(selected = due.takeIf { it > 0L }, onPick = { ms -> due = ms; picked = ms })
+                        ShortTimeRow(
+                            selected = due.takeIf { it > 0L },
+                            onClear = if (due > 0L) ({ due = 0L; picked = null; before = emptyList() }) else null,
+                            pickLabel = "📅 Pick",
+                            plusRow = true,
+                            compact = true,
+                            leading = { RowLabel("WHEN", Modifier.align(Alignment.CenterVertically)) },
+                            onPick = { ms -> due = ms; picked = ms },
+                        )
                     }
                 }
                 // How long it takes: the Calendar books this much time and checks it for clashes.
-                Text(
-                    "HOW LONG?",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    RowLabel("HOW LONG")
                     MyTaskStore.LENGTH_CHOICES.forEach { m ->
                         androidx.compose.material3.FilterChip(
                             selected = length == m,
@@ -630,30 +632,14 @@ internal fun MyTaskDialog(
                         onKeepBoth = { keptClash = due to length },
                     )
                 }
-                Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (due > 0L) {
-                        Text("📅 ${Fmt.dueLabel(due)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    } else {
-                        Text("No time yet", color = NoTimeFg, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { showDateTime = true }) { Text("Date & time ›") }
-                }
                 if (due > 0L) {
-                    // Google Tasks style: the time goes, the task stays (No time yet) and its heads-ups clear.
-                    Box(Modifier.padding(end = 8.dp)) {
-                        RemoveTimeButton(label = "Remove time") { due = 0L; picked = null; before = emptyList() }
-                    }
                     // Extra heads-ups before the due time; tap to add or remove, as many as you like.
-                    Text(
-                        "REMIND ME BEFORE (optional, pick any)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        RowLabel("REMIND BEFORE")
                         listOf(10, 30, 60, 120, 180, 1440, 2880).forEach { m ->
                             val on = m in before
                             androidx.compose.material3.FilterChip(
@@ -677,7 +663,7 @@ internal fun MyTaskDialog(
             }
             when {
                 number.isNotBlank() -> Box(Modifier.padding(end = 8.dp)) {
-                    ContactCard(name = name, number = number, onClear = { name = ""; number = "" })
+                    ContactCard(name = name, number = number, onClear = { name = ""; number = "" }, compact = true)
                 }
                 addPerson -> PersonPicker(prompt = "Who is this task with?") { n, num ->
                     name = n
@@ -797,18 +783,17 @@ internal fun MyTaskDialog(
 
 /** Overdue, Today, This week, Later and No time yet, for the All tab. */
 internal fun allGroups(tasks: List<MyTask>, now: Long): List<Pair<String, List<MyTask>>> {
+    // Day blocks like Follow-ups: Overdue, Today, Tomorrow, then each date; tasks with no time last.
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
-    val endToday = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val endWeek = today.plusDays(7).atStartOfDay(zone).toInstant().toEpochMilli()
     val timed = tasks.filter { it.timed }.sortedBy { it.dueAt }
-    return listOf(
-        "Overdue" to timed.filter { it.dueAt <= now },
-        "Today" to timed.filter { it.dueAt in (now + 1) until endToday },
-        "This week" to timed.filter { it.dueAt in endToday until endWeek },
-        "Later" to timed.filter { it.dueAt >= endWeek },
-        "No time yet" to tasks.filter { !it.timed }.sortedBy { it.createdAt },
-    ).filter { it.second.isNotEmpty() }
+    val overdue = timed.filter { it.dueAt <= now }
+    val days = timed.filter { it.dueAt > now }
+        .groupBy { Instant.ofEpochMilli(it.dueAt).atZone(zone).toLocalDate() }
+        .toSortedMap()
+        .map { (day, list) -> (if (day == today) "Today" else RowFmt.dayTitle(day)) to list }
+    return (listOf("Overdue" to overdue) + days + listOf("No time yet" to tasks.filter { !it.timed }.sortedBy { it.createdAt }))
+        .filter { it.second.isNotEmpty() }
 }
 
 /** A list's open tasks in its sort: My order, or By date (untimed ones last). */
@@ -889,5 +874,18 @@ internal fun LengthDialog(initial: Int, onDismiss: () -> Unit, onPicked: (Int) -
         },
         confirmButton = { TextButton(enabled = total in 5..(24 * 60), onClick = { onPicked(total) }) { Text("OK") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** A small label in front of a row of chips in the packed My task window ("WHEN", "HOW LONG"). */
+@Composable
+private fun RowLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.ExtraBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = modifier.padding(end = 2.dp)
     )
 }

@@ -83,7 +83,9 @@ object Work {
                 inReview = r.review,
             )
         }
-        texts.filter { !it.done }.forEach { t ->
+        // A call and its texts are one follow-up: its texts don't add a second item (one card, one count).
+        val calledLinks = calls.filter { (!it.done || it.review) && it.linkId != 0L }.map { it.linkId }.toSet()
+        texts.filter { !it.done && (it.linkId == 0L || it.linkId !in calledLinks) }.forEach { t ->
             val review = t.review != null
             out += WorkItem(
                 kind = WorkItem.Kind.TEXT,

@@ -321,7 +321,7 @@ fun TimePickerPanel(
 
 /** The last 3 picks as chips (day over time). Passed ones, and ones after [latest], are greyed. */
 @Composable
-fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, onPick: (Long) -> Unit) {
+fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, compact: Boolean = false, onPick: (Long) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val zone = ZoneId.systemDefault()
     val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
@@ -343,7 +343,7 @@ fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, 
                     .background(if (sel) cs.primary else cs.surface)
                     .border(1.5.dp, if (off) cs.outlineVariant else cs.primary, RoundedCornerShape(12.dp))
                     .clickable(enabled = !off) { onPick(ms) }
-                    .padding(vertical = 4.dp, horizontal = 2.dp),
+                    .padding(vertical = if (compact) 1.dp else 4.dp, horizontal = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val fg = when {
@@ -351,10 +351,10 @@ fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, 
                     off -> cs.outline
                     else -> cs.primary
                 }
-                Text(dayText, fontSize = 10.5.sp, color = if (sel) cs.onPrimary else cs.outline, maxLines = 1)
+                Text(dayText, fontSize = if (compact) 9.5.sp else 10.5.sp, color = if (sel) cs.onPrimary else cs.outline, maxLines = 1)
                 Text(
                     at.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())),
-                    fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1
+                    fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1
                 )
             }
         }
@@ -388,6 +388,7 @@ val TextGreen = Color(0xFF5FD6AE)
  * +15m / +30m / +1h / +2h row (Snooze, New time, after-call popup). With [latest], later times are greyed and a
  * custom time after it asks first.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ShortTimeRow(
     selected: Long?,
@@ -399,6 +400,10 @@ fun ShortTimeRow(
     latest: Long? = null,
     latestNote: String? = null,
     showSelected: Boolean = true,
+    /** Packed for the add windows: the time and a small Pick on one line, slim chips, no RECENT label. */
+    compact: Boolean = false,
+    /** Shown first on the compact line (the text times). */
+    leading: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -410,6 +415,63 @@ fun ShortTimeRow(
         recent = RecentPicks.load(ctx)
         onPick(ms)
     }
+    if (compact) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                leading?.invoke(this)
+                if (showSelected && selected != null && selected > 0L) {
+                    Row(
+                        Modifier
+                            .align(Alignment.CenterVertically)
+                            .clip(RoundedCornerShape(9.dp))
+                            .border(1.5.dp, cs.onSurface.copy(alpha = 0.8f), RoundedCornerShape(9.dp))
+                            .padding(start = 8.dp, end = if (onClear != null) 2.dp else 8.dp, top = 3.dp, bottom = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🕒 " + Fmt.dueLabel(selected), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        if (onClear != null) {
+                            Text(" ✕", fontSize = 13.sp, modifier = Modifier.clickable(onClick = onClear).padding(horizontal = 5.dp))
+                        }
+                    }
+                }
+                Text(
+                    pickLabel,
+                    color = cs.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .clip(RoundedCornerShape(9.dp))
+                        .border(1.5.dp, cs.primary.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
+                        .clickable { open = true }
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                )
+            }
+            if (plusRow) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("+15m" to 15, "+30m" to 30, "+1h" to 60, "+2h" to 120).forEach { (label, min) ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PlusBg)
+                                .clickable { pick(System.currentTimeMillis() + min * 60_000L) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, color = PlusFg, fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
+                        }
+                    }
+                }
+            }
+            if (recent.isNotEmpty()) {
+                RecentChips(recent, now, if (showSelected) selected else null, latest, compact = true) { pick(it) }
+            }
+        }
+    } else
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (showSelected && selected != null && selected > 0L) {
             Row(

@@ -371,7 +371,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             }
 
             if (sub == MyTasksUi.ONE_TIME) {
-                val waiting = toSchedule.size + tasks.count { !it.done && !it.timed }
+                val waiting = tasks.count { !it.done && !it.timed }
                 if (waiting > 0) item(key = "waiting") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
                 item(key = "lists") {
                     ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
@@ -438,7 +438,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         }
                     }
                 }
-                if (current == null) {
+                if (current == null || current.byDate) {
+                    // By date: Overdue / Today / Tomorrow / dates, like Follow-ups (All lists and By date lists).
                     allGroups(viewPending, now).forEach { (title, group) ->
                         item(key = "g-$title") {
                             Column {
@@ -454,7 +455,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                                 TaskGroup {
                                     group.forEachIndexed { i, t ->
                                         if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp))
-                                        row(t, showList = true)
+                                        row(t, showList = current == null)
                                     }
                                 }
                             }
@@ -464,8 +465,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                     item(key = "list-${current.id}") {
                         TaskGroup {
                             ReorderableTasks(
-                                tasks = sortedForList(viewPending, current.byDate),
-                                enabled = !current.byDate && !starredOnly,
+                                tasks = sortedForList(viewPending, false),
+                                enabled = !starredOnly,
                                 onDrop = { ids ->
                                     // Keep the hidden (starred-off) tasks after the moved ones.
                                     MyTaskStore.reorder(ids)

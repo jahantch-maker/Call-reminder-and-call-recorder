@@ -374,7 +374,7 @@ private fun FollowUpsAll(
     val overdue = open.filter { it.callPending && it.at <= now }
     val ahead = open.filter { !(it.callPending && it.at <= now) }
     val finished = shown.filter { !it.open }.sortedByDescending { it.finishedAt }
-    val waiting = toSchedule.size + myTasks.count { !it.done && !it.timed }
+    val waiting = toSchedule.size
     val today = LocalDate.now(ZoneId.systemDefault())
     val cs = MaterialTheme.colorScheme
 

@@ -391,7 +391,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                         onChange = { alsoText = it },
                     )
                     if (alsoText && callerNumber != null) {
-                        TextPlanSection(text, taskText(), null)
+                        TextPlanSection(text, taskText(), null, folded = true)
                     }
                 }
                 Spacer(Modifier.height(14.dp))

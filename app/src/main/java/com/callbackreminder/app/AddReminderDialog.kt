@@ -300,12 +300,39 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
 
 /** The person you picked: avatar, name and number, with ✕ to pick someone else. */
 @Composable
-internal fun ContactCard(name: String, number: String, onClear: () -> Unit) {
+internal fun ContactCard(name: String, number: String, onClear: () -> Unit, compact: Boolean = false) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(if (compact) 12.dp else 16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
+        if (compact) {
+            // One line: avatar, name · number, ✕.
+            Row(Modifier.padding(start = 10.dp, end = 0.dp), verticalAlignment = Alignment.CenterVertically) {
+                Avatar(text = name.ifBlank { number }, size = 26.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    name.ifBlank { number },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (name.isNotBlank()) {
+                    Text(
+                        " · $number",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Pick someone else", modifier = Modifier.size(18.dp))
+                }
+            }
+        } else
         Row(
             modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically

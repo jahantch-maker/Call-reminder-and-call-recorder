@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
 
 /** Back arrow, the page name with its count, then the Follow-ups | My tasks box. */
 @Composable
-private fun WaitingHeader(title: String, total: Int, about: String, fu: Int, mine: Int, tab: Int, onBack: () -> Unit, onTab: (Int) -> Unit) {
+private fun WaitingHeader(title: String, total: Int, about: String, fu: Int, mine: Int, tab: Int, onBack: () -> Unit, showTabs: Boolean = true, onTab: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
@@ -61,7 +61,7 @@ private fun WaitingHeader(title: String, total: Int, about: String, fu: Int, min
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
-        BoxTabs(listOf("Follow-ups · $fu", "My tasks · $mine"), tab, onTab)
+        if (showTabs) BoxTabs(listOf("Follow-ups · $fu", "My tasks · $mine"), tab, onTab)
     }
 }
 
@@ -155,13 +155,14 @@ internal class MyCardActions(
  * My tasks with no time yet, each with Set time.
  */
 @Composable
-fun ToScheduleScreen(onBack: () -> Unit) {
+fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
     val ctx = LocalContext.current
     val items by ToScheduleStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
     val mine = myTasks.filter { !it.done && !it.timed }.sortedByDescending { it.createdAt }
     val fus = items.sortedByDescending { it.createdAt }
-    var tab by rememberSaveable { mutableIntStateOf(if (fus.isEmpty() && mine.isNotEmpty()) 1 else 0) }
+    // From the Follow-ups or My tasks tab it shows only that kind, without the box.
+    var tab by rememberSaveable { mutableIntStateOf(only ?: if (fus.isEmpty() && mine.isNotEmpty()) 1 else 0) }
     var setFor by remember { mutableStateOf<ToScheduleItem?>(null) }
     var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
     var openKey by remember { mutableStateOf<Long?>(null) }
@@ -182,8 +183,9 @@ fun ToScheduleScreen(onBack: () -> Unit) {
         ) {
             item(key = "header") {
                 WaitingHeader(
-                    "To schedule", fus.size + mine.size, "No time set yet. Give each one a time, or open it to add what is missing.",
-                    fus.size, mine.size, tab, onBack
+                    "To schedule", when (only) { 0 -> fus.size; 1 -> mine.size; else -> fus.size + mine.size },
+                    "No time set yet. Give each one a time, or open it to add what is missing.",
+                    fus.size, mine.size, tab, onBack, showTabs = only == null
                 ) { tab = it }
             }
             if (tab == 0) {
