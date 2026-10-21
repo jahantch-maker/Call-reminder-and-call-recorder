@@ -1523,7 +1523,7 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
     SettingsPage(title = "Text messages", onBack = onBack) {
         SectionCard(
             title = "When a follow-up gets a new time",
-            subtitle = "His texts move to the same clock times on the new day. If every one of those times has already passed:"
+            subtitle = "The texts move to the same clock times on the new day. If every one of those times has already passed:"
         ) {
             SwitchRow("Send one text right away", sendNowIfPassed) {
                 sendNowIfPassed = it

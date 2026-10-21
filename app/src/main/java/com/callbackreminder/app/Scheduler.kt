@@ -60,11 +60,27 @@ object Scheduler {
         am.cancel(pending(ctx, id))
     }
 
-    /** After a restart or an app update all alarms are gone, so set them again. */
-    fun rescheduleAll(ctx: Context) {
+    /**
+     * After a restart or an app update: set every alarm that is still ahead. Overdue ones already rang and wait in
+     * Review, so they stay quiet. Only with [missedSince] (a restart) the ones that came due while the phone was off
+     * and never rang are returned, for [PhoneOff.ringMissed].
+     */
+    fun restoreAll(ctx: Context, missedSince: Long?): List<Reminder> {
         val now = System.currentTimeMillis()
-        ReminderStore.items.value
-            .filter { !it.done }
-            .forEach { r -> schedule(ctx, r.copy(dueAt = maxOf(r.dueAt, now + 5_000L))) }
+        val missed = ArrayList<Reminder>()
+        ReminderStore.items.value.filter { !it.done }.forEach { r ->
+            val at = alarmAt(r, now)
+            when {
+                at == null -> cancel(ctx, r.id)
+                at > now -> schedule(ctx, r)
+                missedSince != null && at > missedSince &&
+                    r.events.none { e -> (e.what == "Rang" || e.what == PhoneOff.MISSED_EVENT) && e.at >= at } -> missed += r
+            }
+        }
+        return missed
     }
+
+    /** Rings one reminder in a few seconds (a single one missed while the phone was off). */
+    fun ringSoon(ctx: Context, r: Reminder) =
+        schedule(ctx, r.copy(dueAt = System.currentTimeMillis() + 5_000L, repeat = null))
 }

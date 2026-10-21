@@ -188,7 +188,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     val callerNumber = call.number.takeIf { it.isNotBlank() }
     val title = callerName ?: callerNumber ?: "Unknown caller"
     val needsName = callerName == null && callerNumber == null
-    val firstName = (callerName ?: typedName.takeIf { it.isNotBlank() } ?: "him").substringBefore(' ')
+    val firstName = Names.first(callerName ?: typedName)
     val person = callerName ?: typedName.takeIf { it.isNotBlank() } ?: callerNumber ?: "them"
 
     val baseLabel = when (call.type) {
@@ -351,7 +351,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (followUp) "Follow-up with $firstName" else "My task",
+                    if (followUp) firstName?.let { "Follow-up with $it" } ?: "Follow-up" else "My task",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -384,8 +384,8 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                     )
                     SwitchCard(
                         icon = { Icon(Icons.Rounded.Sms, contentDescription = null) },
-                        title = "Also text $firstName",
-                        subtitle = if (alsoText) "On: his texts, with Burst" else "Off: only your call back",
+                        title = firstName?.let { "Also text $it" } ?: "Also send texts",
+                        subtitle = if (alsoText) "On: ${firstName?.let { "$it's texts" } ?: "texts"}, with Burst" else "Off: only your call back",
                         checked = alsoText && callerNumber != null,
                         enabled = callerNumber != null,
                         onChange = { alsoText = it },

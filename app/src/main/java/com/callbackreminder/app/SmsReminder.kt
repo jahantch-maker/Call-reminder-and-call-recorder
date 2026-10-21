@@ -74,7 +74,7 @@ data class SmsReminder(
     /** The follow-up this text belongs to, shared with its call (0 = a text on its own). */
     val linkId: Long = 0L,
     /**
-     * Texts at set times (a follow-up's "Text him" times): minutes after [dueAt] for each text, first 0.
+     * Texts at set times (a follow-up's "Text <first name>" times): minutes after [dueAt] for each text, first 0.
      * Empty for a single text or a template burst. When set, [burstCount] is its size.
      */
     val slots: List<Int> = emptyList(),

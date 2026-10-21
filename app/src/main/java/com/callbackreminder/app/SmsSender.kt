@@ -113,7 +113,9 @@ object SmsSender {
                 if (r.slots.isEmpty()) r = SmsStore.restartBurstNow(id) ?: return
             } else {
                 // Texts whose time passed while the phone was off are skipped; carry on from the next one.
-                val late = (r.burstIndex until r.burstCount).count { i -> r.textAt(i) < now - BURST_GRACE_MS }
+                // (Not when it was only waiting for room under Android's limit.)
+                val late = if (SmsQuota.waiting(ctx, id)) 0
+                else (r.burstIndex until r.burstCount).count { i -> r.textAt(i) < now - BURST_GRACE_MS }
                 if (late > 0) {
                     val first = r.burstIndex + 1
                     val last = r.burstIndex + late
@@ -127,8 +129,8 @@ object SmsSender {
             return
         }
 
-        // The first text going out gives the reminder its task number.
-        r = SmsStore.ensureCode(id) ?: return
+        // The first tracked text going out gives the reminder its task number (untracked ones never need one).
+        if (r.tracked) r = SmsStore.ensureCode(id) ?: return
         val index = r.burstIndex
         val text = r.textFor(index)
         if (!hasPermission(ctx)) {
@@ -141,6 +143,17 @@ object SmsSender {
         // A single text still waiting for its result: don't send it twice.
         if (!r.isBurst && InFlight.busy(ctx, id, now)) return
 
+        // Android's limit: wait for room (and let queued daily lists go first). Send now goes at once.
+        val parts = partsFor(text)
+        if (!manual && (SmsQuota.room(ctx, now) < parts || DailyList.queued(ctx))) {
+            val at = maxOf(SmsQuota.roomAt(ctx, parts, now), if (DailyList.queued(ctx)) now + 60_000L else now)
+            SmsQuota.markWaiting(ctx, id)
+            SmsScheduler.schedule(ctx, r, notBefore = at)
+            SmsQuota.tipOnce(ctx)
+            return
+        }
+        SmsQuota.clearWaiting(ctx, id)
+        SmsQuota.record(ctx, parts, now)
         send(ctx, r, text, if (r.isBurst) index else -1)
         // A burst moves on as soon as a text is handed to the phone; its result is only logged, so a lost
         // result can never hold up the rest of the burst.
@@ -548,7 +561,7 @@ object SmsNotifier {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-        Notify.post(ctx, NotifType.TEXT_SENT, ID_BASE + r.id.toInt(), b)
+        Notify.post(ctx, NotifType.TEXT_SENT, NotifIds.text(r.id), b)
     }
 
     /** Gave up after the retries: alerts you with sound, with Try again and Open in Messages. */
@@ -568,7 +581,7 @@ object SmsNotifier {
             .setAutoCancel(true)
             .addAction(0, "Try again", action(ctx, r, SmsActionReceiver.ACTION_SEND_NOW, 0))
             .addAction(0, "Open in Messages", composer(ctx, r))
-        Notify.post(ctx, NotifType.TEXT_FAILED, ID_BASE + r.id.toInt(), b)
+        Notify.post(ctx, NotifType.TEXT_FAILED, NotifIds.text(r.id), b)
     }
 
     /** SMS permission is off: tap to send it yourself from your Messages app. */
@@ -586,7 +599,7 @@ object SmsNotifier {
             .setContentIntent(composer(ctx, r, text))
             .setAutoCancel(true)
             .addAction(0, "Open in Messages", composer(ctx, r, text))
-        Notify.post(ctx, NotifType.TAP_TO_SEND, ID_BASE + r.id.toInt(), b)
+        Notify.post(ctx, NotifType.TAP_TO_SEND, NotifIds.text(r.id), b)
     }
 
     /**
@@ -624,10 +637,67 @@ object SmsNotifier {
             .setAutoCancel(true)
             .addAction(0, "Mark done", action(ctx, r, SmsActionReceiver.ACTION_MARK_DONE, 400_000))
             .addAction(0, "Not done", notDone)
-        Notify.post(ctx, if (r.review == SmsReminder.Review.NOT_SENT) NotifType.TEXT_FAILED else NotifType.TEXT_REVIEW, ID_BASE + r.id.toInt(), b)
+        Notify.post(ctx, if (r.review == SmsReminder.Review.NOT_SENT) NotifType.TEXT_FAILED else NotifType.TEXT_REVIEW, NotifIds.text(r.id), b)
     }
 
     fun cancel(ctx: Context, id: Long) {
-        NotificationManagerCompat.from(ctx).cancel(ID_BASE + id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.text(id))
     }
+}
+
+/**
+ * Android lets an app send about 30 texts in 30 minutes; past that it asks "allow this app to send a large number of
+ * messages?" or blocks them. Every part sent is counted here, and texts wait for room instead of going all at once.
+ * Daily lists go first: a reminder text waits while lists are queued.
+ */
+object SmsQuota {
+    const val LIMIT = 28
+    private const val WINDOW = 30 * 60_000L
+    private fun p(c: Context) = c.applicationContext.getSharedPreferences("sms_quota", Context.MODE_PRIVATE)
+
+    @Synchronized
+    private fun log(c: Context, now: Long): List<Long> =
+        p(c).getString("log", "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }.filter { it > now - WINDOW }
+
+    /** How many more parts can go now. */
+    fun room(c: Context, now: Long = System.currentTimeMillis()) = LIMIT - log(c, now).size
+
+    @Synchronized
+    fun record(c: Context, parts: Int, now: Long = System.currentTimeMillis()) {
+        val all = log(c, now) + List(parts.coerceAtLeast(1)) { now }
+        p(c).edit().putString("log", all.joinToString(",")).apply()
+    }
+
+    /** When [parts] will fit (a few seconds after enough old ones leave the window). */
+    fun roomAt(c: Context, parts: Int, now: Long = System.currentTimeMillis()): Long {
+        val l = log(c, now).sorted()
+        val over = l.size + parts - LIMIT
+        if (over <= 0) return now
+        return (l.getOrNull(over - 1) ?: now) + WINDOW + 5_000L
+    }
+
+    /** A burst text that waits for room is not "late" when its alarm comes back. */
+    fun markWaiting(c: Context, id: Long) = p(c).edit().putLong("wait_$id", System.currentTimeMillis()).apply()
+    fun waiting(c: Context, id: Long) = System.currentTimeMillis() - p(c).getLong("wait_$id", 0L) < WINDOW + 10 * 60_000L
+    fun clearWaiting(c: Context, id: Long) = p(c).edit().remove("wait_$id").apply()
+
+    /** The one-time "tick Always allow" tip, shown the first time texts have to wait. */
+    @SuppressLint("MissingPermission")
+    fun tipOnce(ctx: Context) {
+        if (p(ctx).getBoolean("tip_shown", false)) return
+        p(ctx).edit().putBoolean("tip_shown", true).apply()
+        if (!Notifier.canNotify(ctx)) return
+        val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setContentTitle("Some texts are waiting a few minutes")
+            .setContentText("Android limits how many texts an app sends. If it asks, tick \"Always allow\".")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Android lets an app send about 30 texts in 30 minutes, so the rest go out a little later by themselves. " +
+                    "If Android asks \"allow this app to send a large number of messages?\", tick \"Always allow\" and tap Allow."
+            ))
+            .setAutoCancel(true)
+        NotificationManagerCompat.from(ctx).notify(NOTIF_TIP, b.build())
+    }
+
+    private const val NOTIF_TIP = 1_099_510
 }

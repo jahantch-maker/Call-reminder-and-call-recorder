@@ -20,12 +20,15 @@ import java.util.Locale
  * Nightly backup: at 11 PM every day the app writes one file with all its lists and settings (calls,
  * texts, My tasks, dossier, history, recording notes) to a folder you picked once. Recordings themselves
  * are left out. The newest 14 files are kept. Restore reads one back and restarts the app.
+ * On from the start: until you pick a folder, the last 7 nights go to the app's own folder on the phone
+ * (Android's own Google backup of the app copies them too).
  */
 object Backup {
     const val ACTION_FIRE = "com.callbackreminder.app.BACKUP"
     private const val REQ = 1_099_400
     private const val NOTIF_ID = 1_099_401
     const val KEEP = 14
+    private const val KEEP_LOCAL = 7
     const val PREFIX = "callback-backup-"
     private const val MIME = "application/json"
     private const val HOUR = 23
@@ -52,8 +55,11 @@ object Backup {
         schedule(c)
     }
 
+    /** Until a folder is picked: the app's own folder on the phone. */
+    private fun localDir(c: Context): File = File(c.getExternalFilesDir(null) ?: c.filesDir, "backups").apply { mkdirs() }
+
     fun folderLabel(c: Context): String {
-        val tree = folder(c) ?: return "No folder chosen"
+        val tree = folder(c) ?: return "On this phone (app folder) · choose a folder to keep it safer"
         return try {
             val id = DocumentsContract.getTreeDocumentId(tree)
             val provider = tree.authority.orEmpty()
@@ -73,8 +79,8 @@ object Backup {
     fun lastFile(c: Context): Uri? = p(c).getString("last_file", null)?.let { Uri.parse(it) }
 
     fun summary(c: Context): String = when {
-        folder(c) == null -> "Off · choose a folder"
         lastError(c).isNotEmpty() -> "Last backup failed"
+        folder(c) == null -> "Every night at 11 PM · on this phone"
         lastAt(c) > 0L -> "Every night at 11 PM · last ${Fmt.dueLabel(lastAt(c))}"
         else -> "Every night at 11 PM"
     }
@@ -91,10 +97,6 @@ object Backup {
     fun schedule(ctx: Context) {
         val am = ctx.getSystemService(AlarmManager::class.java)
         val pi = alarm(ctx)
-        if (folder(ctx) == null) {
-            am.cancel(pi)
-            return
-        }
         val zone = ZoneId.systemDefault()
         val now = System.currentTimeMillis()
         var at = LocalDate.now(zone).atTime(HOUR, 0).atZone(zone).toInstant().toEpochMilli()
@@ -145,11 +147,12 @@ object Backup {
             .put("version", BuildConfigVersion.name(ctx))
             .put("created", System.currentTimeMillis())
             .put("prefs", all)
+            .put("db", Db.export(ctx))
     }
 
     /** Writes a backup now. Returns null when it worked, or what went wrong. */
     fun backUpNow(ctx: Context): String? {
-        val tree = folder(ctx) ?: return "No backup folder chosen"
+        val tree = folder(ctx) ?: return backUpLocal(ctx)
         return try {
             val dir = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
             val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm", Locale.US))
@@ -172,6 +175,22 @@ object Backup {
         }
     }
 
+    private fun backUpLocal(ctx: Context): String? = try {
+        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm", Locale.US))
+        val file = File(localDir(ctx), "$PREFIX$stamp.json")
+        file.writeText(export(ctx).toString(), Charsets.UTF_8)
+        p(ctx).edit()
+            .putLong("last_at", System.currentTimeMillis())
+            .putString("last_error", "")
+            .putString("last_file", Uri.fromFile(file).toString())
+            .apply()
+        localDir(ctx).listFiles().orEmpty().filter { it.name.startsWith(PREFIX) }.sortedByDescending { it.name }
+            .drop(KEEP_LOCAL).forEach { it.delete() }
+        null
+    } catch (e: Exception) {
+        fail(ctx, e.message?.takeIf { it.isNotBlank() } ?: "Backup failed")
+    }
+
     private fun fail(ctx: Context, why: String): String {
         p(ctx).edit().putString("last_error", why).apply()
         return why
@@ -182,7 +201,8 @@ object Backup {
 
     /** Backup files in the folder, newest first. */
     fun list(ctx: Context): List<Item> {
-        val tree = folder(ctx) ?: return emptyList()
+        val tree = folder(ctx) ?: return localDir(ctx).listFiles().orEmpty().filter { it.name.startsWith(PREFIX) }
+            .map { Item(Uri.fromFile(it), it.name, it.lastModified()) }.sortedByDescending { it.name }
         return try {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
             val out = mutableListOf<Item>()
@@ -258,6 +278,8 @@ object Backup {
             }
             e.commit()
         }
+        // The tasks themselves; an older file (no "db") is copied in again from its lists on the restart.
+        Db.restore(ctx, root.optJSONObject("db"))
         p(ctx).edit().putBoolean("rearm", true).commit()
         return null
     }
@@ -266,7 +288,7 @@ object Backup {
     fun rearmIfRestored(ctx: Context) {
         if (!p(ctx).getBoolean("rearm", false)) return
         p(ctx).edit().putBoolean("rearm", false).apply()
-        Scheduler.rescheduleAll(ctx)
+        Scheduler.restoreAll(ctx, null)
         SmsScheduler.rescheduleAll(ctx)
         ReviewReminder.schedule(ctx)
         TaskAlarms.rescheduleAll(ctx)

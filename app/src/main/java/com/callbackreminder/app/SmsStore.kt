@@ -30,98 +30,94 @@ object SmsStore {
 
     private fun prefs() = appCtx.getSharedPreferences("sms_reminders", Context.MODE_PRIVATE)
 
-    private fun load(): List<SmsReminder> {
-        val raw = prefs().getString("list", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                val logArr = o.optJSONArray("log") ?: JSONArray()
-                val log = (0 until logArr.length()).mapNotNull { j ->
-                    val l = logArr.getJSONObject(j)
-                    val status = SmsLogEntry.Status.values().firstOrNull { it.code == l.optString("s") }
-                        ?: return@mapNotNull null
-                    SmsLogEntry(l.getLong("at"), status, l.optString("d"))
-                }
-                SmsReminder(
-                    id = o.getLong("id"),
-                    name = o.optString("name"),
-                    number = o.optString("number"),
-                    message = o.optString("message"),
-                    dueAt = o.getLong("dueAt"),
-                    createdAt = o.optLong("createdAt"),
-                    done = o.optBoolean("done"),
-                    doneAt = o.optLong("doneAt"),
-                    repeat = Repeat.fromJson(o.optJSONObject("repeat")),
-                    seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
-                    occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
-                    occurrenceCount = o.optInt("occurrenceCount", 1),
-                    attempts = o.optInt("attempts"),
-                    retryAt = o.optLong("retryAt"),
-                    log = log,
-                    burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
-                    burstGapMin = o.optInt("burstGap"),
-                    burstIndex = o.optInt("burstIndex"),
-                    review = SmsReminder.Review.values().firstOrNull { it.code == o.optString("review") },
-                    reviewAt = o.optLong("reviewAt"),
-                    code = o.optString("code").replace("-", ""),
-                    tracked = o.optBoolean("tracked", true),
-                    linkId = o.optLong("linkId"),
-                    slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
-                    taskDue = o.optLong("taskDue"),
-                    reviewLaterUntil = o.optLong("reviewLater"),
-                    baseSlots = o.optJSONArray("baseSlots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
-                    groupCount = o.optInt("groupCount", 1).coerceAtLeast(1),
-                    groupGapMin = o.optInt("groupGap"),
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
+    private val rows = Rows<SmsReminder>("sms_reminders", { it.id }, ::toJson, ::fromJson, archivable = { r -> r.doneAt.takeIf { r.done } })
+
+    private fun load(): List<SmsReminder> = rows.load(appCtx, prefs())
+
+    /** Finished items older than [Db.ARCHIVE_DAYS] days, kept for search. */
+    fun archived(): List<SmsReminder> = rows.archived(appCtx)
+
+    private fun fromJson(o: JSONObject): SmsReminder = run {
+        val logArr = o.optJSONArray("log") ?: JSONArray()
+        val log = (0 until logArr.length()).mapNotNull { j ->
+            val l = logArr.getJSONObject(j)
+            val status = SmsLogEntry.Status.values().firstOrNull { it.code == l.optString("s") }
+                ?: return@mapNotNull null
+            SmsLogEntry(l.getLong("at"), status, l.optString("d"))
         }
+        SmsReminder(
+            id = o.getLong("id"),
+            name = o.optString("name"),
+            number = o.optString("number"),
+            message = o.optString("message"),
+            dueAt = o.getLong("dueAt"),
+            createdAt = o.optLong("createdAt"),
+            done = o.optBoolean("done"),
+            doneAt = o.optLong("doneAt"),
+            repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+            seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
+            occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
+            occurrenceCount = o.optInt("occurrenceCount", 1),
+            attempts = o.optInt("attempts"),
+            retryAt = o.optLong("retryAt"),
+            log = log,
+            burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
+            burstGapMin = o.optInt("burstGap"),
+            burstIndex = o.optInt("burstIndex"),
+            review = SmsReminder.Review.values().firstOrNull { it.code == o.optString("review") },
+            reviewAt = o.optLong("reviewAt"),
+            code = o.optString("code").replace("-", ""),
+            tracked = o.optBoolean("tracked", true),
+            linkId = o.optLong("linkId"),
+            slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+            taskDue = o.optLong("taskDue"),
+            reviewLaterUntil = o.optLong("reviewLater"),
+            baseSlots = o.optJSONArray("baseSlots")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+            groupCount = o.optInt("groupCount", 1).coerceAtLeast(1),
+            groupGapMin = o.optInt("groupGap"),
+        )
     }
 
     private fun save(list: List<SmsReminder>) {
-        val arr = JSONArray()
-        list.forEach { r ->
-            val log = JSONArray()
-            r.log.forEach { l ->
-                log.put(JSONObject().put("at", l.at).put("s", l.status.code).put("d", l.detail))
-            }
-            arr.put(
-                JSONObject()
-                    .put("id", r.id)
-                    .put("name", r.name)
-                    .put("number", r.number)
-                    .put("message", r.message)
-                    .put("dueAt", r.dueAt)
-                    .put("createdAt", r.createdAt)
-                    .put("done", r.done)
-                    .put("doneAt", r.doneAt)
-                    .put("repeat", r.repeat?.toJson())
-                    .put("seriesStart", r.seriesStart)
-                    .put("occurrenceAt", r.occurrenceAt)
-                    .put("occurrenceCount", r.occurrenceCount)
-                    .put("attempts", r.attempts)
-                    .put("retryAt", r.retryAt)
-                    .put("log", log)
-                    .put("burstCount", r.burstCount)
-                    .put("burstGap", r.burstGapMin)
-                    .put("burstIndex", r.burstIndex)
-                    .put("review", r.review?.code ?: "")
-                    .put("reviewAt", r.reviewAt)
-                    .put("code", r.code)
-                    .put("tracked", r.tracked)
-                    .put("linkId", r.linkId)
-                    .put("slots", JSONArray().apply { r.slots.forEach { put(it) } })
-                    .put("taskDue", r.taskDue)
-                    .put("reviewLater", r.reviewLaterUntil)
-                    .put("baseSlots", JSONArray().apply { r.baseSlots.forEach { put(it) } })
-                    .put("groupCount", r.groupCount)
-                    .put("groupGap", r.groupGapMin)
-            )
-        }
-        prefs().edit().putString("list", arr.toString()).apply()
+        rows.save(appCtx, list)
         _items.value = list
+    }
+
+    private fun toJson(r: SmsReminder): JSONObject {
+        val log = JSONArray()
+        r.log.forEach { l ->
+            log.put(JSONObject().put("at", l.at).put("s", l.status.code).put("d", l.detail))
+        }
+        return JSONObject()
+            .put("id", r.id)
+            .put("name", r.name)
+            .put("number", r.number)
+            .put("message", r.message)
+            .put("dueAt", r.dueAt)
+            .put("createdAt", r.createdAt)
+            .put("done", r.done)
+            .put("doneAt", r.doneAt)
+            .put("repeat", r.repeat?.toJson())
+            .put("seriesStart", r.seriesStart)
+            .put("occurrenceAt", r.occurrenceAt)
+            .put("occurrenceCount", r.occurrenceCount)
+            .put("attempts", r.attempts)
+            .put("retryAt", r.retryAt)
+            .put("log", log)
+            .put("burstCount", r.burstCount)
+            .put("burstGap", r.burstGapMin)
+            .put("burstIndex", r.burstIndex)
+            .put("review", r.review?.code ?: "")
+            .put("reviewAt", r.reviewAt)
+            .put("code", r.code)
+            .put("tracked", r.tracked)
+            .put("linkId", r.linkId)
+            .put("slots", JSONArray().apply { r.slots.forEach { put(it) } })
+            .put("taskDue", r.taskDue)
+            .put("reviewLater", r.reviewLaterUntil)
+            .put("baseSlots", JSONArray().apply { r.baseSlots.forEach { put(it) } })
+            .put("groupCount", r.groupCount)
+            .put("groupGap", r.groupGapMin)
     }
 
     fun get(id: Long): SmsReminder? = _items.value.firstOrNull { it.id == id }
@@ -553,7 +549,11 @@ object BurstTemplates {
     fun setStopOnReply(c: Context, on: Boolean) = p(c).edit().putBoolean("stop_on_reply", on).apply()
 }
 
-/** Task numbers for texts and calls alike: yyMMdd + the day's serial, like "26101804". Never reused. */
+/**
+ * Task numbers for texts and calls alike: yyMMdd + the day's serial, like "26101804". Never reused. Only tracked
+ * texts and daily lists take one, so a day stays far below 99; past it the serial goes on (100, 101…) and replies
+ * still match.
+ */
 object TaskCodes {
     @Synchronized
     fun next(ctx: Context, n: Int = 1): List<String> {

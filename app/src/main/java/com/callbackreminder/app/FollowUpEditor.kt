@@ -432,7 +432,7 @@ internal fun ArrowCard(icon: @Composable () -> Unit, title: String, subtitle: St
 
 /**
  * New follow-up, or Edit (with [linkId], or [item] for one waiting in To schedule): the person, the task, the
- * due (call) time, then "Remind me to call" and "Text him" with its own times, repeat, tracking and burst. Every
+ * due (call) time, then "Remind me to call" and "Text <first name>" with its own times, repeat, tracking and burst. Every
  * follow-up can switch either part on or off. Remove time sends it to To schedule; only the task is needed to
  * save (a quick save goes to To schedule as "Needs details"). [fromMyTask] is a My task being moved here: it
  * leaves My tasks on Save. [onMoveToMyTasks] adds "Move to My tasks" when editing.
@@ -547,7 +547,7 @@ fun FollowUpDialog(
         editing || item != null -> "Edit follow-up"
         else -> "New follow-up"
     }
-    val first = name.ifBlank { "him" }.substringBefore(' ')
+    val first = Names.first(name)
 
     FormDialog(
         title = heading,
@@ -640,7 +640,7 @@ fun FollowUpDialog(
             FeatureCard(
                 tint = TextCardBg,
                 icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87)) },
-                title = "Text $first",
+                title = first?.let { "Text $it" } ?: "Send texts",
                 subtitle = if (!hasPerson) "Pick a person first" else "Reminder texts from your SIM",
                 checked = textEff,
                 enabled = hasPerson,
@@ -661,7 +661,8 @@ fun FollowUpDialog(
             SwitchCard(
                 icon = { Icon(Icons.Rounded.Bolt, contentDescription = null) },
                 title = "Autopilot ⓘ",
-                subtitle = if (autopilot) "His task number reply cancels my call reminder" else "Off: my call still rings after his reply",
+                subtitle = if (autopilot) "${Names.possessive(name, "Their").replaceFirstChar { it.uppercase() }} task number reply cancels my call reminder"
+                else "Off: my call still rings after ${Names.possessive(name, "the")} reply",
                 checked = autopilot,
                 enabled = text.tracked,
                 onChange = { autopilot = it },
@@ -693,8 +694,8 @@ fun FollowUpDialog(
             title = { Text("Autopilot") },
             text = {
                 Text(
-                    "On: when he texts back the task number, your call reminder is cancelled and the " +
-                        "task waits in To review.\n\nOff: his reply still moves the texts to To review, but your call " +
+                    "On: when ${Names.first(name) ?: "the person"} texts back the task number, your call reminder is cancelled and the " +
+                        "task waits in To review.\n\nOff: the reply still moves the texts to To review, but your call " +
                         "reminder rings anyway so you can confirm by phone.\n\nNeeds Tracking number on, and " +
                         "Settings › Text messages › Stop on a task number reply."
                 )

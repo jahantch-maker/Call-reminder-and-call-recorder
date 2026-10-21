@@ -29,7 +29,6 @@ object DailyList {
     const val EXTRA_KEY = "person_key"
     const val EXTRA_NAME = "person_name"
     private const val REQ_DAILY = 1_099_200
-    private const val NOTIF_BASE = 1_099_300
     private const val DAY = 86_400_000L
 
     const val ACTION_WA_LATER = "com.callbackreminder.app.DAILY_LIST_WA_LATER"
@@ -175,14 +174,103 @@ object DailyList {
         val wa = mutableListOf<String>()
         val sms = mutableListOf<String>()
         people(ctx).forEach { key ->
-            val text = build(ctx, key) ?: return@forEach
-            if (bySms(ctx, key)) {
-                send(ctx, key, text)
-                sms += key
-            }
+            build(ctx, key) ?: return@forEach
+            if (bySms(ctx, key)) sms += key
             if (byWhatsApp(ctx, key)) wa += key
         }
+        if (sms.isNotEmpty()) startSmsRound(ctx, sms)
         if (wa.isNotEmpty()) startRound(ctx, wa, sms)
+    }
+
+    // ---- SMS: a queue under Android's limit, with "sent · waiting · failed" ----
+
+    const val ACTION_FLUSH = "com.callbackreminder.app.DAILY_LIST_FLUSH"
+    private const val REQ_FLUSH = 1_099_260
+
+    /** This round's SMS lists: who, who went through, who failed. Waiting = the rest. */
+    data class SmsRound(val at: Long, val keys: List<String>, val sent: Set<String>, val failed: Set<String>, val queue: List<String>) {
+        val waiting: Int get() = keys.count { it !in sent && it !in failed }
+    }
+
+    private fun list(ctx: Context, k: String) = p(ctx).getString(k, "").orEmpty().split(',').filter { it.isNotBlank() }
+
+    fun smsRound(ctx: Context) = SmsRound(
+        p(ctx).getLong("sms_at", 0L), list(ctx, "sms_keys"), list(ctx, "sms_sent").toSet(), list(ctx, "sms_failed").toSet(),
+        list(ctx, "sms_queue"),
+    )
+
+    /** Daily lists still waiting to go out (reminder texts wait for them). */
+    fun queued(ctx: Context) = list(ctx, "sms_queue").isNotEmpty()
+
+    private fun startSmsRound(ctx: Context, keys: List<String>) {
+        p(ctx).edit()
+            .putLong("sms_at", System.currentTimeMillis())
+            .putString("sms_keys", keys.joinToString(","))
+            .putString("sms_sent", "")
+            .putString("sms_failed", "")
+            .putString("sms_queue", keys.joinToString(","))
+            .commit()
+        flush(ctx)
+    }
+
+    /** Retry on the Daily list page: the failed ones go again. */
+    fun retryFailed(ctx: Context) {
+        val r = smsRound(ctx)
+        if (r.failed.isEmpty()) return
+        p(ctx).edit()
+            .putString("sms_failed", "")
+            .putString("sms_queue", (r.queue + r.failed).distinct().joinToString(","))
+            .commit()
+        flush(ctx)
+    }
+
+    /** Sends what fits under the limit now; the rest waits for an alarm when there is room. */
+    @Synchronized
+    fun flush(ctx: Context) {
+        val queue = list(ctx, "sms_queue").toMutableList()
+        while (queue.isNotEmpty()) {
+            val key = queue.first()
+            val text = build(ctx, key)
+            if (text == null) {
+                // Nothing open any more: nothing to send.
+                queue.removeAt(0)
+                mark(ctx, "sms_sent", key)
+                continue
+            }
+            val parts = SmsSender.partsFor(text)
+            if (SmsQuota.room(ctx) < parts && SmsSender.hasPermission(ctx)) {
+                val at = SmsQuota.roomAt(ctx, parts)
+                val show = PendingIntent.getActivity(
+                    ctx, REQ_FLUSH, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                ctx.getSystemService(AlarmManager::class.java).setClockSafely(AlarmManager.AlarmClockInfo(at, show), flushAlarm(ctx))
+                SmsQuota.tipOnce(ctx)
+                break
+            }
+            queue.removeAt(0)
+            p(ctx).edit().putString("sms_queue", queue.joinToString(",")).commit()
+            if (SmsSender.hasPermission(ctx)) SmsQuota.record(ctx, parts)
+            send(ctx, key, text)
+        }
+        p(ctx).edit().putString("sms_queue", queue.joinToString(",")).commit()
+    }
+
+    private fun flushAlarm(ctx: Context): PendingIntent = PendingIntent.getBroadcast(
+        ctx,
+        REQ_FLUSH,
+        Intent(ctx, TaskReceiver::class.java).setAction(ACTION_FLUSH).setData(Uri.parse("callback://daily-list-flush")),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    @Synchronized
+    private fun mark(ctx: Context, set: String, key: String) {
+        val r = smsRound(ctx)
+        if (key !in r.keys) return
+        val now = (list(ctx, set) + key).distinct()
+        val e = p(ctx).edit().putString(set, now.joinToString(","))
+        // Sent after a retry: no longer failed.
+        if (set == "sms_sent") e.putString("sms_failed", (r.failed - key).joinToString(","))
+        e.commit()
     }
 
     // ---- WhatsApp: you send each one yourself ----
@@ -312,6 +400,8 @@ object DailyList {
                 .setContentIntent(compose)
                 .setAutoCancel(true)
             Notify.post(ctx, NotifType.TAP_TO_SEND, notifId(key), b)
+            // You send this one yourself: it no longer waits here.
+            mark(ctx, "sms_sent", key)
             return
         }
         try {
@@ -342,6 +432,7 @@ object DailyList {
         val name = intent.getStringExtra(EXTRA_NAME).orEmpty()
         if (resultCode == Activity.RESULT_OK) {
             p(ctx).edit().putLong("sent_$key", System.currentTimeMillis()).apply()
+            mark(ctx, "sms_sent", key)
             val b = NotificationCompat.Builder(ctx, Notify.CH_QUIET)
                 .setSmallIcon(R.drawable.ic_stat_sms)
                 .setContentTitle("Sent the list to $name")
@@ -354,6 +445,7 @@ object DailyList {
     }
 
     private fun failed(ctx: Context, key: String, name: String, reason: String) {
+        mark(ctx, "sms_failed", key)
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle("Couldn't send the daily list to $name")
@@ -364,5 +456,5 @@ object DailyList {
         Notify.post(ctx, NotifType.TEXT_FAILED, notifId(key), b)
     }
 
-    private fun notifId(key: String) = NOTIF_BASE + (key.hashCode() and 0xFFFF)
+    private fun notifId(key: String) = NotifIds.dailyList(key)
 }

@@ -498,10 +498,8 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
             if (e == androidx.lifecycle.Lifecycle.Event.ON_START) toWhatsApp[0] = false
             if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && !toWhatsApp[0]) {
                 val st = ReviewSession.state.value
-                val cur = st.current
-                if (st.status == ReviewSession.Status.RUNNING && st.awaiting.isEmpty() &&
-                    (cur?.startsWith("c:") == true || cur?.startsWith("t:") == true)
-                ) ReviewSession.pause(ctx)
+                // From any card (My tasks and To schedule too), so the session never stays "running" by mistake.
+                if (st.status == ReviewSession.Status.RUNNING && st.awaiting.isEmpty()) ReviewSession.pause(ctx)
             }
         }
         owner.lifecycle.addObserver(obs)
@@ -656,7 +654,7 @@ private fun NewTimeReasonDialog(title: String, person: String, onPick: (Long, St
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Saved in his history. His texts move to the new time too. Tap a time to save.",
+                    "Saved in the task's history. Its texts move to the new time too. Tap a time to save.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1115,7 +1113,7 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (s.status == ReviewSession.Status.PAUSED) "⏸ Review session paused" else "▶ Review session running",
+                        if (s.status == ReviewSession.Status.PAUSED) "⏸ Continue review · ${s.total - s.handled} left" else "▶ Review session running",
                         color = PausedFg, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f)
                     )
                     Text("${s.handled} / ${s.total}", color = PausedFg, fontWeight = FontWeight.Bold)
@@ -1126,7 +1124,7 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
                         onClick = { ReviewSession.resume(ctx); onResume() },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk)
-                    ) { Text("▶ Resume", fontWeight = FontWeight.Bold) }
+                    ) { Text("▶ Continue", fontWeight = FontWeight.Bold) }
                     OutlinedButton(onClick = { ReviewSession.clear(ctx) }, modifier = Modifier.weight(1f)) { Text("End", color = PausedFg) }
                 }
             }
@@ -1191,7 +1189,7 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
 
 // ---------------------------------------------------------------- Settings
 
-/** Settings › Review: each section's Show and Session switches, drag ≡ to reorder, and the resume reminder. */
+/** Settings › Review: each section's Show and Session switches, drag ≡ to reorder. */
 @Composable
 fun ReviewSectionsSettings() {
     val ctx = LocalContext.current
@@ -1202,8 +1200,6 @@ fun ReviewSectionsSettings() {
     var offset by remember { mutableFloatStateOf(0f) }
     val rowH = 96.dp
     val rowPx = with(density) { rowH.toPx() }
-    var minutes by remember { mutableIntStateOf(ReviewPrefs.resumeMinutes(ctx)) }
-    var menu by remember { mutableStateOf(false) }
 
     SectionCard(
         title = "Sections",
@@ -1268,18 +1264,6 @@ fun ReviewSectionsSettings() {
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-    SectionCard(title = "Call session", subtitle = "While a session is paused, a popup asks you to resume after this long. Kept until midnight.") {
-        Box {
-            OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Remind me to resume after $minutes min paused ▾")
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                ReviewPrefs.RESUME_CHOICES.forEach { m ->
-                    DropdownMenuItem(text = { Text("$m min") }, onClick = { minutes = m; ReviewPrefs.setResumeMinutes(ctx, m); menu = false })
                 }
             }
         }

@@ -223,7 +223,7 @@ fun CallsScreen(resumeKey: Int, switcher: (@Composable () -> Unit)? = null) {
         if (openId == r.id) openId = null
         scope.offerUndo(snack, "Back in To review ${Fmt.dueLabel(ms)}") { ReminderStore.restore(before) }
     }
-    /** A follow-up whose texts are still going gets the "His texts move too" switch on New time. */
+    /** A follow-up whose texts are still going gets the "Texts move too" switch on New time. */
     fun hasOpenTexts(r: Reminder) = r.linkId != 0L && SmsStore.items.value.any { it.linkId == r.linkId && !it.done }
     fun deleteNow(r: Reminder) {
         val before = r

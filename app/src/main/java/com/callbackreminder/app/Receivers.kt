@@ -55,17 +55,89 @@ class ActionReceiver : BroadcastReceiver() {
     }
 }
 
-/** After a restart or app update, put all the alarms back. */
+/**
+ * After a restart or app update, put all the alarms back. Nothing that already rang rings again: after an update
+ * nothing old rings at all, after a restart only what came due while the phone was off (one rings, several give
+ * one notification).
+ */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ReminderStore.init(context)
-        Scheduler.rescheduleAll(context)
+        MyTaskStore.init(context)
+        val restart = intent.action != Intent.ACTION_MY_PACKAGE_REPLACED
+        val since = if (restart) PhoneOff.offSince(context) else null
+        val calls = Scheduler.restoreAll(context, since)
+        val tasks = if (since != null) TaskAlarms.missedSince(since) else emptyList()
+        PhoneOff.ringMissed(context, calls, tasks)
         SmsStore.init(context)
         SmsScheduler.rescheduleAll(context)
         BankingPause.resume(context)
         ReviewReminder.schedule(context)
         TaskAlarms.rescheduleAll(context)
         ReviewSession.rearm(context)
+    }
+}
+
+/** When the phone went off, so a restart knows what came due meanwhile. */
+object PhoneOff {
+    const val MISSED_EVENT = "Came due while the phone was off"
+    private const val REQ_OPEN = 1_099_501
+    private fun p(c: Context) = c.applicationContext.getSharedPreferences("phone_off", Context.MODE_PRIVATE)
+
+    /** The last time the app was seen running before this start (read before [markAlive] overwrites it). */
+    @Volatile private var aliveBefore = 0L
+
+    /** Called whenever the app starts (alarms, the screen, a call): the phone was on until at least now. */
+    fun markAlive(c: Context) {
+        val s = p(c)
+        if (aliveBefore == 0L) aliveBefore = s.getLong("alive", 0L)
+        s.edit().putLong("alive", System.currentTimeMillis()).apply()
+    }
+
+    fun markShutdown(c: Context) = p(c).edit().putLong("shutdown", System.currentTimeMillis()).commit()
+
+    /** When the phone went off: the shutdown, or the last sign of life when the battery died. 12 h back if unknown. */
+    fun offSince(c: Context): Long {
+        val now = System.currentTimeMillis()
+        val boot = now - android.os.SystemClock.elapsedRealtime()
+        val known = maxOf(p(c).getLong("shutdown", 0L), aliveBefore).takeIf { it in 1..boot }
+        return known ?: (boot - 12 * 60 * 60_000L)
+    }
+
+    /** One missed item rings as usual; two or more give one notification that opens Review. */
+    @android.annotation.SuppressLint("MissingPermission")
+    fun ringMissed(ctx: Context, calls: List<Reminder>, tasks: List<MyTask>) {
+        val total = calls.size + tasks.size
+        if (total == 0) return
+        if (total == 1) {
+            calls.firstOrNull()?.let { Scheduler.ringSoon(ctx, it) }
+            tasks.firstOrNull()?.let { TaskAlarms.showTask(ctx, it) }
+            return
+        }
+        calls.forEach { ReminderStore.logEvent(it.id, MISSED_EVENT) }
+        if (!Notifier.canNotify(ctx)) return
+        Notifier.createChannels(ctx)
+        val open = android.app.PendingIntent.getActivity(
+            ctx, REQ_OPEN, ReviewReminder.reviewIntent(ctx),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val what = if (tasks.isEmpty()) "follow-ups" else if (calls.isEmpty()) "tasks" else "follow-ups and tasks"
+        val b = androidx.core.app.NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+            .setSmallIcon(R.drawable.ic_stat_call)
+            .setContentTitle("$total $what came due while your phone was off")
+            .setContentText((calls.map { it.note.ifBlank { "Call back" } } + tasks.map { it.title }).take(4).joinToString(" · "))
+            .setCategory(androidx.core.app.NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        Notify.post(ctx, NotifType.CALLBACK, NotifIds.MISSED_WHILE_OFF, b)
+    }
+}
+
+/** The phone is switching off: remember when. */
+class ShutdownReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        PhoneOff.markShutdown(context)
     }
 }
 

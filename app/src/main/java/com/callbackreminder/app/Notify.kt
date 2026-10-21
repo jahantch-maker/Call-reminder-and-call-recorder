@@ -120,3 +120,21 @@ object Notify {
         NotificationManagerCompat.from(ctx).notify(id, b.build())
     }
 }
+
+/**
+ * Every notification's number. Ids are small counters (1, 2, 3…) shared by calls, texts and My tasks, so each kind
+ * gets its own range far above the fixed numbers (1, 42, 77_001, 1_099_xxx, 1_501_xxx); two kinds can never
+ * replace each other.
+ */
+object NotifIds {
+    fun call(id: Long) = 10_000_000 + id.toInt()
+    fun text(id: Long) = 20_000_000 + id.toInt()
+    fun task(id: Long) = 30_000_000 + id.toInt()
+    fun taskBefore(id: Long) = 31_000_000 + id.toInt()
+    fun dossier(id: Long) = 32_000_000 + id.toInt()
+    fun dossierBefore(id: Long) = 33_000_000 + id.toInt()
+    fun replied(id: Long) = 34_000_000 + id.toInt()
+    fun dailyList(key: String) = 35_000_000 + (key.hashCode() and 0xFFFF)
+    /** "N follow-ups came due while your phone was off". */
+    const val MISSED_WHILE_OFF = 1_099_500
+}

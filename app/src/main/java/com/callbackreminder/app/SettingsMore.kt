@@ -152,6 +152,32 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(onClick = onOpenPeople, modifier = Modifier.fillMaxWidth()) { Text("Open People") }
         }
+        var round by remember { mutableStateOf(DailyList.smsRound(ctx)) }
+        if (round.keys.isNotEmpty()) {
+            SectionCard(
+                title = "Last SMS round · ${Fmt.dueLabel(round.at)}",
+                subtitle = "Android lets an app send about 30 texts in 30 minutes, so long rounds go out a little at a time. " +
+                    "If Android asks to allow many messages, tick \"Always allow\"."
+            ) {
+                Text(
+                    "${round.sent.size} sent · ${round.waiting} waiting · ${round.failed.size} failed",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (round.failed.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+                if (round.failed.isNotEmpty()) {
+                    Text(
+                        "Failed: " + round.failed.joinToString(", ") { DailyList.nameFor(ctx, it) },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = { DailyList.retryFailed(ctx); round = DailyList.smsRound(ctx) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Retry failed") }
+                }
+            }
+        }
         SectionCard(
             title = "Send times",
             subtitle = "The same times for everyone. Each list has all their open tasks with the task number, " +
@@ -229,14 +255,15 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
                 "settings and recording notes. Recordings themselves are left out (too big). The newest ${Backup.KEEP} are kept."
         ) {
             Text(
-                if (folder == null) "No folder chosen yet" else Backup.folderLabel(ctx),
+                Backup.folderLabel(ctx),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 when {
-                    folder == null -> "Choose a folder to switch the backup on."
                     error.isNotEmpty() -> "Last try failed: $error"
+                    folder == null && last > 0L -> "Last backup: ${Fmt.dueLabel(last)} · the last 7 nights are kept"
+                    folder == null -> "On from the start: the last 7 nights are kept on this phone"
                     last > 0L -> "Last backup: ${Fmt.dueLabel(last)}"
                     else -> "No backup yet"
                 },
@@ -247,13 +274,13 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
             OutlinedButton(onClick = { pickFolder.launch(null) }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (folder == null) "Choose a folder" else "Change folder")
             }
+            Spacer(Modifier.height(6.dp))
+            Button(onClick = {
+                val e = Backup.backUpNow(ctx)
+                Toast.makeText(ctx, e ?: "Backed up", Toast.LENGTH_SHORT).show()
+                tick++
+            }, modifier = Modifier.fillMaxWidth()) { Text("Back up now") }
             if (folder != null) {
-                Spacer(Modifier.height(6.dp))
-                Button(onClick = {
-                    val e = Backup.backUpNow(ctx)
-                    Toast.makeText(ctx, e ?: "Backed up", Toast.LENGTH_SHORT).show()
-                    tick++
-                }, modifier = Modifier.fillMaxWidth()) { Text("Back up now") }
                 Spacer(Modifier.height(6.dp))
                 FilledTonalButton(onClick = {
                     val share = Backup.shareIntent(ctx)
@@ -274,12 +301,10 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
             title = "Restore",
             subtitle = "Replaces everything in the app with a backup, then restarts the app. Recordings on the phone stay as they are."
         ) {
-            if (folder != null) {
-                FilledTonalButton(onClick = { restoreList = Backup.list(ctx) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Restore from the backup folder")
-                }
-                Spacer(Modifier.height(6.dp))
+            FilledTonalButton(onClick = { restoreList = Backup.list(ctx) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (folder != null) "Restore from the backup folder" else "Restore from the backups on this phone")
             }
+            Spacer(Modifier.height(6.dp))
             OutlinedButton(onClick = { pickFile.launch(arrayOf("application/json", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Restore from a file…")
             }

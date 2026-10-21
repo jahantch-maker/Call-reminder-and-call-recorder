@@ -25,7 +25,7 @@ enum class ReviewSection(
     val defaultShow: Boolean,
     val defaultSession: Boolean,
 ) {
-    REPLIED("replied", "✅", "Replied, check it", "They texted back the task number, or you chose Done, review it", false, false),
+    REPLIED("replied", "✅", "Replied, check it", "They texted back the task number, or you chose Done, review it", true, true),
     OVERDUE("overdue", "🔴", "Overdue", "Calls, and texts with no reply", true, true),
     SCHED_FU("sched_fu", "🕘", "To schedule · Follow-ups", "No time or no person yet", true, true),
     SCHED_MY("sched_my", "🕘", "To schedule · My tasks", "My tasks with no time", true, true),
@@ -61,6 +61,18 @@ object ReviewPrefs {
     val RESUME_CHOICES = listOf(5, 10, 15, 30, 60)
 
     fun shown(c: Context): List<ReviewSection> = order(c).filter { show(c, it) }
+
+    /** v0.32: "Replied, check it" is switched on once and moved first (it used to be off by default). */
+    fun migrate(c: Context) {
+        if (p(c).getBoolean("replied_on_v32", false)) return
+        val s = ReviewSection.REPLIED
+        p(c).edit()
+            .putBoolean("sec_show_${s.key}", true)
+            .putBoolean("sec_session_${s.key}", true)
+            .putBoolean("replied_on_v32", true)
+            .apply()
+        setOrder(c, listOf(s) + order(c).filter { it != s })
+    }
 }
 
 /** One thing waiting on the Review page. [key] names it in a session queue, like "c:12". */
@@ -244,8 +256,9 @@ object ReviewData {
 
 /**
  * The review session: one item after another (calls with the Next card, the rest with a card each). It is kept
- * in prefs, so it survives the app closing and a phone restart, until it ends or midnight. While paused, an
- * ongoing notification and the Home card offer Resume, and a popup asks after [ReviewPrefs.resumeMinutes].
+ * in prefs, so it survives the app closing and a phone restart. While paused, a quiet ongoing notification and the
+ * Home card offer "Continue review"; there is no timed resume popup. The next 1 PM / 6 PM review starts with the
+ * items left over, and what is left at midnight is carried to the next day's first review.
  */
 object ReviewSession {
     const val MODE_ALL = "all"
@@ -315,8 +328,9 @@ object ReviewSession {
                 day = s.getString("day", "")!!,
             )
         }
-        // Kept until midnight, then a fresh start.
+        // A new day: what was left goes first into the next review (never dropped), then a fresh start.
         if (_state.value.active && _state.value.day != today()) {
+            setCarry(ctx, (carry(ctx) + leftovers(_state.value)).distinct())
             set(ctx, State())
             cancelReminder(ctx)
         }
@@ -345,12 +359,27 @@ object ReviewSession {
             .commit()
     }
 
+    /** What a session had not reached yet. */
+    private fun leftovers(s: State): List<String> = if (s.active) s.queue.drop(s.pos) else emptyList()
+
+    /** Items left over from yesterday's unfinished session. */
+    private fun carry(ctx: Context): List<String> = p(ctx).getString("carry", "").orEmpty().split(',').filter { it.isNotBlank() }
+    private fun setCarry(ctx: Context, keys: List<String>) = p(ctx).edit().putString("carry", keys.joinToString(",")).commit()
+
+    /**
+     * Starts a session. Items left over from a paused or unfinished session (today's, or carried from yesterday)
+     * come first, oldest first, then everything else that is waiting now.
+     */
     fun start(ctx: Context, mode: String): Boolean {
-        val items = ReviewData.queue(ctx, mode)
-        if (items.isEmpty()) return false
+        val items = ReviewData.queue(ctx, mode).map { it.key }
+        val fresh = items.toSet()
+        val left = (carry(ctx) + leftovers(init(ctx))).distinct().filter { it in fresh }
+        val queue = left + items.filter { it !in left }
+        if (queue.isEmpty()) return false
         cancelReminder(ctx)
         ReviewReminder.cancelSnooze(ctx)
-        set(ctx, State(status = Status.RUNNING, mode = mode, queue = items.map { it.key }, startedAt = System.currentTimeMillis(), day = today()))
+        setCarry(ctx, emptyList())
+        set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today()))
         return true
     }
 
@@ -456,10 +485,9 @@ object ReviewSession {
     fun pause(ctx: Context) {
         val s = init(ctx)
         if (s.status != Status.RUNNING) return
-        val now = System.currentTimeMillis()
-        val at = now + ReviewPrefs.resumeMinutes(ctx) * 60_000L
-        set(ctx, s.copy(status = Status.PAUSED, pausedAt = now, remindAt = at))
-        armReminder(ctx, at)
+        // No timed "resume?" popup (you are pulled away many times a day): the quiet notification and the Home
+        // card wait, and the next review reminder picks the rest up.
+        set(ctx, s.copy(status = Status.PAUSED, pausedAt = System.currentTimeMillis(), remindAt = 0L))
         showPausedNotification(ctx)
     }
 
@@ -467,7 +495,9 @@ object ReviewSession {
         val s = init(ctx)
         if (s.status != Status.PAUSED) return
         cancelReminder(ctx)
-        set(ctx, s.copy(status = Status.RUNNING, pausedAt = 0L, remindAt = 0L))
+        // What became due while paused joins at the end, so your place doesn't jump.
+        val added = ReviewData.queue(ctx, s.mode).map { it.key }.filter { it !in s.queue }
+        set(ctx, s.copy(status = Status.RUNNING, queue = s.queue + added, pausedAt = 0L, remindAt = 0L))
     }
 
     fun remindLater(ctx: Context, minutes: Int = 15) {
@@ -479,12 +509,10 @@ object ReviewSession {
         showPausedNotification(ctx)
     }
 
-    /** After a restart: the paused notification and the resume popup come back (a minute after boot if overdue). */
+    /** After a restart: the paused notification comes back. */
     fun rearm(ctx: Context) {
         val s = init(ctx)
         if (s.status != Status.PAUSED) return
-        val now = System.currentTimeMillis()
-        armReminder(ctx, if (s.remindAt > now) s.remindAt else now + 60_000L)
         showPausedNotification(ctx)
     }
 
@@ -545,12 +573,12 @@ object ReviewSession {
         )
         val b = NotificationCompat.Builder(ctx, Notify.CH_QUIET)
             .setSmallIcon(R.drawable.ic_stat_call)
-            .setContentTitle("Review session paused · ${s.handled} of ${s.total}")
+            .setContentTitle("Continue review · ${s.total - s.handled} left")
             .setContentText(nextName(ctx)?.let { "Next: $it" } ?: "Tap to resume")
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(openIntent(ctx, REQ_REMIND + 3))
-            .addAction(0, "Resume", openIntent(ctx, REQ_REMIND + 4, resume = true))
+            .addAction(0, "Continue", openIntent(ctx, REQ_REMIND + 4, resume = true))
             .addAction(0, "End", end)
         NotificationManagerCompat.from(ctx).notify(NOTIF_ID, b.build())
     }

@@ -115,87 +115,83 @@ object ToScheduleStore {
 
     private fun prefs() = appCtx.getSharedPreferences("to_schedule", Context.MODE_PRIVATE)
 
-    private fun load(): List<ToScheduleItem> {
-        val raw = prefs().getString("list", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                ToScheduleItem(
-                    id = o.getLong("id"),
-                    name = o.optString("name"),
-                    number = o.optString("number"),
-                    note = o.optString("note"),
-                    createdAt = o.optLong("createdAt"),
-                    callOn = o.optBoolean("callOn", true),
-                    textOn = o.optBoolean("textOn", false),
-                    message = o.optString("message"),
-                    tracked = o.optBoolean("tracked", true),
-                    textTimes = o.optJSONArray("textTimes")?.let { a -> (0 until a.length()).map { a.getLong(it) } } ?: emptyList(),
-                    burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
-                    burstGapMin = o.optInt("burstGap"),
-                    repeat = Repeat.fromJson(o.optJSONObject("repeat")),
-                    oldDue = o.optLong("oldDue"),
-                    autopilot = o.optBoolean("autopilot"),
-                    starred = o.optBoolean("starred"),
-                    linkId = o.optLong("linkId"),
-                    code = o.optString("code").replace("-", ""),
-                    callEvents = o.optJSONArray("callEvents")?.let { a ->
-                        (0 until a.length()).map { j ->
-                            val e = a.getJSONObject(j)
-                            CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
-                        }
-                    } ?: emptyList(),
-                    textLog = o.optJSONArray("textLog")?.let { a ->
-                        (0 until a.length()).mapNotNull { j ->
-                            val l = a.getJSONObject(j)
-                            val status = SmsLogEntry.Status.values().firstOrNull { it.code == l.optString("s") }
-                                ?: return@mapNotNull null
-                            SmsLogEntry(l.getLong("at"), status, l.optString("d"))
-                        }
-                    } ?: emptyList(),
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
+    private val rows = Rows<ToScheduleItem>("to_schedule", { it.id }, ::toJson, ::fromJson)
+
+    private fun load(): List<ToScheduleItem> = rows.load(appCtx, prefs())
+
+    /** Finished items older than [Db.ARCHIVE_DAYS] days, kept for search. */
+    fun archived(): List<ToScheduleItem> = rows.archived(appCtx)
+
+    private fun fromJson(o: JSONObject): ToScheduleItem = run {
+        ToScheduleItem(
+            id = o.getLong("id"),
+            name = o.optString("name"),
+            number = o.optString("number"),
+            note = o.optString("note"),
+            createdAt = o.optLong("createdAt"),
+            callOn = o.optBoolean("callOn", true),
+            textOn = o.optBoolean("textOn", false),
+            message = o.optString("message"),
+            tracked = o.optBoolean("tracked", true),
+            textTimes = o.optJSONArray("textTimes")?.let { a -> (0 until a.length()).map { a.getLong(it) } } ?: emptyList(),
+            burstCount = o.optInt("burstCount", 1).coerceAtLeast(1),
+            burstGapMin = o.optInt("burstGap"),
+            repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+            oldDue = o.optLong("oldDue"),
+            autopilot = o.optBoolean("autopilot"),
+            starred = o.optBoolean("starred"),
+            linkId = o.optLong("linkId"),
+            code = o.optString("code").replace("-", ""),
+            callEvents = o.optJSONArray("callEvents")?.let { a ->
+                (0 until a.length()).map { j ->
+                    val e = a.getJSONObject(j)
+                    CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
+                }
+            } ?: emptyList(),
+            textLog = o.optJSONArray("textLog")?.let { a ->
+                (0 until a.length()).mapNotNull { j ->
+                    val l = a.getJSONObject(j)
+                    val status = SmsLogEntry.Status.values().firstOrNull { it.code == l.optString("s") }
+                        ?: return@mapNotNull null
+                    SmsLogEntry(l.getLong("at"), status, l.optString("d"))
+                }
+            } ?: emptyList(),
+        )
     }
 
     private fun save(list: List<ToScheduleItem>) {
-        val arr = JSONArray()
-        list.forEach { t ->
-            arr.put(
-                JSONObject()
-                    .put("id", t.id)
-                    .put("name", t.name)
-                    .put("number", t.number)
-                    .put("note", t.note)
-                    .put("createdAt", t.createdAt)
-                    .put("callOn", t.callOn)
-                    .put("textOn", t.textOn)
-                    .put("message", t.message)
-                    .put("tracked", t.tracked)
-                    .put("textTimes", JSONArray().apply { t.textTimes.forEach { put(it) } })
-                    .put("burstCount", t.burstCount)
-                    .put("burstGap", t.burstGapMin)
-                    .put("repeat", t.repeat?.toJson())
-                    .put("oldDue", t.oldDue)
-                    .put("autopilot", t.autopilot)
-                    .put("starred", t.starred)
-                    .put("linkId", t.linkId)
-                    .put("code", t.code)
-                    .put("callEvents", JSONArray().apply {
-                        t.callEvents.forEach { e ->
-                            put(JSONObject().put("at", e.at).put("what", e.what).put("due", e.due).put("note", e.note))
-                        }
-                    })
-                    .put("textLog", JSONArray().apply {
-                        t.textLog.forEach { l -> put(JSONObject().put("at", l.at).put("s", l.status.code).put("d", l.detail)) }
-                    })
-            )
-        }
-        prefs().edit().putString("list", arr.toString()).apply()
+        rows.save(appCtx, list)
         _items.value = list
+    }
+
+    private fun toJson(t: ToScheduleItem): JSONObject {
+        return JSONObject()
+            .put("id", t.id)
+            .put("name", t.name)
+            .put("number", t.number)
+            .put("note", t.note)
+            .put("createdAt", t.createdAt)
+            .put("callOn", t.callOn)
+            .put("textOn", t.textOn)
+            .put("message", t.message)
+            .put("tracked", t.tracked)
+            .put("textTimes", JSONArray().apply { t.textTimes.forEach { put(it) } })
+            .put("burstCount", t.burstCount)
+            .put("burstGap", t.burstGapMin)
+            .put("repeat", t.repeat?.toJson())
+            .put("oldDue", t.oldDue)
+            .put("autopilot", t.autopilot)
+            .put("starred", t.starred)
+            .put("linkId", t.linkId)
+            .put("code", t.code)
+            .put("callEvents", JSONArray().apply {
+                t.callEvents.forEach { e ->
+                    put(JSONObject().put("at", e.at).put("what", e.what).put("due", e.due).put("note", e.note))
+                }
+            })
+            .put("textLog", JSONArray().apply {
+                t.textLog.forEach { l -> put(JSONObject().put("at", l.at).put("s", l.status.code).put("d", l.detail)) }
+            })
     }
 
     fun get(id: Long): ToScheduleItem? = _items.value.firstOrNull { it.id == id }

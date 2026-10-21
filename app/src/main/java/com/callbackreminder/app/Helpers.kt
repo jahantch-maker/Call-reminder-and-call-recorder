@@ -486,3 +486,24 @@ data class SetupStatus(
         }
     }
 }
+
+/** A person's first name for labels ("Text Sana", "Sana's texts") instead of "him" / "his". */
+object Names {
+    // Titles saved in front of a name ("Mr Ali", "Engr Kamran", "Haji Aslam") are skipped.
+    private val TITLES = setOf(
+        "mr", "mrs", "ms", "miss", "sir", "madam", "mam", "maam", "dr", "doctor", "engr", "eng", "prof",
+        "haji", "hajji", "hafiz", "janab", "mohtarma", "bhai", "baji",
+    )
+
+    /** The first name, or null when there is none (then say "Send text", "Show all tasks" and the like). */
+    fun first(name: String?): String? {
+        val words = name.orEmpty().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return null
+        val word = words.firstOrNull { it.trimEnd('.', ',').lowercase() !in TITLES } ?: words.first()
+        // A number saved as the name is not a name.
+        return word.trimEnd('.', ',').takeIf { w -> w.any { it.isLetter() } }
+    }
+
+    /** "Sana's", or [none] without a name. */
+    fun possessive(name: String?, none: String = "their"): String = first(name)?.let { "$it's" } ?: none
+}

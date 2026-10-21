@@ -102,7 +102,7 @@ object TextToCall {
         if (!Notifier.canNotify(ctx)) return
         val open = PendingIntent.getActivity(
             ctx,
-            1_400_000 + r.id.toInt(),
+            NotifIds.replied(r.id),
             Intent(ctx, MainActivity::class.java)
                 .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_REVIEW)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -116,6 +116,6 @@ object TextToCall {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
             .setAutoCancel(true)
-        Notify.post(ctx, NotifType.TEXT_REPLIED, 1_400_000 + r.id.toInt(), b)
+        Notify.post(ctx, NotifType.TEXT_REPLIED, NotifIds.replied(r.id), b)
     }
 }

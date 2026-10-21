@@ -70,6 +70,8 @@ import kotlinx.coroutines.flow.drop
 class MainActivity : ComponentActivity() {
 
     companion object {
+        /** The app is on screen (between onStart and onStop). */
+        @Volatile var visible = false
         /** Which screen a notification wants open, e.g. [OPEN_MESSAGES]. */
         const val EXTRA_OPEN = "open_screen"
         const val OPEN_MESSAGES = "messages"
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
         const val OPEN_DOSSIER_REVIEW = "dossier_review"
         /** The morning summary: the "Your day" page. */
         const val OPEN_MY_DAY = "my_day"
-        /** The caller card's "Show all his tasks": the person page, with [EXTRA_PERSON] as the key. */
+        /** The caller card's "Show all Sana's tasks": the person page, with [EXTRA_PERSON] as the key. */
         const val OPEN_PERSON = "person"
         const val EXTRA_PERSON = "person_key"
         /** The "Daily lists ready" notification: the WhatsApp send page. */
@@ -265,6 +267,16 @@ class MainActivity : ComponentActivity() {
             }
             openMessagesTick.intValue = openMessagesTick.intValue + 1
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        visible = true
+    }
+
+    override fun onStop() {
+        visible = false
+        super.onStop()
     }
 
     override fun onResume() {
