@@ -55,13 +55,21 @@ internal fun WorkBlock(
     val stars by FuStars.keys.collectAsState()
     LaunchedEffect(Unit) { FuStars.load(ctx) }
     val fes = remember(calls, texts) { entries(calls, texts) }
+    fun entryOf(w: WorkItem): FuEntry? =
+        fes.firstOrNull { if (w.kind == WorkItem.Kind.CALL) it.call?.id == w.id else it.text?.id == w.id }
+    // A follow-up's call and its texts are one card.
+    val shown = remember(list, fes) {
+        list.distinctBy { w ->
+            if (w.kind == WorkItem.Kind.CALL || w.kind == WorkItem.Kind.TEXT) entryOf(w)?.key ?: w.key else w.key
+        }
+    }
     Column(Modifier.animateContentSize(tween(240))) {
-        list.forEachIndexed { i, w ->
+        shown.forEachIndexed { i, w ->
             key(w.key) {
-                val pos = rowPos(i, list.size)
+                val pos = rowPos(i, shown.size)
                 when (w.kind) {
                     WorkItem.Kind.CALL, WorkItem.Kind.TEXT -> {
-                        val e = fes.firstOrNull { if (w.kind == WorkItem.Kind.CALL) it.call?.id == w.id else it.text?.id == w.id }
+                        val e = entryOf(w)
                         if (e != null) fu.Card(e, pos, now, e.call?.starred ?: (e.key in stars))
                     }
                     WorkItem.Kind.MY_TASK -> MyTaskStore.get(w.id)?.let { t ->

@@ -144,7 +144,8 @@ internal class FuController(
 
     fun call(e: FuEntry) {
         val r = e.call
-        if (r != null && (r.review || (!r.done && r.dueAt <= System.currentTimeMillis()))) FollowUp.mark(ctx, r)
+        // Any call from a follow-up card, due or not, brings the follow-up popup (New time, Why not done) after it.
+        if (r != null && (r.review || !r.done)) FollowUp.mark(ctx, r)
         dial(ctx, e.number)
     }
 

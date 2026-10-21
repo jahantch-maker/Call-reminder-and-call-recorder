@@ -322,6 +322,9 @@ private object Screen {
     const val APPEARANCE = 31
     const val MY_DAY_SETTINGS = 32
     const val OVERDUE = 33
+    /** To schedule with only follow-ups / only My tasks (the waiting links on those tabs). */
+    const val TO_SCHEDULE_FU = 34
+    const val TO_SCHEDULE_MINE = 35
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -580,6 +583,8 @@ private fun AppRoot(
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
                 Screen.TO_SCHEDULE -> ToScheduleScreen(onBack = { back() })
+                Screen.TO_SCHEDULE_FU -> ToScheduleScreen(onBack = { back() }, only = 0)
+                Screen.TO_SCHEDULE_MINE -> ToScheduleScreen(onBack = { back() }, only = 1)
                 Screen.OVERDUE -> OverdueScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW -> {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -700,11 +705,11 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
               CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
-                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey, onOpenToSchedule = { open(Screen.TO_SCHEDULE) })
+                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey, onOpenToSchedule = { open(Screen.TO_SCHEDULE_MINE) })
                     Tab.FOLLOW_UPS -> FollowUpsScreen(
                         resumeKey = resumeKey,
                         onOpenTextSettings = { open(Screen.TEXT_SETTINGS) },
-                        onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                        onOpenToSchedule = { open(Screen.TO_SCHEDULE_FU) },
                     )
                     Tab.PEOPLE -> PeopleScreen(
                         resumeKey = resumeKey,

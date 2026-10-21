@@ -166,7 +166,7 @@ class WidgetActivity : ComponentActivity() {
     // ---- Straight actions ----
 
     private fun callNow(r: Reminder) {
-        if (r.review || (!r.done && r.dueAt <= System.currentTimeMillis())) FollowUp.mark(this, r)
+        if (r.review || !r.done) FollowUp.mark(this, r)
         dial(this, r.number)
     }
 

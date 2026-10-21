@@ -284,7 +284,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
 
     fun callFu(f: CalFollowUp) {
         if (f.isCall) ReminderStore.items.value.firstOrNull { it.id == f.id }?.let { r ->
-            if (!r.done && r.dueAt <= System.currentTimeMillis()) FollowUp.mark(ctx, r)
+            if (r.review || !r.done) FollowUp.mark(ctx, r)
         }
         dial(ctx, f.number)
     }
