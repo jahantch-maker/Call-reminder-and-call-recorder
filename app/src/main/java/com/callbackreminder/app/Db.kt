@@ -161,8 +161,8 @@ class Rows<T>(
 
     private fun migrate(ctx: Context, prefs: SharedPreferences) {
         val raw = prefs.getString("list", null)
-        val items = if (raw == null) emptyList() else JSONArray(raw).let { arr -> (0 until arr.length()).map { read(arr.getJSONObject(it)) } }
-            .distinctBy(idOf)
+        val items: List<T> = if (raw == null) emptyList()
+        else JSONArray(raw).let { arr -> (0 until arr.length()).map { read(arr.getJSONObject(it)) } }.distinctBy(idOf)
         Db.write(ctx, table, items.map { idOf(it) to write(it).toString() }, emptyList())
         // Every item made it across, or the copy is not trusted.
         check(Db.count(ctx, table) >= items.size) { "copied ${Db.count(ctx, table)} of ${items.size}" }
