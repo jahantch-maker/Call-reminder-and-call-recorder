@@ -321,6 +321,7 @@ private object Screen {
     const val CALENDAR_SETTINGS = 30
     const val APPEARANCE = 31
     const val MY_DAY_SETTINGS = 32
+    const val OVERDUE = 33
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -579,6 +580,7 @@ private fun AppRoot(
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
                 Screen.TO_SCHEDULE -> ToScheduleScreen(onBack = { back() })
+                Screen.OVERDUE -> OverdueScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW -> {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
                     ReviewPage(
@@ -731,6 +733,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                        onOpenOverdue = { open(Screen.OVERDUE) },
                         onOpenMyTasks = { sub ->
                             MyTasksUi.tabRequest.value = sub
                             onTab(Tab.MY_TASKS)

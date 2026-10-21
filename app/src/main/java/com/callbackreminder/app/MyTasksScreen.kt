@@ -130,7 +130,7 @@ private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault(
 
 /** Refreshes "overdue" and "was due" labels while a screen is open. */
 @Composable
-private fun rememberNow(resumeKey: Int): Long {
+internal fun rememberNow(resumeKey: Int): Long {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {

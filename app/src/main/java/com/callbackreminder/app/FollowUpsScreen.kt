@@ -341,18 +341,14 @@ private fun FollowUpsAll(
     val stars by FuStars.keys.collectAsState()
     LaunchedEffect(Unit) { FuStars.load(ctx) }
     var showNew by remember { mutableStateOf(false) }
-    var sendFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var newTimeFor by remember { mutableStateOf<FuEntry?>(null) }
-    var pickTimeFor by remember { mutableStateOf<FuEntry?>(null) }
-    var reviewLaterFor by remember { mutableStateOf<FuEntry?>(null) }
-    var timelineFor by remember { mutableStateOf<FuEntry?>(null) }
-    var textsFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var moveTexts by remember { mutableStateOf(true) }
-    // Just ticked: shown ticked for a moment before it leaves the list.
-    var ticking by remember { mutableStateOf(setOf<String>()) }
     val snack = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    val fu = rememberFuController(snack)
+    // A text notification's "Not done, text again" opens its follow-up in the editor.
+    LaunchedEffect(editLink) {
+        val link = editLink ?: return@LaunchedEffect
+        onEditLink(null)
+        fu.editLink = link
+    }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -381,122 +377,6 @@ private fun FollowUpsAll(
     val waiting = toSchedule.size + myTasks.count { !it.done && !it.timed }
     val today = LocalDate.now(ZoneId.systemDefault())
     val cs = MaterialTheme.colorScheme
-
-    /** Puts back this follow-up's call and texts as they are now (for Undo). */
-    fun undoFor(e: FuEntry): () -> Unit {
-        val link = FollowUps.snapshot(e.call?.linkId ?: e.text?.linkId ?: 0L)
-        val c = e.call
-        val t = e.text
-        return {
-            c?.let { ReminderStore.restore(it) }
-            t?.let { SmsStore.restore(it) }
-            link()
-        }
-    }
-
-    fun done(e: FuEntry) {
-        val undo = undoFor(e)
-        when {
-            e.callPending -> ReminderStore.markDone(e.call!!.id)
-            e.textActive -> SmsStore.markDone(e.text!!.id)
-        }
-        if (openKey == e.key) openKey = null
-        scope.offerUndo(snack, "Done · ${e.title}", undo)
-    }
-    fun checked(e: FuEntry) {
-        val undo = undoFor(e)
-        e.call?.code?.let { ReplyNotes.clear(ctx, it) }
-        if (e.callReview) ReminderStore.reviewed(e.call!!.id)
-        if (e.textReview) SmsStore.markDone(e.text!!.id, linked = false)
-        if (openKey == e.key) openKey = null
-        scope.offerUndo(snack, "Checked · ${e.title}", undo)
-    }
-    fun newTime(e: FuEntry, ms: Long) {
-        val undo = undoFor(e)
-        val c = e.call
-        val t = e.text
-        if (c != null && (e.callPending || e.callReview || t == null || !e.textActive)) {
-            ReminderStore.reschedule(c.id, ms, "Moved to")
-            // A new time moves the task's due date: the texts follow it.
-            if (!c.done) FollowUps.onNewTime(ctx, c, ms, moveTexts)
-        } else if (t != null) {
-            SmsStore.reschedule(t.id, ms)
-            if (t.taskDue > 0L) SmsStore.setTaskDue(t.id, ms, "Message updated: due ${Fmt.fullDate(ms)}")
-        }
-        moveTexts = true
-        openKey = null
-        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}", undo)
-    }
-    fun reviewLater(e: FuEntry, ms: Long) {
-        val undo = undoFor(e)
-        if (e.callReview) ReminderStore.reviewLater(e.call!!.id, ms)
-        if (e.textReview) SmsStore.reviewLater(e.text!!.id, ms)
-        openKey = null
-        scope.offerUndo(snack, "Back in To review ${Fmt.dueLabel(ms)}", undo)
-    }
-    fun delete(e: FuEntry) {
-        val undo = undoFor(e)
-        val link = e.call?.linkId?.takeIf { it != 0L } ?: e.text?.linkId?.takeIf { it != 0L }
-        if (link != null) {
-            ReminderStore.items.value.filter { it.linkId == link }.forEach { ReminderStore.delete(it.id) }
-            SmsStore.items.value.filter { it.linkId == link }.forEach { SmsStore.delete(it.id) }
-        } else {
-            e.call?.let { ReminderStore.delete(it.id) }
-            e.text?.let { SmsStore.delete(it.id) }
-        }
-        openKey = null
-        scope.offerUndo(snack, "Deleted · ${e.title}", undo)
-    }
-    fun moveBack(e: FuEntry) {
-        val undo = undoFor(e)
-        when {
-            e.call != null -> ReminderStore.reopen(e.call.id)
-            e.text != null -> SmsStore.reopen(e.text.id)
-        }
-        if (openKey == e.key) openKey = null
-        scope.offerUndo(snack, "Moved back · ${e.title}", undo)
-    }
-    fun removeTime(e: FuEntry) {
-        val undo = undoFor(e)
-        val item = FollowUps.removeTime(ctx, e.call, e.text)
-        openKey = null
-        scope.offerUndo(snack, "Time removed · texts paused · in To schedule") {
-            ToScheduleStore.remove(item.id)
-            undo()
-        }
-    }
-    fun moveToMyTasks(e: FuEntry) {
-        val undo = undoFor(e)
-        val task = FollowUps.moveToMyTasks(ctx, e.call, e.text)
-        openKey = null
-        scope.offerUndo(snack, "Moved to My tasks" + if (e.text != null) " · texts cancelled" else "") {
-            MyTaskStore.delete(task.id)
-            undo()
-        }
-    }
-    fun edit(e: FuEntry) {
-        onEditLink(FollowUps.ensureLink(ctx, e.call, e.text))
-    }
-    fun call(e: FuEntry) {
-        val r = e.call
-        if (r != null && (r.review || (!r.done && r.dueAt <= System.currentTimeMillis()))) FollowUp.mark(ctx, r)
-        dial(ctx, e.number)
-    }
-    /** The tick: Done (or Checked in review); on the Done tab it moves the follow-up back. */
-    fun tick(e: FuEntry) {
-        if (e.key in ticking) return
-        if (!e.open) { moveBack(e); return }
-        ticking = ticking + e.key
-        scope.launch {
-            delay(380L)
-            if (e.inReview) checked(e) else done(e)
-            ticking = ticking - e.key
-        }
-    }
-    fun star(e: FuEntry) {
-        val c = e.call
-        if (c != null) ReminderStore.setStar(c.id, !c.starred) else FuStars.toggle(ctx, e.key)
-    }
 
     Scaffold(
         containerColor = cs.background,
@@ -561,34 +441,11 @@ private fun FollowUpsAll(
                 item(key = "to-schedule") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
             }
 
-            val row: @Composable (FuEntry, RowPos) -> Unit = { e, pos ->
-                FollowUpCard(
-                    e = e,
-                    pos = pos,
-                    now = now,
-                    ticking = e.key in ticking,
-                    starred = starred(e),
-                    expanded = openKey == e.key,
-                    highlighted = outlined == e.key,
-                    onToggle = { openKey = if (openKey == e.key) null else e.key },
-                    onTick = { tick(e) },
-                    onStar = { star(e) },
-                    onCall = { call(e) },
-                    onTexts = { textsFor = it },
-                    onNewTime = { newTimeFor = e },
-                    onReviewLater = { reviewLaterFor = e },
-                    onEdit = { edit(e) },
-                    onRemoveTime = { removeTime(e) },
-                    onMove = { moveToMyTasks(e) },
-                    onTimeline = { timelineFor = e },
-                    onDelete = { delete(e) },
-                )
-            }
             fun block(key: String, title: String, count: String, color: Color, list: List<FuEntry>) {
                 if (list.isEmpty()) return
                 item(key = "group-$key") { Box(Modifier.animateItem()) { DayHeader(title, count, color) } }
                 itemsIndexed(list, key = { _, e -> e.key }) { i, e ->
-                    Box(Modifier.animateItem()) { row(e, rowPos(i, list.size)) }
+                    Box(Modifier.animateItem()) { fu.Card(e, rowPos(i, list.size), now, starred(e), highlighted = outlined == e.key) }
                 }
             }
 
@@ -640,84 +497,8 @@ private fun FollowUpsAll(
     }
 
     if (showNew) FollowUpDialog(onDismiss = { showNew = false })
-    editLink?.let { link ->
-        val e = every.firstOrNull { (it.call?.linkId ?: it.text?.linkId) == link }
-        FollowUpDialog(
-            onDismiss = { onEditLink(null) },
-            linkId = link,
-            onMoveToMyTasks = e?.takeIf { it.open }?.let { en -> { moveToMyTasks(en) } },
-        )
-    }
-
-    newTimeFor?.let { e ->
-        val hasTexts = e.call != null && !e.call.done && e.textActive
-        SnoozeSheet(
-            heading = "New time",
-            about = e.title,
-            onPick = { ms -> newTimeFor = null; newTime(e, ms) },
-            onPickTime = { newTimeFor = null; pickTimeFor = e },
-            onDismiss = { newTimeFor = null; moveTexts = true },
-            plusRow = true,
-            footer = if (hasTexts) ({ TextsMoveSwitch(moveTexts) { moveTexts = it } }) else null
-        )
-    }
-    pickTimeFor?.let { e ->
-        DateTimePickerFlow(
-            initialMs = maxOf(e.at, now + 60_000L),
-            onPicked = { ms -> pickTimeFor = null; newTime(e, ms) },
-            onDismiss = { pickTimeFor = null; moveTexts = true }
-        )
-    }
-    reviewLaterFor?.let { e ->
-        SnoozeSheet(
-            heading = "Review later",
-            about = e.title,
-            onPick = { ms -> reviewLaterFor = null; reviewLater(e, ms) },
-            onPickTime = { reviewLaterFor = null },
-            onDismiss = { reviewLaterFor = null },
-            plusRow = true
-        )
-    }
-    timelineFor?.let { e ->
-        val c = e.call?.let { r -> calls.firstOrNull { it.id == r.id } ?: r }
-        if (c != null) CallHistoryDialog(r = c, onDismiss = { timelineFor = null })
-        else e.text?.let { t -> HistoryDialog(r = texts.firstOrNull { it.id == t.id } ?: t, onDismiss = { timelineFor = null }) }
-    }
-    textsFor?.let { t ->
-        TextsSheet(
-            t = texts.firstOrNull { it.id == t.id } ?: t,
-            onDismiss = { textsFor = null },
-            onSendNow = { r -> textsFor = null; sendFor = r },
-            onChange = { r -> textsFor = null; onEditLink(FollowUps.ensureLink(ctx, null, r)) },
-            onStop = { r ->
-                textsFor = null
-                val before = r
-                SmsStore.markDone(r.id, linked = false)
-                scope.offerUndo(snack, "Texts stopped") { SmsStore.restore(before) }
-            },
-        )
-    }
-
-    sendFor?.let { r ->
-        AlertDialog(
-            onDismissRequest = { sendFor = null },
-            title = { Text("Send now?") },
-            text = { Text("Sends “${r.message}” to ${r.title} now.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    sendFor = null
-                    if (!r.isBurst && SmsSender.InFlight.busy(ctx, r.id, System.currentTimeMillis())) {
-                        Toast.makeText(ctx, "Already sending this message", Toast.LENGTH_SHORT).show()
-                    } else {
-                        SmsSender.sendDue(ctx, r.id, manual = true)
-                    }
-                }) { Text("Send") }
-            },
-            dismissButton = { TextButton(onClick = { sendFor = null }) { Text("Cancel") } }
-        )
-    }
+    fu.Sheets()
 }
-
 
 /** The time picker in a sheet for a follow-up waiting with no time: one tap sets it. */
 @Composable
@@ -759,7 +540,7 @@ fun FollowUpsHeader(status: String, red: Boolean) {
  * the person, then 📞 WA and ★. Tapping opens it in place: the details, 🕘 New time and the links.
  */
 @Composable
-private fun FollowUpCard(
+internal fun FollowUpCard(
     e: FuEntry,
     pos: RowPos,
     now: Long,
@@ -888,7 +669,7 @@ private fun FollowUpCard(
 /** 💬 on a row: what was sent, what is coming (with its burst), replies, and Send next now / Change times / Stop. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TextsSheet(
+internal fun TextsSheet(
     t: SmsReminder,
     onDismiss: () -> Unit,
     onSendNow: (SmsReminder) -> Unit,

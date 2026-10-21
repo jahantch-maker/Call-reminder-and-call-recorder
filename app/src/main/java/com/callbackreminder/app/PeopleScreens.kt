@@ -313,8 +313,9 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
         }
         out.sortedByDescending { it.at }.take(300)
     }
+    val personSnack = remember { androidx.compose.material3.SnackbarHostState() }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { androidx.compose.material3.SnackbarHost(personSnack) }) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -432,16 +433,12 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                 }
             }
             item(key = "tabs") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Pending ${pending.size}") })
-                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Done ${done.size}") })
-                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("History") })
-                }
+                BoxTabs(listOf("Pending · ${pending.size}", "Done · ${done.size}", "History"), tab, { tab = it })
             }
             when (tab) {
                 0 -> {
                     if (pending.isEmpty()) item(key = "none-p") { Hint("Nothing pending with $name.") }
-                    if (pending.isNotEmpty()) item(key = "pending") { WorkBlock(pending, now, showPerson = false, onOpen = onOpenItem) }
+                    if (pending.isNotEmpty()) item(key = "pending") { WorkBlock(pending, now, showPerson = false, onOpen = onOpenItem, snack = personSnack) }
                 }
                 1 -> {
                     if (done.isEmpty()) item(key = "none-d") { Hint("Nothing done yet.") }

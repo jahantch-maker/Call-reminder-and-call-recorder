@@ -179,6 +179,8 @@ internal fun MyTaskCard(
     handle: Modifier? = null,
     /** Just ticked: shown done (filled circle, struck through) while it plays out, before it leaves. */
     finishing: Boolean = false,
+    /** Set when the card draws its own block (To schedule, Overdue); left null inside a [TaskGroup]. */
+    pos: RowPos? = null,
     expanded: Boolean,
     onToggle: () -> Unit,
     onTick: () -> Unit,
@@ -224,6 +226,7 @@ internal fun MyTaskCard(
             onClick = onToggle,
             highlighted = highlighted,
             handle = handle,
+            pos = pos,
         ) {
             CardPanel(
                 details = listOfNotNull(
@@ -234,6 +237,7 @@ internal fun MyTaskCard(
                     ).joinToString(" · "),
                 ),
                 onNewTime = if (t.done) null else onNewTime,
+                buttonLabel = if (t.timed) "New time" else "Set time",
                 links = buildList {
                     add(RowLink("Edit", onClick = onEdit))
                     if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
