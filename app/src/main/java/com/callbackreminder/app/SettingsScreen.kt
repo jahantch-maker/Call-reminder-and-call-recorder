@@ -96,6 +96,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import java.time.DayOfWeek
 import java.time.LocalTime
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.PaddingValues
 
 /**
  * The Settings menu: one row per section. Each row opens its own page, which slides in like
@@ -122,6 +129,7 @@ fun SettingsScreen(
     onOpenWhatsApp: () -> Unit,
     onOpenCalendar: () -> Unit = {},
     onOpenAppearance: () -> Unit = {},
+    onOpenMyDay: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -209,23 +217,14 @@ fun SettingsScreen(
                 if (BurstTemplates.stopOnReply(ctx)) "stops on a task number reply" else "reply check off",
             onClick = onOpenTextMessages
         )
-        NavRow(
-            icon = Icons.Rounded.PendingActions,
-            title = "Review",
-            summary = remember { ReviewReminder.summary(ctx) + " · sections · call session" },
-            onClick = onOpenReview
-        )
-        NavRow(
-            icon = Icons.Rounded.Checklist,
-            title = "Dossier",
-            summary = remember { DossierSettings.summary(ctx) + " · locks at 3:00 AM" },
-            onClick = onOpenDossier
-        )
+        // Morning summary, Review and the Dossier reminder: one card, the three pages inside it.
         NavRow(
             icon = Icons.Rounded.WbSunny,
-            title = "Morning summary",
-            summary = remember { MorningSummary.summary(ctx) },
-            onClick = onOpenMorningSummary
+            title = "My day",
+            summary = remember(resumeKey) {
+                "Morning summary ${MorningSummary.summary(ctx)} · Review ${ReviewReminder.summary(ctx)} · Dossier reminder"
+            },
+            onClick = onOpenMyDay
         )
         NavRow(
             icon = Icons.Rounded.Notifications,
@@ -902,6 +901,40 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
     }
 }
 
+// ---------------------------------------------------------------- My day
+
+/** Settings › My day: the three "look at your day" reminders, each still its own page. */
+@Composable
+fun MyDaySettingsScreen(
+    resumeKey: Int,
+    onBack: () -> Unit,
+    onOpenMorningSummary: () -> Unit,
+    onOpenReview: () -> Unit,
+    onOpenDossier: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    SettingsPage(title = "My day", onBack = onBack) {
+        NavRow(
+            icon = Icons.Rounded.WbSunny,
+            title = "Morning summary",
+            summary = remember(resumeKey) { MorningSummary.summary(ctx) },
+            onClick = onOpenMorningSummary
+        )
+        NavRow(
+            icon = Icons.Rounded.PendingActions,
+            title = "Review",
+            summary = remember(resumeKey) { ReviewReminder.summary(ctx) },
+            onClick = onOpenReview
+        )
+        NavRow(
+            icon = Icons.Rounded.Checklist,
+            title = "Dossier reminder",
+            summary = remember(resumeKey) { DossierSettings.summary(ctx) + " · locks at 3:00 AM" },
+            onClick = onOpenDossier
+        )
+    }
+}
+
 // ---------------------------------------------------------------- Review reminder
 
 /** Twice a day: a popup with what is waiting (calls overdue or to review, texts to review). */
@@ -914,76 +947,58 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
     var editTime by remember { mutableStateOf<Int?>(null) }
 
     SettingsPage(title = "Review", onBack = onBack) {
-        SectionCard(
-            title = "Review reminder",
-            subtitle = "At these times a popup shows what's waiting in each Review section that is switched on, " +
-                "with Start review and Open Review page. When nothing is waiting, it stays quiet."
-        ) {
+        // One screen: the reminder, its two times and days in one card, then the three switches.
+        SectionCard(title = "Remind me to review", subtitle = "A popup with what needs you. Quiet when nothing is waiting.") {
             SwitchRow(label = "Remind me to review", checked = on, onChange = {
                 on = it
                 ReviewReminder.setEnabled(ctx, it)
             })
-        }
-
-        if (on) {
-            SectionCard(title = "Times", subtitle = "Two times a day.") {
-                times.forEachIndexed { i, minutes ->
-                    if (i > 0) HorizontalDivider()
+            AnimatedVisibility(visible = on, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Column {
+                    HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(if (i == 0) "First review" else "Second review", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                ReviewReminder.timeLabel(minutes),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                        Text("Times", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        times.forEachIndexed { i, minutes ->
+                            FilledTonalButton(
+                                onClick = { editTime = i },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) { Text(ReviewReminder.timeLabel(minutes), fontWeight = FontWeight.Bold) }
                         }
-                        FilledTonalButton(onClick = { editTime = i }) { Text("Change") }
                     }
-                }
-            }
-
-            SectionCard(title = "Days", subtitle = "Runs on ${ReviewReminder.daysLabel(days)}.") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DayOfWeek.values().forEach { day ->
-                        val selected = ReviewReminder.isDayOn(days, day)
-                        Surface(
-                            onClick = {
-                                days = days xor (1 shl (day.value - 1))
-                                ReviewReminder.setDays(ctx, days)
-                            },
-                            modifier = Modifier.weight(1f).height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(day.name.take(1), fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DayOfWeek.values().forEach { day ->
+                            val selected = ReviewReminder.isDayOn(days, day)
+                            val bg by animateColorAsState(
+                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, label = "day"
+                            )
+                            Surface(
+                                onClick = {
+                                    days = days xor (1 shl (day.value - 1))
+                                    ReviewReminder.setDays(ctx, days)
+                                },
+                                modifier = Modifier.weight(1f).height(36.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                color = bg,
+                                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(day.name.take(1), fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
             }
-
-            SectionCard(
-                title = "How it shows",
-                subtitle = "Uses your Reminder style: ${ReminderStyle.mode(ctx).title.lowercase()}. " +
-                    "The popup plays your Popup ringtone, a banner your Notification ringtone. " +
-                    "Snooze gives 15 min, 30 min, 1 hour or 2 hours."
-            ) {
-                FilledTonalButton(
-                    onClick = { ReviewReminder.show(ctx, ReviewReminder.counts(ctx)) },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Show the review popup now") }
-            }
         }
 
         ReviewSectionsSettings()
+
+        TextButton(onClick = { ReviewReminder.show(ctx, ReviewReminder.counts(ctx)) }) { Text("▶ Test: show the review popup now") }
     }
 
     editTime?.let { i ->
@@ -1111,7 +1126,7 @@ fun DossierSettingsScreen(onBack: () -> Unit) {
     var skipAllDone by remember { mutableStateOf(DossierSettings.skipWhenAllDone(ctx)) }
     var editTime by remember { mutableStateOf<Int?>(null) } // -1 = a new time
 
-    SettingsPage(title = "Dossier", onBack = onBack) {
+    SettingsPage(title = "Dossier reminder", onBack = onBack) {
         SectionCard(
             title = "Separate dossier reminder",
             subtitle = if (separate) "On: you're reminded about unticked dossier tasks at your own times below."

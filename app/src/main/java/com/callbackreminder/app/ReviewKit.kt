@@ -36,24 +36,47 @@ enum class ReviewSection(
     val isCalls: Boolean get() = this == OVERDUE || this == DUE_TODAY
 }
 
-/** Settings › Review: which sections show, which join "Start review", their order and the resume reminder. */
+/**
+ * Settings › Review: three switches, one per item of the Needs you card, for what "Start review" goes through.
+ * The order is fixed: Replied, check it → Overdue → To schedule. Every section always shows on the Review page.
+ * "Still due today" is no longer part of Review (it is in Next up on Home).
+ */
 object ReviewPrefs {
     private fun p(c: Context) = c.getSharedPreferences("review_reminder", Context.MODE_PRIVATE)
 
-    fun order(c: Context): List<ReviewSection> {
-        val saved = p(c).getString("sec_order", null)?.split(',')
-            ?.mapNotNull { k -> ReviewSection.values().firstOrNull { it.key == k } }.orEmpty()
-        return saved + ReviewSection.values().filter { it !in saved }
+    /** The three switches, in their fixed order. */
+    enum class Group(val key: String, val emoji: String, val title: String, val about: String) {
+        REPLIED("replied", "✅", "Replied, check it", "They replied Done, or you chose Done, review it"),
+        OVERDUE("overdue", "🔴", "Overdue", "Follow-ups and My tasks past their time"),
+        SCHEDULE("sched", "🕘", "To schedule", "Follow-ups and My tasks with no time"),
     }
 
-    fun setOrder(c: Context, list: List<ReviewSection>) =
-        p(c).edit().putString("sec_order", list.joinToString(",") { it.key }).apply()
+    fun groupOf(s: ReviewSection): Group? = when (s) {
+        ReviewSection.REPLIED -> Group.REPLIED
+        ReviewSection.OVERDUE, ReviewSection.MY_LATE -> Group.OVERDUE
+        ReviewSection.SCHED_FU, ReviewSection.SCHED_MY -> Group.SCHEDULE
+        ReviewSection.DUE_TODAY -> null
+    }
 
-    fun show(c: Context, s: ReviewSection) = p(c).getBoolean("sec_show_${s.key}", s.defaultShow)
-    fun setShow(c: Context, s: ReviewSection, on: Boolean) = p(c).edit().putBoolean("sec_show_${s.key}", on).apply()
+    private val ORDER = listOf(
+        ReviewSection.REPLIED, ReviewSection.OVERDUE, ReviewSection.MY_LATE, ReviewSection.SCHED_FU, ReviewSection.SCHED_MY,
+    )
 
-    fun session(c: Context, s: ReviewSection) = show(c, s) && p(c).getBoolean("sec_session_${s.key}", s.defaultSession)
-    fun setSession(c: Context, s: ReviewSection, on: Boolean) = p(c).edit().putBoolean("sec_session_${s.key}", on).apply()
+    fun order(@Suppress("UNUSED_PARAMETER") c: Context): List<ReviewSection> = ORDER
+
+    fun show(@Suppress("UNUSED_PARAMETER") c: Context, s: ReviewSection) = groupOf(s) != null
+
+    fun inSession(c: Context, g: Group): Boolean {
+        val key = "grp_${g.key}"
+        if (p(c).contains(key)) return p(c).getBoolean(key, true)
+        // Before v0.33 each section had its own Session switch: keep what was chosen for the first of the group.
+        val first = ORDER.first { groupOf(it) == g }
+        return p(c).getBoolean("sec_session_${first.key}", true)
+    }
+
+    fun setInSession(c: Context, g: Group, on: Boolean) = p(c).edit().putBoolean("grp_${g.key}", on).apply()
+
+    fun session(c: Context, s: ReviewSection) = groupOf(s)?.let { inSession(c, it) } ?: false
 
     /** Minutes paused before "Resume your call session?" pops up. */
     fun resumeMinutes(c: Context) = p(c).getInt("resume_min", 15)
@@ -62,7 +85,7 @@ object ReviewPrefs {
 
     fun shown(c: Context): List<ReviewSection> = order(c).filter { show(c, it) }
 
-    /** v0.32: "Replied, check it" is switched on once and moved first (it used to be off by default). */
+    /** v0.32: "Replied, check it" is switched on once (it used to be off by default). */
     fun migrate(c: Context) {
         if (p(c).getBoolean("replied_on_v32", false)) return
         val s = ReviewSection.REPLIED
@@ -71,7 +94,6 @@ object ReviewPrefs {
             .putBoolean("sec_session_${s.key}", true)
             .putBoolean("replied_on_v32", true)
             .apply()
-        setOrder(c, listOf(s) + order(c).filter { it != s })
     }
 }
 
@@ -170,7 +192,11 @@ object ReviewData {
                 it.message, it.title, it.number, it.reviewAt, listOf("✅ Replied Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
         }
 
-        val overdueCalls = calls.filter { !it.done && it.dueAt <= now }.map {
+        // Replies with more than a "done" in them: read first, the task stays open.
+        val notes = ReplyNotes.items(ctx)
+        val noteKeys = notes.map { it.key }.toSet()
+
+        val overdueCalls = calls.filter { !it.done && it.dueAt <= now && "c:${it.id}" !in noteKeys }.map {
             ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
                 it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt,
                 listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "Delayed ${n}×" }), code = it.code)
@@ -179,7 +205,7 @@ object ReviewData {
         val overdueTexts = texts.filter { t ->
             !t.done && t.review != SmsReminder.Review.REPLIED && (t.linkId == 0L || t.linkId !in openLinks) &&
                 (t.review == SmsReminder.Review.NO_REPLY || (t.taskDue in 1..now))
-        }.map { t ->
+        }.filter { "t:${it.id}" !in noteKeys }.map { t ->
             val at = t.taskDue.takeIf { it > 0L } ?: t.reviewAt
             ReviewItem("t:${t.id}", ReviewSection.OVERDUE, ReviewItem.Kind.TEXT, t.id, t.message, t.title, t.number, at,
                 listOf(lateLabel(at, now), "💬 No reply"), code = t.code)
@@ -206,7 +232,7 @@ object ReviewData {
         }
 
         return mapOf(
-            ReviewSection.REPLIED to replied.sortedBy { it.at },
+            ReviewSection.REPLIED to (replied + notes).sortedBy { it.at },
             ReviewSection.OVERDUE to (overdueCalls + overdueTexts).sortedBy { it.at },
             ReviewSection.SCHED_FU to schedFu,
             ReviewSection.SCHED_MY to schedMy,

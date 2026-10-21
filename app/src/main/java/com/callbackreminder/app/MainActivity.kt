@@ -320,6 +320,7 @@ private object Screen {
     const val DAILY_WA = 29
     const val CALENDAR_SETTINGS = 30
     const val APPEARANCE = 31
+    const val MY_DAY_SETTINGS = 32
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -492,6 +493,14 @@ private fun AppRoot(
                     onOpenWhatsApp = { open(Screen.WHATSAPP_SETTINGS) },
                     onOpenCalendar = { open(Screen.CALENDAR_SETTINGS) },
                     onOpenAppearance = { open(Screen.APPEARANCE) },
+                    onOpenMyDay = { open(Screen.MY_DAY_SETTINGS) },
+                )
+                Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenMorningSummary = { open(Screen.MORNING_SETTINGS) },
+                    onOpenReview = { open(Screen.REVIEW_SETTINGS) },
+                    onOpenDossier = { open(Screen.DOSSIER_SETTINGS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })

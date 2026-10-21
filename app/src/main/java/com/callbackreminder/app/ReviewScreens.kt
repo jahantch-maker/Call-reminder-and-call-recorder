@@ -81,6 +81,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.material3.HorizontalDivider
 
 // Each has a light and a dark version, so the Review pages read well in both modes.
 private val LateRed: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
@@ -103,6 +104,7 @@ object ReviewActions {
     }
 
     fun done(ctx: android.content.Context, item: ReviewItem) {
+        ReplyNotes.clear(ctx, item.code)
         when (item.kind) {
             ReviewItem.Kind.CALL -> ReminderStore.markDone(item.id)
             ReviewItem.Kind.CALL_REVIEW -> ReminderStore.reviewed(item.id)
@@ -130,6 +132,7 @@ object ReviewActions {
 
     /** [reason] is the optional "Why not done?", kept in his history. */
     fun newTime(ctx: android.content.Context, item: ReviewItem, ms: Long, reason: String = "") {
+        ReplyNotes.clear(ctx, item.code)
         when (item.kind) {
             ReviewItem.Kind.CALL -> {
                 val before = ReminderStore.get(item.id) ?: return
@@ -1193,78 +1196,17 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
 @Composable
 fun ReviewSectionsSettings() {
     val ctx = LocalContext.current
-    val density = LocalDensity.current
-    var order by remember { mutableStateOf(ReviewPrefs.order(ctx)) }
     var tick by remember { mutableIntStateOf(0) }
-    var dragging by remember { mutableStateOf<ReviewSection?>(null) }
-    var offset by remember { mutableFloatStateOf(0f) }
-    val rowH = 96.dp
-    val rowPx = with(density) { rowH.toPx() }
-
-    SectionCard(
-        title = "Sections",
-        subtitle = "Show = on the Review page. Session = included in \"Start review\". Drag ≡ to reorder. " +
-            "The 1 PM / 6 PM popup and the Home card count only the shown ones."
-    ) {
-        Column {
-            order.forEach { sec ->
-                val isDrag = dragging == sec
-                androidx.compose.runtime.key(sec) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(rowH)
-                            .zIndex(if (isDrag) 1f else 0f)
-                            .graphicsLayer { translationY = if (isDrag) offset else 0f }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (isDrag) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Rounded.DragHandle,
-                                    contentDescription = "Drag to reorder",
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .padding(6.dp)
-                                        .pointerInput(sec) {
-                                            detectDragGestures(
-                                                onDragStart = { dragging = sec; offset = 0f },
-                                                onDragEnd = { dragging = null; offset = 0f; ReviewPrefs.setOrder(ctx, order) },
-                                                onDragCancel = { dragging = null; offset = 0f },
-                                                onDrag = { change, d ->
-                                                    change.consume()
-                                                    offset += d.y
-                                                    val idx = order.indexOf(sec)
-                                                    val target = (idx + (offset / rowPx).roundToInt()).coerceIn(0, order.lastIndex)
-                                                    if (target != idx) {
-                                                        order = order.toMutableList().apply { removeAt(idx); add(target, sec) }
-                                                        offset -= (target - idx) * rowPx
-                                                    }
-                                                }
-                                            )
-                                        }
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Text("${sec.emoji} ${sec.title}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val show = remember(tick) { ReviewPrefs.show(ctx, sec) }
-                                        val ses = remember(tick) { ReviewPrefs.session(ctx, sec) }
-                                        Text("Show", style = MaterialTheme.typography.bodySmall)
-                                        Switch(checked = show, onCheckedChange = { ReviewPrefs.setShow(ctx, sec, it); tick++ },
-                                            modifier = Modifier.padding(horizontal = 6.dp))
-                                        Text("Session", style = MaterialTheme.typography.bodySmall)
-                                        Switch(checked = ses, enabled = show, onCheckedChange = { ReviewPrefs.setSession(ctx, sec, it); tick++ },
-                                            modifier = Modifier.padding(horizontal = 6.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
+    SectionCard(title = "In Start review", subtitle = "Always in this order. Turn off what you don't want in the session.") {
+        ReviewPrefs.Group.values().forEachIndexed { i, g ->
+            if (i > 0) HorizontalDivider()
+            val on = remember(tick) { ReviewPrefs.inSession(ctx, g) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${g.emoji} ${g.title}", style = MaterialTheme.typography.bodyLarge)
+                    Text(g.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Switch(checked = on, onCheckedChange = { ReviewPrefs.setInSession(ctx, g, it); tick++ })
             }
         }
     }
