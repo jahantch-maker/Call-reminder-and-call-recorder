@@ -96,8 +96,8 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.ZoneId
 
-private val NoTimeBg: Color @Composable get() = Tones.amber.bg
-private val NoTimeFg: Color @Composable get() = Tones.amber.fg
+internal val NoTimeBg: Color @Composable get() = Tones.amber.bg
+internal val NoTimeFg: Color @Composable get() = Tones.amber.fg
 
 /** The list tabs under "Tasks": All, Unsorted, your lists, ＋ New list. [selected] -1 is All. */
 @Composable
@@ -165,13 +165,13 @@ const val CHIP_RED = 1
 const val CHIP_ORANGE = 2
 
 /**
- * One task, Google Tasks style: tick circle, bold task, note, the list's name (All tab), date chip
- * (red when overdue) or an orange "No time yet", the person, and ★ on the right. [handle] shows ⠿ for
- * "My order" dragging.
+ * One task as THE card: tick, bold task, note, the list's name (All tab), the time box (red when overdue) or an
+ * orange "No time yet", the person box, 📞 and WA when it has a person, and ★. No ⋮: tapping opens it in place
+ * with 🕘 New time and Edit / Remove time / Move to Follow-ups / Delete. [handle] shows ⠿ for "My order".
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-internal fun GTaskRow(
+internal fun MyTaskCard(
     t: MyTask,
     now: Long,
     listName: String?,
@@ -179,19 +179,18 @@ internal fun GTaskRow(
     handle: Modifier? = null,
     /** Just ticked: shown done (filled circle, struck through) while it plays out, before it leaves. */
     finishing: Boolean = false,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onTick: () -> Unit,
     onStar: () -> Unit,
-    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onNewTime: () -> Unit,
     onRemoveTime: (() -> Unit)? = null,
     onMoveToFollowUps: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
-    val cs = MaterialTheme.colorScheme
     val overdue = !t.done && t.timed && t.dueAt <= now
-    var personMenu by remember { mutableStateOf(false) }
-    var rowMenu by remember { mutableStateOf(false) }
-    val hasMenu = !t.done && (onMoveToFollowUps != null || onDelete != null)
     // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     if (highlighted) {
@@ -201,98 +200,47 @@ internal fun GTaskRow(
             runCatching { bring.bringIntoView() }
         }
     }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .bringIntoViewRequester(bring)
-            .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), RoundedCornerShape(14.dp)) else Modifier)
-            .combinedClickable(onClick = onOpen, onLongClick = if (hasMenu) ({ rowMenu = true }) else null)
-            .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Box(Modifier.padding(top = 1.dp)) { TickCircle(done = t.done || finishing, onClick = onTick) }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            val struck = t.done || finishing
-            val titleColor by androidx.compose.animation.animateColorAsState(
-                if (struck) cs.onSurfaceVariant else if (highlighted) cs.primary else cs.onSurface,
-                androidx.compose.animation.core.tween(220), label = "taskTitle"
+    Box(Modifier.bringIntoViewRequester(bring)) {
+        TaskCard(
+            title = t.title,
+            done = t.done || finishing,
+            onTick = onTick,
+            time = when {
+                t.done -> "Done " + Fmt.dueLabel(t.doneAt)
+                t.timed -> Fmt.dueLabel(t.dueAt)
+                else -> null
+            },
+            late = overdue,
+            person = if (t.hasPerson) Names.first(t.personTitle) ?: t.personTitle else null,
+            note = t.note.takeIf { !t.done },
+            sub = listName,
+            starred = t.starred,
+            onStar = if (t.done) null else onStar,
+            onCall = if (t.hasPerson && !t.done) ({ dial(ctx, t.number) }) else null,
+            onWhatsApp = if (t.hasPerson && !t.done) ({
+                WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, "", t.title, if (t.timed) t.dueAt else 0L, t.name))
+            }) else null,
+            expanded = expanded,
+            onClick = onToggle,
+            highlighted = highlighted,
+            handle = handle,
+        ) {
+            CardPanel(
+                details = listOfNotNull(
+                    t.note.takeIf { it.isNotBlank() }?.let { "Note: $it" },
+                    listOfNotNull(
+                        "List ${MyTaskStore.listName(t.listId)}",
+                        t.personTitle.takeIf { t.hasPerson }?.let { p -> if (t.name.isNotBlank()) "$p · ${t.number}" else p },
+                    ).joinToString(" · "),
+                ),
+                onNewTime = if (t.done) null else onNewTime,
+                links = buildList {
+                    add(RowLink("Edit", onClick = onEdit))
+                    if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
+                    if (!t.done && onMoveToFollowUps != null) add(RowLink("Move to Follow-ups", onClick = onMoveToFollowUps))
+                    if (onDelete != null) add(RowLink("Delete", danger = true, onClick = onDelete))
+                }
             )
-            Text(
-                t.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                color = titleColor,
-                textDecoration = if (struck) TextDecoration.LineThrough else null
-            )
-            if (t.note.isNotBlank() && !t.done) {
-                Text(t.note, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            if (listName != null) {
-                Text(listName, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-            }
-            if (!t.done) {
-                Row(
-                    Modifier.padding(top = 4.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (t.timed) TaskChip(Fmt.dueLabel(t.dueAt), if (overdue) CHIP_RED else CHIP_PLAIN)
-                    else TaskChip("⏱ No time yet", CHIP_ORANGE)
-                    if (t.hasPerson) {
-                        Box {
-                            TaskChip(
-                                t.personTitle,
-                                CHIP_PLAIN,
-                                icon = { Icon(Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) },
-                                onClick = { personMenu = true }
-                            )
-                            DropdownMenu(expanded = personMenu, onDismissRequest = { personMenu = false }) {
-                                DropdownMenuItem(text = { Text("Call ${t.personTitle}") }, onClick = { personMenu = false; dial(ctx, t.number) })
-                                DropdownMenuItem(text = { Text("Text ${t.personTitle}") }, onClick = { personMenu = false; textApp(ctx, t.number) })
-                            }
-                        }
-                    }
-                }
-            } else {
-                Text("Done ${Fmt.dueLabel(t.doneAt)}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-            }
-        }
-        if (handle != null) {
-            Box(handle.padding(top = 4.dp, start = 4.dp, end = 2.dp)) {
-                Icon(Icons.Rounded.DragIndicator, contentDescription = "Drag to move", tint = cs.outline, modifier = Modifier.size(22.dp))
-            }
-        }
-        if (!t.done) StarButton(t.starred, onStar)
-        if (hasMenu) {
-            // Long-press or ⋮: Remove time and Move to Follow-ups without opening the task.
-            Box {
-                IconButton(onClick = { rowMenu = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "More", tint = cs.outline, modifier = Modifier.size(20.dp))
-                }
-                DropdownMenu(expanded = rowMenu, onDismissRequest = { rowMenu = false }) {
-                    DropdownMenuItem(text = { Text("Edit") }, onClick = { rowMenu = false; onOpen() })
-                    if (t.timed && onRemoveTime != null) {
-                        DropdownMenuItem(
-                            text = { Text("Remove time") },
-                            leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null) },
-                            onClick = { rowMenu = false; onRemoveTime() }
-                        )
-                    }
-                    if (onMoveToFollowUps != null) {
-                        DropdownMenuItem(
-                            text = { Text("Move to Follow-ups") },
-                            leadingIcon = { Icon(Icons.Rounded.Notifications, contentDescription = null) },
-                            onClick = { rowMenu = false; onMoveToFollowUps() }
-                        )
-                    }
-                    if (onDelete != null) {
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = cs.error) },
-                            onClick = { rowMenu = false; onDelete() }
-                        )
-                    }
-                }
-            }
         }
     }
 }

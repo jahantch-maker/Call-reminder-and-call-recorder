@@ -326,11 +326,7 @@ private object Screen {
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
 private fun tabFor(item: WorkItem): Int = when (item.kind) {
     WorkItem.Kind.CALL -> {
-        CallsUi.tabRequest.value = when {
-            item.inReview -> CallsUi.TO_REVIEW
-            item.overdue -> CallsUi.OVERDUE
-            else -> CallsUi.TO_CALL
-        }
+        CallsUi.showRequest.value = item.id
         callsTab()
     }
     WorkItem.Kind.TEXT -> {
@@ -358,15 +354,15 @@ private object Tab {
     const val COUNT = 6
 }
 
-/** The Follow-ups tab, opened on its Calls list. */
+/** The Follow-ups tab, showing everything (a call request then picks Open or Done and scrolls to it). */
 private fun callsTab(): Int {
-    FollowUpsUi.view.value = FollowUpsUi.CALLS
+    FollowUpsUi.view.value = FollowUpsUi.ALL
     return Tab.FOLLOW_UPS
 }
 
-/** The Follow-ups tab, opened on its Texts list. */
+/** The Follow-ups tab, showing everything (a text request then picks Open or Done and scrolls to it). */
 private fun textsTab(): Int {
-    FollowUpsUi.view.value = FollowUpsUi.TEXTS
+    FollowUpsUi.view.value = FollowUpsUi.ALL
     return Tab.FOLLOW_UPS
 }
 
