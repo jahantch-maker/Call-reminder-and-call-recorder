@@ -26,99 +26,95 @@ object ReminderStore {
 
     private fun prefs() = appCtx.getSharedPreferences("reminders", Context.MODE_PRIVATE)
 
-    private fun load(): List<Reminder> {
-        val raw = prefs().getString("list", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                Reminder(
-                    id = o.getLong("id"),
-                    name = o.optString("name"),
-                    number = o.optString("number"),
-                    note = o.optString("note"),
-                    dueAt = o.getLong("dueAt"),
-                    createdAt = o.optLong("createdAt"),
-                    done = o.optBoolean("done"),
-                    doneAt = o.optLong("doneAt"),
-                    repeat = Repeat.fromJson(o.optJSONObject("repeat")),
-                    seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
-                    occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
-                    occurrenceCount = o.optInt("occurrenceCount", 1),
-                    review = o.optBoolean("review"),
-                    delays = o.optJSONArray("delays")?.let { d ->
-                        (0 until d.length()).map { j ->
-                            val e = d.getJSONObject(j)
-                            Delay(e.optLong("at"), e.optLong("wasDue"), e.optLong("newDue"), e.optString("reason"))
-                        }
-                    } ?: emptyList(),
-                    events = o.optJSONArray("events")?.let { d ->
-                        (0 until d.length()).map { j ->
-                            val e = d.getJSONObject(j)
-                            CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
-                        }
-                    } ?: emptyList(),
-                    starred = o.optBoolean("starred"),
-                    linkId = o.optLong("linkId"),
-                    autopilot = o.optBoolean("autopilot"),
-                    reviewLaterUntil = o.optLong("reviewLater"),
-                    code = o.optString("code").replace("-", ""),
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
+    private val rows = Rows<Reminder>("reminders", { it.id }, ::toJson, ::fromJson, archivable = { r -> r.doneAt.takeIf { r.done && !r.review } })
+
+    private fun load(): List<Reminder> = rows.load(appCtx, prefs())
+
+    /** Finished items older than [Db.ARCHIVE_DAYS] days, kept for search. */
+    fun archived(): List<Reminder> = rows.archived(appCtx)
+
+    private fun fromJson(o: JSONObject): Reminder = run {
+        Reminder(
+            id = o.getLong("id"),
+            name = o.optString("name"),
+            number = o.optString("number"),
+            note = o.optString("note"),
+            dueAt = o.getLong("dueAt"),
+            createdAt = o.optLong("createdAt"),
+            done = o.optBoolean("done"),
+            doneAt = o.optLong("doneAt"),
+            repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+            seriesStart = o.optLong("seriesStart", o.getLong("dueAt")),
+            occurrenceAt = o.optLong("occurrenceAt", o.getLong("dueAt")),
+            occurrenceCount = o.optInt("occurrenceCount", 1),
+            review = o.optBoolean("review"),
+            delays = o.optJSONArray("delays")?.let { d ->
+                (0 until d.length()).map { j ->
+                    val e = d.getJSONObject(j)
+                    Delay(e.optLong("at"), e.optLong("wasDue"), e.optLong("newDue"), e.optString("reason"))
+                }
+            } ?: emptyList(),
+            events = o.optJSONArray("events")?.let { d ->
+                (0 until d.length()).map { j ->
+                    val e = d.getJSONObject(j)
+                    CallEvent(e.optLong("at"), e.optString("what"), e.optLong("due"), e.optString("note"))
+                }
+            } ?: emptyList(),
+            starred = o.optBoolean("starred"),
+            linkId = o.optLong("linkId"),
+            autopilot = o.optBoolean("autopilot"),
+            reviewLaterUntil = o.optLong("reviewLater"),
+            code = o.optString("code").replace("-", ""),
+        )
     }
 
     private fun save(list: List<Reminder>) {
-        val arr = JSONArray()
-        list.forEach { r ->
-            arr.put(
-                JSONObject()
-                    .put("id", r.id)
-                    .put("name", r.name)
-                    .put("number", r.number)
-                    .put("note", r.note)
-                    .put("dueAt", r.dueAt)
-                    .put("createdAt", r.createdAt)
-                    .put("done", r.done)
-                    .put("doneAt", r.doneAt)
-                    .put("repeat", r.repeat?.toJson())
-                    .put("seriesStart", r.seriesStart)
-                    .put("occurrenceAt", r.occurrenceAt)
-                    .put("occurrenceCount", r.occurrenceCount)
-                    .put("review", r.review)
-                    .put("starred", r.starred)
-                    .put("linkId", r.linkId)
-                    .put("autopilot", r.autopilot)
-                    .put("reviewLater", r.reviewLaterUntil)
-                    .put("code", r.code)
-                    .put("delays", JSONArray().apply {
-                        r.delays.forEach { d ->
-                            put(
-                                JSONObject()
-                                    .put("at", d.at)
-                                    .put("wasDue", d.wasDue)
-                                    .put("newDue", d.newDue)
-                                    .put("reason", d.reason)
-                            )
-                        }
-                    })
-                    .put("events", JSONArray().apply {
-                        r.events.forEach { e ->
-                            put(
-                                JSONObject()
-                                    .put("at", e.at)
-                                    .put("what", e.what)
-                                    .put("due", e.due)
-                                    .put("note", e.note)
-                            )
-                        }
-                    })
-            )
-        }
-        prefs().edit().putString("list", arr.toString()).apply()
+        rows.save(appCtx, list)
         _items.value = list
+    }
+
+    private fun toJson(r: Reminder): JSONObject {
+        return JSONObject()
+            .put("id", r.id)
+            .put("name", r.name)
+            .put("number", r.number)
+            .put("note", r.note)
+            .put("dueAt", r.dueAt)
+            .put("createdAt", r.createdAt)
+            .put("done", r.done)
+            .put("doneAt", r.doneAt)
+            .put("repeat", r.repeat?.toJson())
+            .put("seriesStart", r.seriesStart)
+            .put("occurrenceAt", r.occurrenceAt)
+            .put("occurrenceCount", r.occurrenceCount)
+            .put("review", r.review)
+            .put("starred", r.starred)
+            .put("linkId", r.linkId)
+            .put("autopilot", r.autopilot)
+            .put("reviewLater", r.reviewLaterUntil)
+            .put("code", r.code)
+            .put("delays", JSONArray().apply {
+                r.delays.forEach { d ->
+                    put(
+                        JSONObject()
+                            .put("at", d.at)
+                            .put("wasDue", d.wasDue)
+                            .put("newDue", d.newDue)
+                            .put("reason", d.reason)
+                    )
+                }
+            })
+            .put("events", JSONArray().apply {
+                r.events.forEach { e ->
+                    put(
+                        JSONObject()
+                            .put("at", e.at)
+                            .put("what", e.what)
+                            .put("due", e.due)
+                            .put("note", e.note)
+                    )
+                }
+            })
     }
 
     fun get(id: Long): Reminder? = _items.value.firstOrNull { it.id == id }
@@ -151,7 +147,8 @@ object ReminderStore {
             occurrenceAt = first,
             events = earlier + CallEvent(System.currentTimeMillis(), "$createdAs, due", first),
             starred = starred,
-            code = code.ifEmpty { TaskCodes.next(appCtx).first() },
+            // No number for a plain call reminder: one is given only when a tracked text (or a daily list) sends it.
+            code = code,
         )
         save(_items.value + r)
         Scheduler.schedule(appCtx, r)

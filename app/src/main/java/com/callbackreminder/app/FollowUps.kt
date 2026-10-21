@@ -14,7 +14,7 @@ object FollowUps {
     private fun prefs(c: Context) = c.getSharedPreferences("follow_ups", Context.MODE_PRIVATE)
 
     /**
-     * What "Text him" will send: one text (or a [burst]) at each of [times], the message, the task number
+     * What "Text <first name>" will send: one text (or a [burst]) at each of [times], the message, the task number
      * switch, and an optional [repeat] for the whole set.
      */
     data class TextPlan(
@@ -150,8 +150,8 @@ object FollowUps {
         from: ToScheduleItem? = null,
     ): Boolean {
         val textOn = text != null && text.times.isNotEmpty()
-        // Every follow-up gets its task number when saved, so a daily list can show it before any text goes.
-        val code = from?.code?.takeIf { it.isNotEmpty() } ?: SmsStore.newCode()
+        // A number only when tracked texts will carry it (a daily list gives one later if it lists the task).
+        val code = from?.code?.takeIf { it.isNotEmpty() } ?: if (textOn && text!!.tracked) SmsStore.newCode() else ""
         if (due == null || (!callOn && !textOn)) {
             ToScheduleStore.put(
                 ToScheduleItem(
@@ -214,7 +214,8 @@ object FollowUps {
         val call = call(linkId)
         val sms = text(linkId)
         val textOn = text != null && text.times.isNotEmpty()
-        val code = call?.code?.takeIf { it.isNotEmpty() } ?: sms?.code?.takeIf { it.isNotEmpty() } ?: SmsStore.newCode()
+        val code = call?.code?.takeIf { it.isNotEmpty() } ?: sms?.code?.takeIf { it.isNotEmpty() }
+            ?: if (textOn && text!!.tracked) SmsStore.newCode() else ""
         if (due == null || (!callOn && !textOn)) {
             park(c, linkId, name, number, task, callOn, autopilot, text, starred, oldDue = due ?: call?.takeIf { !it.done }?.dueAt ?: sms?.taskDue ?: 0L)
             return false
@@ -419,7 +420,7 @@ object FollowUps {
         if (text.linkId == 0L) return
         ReminderStore.init(c)
         ReminderStore.items.value.filter { it.linkId == text.linkId && !it.done && it.autopilot }.forEach {
-            ReminderStore.logEvent(it.id, "Call cancelled by his “${text.doneReply}” reply (Autopilot)")
+            ReminderStore.logEvent(it.id, "Call cancelled by the “${text.doneReply}” reply (Autopilot)")
             ReminderStore.markDone(it.id, linked = false)
         }
     }

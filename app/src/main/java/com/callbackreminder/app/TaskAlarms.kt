@@ -76,9 +76,13 @@ object TaskAlarms {
 
     fun cancelTask(ctx: Context, id: Long) = am(ctx).cancel(taskAlarm(ctx, id))
 
+    /** One-time tasks that came due after [since] (while the phone was off), so they never showed. */
+    fun missedSince(since: Long, now: Long = System.currentTimeMillis()): List<MyTask> =
+        MyTaskStore.items.value.filter { !it.done && it.timed && it.dueAt in (since + 1)..now }
+
     fun cancelTaskNotification(ctx: Context, id: Long) {
-        NotificationManagerCompat.from(ctx).cancel(TASK_BASE + id.toInt())
-        NotificationManagerCompat.from(ctx).cancel(TASK_BEFORE_BASE + id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.task(id))
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.taskBefore(id))
     }
 
     /** "1 hour before", "1 day before" and the like. */
@@ -105,13 +109,13 @@ object TaskAlarms {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BEFORE_BASE + t.id.toInt()))
             .setAutoCancel(true)
-        Notify.post(ctx, NotifType.MY_TASK, TASK_BEFORE_BASE + t.id.toInt(), b)
+        Notify.post(ctx, NotifType.MY_TASK, NotifIds.taskBefore(t.id), b)
     }
 
     @SuppressLint("MissingPermission")
     fun showTask(ctx: Context, t: MyTask) {
         if (!Notifier.canNotify(ctx)) return
-        NotificationManagerCompat.from(ctx).cancel(TASK_BEFORE_BASE + t.id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.taskBefore(t.id))
         val text = listOfNotNull(
             t.note.takeIf { it.isNotBlank() },
             t.personTitle.takeIf { t.hasPerson }?.let { "with $it" },
@@ -147,7 +151,7 @@ object TaskAlarms {
             b.addAction(0, "Call ${t.personTitle}", call)
         }
         b.addAction(0, "Done", done)
-        Notify.post(ctx, NotifType.MY_TASK, TASK_BASE + t.id.toInt(), b)
+        Notify.post(ctx, NotifType.MY_TASK, NotifIds.task(t.id), b)
     }
 
     // ---- Dossier tasks ----
@@ -196,15 +200,15 @@ object TaskAlarms {
     fun cancelDossier(ctx: Context, id: Long) = am(ctx).cancel(dossierAlarm(ctx, id, null))
 
     fun cancelDossierNotification(ctx: Context, id: Long) {
-        NotificationManagerCompat.from(ctx).cancel(DOSSIER_BASE + id.toInt())
-        NotificationManagerCompat.from(ctx).cancel(BEFORE_BASE + id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.dossier(id))
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.dossierBefore(id))
     }
 
     /** At the due time: the task with only a Done button. No popup. */
     @SuppressLint("MissingPermission")
     fun showDossierDue(ctx: Context, t: DossierTask, date: LocalDate) {
         if (!Notifier.canNotify(ctx)) return
-        NotificationManagerCompat.from(ctx).cancel(BEFORE_BASE + t.id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.dossierBefore(t.id))
         val text = "Due ${t.timeLabel} · ${t.frequency}"
         val done = PendingIntent.getBroadcast(
             ctx,
@@ -226,7 +230,7 @@ object TaskAlarms {
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, DOSSIER_BASE + t.id.toInt()))
             .setAutoCancel(true)
             .addAction(0, "✓ Done", done)
-        Notify.post(ctx, NotifType.DOSSIER, DOSSIER_BASE + t.id.toInt(), b)
+        Notify.post(ctx, NotifType.DOSSIER, NotifIds.dossier(t.id), b)
     }
 
     /** The extra heads-up before a dossier task. */
@@ -241,7 +245,7 @@ object TaskAlarms {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, BEFORE_BASE + t.id.toInt()))
             .setAutoCancel(true)
-        Notify.post(ctx, NotifType.DOSSIER_BEFORE, BEFORE_BASE + t.id.toInt(), b)
+        Notify.post(ctx, NotifType.DOSSIER_BEFORE, NotifIds.dossierBefore(t.id), b)
     }
 
     // ---- Separate dossier reminder (Settings › Dossier) ----
@@ -359,6 +363,16 @@ class TaskReceiver : BroadcastReceiver() {
                 }.start()
             }
             DailyList.ACTION_SENT -> DailyList.onResult(context, intent, resultCode)
+            DailyList.ACTION_FLUSH -> {
+                val pending = goAsync()
+                Thread {
+                    try {
+                        DailyList.flush(context)
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
+            }
             DailyList.ACTION_WA_LATER -> DailyList.later(context)
             DailyList.ACTION_WA_REMIND -> DailyList.showReady(context)
             Backup.ACTION_FIRE -> {

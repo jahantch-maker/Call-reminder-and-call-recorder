@@ -1151,9 +1151,9 @@ fun WhatMovedDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("🔔  Calls and Texts are now one tab: Follow-ups. All your old items are there, task numbers kept. Use Open · Done and the Filter at the top.")
-                Text("📞💬  One follow-up can remind you to call and text him, at different times.")
-                Text("⚡  Autopilot (off by default): his “Done” reply cancels your call.")
-                Text("🕘  New time moves his texts too, and updates the due time in the message.")
+                Text("📞💬  One follow-up can remind you to call and send texts, at different times.")
+                Text("⚡  Autopilot (off by default): a “Done” reply cancels your call.")
+                Text("🕘  New time moves the texts too, and updates the due time in the message.")
                 Text("👥  People tab: everyone you follow up with. 📁 Projects is coming soon.")
                 Text("🎙 ⚙  Recordings and Settings stay at the top right.")
             }
@@ -1162,7 +1162,7 @@ fun WhatMovedDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** The switch at the top of New time for a follow-up whose texts are still going: "His texts move too". */
+/** The switch at the top of New time for a follow-up whose texts are still going: "Texts move too". */
 @Composable
 fun TextsMoveSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
     Row(
@@ -1170,7 +1170,7 @@ fun TextsMoveSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("His texts move too", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text("Texts move too", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Same clock times on the new day, with the new due time in the message",
                 style = MaterialTheme.typography.bodySmall,

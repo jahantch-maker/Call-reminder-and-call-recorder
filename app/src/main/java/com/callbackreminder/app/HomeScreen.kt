@@ -95,6 +95,8 @@ fun HomeScreen(
     onOpenSearch: (String) -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val unreadable by Db.failed.collectAsState()
+    var unreadableSeen by remember { mutableStateOf(false) }
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val toSchedule by ToScheduleStore.items.collectAsState()
@@ -196,6 +198,19 @@ fun HomeScreen(
             }
 
             item(key = "search") { HomeSearchBar(onOpen = onOpenSearch) }
+
+            // A list that couldn't be read is never saved over: say so, and point to the backup.
+            if (unreadable.isNotEmpty() && !unreadableSeen) {
+                item(key = "unreadable") {
+                    Banner(
+                        title = "Some of your data couldn't be read",
+                        body = "Nothing was deleted or saved over it. Restore last night's backup in Settings › Backup " +
+                            "to get it back.",
+                        button = "Got it",
+                        onClick = { unreadableSeen = true }
+                    )
+                }
+            }
 
             // The Review card replaces the old To review tile.
             item(key = "review") {

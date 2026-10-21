@@ -100,11 +100,17 @@ object RecordingStore {
                 )
             }
         } catch (e: Exception) {
+            // Unreadable: never saved over.
+            broken = true
+            Db.markFailed("recordings")
             emptyList()
         }
     }
 
+    private var broken = false
+
     private fun save(list: List<Recording>) {
+        if (broken) return
         val arr = JSONArray()
         list.forEach { r ->
             arr.put(

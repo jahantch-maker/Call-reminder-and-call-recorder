@@ -170,7 +170,7 @@ object Notifier {
         b.addAction(0, "Snooze 1h", actionIntent(ctx, r.id, ActionReceiver.ACTION_SNOOZE, 60))
         b.addAction(0, "Done", actionIntent(ctx, r.id, ActionReceiver.ACTION_DONE, 0))
 
-        Notify.post(ctx, if (quiet) NotifType.MISSED else NotifType.CALLBACK, r.id.toInt(), b)
+        Notify.post(ctx, if (quiet) NotifType.MISSED else NotifType.CALLBACK, NotifIds.call(r.id), b)
     }
 
     /** The notification that stays up while reminders are ringing (also opens the ringing screen). */
@@ -227,7 +227,7 @@ object Notifier {
     }
 
     fun cancel(ctx: Context, id: Long) {
-        NotificationManagerCompat.from(ctx).cancel(id.toInt())
+        NotificationManagerCompat.from(ctx).cancel(NotifIds.call(id))
     }
 
     /** Backup path: a tap-to-open prompt in case the popup is blocked by the phone. */

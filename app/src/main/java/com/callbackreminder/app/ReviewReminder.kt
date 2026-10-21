@@ -152,8 +152,14 @@ object ReviewReminder {
     /** A review time arrived: show the popup if anything is waiting, and set the next one. */
     fun fire(ctx: Context) {
         schedule(ctx)
-        // A session is running or paused: it has its own resume reminder.
-        if (ReviewSession.init(ctx).active) return
+        // Only a session you are in right now skips it (on screen, or a call from it in the last hour). A paused
+        // one doesn't: "Review now" starts with its leftovers first.
+        val s = ReviewSession.init(ctx)
+        if (s.status == ReviewSession.Status.RUNNING) {
+            val calling = s.awaiting.isNotEmpty() && System.currentTimeMillis() - s.awaitingAt < 60 * 60_000L
+            if (MainActivity.visible || calling) return
+            ReviewSession.pause(ctx)
+        }
         val counts = counts(ctx)
         if (counts.total == 0 || !Notify.on(ctx, NotifType.REVIEW)) return
         show(ctx, counts)

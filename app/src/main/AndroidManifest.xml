@@ -216,6 +216,15 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".ShutdownReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+                <action android:name="android.intent.action.QUICKBOOT_POWEROFF" />
+            </intent-filter>
+        </receiver>
+
         <!-- Home screen widgets (drawn with Glance). Added from the home screen: long-press › Widgets. -->
         <receiver
             android:name=".FollowUpsWidgetReceiver"

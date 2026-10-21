@@ -310,7 +310,7 @@ object CallerCard {
             })
         }
         // Opens the app on this person's page, Pending list (calls, texts and My tasks, soonest due first).
-        card.addView(text(ctx, "Show all his tasks (${info.pending})", 15f, Color.WHITE, bold = true, lines = 1).apply {
+        card.addView(text(ctx, "Show all ${Names.possessive(info.name, "")}${if (Names.first(info.name) != null) " " else ""}tasks (${info.pending})", 15f, Color.WHITE, bold = true, lines = 1).apply {
             gravity = Gravity.CENTER
             setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10))
             background = GradientDrawable().apply {
@@ -402,7 +402,7 @@ object CallerCard {
         .putExtra(MainActivity.EXTRA_PERSON, key)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
-    /** "Show all his tasks": the person page in the app. The card goes away. */
+    /** "Show all Sana's tasks": the person page in the app. The card goes away. */
     private fun openAll(ctx: Context, key: String) {
         hide(ctx)
         try {

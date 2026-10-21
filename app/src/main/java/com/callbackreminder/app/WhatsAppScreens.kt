@@ -61,7 +61,7 @@ fun WhatsAppSettingsScreen(onBack: () -> Unit) {
     SettingsPage(title = "WhatsApp", onBack = onBack) {
         SectionCard(
             title = "Open in",
-            subtitle = "The WA buttons open his chat in this app with the message typed. You press Send yourself."
+            subtitle = "The WA buttons open the person's chat in this app with the message typed. You press Send yourself."
         ) {
             apps.forEach { pkg ->
                 Row(
@@ -182,7 +182,7 @@ fun DailyWhatsAppScreen(resumeKey: Int, onBack: () -> Unit) {
                 colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen, contentColor = WhatsAppInk)
             ) { Text("Send next: ${names[next].orEmpty()} ›", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
             Text(
-                "Opens his chat with the list typed. Press Send, then come back.",
+                "Opens the chat with the list typed. Press Send, then come back.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

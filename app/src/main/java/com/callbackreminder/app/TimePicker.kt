@@ -362,7 +362,7 @@ fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, 
     }
 }
 
-/** The green colours of the "Text him" card, for its chips, buttons and picker. */
+/** The green colours of the "Text <first name>" card, for its chips, buttons and picker. */
 @Composable
 fun TextGreenTheme(content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme

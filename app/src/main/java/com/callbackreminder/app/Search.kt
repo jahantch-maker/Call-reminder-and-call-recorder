@@ -241,6 +241,8 @@ fun SearchScreen(
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     val recordings by RecordingStore.items.collectAsState()
+    // Finished over 90 days ago: read only when you search.
+    val archive = remember { Triple(ReminderStore.archived(), SmsStore.archived(), MyTaskStore.archived()) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
@@ -302,6 +304,14 @@ fun SearchScreen(
         "People" to Work.people(System.currentTimeMillis(), calls, texts, myTasks, all = true)
             .filter { p -> name(p.name) || num(p.number) }
             .map { p -> Hit(p.title, Work.line(p, System.currentTimeMillis()), p.pending == 0, Icons.Rounded.Person) { onOpenPerson(p.key) } },
+        "Archive · done over ${Db.ARCHIVE_DAYS} days ago" to (
+            archive.first.filter { r -> task(r.note) || name(r.name) || num(r.number) || r.delays.any { why(it.reason) } }
+                .map { r -> Hit(r.headline(), listOf(r.title, "done ${Fmt.dueLabel(r.doneAt)}").joinToString(" · "), true, Icons.Rounded.Call) {} } +
+                archive.second.filter { t -> task(t.message) || task(t.code) || name(t.name) || num(t.number) }
+                    .map { t -> Hit(t.message, listOf(t.title, "done ${Fmt.dueLabel(t.doneAt)}").joinToString(" · "), true, Icons.Rounded.Sms) {} } +
+                archive.third.filter { m -> task(m.title) || note(m.note) || name(m.name) || num(m.number) }
+                    .map { m -> Hit(m.title, listOfNotNull("done ${Fmt.dueLabel(m.doneAt)}", m.personTitle.takeIf { m.hasPerson }).joinToString(" · "), true, Icons.Rounded.TaskAlt) {} }
+            ),
         "Recordings" to if (!on.getValue(SearchSource.RECORDINGS)) emptyList() else recordings.filter { r ->
             name(r.name) || name(r.title) || num(r.number) || note(r.note)
         }.sortedByDescending { it.startedAt }.map { r ->

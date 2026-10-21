@@ -189,61 +189,57 @@ object MyTaskStore {
 
     private fun prefs() = appCtx.getSharedPreferences("my_tasks", Context.MODE_PRIVATE)
 
-    private fun load(): List<MyTask> {
-        val raw = prefs().getString("list", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                MyTask(
-                    id = o.getLong("id"),
-                    title = o.optString("title"),
-                    note = o.optString("note"),
-                    dueAt = o.optLong("dueAt"),
-                    name = o.optString("name"),
-                    number = o.optString("number"),
-                    createdAt = o.optLong("createdAt"),
-                    done = o.optBoolean("done"),
-                    doneAt = o.optLong("doneAt"),
-                    listId = o.optLong("listId", UNSORTED),
-                    starred = o.optBoolean("starred"),
-                    position = o.optLong("position", o.optLong("createdAt")),
-                    remindBefore = o.optJSONArray("remindBefore")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
-                    durationMin = o.optInt("durationMin", DEFAULT_LENGTH),
-                    events = o.optJSONArray("events")?.let { a ->
-                        (0 until a.length()).map { a.getJSONObject(it).let { e -> TaskEvent(e.optLong("a"), e.optString("t")) } }
-                    } ?: emptyList(),
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
+    private val rows = Rows<MyTask>("my_tasks", { it.id }, ::toJson, ::fromJson, archivable = { t -> t.doneAt.takeIf { t.done } })
+
+    private fun load(): List<MyTask> = rows.load(appCtx, prefs())
+
+    /** Finished items older than [Db.ARCHIVE_DAYS] days, kept for search. */
+    fun archived(): List<MyTask> = rows.archived(appCtx)
+
+    private fun fromJson(o: JSONObject): MyTask = run {
+        MyTask(
+            id = o.getLong("id"),
+            title = o.optString("title"),
+            note = o.optString("note"),
+            dueAt = o.optLong("dueAt"),
+            name = o.optString("name"),
+            number = o.optString("number"),
+            createdAt = o.optLong("createdAt"),
+            done = o.optBoolean("done"),
+            doneAt = o.optLong("doneAt"),
+            listId = o.optLong("listId", UNSORTED),
+            starred = o.optBoolean("starred"),
+            position = o.optLong("position", o.optLong("createdAt")),
+            remindBefore = o.optJSONArray("remindBefore")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+            durationMin = o.optInt("durationMin", DEFAULT_LENGTH),
+            events = o.optJSONArray("events")?.let { a ->
+                (0 until a.length()).map { a.getJSONObject(it).let { e -> TaskEvent(e.optLong("a"), e.optString("t")) } }
+            } ?: emptyList(),
+        )
     }
 
     private fun save(list: List<MyTask>) {
-        val arr = JSONArray()
-        list.forEach { t ->
-            arr.put(
-                JSONObject()
-                    .put("id", t.id)
-                    .put("title", t.title)
-                    .put("note", t.note)
-                    .put("dueAt", t.dueAt)
-                    .put("name", t.name)
-                    .put("number", t.number)
-                    .put("createdAt", t.createdAt)
-                    .put("done", t.done)
-                    .put("doneAt", t.doneAt)
-                    .put("listId", t.listId)
-                    .put("starred", t.starred)
-                    .put("position", t.position)
-                    .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
-                    .put("durationMin", t.durationMin)
-                    .put("events", JSONArray().apply { t.events.forEach { put(JSONObject().put("a", it.at).put("t", it.text)) } })
-            )
-        }
-        prefs().edit().putString("list", arr.toString()).apply()
+        rows.save(appCtx, list)
         _items.value = list
+    }
+
+    private fun toJson(t: MyTask): JSONObject {
+        return JSONObject()
+            .put("id", t.id)
+            .put("title", t.title)
+            .put("note", t.note)
+            .put("dueAt", t.dueAt)
+            .put("name", t.name)
+            .put("number", t.number)
+            .put("createdAt", t.createdAt)
+            .put("done", t.done)
+            .put("doneAt", t.doneAt)
+            .put("listId", t.listId)
+            .put("starred", t.starred)
+            .put("position", t.position)
+            .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
+            .put("durationMin", t.durationMin)
+            .put("events", JSONArray().apply { t.events.forEach { put(JSONObject().put("a", it.at).put("t", it.text)) } })
     }
 
     // ---- Lists ----
@@ -268,13 +264,18 @@ object MyTaskStore {
                 }
             }
         } catch (e: Exception) {
+            // Unreadable: never saved over (see saveLists).
+            listsBroken = true
             emptyList()
         }
         val unsorted = saved.firstOrNull { it.id == UNSORTED } ?: TaskList(UNSORTED, "Unsorted")
         return listOf(unsorted.copy(name = "Unsorted")) + saved.filter { it.id != UNSORTED }
     }
 
+    private var listsBroken = false
+
     private fun saveLists(list: List<TaskList>) {
+        if (listsBroken) return
         val arr = JSONArray()
         list.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name).put("byDate", it.byDate)) }
         prefs().edit().putString("lists", arr.toString()).apply()
@@ -521,11 +522,18 @@ object DossierStore {
                 )
             }
         } catch (e: Exception) {
+            // Unreadable: never saved over (see saveTasks).
+            tasksBroken = true
+            Db.markFailed("dossier")
             emptyList()
         }
     }
 
+    private var tasksBroken = false
+    private var recordsBroken = false
+
     private fun saveTasks(list: List<DossierTask>) {
+        if (tasksBroken) return
         val arr = JSONArray()
         list.forEach { t ->
             arr.put(
@@ -563,11 +571,14 @@ object DossierStore {
                 )
             }.associateBy { "${it.taskId}|${it.date}" }
         } catch (e: Exception) {
+            recordsBroken = true
+            Db.markFailed("dossier_records")
             emptyMap()
         }
     }
 
     private fun saveRecords(map: Map<String, DossierRecord>) {
+        if (recordsBroken) return
         val oldest = LocalDate.now().minusDays(KEEP_DAYS).toString()
         val kept = map.filterValues { (it.done || it.reason.isNotBlank()) && it.date >= oldest }
         val arr = JSONArray()
