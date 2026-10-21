@@ -615,7 +615,7 @@ internal fun FollowUpCard(
         }
         add(parts.joinToString(" · "))
         val more = listOfNotNull(
-            (call?.code?.takeIf { it.isNotEmpty() } ?: text?.code?.takeIf { it.isNotEmpty() && text.tracked })?.let { "# Task no. $it" },
+            (call?.code?.takeIf { it.isNotEmpty() } ?: text?.takeIf { it.tracked }?.code?.takeIf { it.isNotEmpty() })?.let { "# Task no. $it" },
             call?.repeatLabel?.takeIf { e.callPending },
             "Skip my call if ${Names.first(e.person) ?: "they"} replies".takeIf { !finished && call != null && call.autopilot && text != null },
         )

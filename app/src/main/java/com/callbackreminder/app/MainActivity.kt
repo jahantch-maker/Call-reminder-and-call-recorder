@@ -700,7 +700,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
               CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
-                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey)
+                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey, onOpenToSchedule = { open(Screen.TO_SCHEDULE) })
                     Tab.FOLLOW_UPS -> FollowUpsScreen(
                         resumeKey = resumeKey,
                         onOpenTextSettings = { open(Screen.TEXT_SETTINGS) },

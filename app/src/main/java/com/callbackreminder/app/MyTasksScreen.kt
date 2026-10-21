@@ -144,9 +144,10 @@ internal fun rememberNow(resumeKey: Int): Long {
 
 /** The My tasks tab: your Tasks in lists (like Google Tasks), and the Dossier you tick every day. */
 @Composable
-fun MyTasksScreen(resumeKey: Int) {
+fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     val ctx = LocalContext.current
     val tasks by MyTaskStore.items.collectAsState()
+    val toSchedule by ToScheduleStore.items.collectAsState()
     val lists by MyTaskStore.lists.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
@@ -370,6 +371,8 @@ fun MyTasksScreen(resumeKey: Int) {
             }
 
             if (sub == MyTasksUi.ONE_TIME) {
+                val waiting = toSchedule.size + tasks.count { !it.done && !it.timed }
+                if (waiting > 0) item(key = "waiting") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
                 item(key = "lists") {
                     ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
                 }
