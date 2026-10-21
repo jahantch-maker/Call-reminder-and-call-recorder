@@ -66,6 +66,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.time.Instant
 import java.time.ZoneId
+import androidx.compose.ui.draw.clip
 
 /**
  * A tall edit window whose Cancel and Save stay fixed at the bottom, above the phone's Home/Back buttons,
@@ -224,7 +225,16 @@ fun rememberTextPlanState(from: SmsReminder? = null, item: ToScheduleItem? = nul
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TextPlanSection(state: TextPlanState, task: String, due: Long?, latest: Long? = null) {
+fun TextPlanSection(
+    state: TextPlanState,
+    task: String,
+    due: Long?,
+    latest: Long? = null,
+    /** The follow-up editor: Burst, Reply code, Repeat and [extra] fold under "Customise ▾". */
+    folded: Boolean = false,
+    firstName: String? = null,
+    extra: (@Composable () -> Unit)? = null,
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val templates = remember { BurstTemplates.load(ctx) }
@@ -232,41 +242,7 @@ fun TextPlanSection(state: TextPlanState, task: String, due: Long?, latest: Long
     var templateMenu by remember { mutableStateOf(false) }
     var help by remember { mutableStateOf<Pair<String, String>?>(null) }
     val message = state.messageFor(task)
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("TEXT TIMES", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            state.times.sorted().forEach { t ->
-                InputChip(
-                    selected = false,
-                    onClick = { state.times = state.times - t },
-                    label = { Text("🕒 " + Fmt.dueLabel(t)) },
-                    trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
-                )
-            }
-        }
-        ShortTimeRow(
-            selected = null,
-            showSelected = false,
-            pickLabel = "＋ Add time",
-            dialogTitle = "Add text time",
-            latest = latest,
-            latestNote = latest?.let { "Times after the call (${Fmt.dueLabel(it)}) are greyed" },
-            onPick = { ms ->
-                // Whole minutes, no copies.
-                val m = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).withSecond(0).withNano(0).toInstant().toEpochMilli()
-                if (m !in state.times) state.times = state.times + m
-                state.parked = false
-            },
-        )
-        if (due == null && state.times.isNotEmpty()) {
-            Text(
-                "Texts wait until the follow-up has a time, then move with it.",
-                style = MaterialTheme.typography.bodySmall,
-                color = cs.onSurfaceVariant
-            )
-        }
-
+    val repeatBlock: @Composable () -> Unit = {
         // Repeat: daily / weekly for the whole set of texts, picked like a text's date & time.
         Surface(
             shape = RoundedCornerShape(14.dp),
@@ -295,22 +271,16 @@ fun TextPlanSection(state: TextPlanState, task: String, due: Long?, latest: Long
             }
         }
 
-        OutlinedTextField(
-            value = message,
-            onValueChange = { state.message = it; state.messageTouched = true },
-            trailingIcon = voiceMic(message) { state.message = it; state.messageTouched = true },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Message") },
-            supportingText = { due?.let { Text("The app adds “(Due: ${Fmt.fullDate(it)})” and updates it on every New time.") } },
-            maxLines = 4,
-            shape = RoundedCornerShape(14.dp)
-        )
+    }
+    val trackBlock: @Composable () -> Unit = {
         SwitchWithHelp(
-            label = "Tracking number",
+            label = if (folded) "Reply code" else "Tracking number",
             checked = state.tracked,
             onCheckedChange = { state.tracked = it },
             onHelp = { help = "Tracking number" to TRACKING_HELP }
         )
+    }
+    val burstBlock: @Composable () -> Unit = {
         SwitchWithHelp(
             label = "Burst",
             checked = state.burstOn,
@@ -346,6 +316,91 @@ fun TextPlanSection(state: TextPlanState, task: String, due: Long?, latest: Long
                     style = MaterialTheme.typography.bodySmall,
                     color = cs.onSurfaceVariant
                 )
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("TEXT TIMES", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            state.times.sorted().forEach { t ->
+                InputChip(
+                    selected = false,
+                    onClick = { state.times = state.times - t },
+                    label = { Text("🕒 " + Fmt.dueLabel(t)) },
+                    trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
+                )
+            }
+        }
+        ShortTimeRow(
+            selected = null,
+            showSelected = false,
+            pickLabel = "＋ Add time",
+            dialogTitle = "Add text time",
+            latest = latest,
+            latestNote = latest?.let { "Times after the call (${Fmt.dueLabel(it)}) are greyed" },
+            onPick = { ms ->
+                // Whole minutes, no copies.
+                val m = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).withSecond(0).withNano(0).toInstant().toEpochMilli()
+                if (m !in state.times) state.times = state.times + m
+                state.parked = false
+            },
+        )
+        if (due == null && state.times.isNotEmpty()) {
+            Text(
+                "Texts wait until the follow-up has a time, then move with it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = cs.onSurfaceVariant
+            )
+        }
+
+        OutlinedTextField(
+            value = message,
+            onValueChange = { state.message = it; state.messageTouched = true },
+            trailingIcon = voiceMic(message) { state.message = it; state.messageTouched = true },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Message") },
+            supportingText = { due?.let { Text("The app adds “(Due: ${Fmt.fullDate(it)})” and updates it on every New time.") } },
+            maxLines = 4,
+            shape = RoundedCornerShape(14.dp)
+        )
+        if (!folded) {
+            repeatBlock()
+            trackBlock()
+            burstBlock()
+        } else {
+            var open by remember { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { open = !open }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(if (open) "Customise ▴" else "Customise ▾", color = cs.primary, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                if (!open) {
+                    Text(
+                        listOfNotNull(
+                            "Burst on".takeIf { state.burstOn },
+                            "Reply code".takeIf { state.tracked },
+                            if (state.repeat != null) "Repeats" else "Once",
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = open,
+                enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    burstBlock()
+                    trackBlock()
+                    repeatBlock()
+                    extra?.invoke()
+                }
             }
         }
     }
@@ -565,7 +620,44 @@ fun FollowUpDialog(
                 )
             }
         },
-        summary = { FollowUpSummary(callEff && !text.parked, due, textEff && !text.parked, text.takeIf { textEff }?.plan(task)) },
+        summary = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FollowUpSummary(callEff && !text.parked, due, textEff && !text.parked, text.takeIf { textEff }?.plan(task))
+                if (textEff && !text.parked) {
+                    // The exact SMS, as it goes out.
+                    val plan = text.plan(task)
+                    val code = editText?.code?.takeIf { it.isNotEmpty() } ?: "task no."
+                    val body = plan.message + (saveDue?.let { " (Due: ${Fmt.fullDate(it)})" } ?: "")
+                    val sms = when {
+                        !plan.tracked -> body
+                        plan.burst != null -> "Reminder 1 ($code): $body"
+                        else -> "($code) $body"
+                    }
+                    if (plan.tracked) {
+                        Text(
+                            "✅ A reply of $code moves it to Review",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "${(first ?: "THEY").uppercase()} WILL READ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(sms, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    }
+                }
+                // Staff on a daily list get this task in it anyway.
+                if (hasPerson && DailyList.isOn(ctx, RecentPeople.key(number))) {
+                    Text(
+                        "📋 ${first ?: "They"} also gets this in the daily list (${DailyList.timesLabel(ctx)})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Tones.amber.fg
+                    )
+                }
+            }
+        },
         onConfirm = {
             val plan = if (textEff) text.plan(task) else null
             val pilot = autopilot && callEff && textEff
@@ -606,68 +698,98 @@ fun FollowUpDialog(
             shape = RoundedCornerShape(14.dp)
         )
 
-        // C. Remind me to call (blue): its time lives inside the card.
-        FeatureCard(
-            tint = CallCardBg,
-            icon = { Icon(Icons.Rounded.Call, contentDescription = null, tint = if (LocalDarkTheme.current) CallBlue else Color(0xFF3D5AFE)) },
-            title = "Remind me to call",
-            subtitle = if (!hasPerson) "Pick a person first" else "Rings at the call time",
-            checked = callEff,
-            enabled = hasPerson,
-            onChange = { on ->
-                callOn = on
-                if (on && due == null && anchor == 0L) setDue(defaultCallTime(ctx, System.currentTimeMillis()))
-            },
-        ) {
-            Text("CALL TIME", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ShortTimeRow(
-                selected = due,
-                onClear = if (due != null) ({ setDue(null) }) else null,
-                dialogTitle = "Pick call time",
-                onPick = { setDue(it) },
+        // C. How should I follow up? Three presets instead of the call and text switches.
+        val preset = when {
+            textOn && callOn -> 1
+            textOn -> 2
+            else -> 0
+        }
+        Text("HOW SHOULD I FOLLOW UP?", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        BoxTabs(listOf("Just remind me", "Remind + text", "Text only"), preset, { p ->
+            val wantCall = p != 2
+            val wantText = p != 0
+            callOn = wantCall
+            if (wantCall && due == null && anchor == 0L && hasPerson) setDue(defaultCallTime(ctx, System.currentTimeMillis()))
+            textOn = wantText
+            if (wantText && text.times.isEmpty()) {
+                val nowMs = System.currentTimeMillis()
+                val t = if (wantCall && due != null) FollowUps.firstTextTime(due!!, nowMs) else FollowUps.firstTextTimeNoCall(nowMs)
+                t?.let { text.times = listOf(it) }
+            }
+        })
+        if (!hasPerson) {
+            Text(
+                "Pick a person to set a call or texts. Saved without one, it waits in To schedule.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (due == null) {
+        }
+
+        // 📞 CALL <FIRST>: the call time, +15m to +2h, recent times and 📅 Pick.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = callEff,
+            enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+        ) {
+            PartCard(CallCardBg) {
                 Text(
-                    "No call time: it waits in To schedule until you set one.",
-                    style = MaterialTheme.typography.bodySmall,
+                    "📞 CALL ${first?.uppercase() ?: ""}".trim(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                ShortTimeRow(
+                    selected = due,
+                    onClear = if (due != null) ({ setDue(null) }) else null,
+                    dialogTitle = "Pick call time",
+                    pickLabel = "📅 Pick",
+                    plusRow = true,
+                    onPick = { setDue(it) },
+                )
+                if (due == null) {
+                    Text(
+                        "No call time: it waits in To schedule until you set one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
-        // Text him (green): text times, repeat, message, tracking and burst inside the card.
-        TextGreenTheme {
-            FeatureCard(
-                tint = TextCardBg,
-                icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87)) },
-                title = first?.let { "Text $it" } ?: "Send texts",
-                subtitle = if (!hasPerson) "Pick a person first" else "Reminder texts from your SIM",
-                checked = textEff,
-                enabled = hasPerson,
-                onChange = { on ->
-                    textOn = on
-                    if (on && text.times.isEmpty()) {
-                        val nowMs = System.currentTimeMillis()
-                        val t = if (callEff && due != null) FollowUps.firstTextTime(due!!, nowMs) else FollowUps.firstTextTimeNoCall(nowMs)
-                        t?.let { text.times = listOf(it) }
-                    }
-                },
-            ) {
-                TextPlanSection(text, task, if (text.parked) null else if (callEff) due else text.times.minOrNull(), latest = if (callEff) due else null)
+        // 💬 TEXT <FIRST>: text times and the message; Burst, Reply code, Repeat and Skip my call under Customise.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = textEff,
+            enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+        ) {
+            TextGreenTheme {
+                PartCard(TextCardBg) {
+                    Text(
+                        "💬 TEXT ${first?.uppercase() ?: ""}".trim(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextPlanSection(
+                        text, task, if (text.parked) null else if (callEff) due else text.times.minOrNull(),
+                        latest = if (callEff) due else null,
+                        folded = true,
+                        firstName = first,
+                        extra = if (callEff) ({
+                            SwitchCard(
+                                icon = { Icon(Icons.Rounded.Bolt, contentDescription = null) },
+                                title = "Skip my call if ${first ?: "they"} replies ⓘ",
+                                subtitle = if (autopilot) "On: a reply with the task number cancels my call"
+                                else "Off: your call rings anyway",
+                                checked = autopilot,
+                                enabled = text.tracked,
+                                onChange = { autopilot = it },
+                                onTitleClick = { showAutoHelp = true },
+                            )
+                        }) else null,
+                    )
+                }
             }
-        }
-
-        if (callEff && textEff) {
-            SwitchCard(
-                icon = { Icon(Icons.Rounded.Bolt, contentDescription = null) },
-                title = "Autopilot ⓘ",
-                subtitle = if (autopilot) "${Names.possessive(name, "Their").replaceFirstChar { it.uppercase() }} task number reply cancels my call reminder"
-                else "Off: my call still rings after ${Names.possessive(name, "the")} reply",
-                checked = autopilot,
-                enabled = text.tracked,
-                onChange = { autopilot = it },
-                onTitleClick = { showAutoHelp = true },
-            )
         }
         if (anyTime) {
             RemoveTimeButton {
@@ -691,7 +813,7 @@ fun FollowUpDialog(
     if (showAutoHelp) {
         AlertDialog(
             onDismissRequest = { showAutoHelp = false },
-            title = { Text("Autopilot") },
+            title = { Text("Skip my call if ${Names.first(name) ?: "they"} replies") },
             text = {
                 Text(
                     "On: when ${Names.first(name) ?: "the person"} texts back the task number, your call reminder is cancelled and the " +
@@ -749,6 +871,18 @@ internal fun FeatureCard(
                 )
             }
         }
+    }
+}
+
+/** A soft tinted card holding the call or the text part of the editor. */
+@Composable
+internal fun PartCard(tint: Color, content: @Composable ColumnScope.() -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = tint, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = content
+        )
     }
 }
 

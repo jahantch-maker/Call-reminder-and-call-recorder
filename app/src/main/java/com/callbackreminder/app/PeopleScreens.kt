@@ -224,6 +224,7 @@ fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -
                 }
             }
             items(shown, key = { it.key }) { p ->
+                Box(Modifier.animateItem()) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -232,6 +233,7 @@ fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -
                     Box(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
                         PersonRow(p, now, withWaiting = true) { onOpenPerson(p.key) }
                     }
+                }
                 }
             }
         }
@@ -261,7 +263,6 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var addMenu by remember { mutableStateOf(false) }
     var newCall by remember { mutableStateOf(false) }
-    var newText by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf(false) }
     var dailyOn by remember(key) { mutableStateOf(DailyList.isOn(ctx, key.orEmpty())) }
     var via by remember(key) { mutableStateOf(DailyList.via(ctx, key.orEmpty())) }
@@ -362,9 +363,8 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                                 Text("Task")
                             }
                             DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
-                                DropdownMenuItem(text = { Text("Call-back reminder") }, onClick = { addMenu = false; newCall = true })
-                                DropdownMenuItem(text = { Text("Text message") }, onClick = { addMenu = false; newText = true })
-                                DropdownMenuItem(text = { Text("My task with $name") }, onClick = { addMenu = false; newTask = true })
+                                DropdownMenuItem(text = { Text("Follow-up with ${Names.first(name) ?: name}") }, onClick = { addMenu = false; newCall = true })
+                                DropdownMenuItem(text = { Text("My task with ${Names.first(name) ?: name}") }, onClick = { addMenu = false; newTask = true })
                             }
                         }
                     }
@@ -489,24 +489,11 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     }
 
     if (newCall) {
-        AddReminderDialog(
+        // The one follow-up editor: Just remind me, Remind + text or Text only.
+        FollowUpDialog(
+            onDismiss = { newCall = false },
             initialName = person?.name.orEmpty(),
             initialNumber = number,
-            onDismiss = { newCall = false },
-            onSave = { n, num, note, dueAt, repeat, starred ->
-                ReminderStore.add(n, num, note, dueAt, repeat, starred = starred)
-                newCall = false
-            }
-        )
-    }
-    if (newText) {
-        SmsReminderDialog(
-            prefill = TextPrefill(name = person?.name.orEmpty(), number = number, message = ""),
-            onDismiss = { newText = false },
-            onSave = { n, num, message, dueAt, repeat, burst, tracked ->
-                SmsStore.add(n, num, message, dueAt, repeat, burst, tracked)
-                newText = false
-            }
         )
     }
     if (newTask) {

@@ -500,6 +500,7 @@ fun MyTasksScreen(resumeKey: Int) {
                     }
                 }
                 items(todays, key = { "d${it.id}" }) { t ->
+                    Box(Modifier.animateItem()) {
                     DossierRow(
                         t = t,
                         day = day,
@@ -514,6 +515,7 @@ fun MyTasksScreen(resumeKey: Int) {
                         onStar = { DossierStore.setStar(t.id, !t.starred) },
                         highlighted = -t.id == highlightId,
                     )
+                    }
                 }
                 if (notToday.isNotEmpty()) {
                     item(key = "not-today") {
@@ -526,6 +528,7 @@ fun MyTasksScreen(resumeKey: Int) {
                         )
                     }
                     items(notToday, key = { "n${it.id}" }) { t ->
+                        Box(Modifier.animateItem()) {
                         DossierRow(
                             t = t,
                             day = day,
@@ -541,6 +544,7 @@ fun MyTasksScreen(resumeKey: Int) {
                             onStar = { DossierStore.setStar(t.id, !t.starred) },
                             highlighted = -t.id == highlightId,
                         )
+                        }
                     }
                 }
             }

@@ -308,8 +308,12 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
 
     fun snoozeFuTo(f: CalFollowUp, ms: Long) {
         val undo = undoFor(f)
-        if (f.isCall) ReminderStore.reschedule(f.id, ms, "Snoozed to") else SmsStore.reschedule(f.id, ms)
-        scope.offerUndo(snack, "Snoozed to ${Fmt.dueLabel(ms)}", undo)
+        // New time moves the task's due date: a call's texts follow it, like everywhere else.
+        if (f.isCall) {
+            ReminderStore.newTime(f.id, ms)
+            ReminderStore.get(f.id)?.let { FollowUps.onNewTime(ctx, it, ms, true) }
+        } else SmsStore.reschedule(f.id, ms)
+        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}", undo)
     }
 
     /** Undo text after a slide or stretch, with ⚠ when it now overlaps your own items. */
@@ -458,7 +462,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
     }
     snoozeFu?.let { f ->
         SnoozeSheet(
-            heading = "Snooze",
+            heading = "New time",
             about = f.title,
             onPick = { ms -> snoozeFu = null; snoozeFuTo(f, ms) },
             onPickTime = { snoozeFu = null },
@@ -1218,7 +1222,7 @@ private fun DayBody(
                                                 onDragEnd = {
                                                     val d = drag
                                                     if (d != null && d.key == k) {
-                                                        // Sliding a follow-up = Snooze; never into the past.
+                                                        // Sliding a follow-up = New time; never into the past.
                                                         val to = maxOf(
                                                             snap15(timeOf(y + d.dy.toDp())),
                                                             CalendarData.roundUp(System.currentTimeMillis(), 15)
@@ -1248,7 +1252,7 @@ private fun DayBody(
                                     onCall = { onCall(f) },
                                 )
                                 if (op != null) {
-                                    TimeBubble("Snooze to " + Fmt.timeOnly(snap15(timeOf(y + with(density) { op.dy.toDp() }))), Modifier.zIndex(4f).offset(x = 2.dp, y = shownY - 9.dp))
+                                    TimeBubble("Move to " + Fmt.timeOnly(snap15(timeOf(y + with(density) { op.dy.toDp() }))), Modifier.zIndex(4f).offset(x = 2.dp, y = shownY - 9.dp))
                                 }
                             }
                         }
@@ -1529,7 +1533,7 @@ private fun FitToggle(bestFit: Boolean, motion: Boolean, onChange: (Boolean) -> 
     }
 }
 
-/** Tap a follow-up: Call / Done / Snooze / WhatsApp (his chat opens with the message typed). */
+/** Tap a follow-up: Call / Done / New time / WhatsApp (his chat opens with the message typed). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () -> Unit, onDone: () -> Unit, onSnooze: () -> Unit) {
@@ -1552,7 +1556,7 @@ private fun FollowUpActions(f: CalFollowUp, onDismiss: () -> Unit, onCall: () ->
                     }
                 }
                 OutlinedButton(onClick = onDone, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("✓ Done") }
-                OutlinedButton(onClick = onSnooze, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Snooze") }
+                OutlinedButton(onClick = onSnooze, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("New time", maxLines = 1) }
                 if (f.number.isNotBlank()) {
                     WhatsAppAction(size = 48.dp) {
                         val sent = if (f.isCall) ReminderStore.get(f.id)?.let { WhatsApp.forCall(ctx, it) }

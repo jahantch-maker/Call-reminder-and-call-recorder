@@ -12,8 +12,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "0.32.0"
+        versionCode = 44
+        versionName = "0.33.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.

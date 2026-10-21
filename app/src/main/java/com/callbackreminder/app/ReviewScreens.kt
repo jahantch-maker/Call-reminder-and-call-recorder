@@ -279,6 +279,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     }
                 }
                 items(list, key = { "${sec.key}-${it.key}" }) { item ->
+                    Box(Modifier.animateItem()) {
                     ReviewRow(
                         item = item,
                         now = now,
@@ -290,6 +291,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                         onNewTime = { newTimeFor = item },
                         onDetails = { editFor = ToScheduleStore.items.value.firstOrNull { it.id == item.id } },
                     )
+                    }
                 }
             }
         }

@@ -563,18 +563,15 @@ fun TextFollowUpSheet(
     }
 
     if (showEdit) {
-        SmsReminderDialog(
-            initial = SmsStore.get(task.id) ?: task,
+        // "Not done, text again": the same follow-up editor as everywhere; it stays in To review until saved.
+        val link = remember { FollowUps.ensureLink(ctx, null, SmsStore.get(task.id) ?: task) }
+        FollowUpDialog(
             onDismiss = {
-                // Not done is noted; it stays in To review until you set new days.
                 showEdit = false
-                finish("Still in To review")
+                val now = SmsStore.get(task.id)
+                finish(if (now != null && now.active) "Text scheduled again · ${Fmt.dueLabel(now.alarmAt)}" else "Still in To review")
             },
-            onSave = { name, number, message, dueAt, repeat, burst, tracked ->
-                SmsStore.edit(task.id, name, number, message, dueAt, repeat, burst, tracked)
-                showEdit = false
-                finish("Text scheduled again · ${Fmt.dueLabel(dueAt)}")
-            }
+            linkId = link,
         )
     }
 }

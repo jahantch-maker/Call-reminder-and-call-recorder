@@ -78,7 +78,7 @@ internal class FuController(
         val c = e.call
         val t = e.text
         if (c != null && (e.callPending || e.callReview || t == null || !e.textActive)) {
-            ReminderStore.reschedule(c.id, ms, "Moved to")
+            ReminderStore.newTime(c.id, ms)
             // A new time moves the task's due date: the texts follow it.
             if (!c.done) FollowUps.onNewTime(ctx, c, ms, moveTexts)
         } else if (t != null) {
