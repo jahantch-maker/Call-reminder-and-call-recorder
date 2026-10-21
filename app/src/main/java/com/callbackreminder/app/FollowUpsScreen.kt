@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
-import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.Warning
@@ -54,9 +53,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -87,6 +83,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalDate
 import java.time.ZoneId
+import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import kotlinx.coroutines.launch
 
 /** What the Follow-ups tab shows: everything together, or (from Filter) only calls or only texts. */
 object FollowUpsUi {
@@ -106,124 +105,146 @@ object FollowUpsUi {
 }
 
 /**
- * The Follow-ups tab: every follow-up once, a call and its texts together, with Open / Done and a Filter
- * (Everything, Calls only, Texts only, and the sort). Calls only and Texts only are the full call and text lists.
+ * The Follow-ups tab: every follow-up once, a call and its texts together, as the same card as My tasks. Open | Done
+ * in the box at the top, then "Everything ▾" (Calls only, Texts only, and the sort) and "★ Starred".
  */
 @Composable
 fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSchedule: () -> Unit) {
+    val ctx = LocalContext.current
     var view by rememberSaveable { mutableIntStateOf(FollowUpsUi.ALL) }
     var done by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable { mutableIntStateOf(FollowUpsUi.SORT_DUE) }
+    var starredOnly by rememberSaveable { mutableStateOf(false) }
+    var reveal by remember { mutableStateOf<String?>(null) }
+    var editLink by remember { mutableStateOf<Long?>(null) }
     val asked by FollowUpsUi.view.collectAsState()
     LaunchedEffect(asked) {
         val v = asked ?: return@LaunchedEffect
         FollowUpsUi.view.value = null
         view = v
     }
-    // A request for a call or a text (a notification, search, Home) opens the list that shows it.
+    /** Shows this follow-up: the filters that could hide it are cleared, Open or Done as it is, then scrolled to. */
+    fun show(e: FuEntry?) {
+        e ?: return
+        view = FollowUpsUi.ALL
+        starredOnly = false
+        done = !e.open
+        reveal = e.key
+    }
+    fun everything() = entries(ReminderStore.items.value, SmsStore.items.value)
+    // A request for a call or a text (a notification, search, Home) shows it here.
     val callShow by CallsUi.showRequest.collectAsState()
     val callTab by CallsUi.tabRequest.collectAsState()
     val textShow by SmsUi.showRequest.collectAsState()
     val textTab by SmsUi.tabRequest.collectAsState()
     val textEdit by SmsUi.editRequest.collectAsState()
-    LaunchedEffect(callShow, callTab) { if (callShow != null || callTab != null) view = FollowUpsUi.CALLS }
-    LaunchedEffect(textShow, textTab, textEdit) { if (textShow != null || textTab != null || textEdit != null) view = FollowUpsUi.TEXTS }
-    // "Show in Follow-ups ›": Everything, Open or Done as the follow-up is, then the list scrolls to it.
     val entryShow by FollowUpsUi.showEntry.collectAsState()
-    var reveal by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(callShow) {
+        val id = callShow ?: return@LaunchedEffect
+        CallsUi.showRequest.value = null
+        show(everything().firstOrNull { it.call?.id == id })
+    }
+    LaunchedEffect(textShow) {
+        val id = textShow ?: return@LaunchedEffect
+        SmsUi.showRequest.value = null
+        show(everything().firstOrNull { it.text?.id == id })
+    }
+    LaunchedEffect(callTab) {
+        val t = callTab ?: return@LaunchedEffect
+        CallsUi.tabRequest.value = null
+        done = t == CallsUi.DONE
+    }
+    LaunchedEffect(textTab) {
+        val t = textTab ?: return@LaunchedEffect
+        SmsUi.tabRequest.value = null
+        done = t == 2
+    }
+    LaunchedEffect(textEdit) {
+        val id = textEdit ?: return@LaunchedEffect
+        SmsUi.editRequest.value = null
+        val t = SmsStore.get(id) ?: return@LaunchedEffect
+        done = false
+        editLink = FollowUps.ensureLink(ctx, null, t)
+    }
     LaunchedEffect(entryShow) {
         val key = entryShow ?: return@LaunchedEffect
         FollowUpsUi.showEntry.value = null
-        val e = entries(ReminderStore.items.value, SmsStore.items.value).firstOrNull { it.key == key } ?: return@LaunchedEffect
-        view = FollowUpsUi.ALL
-        done = !e.open
-        reveal = key
+        show(everything().firstOrNull { it.key == key })
     }
 
-    val bar: @Composable () -> Unit = {
-        FollowUpsBar(
-            done = done && view == FollowUpsUi.ALL,
-            openSelected = !done && view == FollowUpsUi.ALL,
-            show = view,
-            sort = sort,
-            onOpen = { done = false; view = FollowUpsUi.ALL },
-            onDone = { done = true; view = FollowUpsUi.ALL },
-            onShow = { view = it },
-            onSort = { sort = it; if (view != FollowUpsUi.ALL) view = FollowUpsUi.ALL },
-        )
-    }
-    when (view) {
-        FollowUpsUi.CALLS -> CallsScreen(resumeKey = resumeKey, switcher = bar)
-        FollowUpsUi.TEXTS -> MessagesScreen(resumeKey = resumeKey, onBack = null, onOpenSettings = onOpenTextSettings, switcher = bar)
-        else -> FollowUpsAll(
-            resumeKey = resumeKey,
-            bar = bar,
-            showDone = done,
-            sort = sort,
-            onOpenToSchedule = onOpenToSchedule,
-            reveal = reveal,
-            onRevealed = { reveal = null },
-        )
-    }
+    FollowUpsAll(
+        resumeKey = resumeKey,
+        showDone = done,
+        show = view,
+        sort = sort,
+        starredOnly = starredOnly,
+        onDoneTab = { done = it },
+        onShow = { view = it },
+        onSort = { sort = it },
+        onStarred = { starredOnly = it },
+        onOpenToSchedule = onOpenToSchedule,
+        reveal = reveal,
+        onRevealed = { reveal = null },
+        editLink = editLink,
+        onEditLink = { editLink = it },
+    )
 }
 
-/** Open · Done · Filter ▾ under the Follow-ups title. */
+/** Open | Done in the box, then "Everything ▾" and "★ Starred" under it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FollowUpsBar(
     done: Boolean,
-    openSelected: Boolean,
+    openCount: Int,
+    doneCount: Int,
     show: Int,
     sort: Int,
-    onOpen: () -> Unit,
-    onDone: () -> Unit,
+    starredOnly: Boolean,
+    onDoneTab: (Boolean) -> Unit,
     onShow: (Int) -> Unit,
     onSort: (Int) -> Unit,
+    onStarred: (Boolean) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     val filterLabel = when (show) {
-        FollowUpsUi.CALLS -> "Calls ▾"
-        FollowUpsUi.TEXTS -> "Texts ▾"
-        else -> "Filter ▾"
+        FollowUpsUi.CALLS -> "📞 Calls only"
+        FollowUpsUi.TEXTS -> "💬 Texts only"
+        else -> "Everything"
     }
-    Box(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = openSelected,
-                onClick = onOpen,
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
-            ) { Text("Open") }
-            SegmentedButton(
-                selected = done,
-                onClick = onDone,
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
-            ) { Text("Done") }
-            SegmentedButton(
-                selected = show != FollowUpsUi.ALL,
-                onClick = { menu = true },
-                shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
-                icon = {},
-            ) { Text(filterLabel, maxLines = 1) }
-        }
-        Box(Modifier.align(Alignment.TopEnd)) {
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                MenuHeading("SHOW")
-                listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                        onClick = { menu = false; onShow(v) }
-                    )
-                }
-                MenuHeading("SORT")
-                listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        leadingIcon = if (sort == v && show == FollowUpsUi.ALL) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                        onClick = { menu = false; onSort(v) }
-                    )
+    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) })
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box {
+                FilterChip(
+                    selected = show != FollowUpsUi.ALL,
+                    onClick = { menu = true },
+                    label = { Text(filterLabel, maxLines = 1) },
+                    trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    MenuHeading("SHOW")
+                    listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                            onClick = { menu = false; onShow(v) }
+                        )
+                    }
+                    MenuHeading("SORT")
+                    listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                            onClick = { menu = false; onSort(v) }
+                        )
+                    }
                 }
             }
+            StarredFilterChip(starredOnly, onStarred)
         }
     }
 }
@@ -237,6 +258,7 @@ private fun MenuHeading(text: String) {
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
     )
 }
+
 
 /** One follow-up in the list: a call, its texts, or both. */
 internal class FuEntry(val call: Reminder?, val text: SmsReminder?) {
@@ -297,33 +319,36 @@ internal fun entries(calls: List<Reminder>, texts: List<SmsReminder>): List<FuEn
 @Composable
 private fun FollowUpsAll(
     resumeKey: Int,
-    bar: @Composable () -> Unit,
     showDone: Boolean,
+    show: Int,
     sort: Int,
+    starredOnly: Boolean,
+    onDoneTab: (Boolean) -> Unit,
+    onShow: (Int) -> Unit,
+    onSort: (Int) -> Unit,
+    onStarred: (Boolean) -> Unit,
     onOpenToSchedule: () -> Unit,
     reveal: String? = null,
     onRevealed: () -> Unit = {},
+    editLink: Long?,
+    onEditLink: (Long?) -> Unit,
 ) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val toSchedule by ToScheduleStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
+    val stars by FuStars.keys.collectAsState()
+    LaunchedEffect(Unit) { FuStars.load(ctx) }
     var showNew by remember { mutableStateOf(false) }
-    var sendFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var editLink by remember { mutableStateOf<Long?>(null) }
-    var editItem by remember { mutableStateOf<ToScheduleItem?>(null) }
-    var snoozeFor by remember { mutableStateOf<FuEntry?>(null) }
-    var newTimeFor by remember { mutableStateOf<FuEntry?>(null) }
-    var pickTimeFor by remember { mutableStateOf<FuEntry?>(null) }
-    var reviewLaterFor by remember { mutableStateOf<FuEntry?>(null) }
-    var setTimeFor by remember { mutableStateOf<ToScheduleItem?>(null) }
-    var timelineFor by remember { mutableStateOf<FuEntry?>(null) }
-    var textsFor by remember { mutableStateOf<SmsReminder?>(null) }
-    var moveTexts by remember { mutableStateOf(true) }
     val snack = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    val fu = rememberFuController(snack)
+    // A text notification's "Not done, text again" opens its follow-up in the editor.
+    LaunchedEffect(editLink) {
+        val link = editLink ?: return@LaunchedEffect
+        onEditLink(null)
+        fu.editLink = link
+    }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -334,137 +359,24 @@ private fun FollowUpsAll(
     }
     LaunchedEffect(resumeKey) { now = System.currentTimeMillis() }
 
+    fun starred(e: FuEntry): Boolean = e.call?.starred ?: (e.key in stars)
     val every = entries(calls, texts)
-    val all = every.filter { it.open && !it.hidden }
+    val shown = every.filter {
+        when (show) {
+            FollowUpsUi.CALLS -> it.call != null
+            FollowUpsUi.TEXTS -> it.text != null
+            else -> true
+        } && (!starredOnly || starred(it))
+    }
+    val all = shown.filter { it.open && !it.hidden }
     val review = all.filter { it.inReview }.sortedByDescending { it.at }
     val open = all.filter { !it.inReview }.sortedBy { it.at }
     val overdue = open.filter { it.callPending && it.at <= now }
     val ahead = open.filter { !(it.callPending && it.at <= now) }
-    val finished = every.filter { !it.open }.sortedByDescending { it.finishedAt }
-    val noTime = toSchedule.sortedByDescending { it.createdAt }
-    val myNoTime = myTasks.count { !it.done && !it.timed }
+    val finished = shown.filter { !it.open }.sortedByDescending { it.finishedAt }
+    val waiting = toSchedule.size + myTasks.count { !it.done && !it.timed }
     val today = LocalDate.now(ZoneId.systemDefault())
     val cs = MaterialTheme.colorScheme
-
-    /** Puts back this follow-up's call and texts as they are now (for Undo). */
-    fun undoFor(e: FuEntry): () -> Unit {
-        val link = FollowUps.snapshot(e.call?.linkId ?: e.text?.linkId ?: 0L)
-        val c = e.call
-        val t = e.text
-        return {
-            c?.let { ReminderStore.restore(it) }
-            t?.let { SmsStore.restore(it) }
-            link()
-        }
-    }
-
-    fun done(e: FuEntry) {
-        val undo = undoFor(e)
-        when {
-            e.callPending -> ReminderStore.markDone(e.call!!.id)
-            e.textActive -> SmsStore.markDone(e.text!!.id)
-        }
-        openKey = null
-        scope.offerUndo(snack, "Done · ${e.title}", undo)
-    }
-    fun checked(e: FuEntry) {
-        val undo = undoFor(e)
-        if (e.callReview) ReminderStore.reviewed(e.call!!.id)
-        if (e.textReview) SmsStore.markDone(e.text!!.id, linked = false)
-        openKey = null
-        scope.offerUndo(snack, "Checked · ${e.title}", undo)
-    }
-    fun snooze(e: FuEntry, ms: Long) {
-        val c = e.call ?: return
-        val undo = undoFor(e)
-        ReminderStore.reschedule(c.id, ms, "Snoozed to")
-        openKey = null
-        scope.offerUndo(snack, "Snoozed to ${Fmt.dueLabel(ms)}", undo)
-    }
-    fun newTime(e: FuEntry, ms: Long) {
-        val undo = undoFor(e)
-        val c = e.call
-        val t = e.text
-        if (c != null && (e.callPending || e.callReview || t == null || !e.textActive)) {
-            ReminderStore.reschedule(c.id, ms, "Moved to")
-            // A new time moves the task's due date: his texts follow it (Snooze only moves your call).
-            if (!c.done) FollowUps.onNewTime(ctx, c, ms, moveTexts)
-        } else if (t != null) {
-            SmsStore.reschedule(t.id, ms)
-            if (t.taskDue > 0L) SmsStore.setTaskDue(t.id, ms, "Message updated: due ${Fmt.fullDate(ms)}")
-        }
-        moveTexts = true
-        openKey = null
-        scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}", undo)
-    }
-    fun reviewLater(e: FuEntry, ms: Long) {
-        val undo = undoFor(e)
-        if (e.callReview) ReminderStore.reviewLater(e.call!!.id, ms)
-        if (e.textReview) SmsStore.reviewLater(e.text!!.id, ms)
-        openKey = null
-        scope.offerUndo(snack, "Back in To review ${Fmt.dueLabel(ms)}", undo)
-    }
-    fun delete(e: FuEntry) {
-        val undo = undoFor(e)
-        val link = e.call?.linkId?.takeIf { it != 0L } ?: e.text?.linkId?.takeIf { it != 0L }
-        if (link != null) {
-            ReminderStore.items.value.filter { it.linkId == link }.forEach { ReminderStore.delete(it.id) }
-            SmsStore.items.value.filter { it.linkId == link }.forEach { SmsStore.delete(it.id) }
-        } else {
-            e.call?.let { ReminderStore.delete(it.id) }
-            e.text?.let { SmsStore.delete(it.id) }
-        }
-        openKey = null
-        scope.offerUndo(snack, "Deleted · ${e.title}", undo)
-    }
-    fun moveBack(e: FuEntry) {
-        val undo = undoFor(e)
-        when {
-            e.call != null -> ReminderStore.reopen(e.call.id)
-            e.text != null -> SmsStore.reopen(e.text.id)
-        }
-        openKey = null
-        scope.offerUndo(snack, "Moved back · ${e.title}", undo)
-    }
-    fun removeTime(e: FuEntry) {
-        val undo = undoFor(e)
-        val item = FollowUps.removeTime(ctx, e.call, e.text)
-        openKey = null
-        scope.offerUndo(snack, "Time removed · texts paused · in To schedule") {
-            ToScheduleStore.remove(item.id)
-            undo()
-        }
-    }
-    fun moveToMyTasks(e: FuEntry) {
-        val undo = undoFor(e)
-        val task = FollowUps.moveToMyTasks(ctx, e.call, e.text)
-        openKey = null
-        scope.offerUndo(snack, "Moved to My tasks" + if (e.text != null) " · texts cancelled" else "") {
-            MyTaskStore.delete(task.id)
-            undo()
-        }
-    }
-    fun edit(e: FuEntry) {
-        editLink = FollowUps.ensureLink(ctx, e.call, e.text)
-    }
-    fun call(e: FuEntry) {
-        val r = e.call
-        if (r != null && (r.review || (!r.done && r.dueAt <= System.currentTimeMillis()))) FollowUp.mark(ctx, r)
-        dial(ctx, e.number)
-    }
-    fun deleteItem(t: ToScheduleItem) {
-        ToScheduleStore.remove(t.id)
-        openKey = null
-        scope.offerUndo(snack, "Deleted · ${t.headline}") { ToScheduleStore.put(t) }
-    }
-    fun itemToMyTasks(t: ToScheduleItem) {
-        val task = FollowUps.moveToMyTasks(ctx, t)
-        openKey = null
-        scope.offerUndo(snack, "Moved to My tasks") { MyTaskStore.delete(task.id); ToScheduleStore.put(t) }
-    }
-    fun setTime(t: ToScheduleItem) {
-        if (t.needsDetails) editItem = t else setTimeFor = t
-    }
 
     Scaffold(
         containerColor = cs.background,
@@ -505,66 +417,35 @@ private fun FollowUpsAll(
                         overdue.isNotEmpty() && review.isNotEmpty() -> "${overdue.size} overdue · ${review.size} to review"
                         overdue.isNotEmpty() -> "${overdue.size} overdue"
                         review.isNotEmpty() -> "${review.size} to review"
-                        open.isEmpty() && noTime.isEmpty() -> "All caught up"
-                        else -> "${open.size + noTime.size} open"
+                        open.isEmpty() -> "All caught up"
+                        else -> "${open.size} open"
                     },
                     red = overdue.isNotEmpty() || review.isNotEmpty(),
                 )
             }
-            item(key = "switch") { bar() }
-            val waiting = noTime.size + myNoTime
-            if (!showDone && waiting > 0) {
-                item(key = "to-schedule") {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = cs.tertiaryContainer,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp).clickable(onClick = onOpenToSchedule)
-                    ) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Schedule, contentDescription = null, tint = cs.onTertiaryContainer)
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "To schedule ($waiting) · no time set yet",
-                                color = cs.onTertiaryContainer,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text("Open", color = cs.onTertiaryContainer, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            val row: @Composable (FuEntry, RowPos) -> Unit = { e, pos ->
-                FollowUpRow(
-                    e = e,
-                    pos = pos,
-                    now = now,
-                    expanded = openKey == e.key,
-                    onToggle = { openKey = if (openKey == e.key) null else e.key },
-                    onCall = { call(e) },
-                    onTexts = { textsFor = it },
-                    onDone = { if (e.inReview) checked(e) else done(e) },
-                    onSnooze = { snoozeFor = e },
-                    onNewTime = { newTimeFor = e },
-                    onReviewLater = { reviewLaterFor = e },
-                    onEdit = { edit(e) },
-                    onRemoveTime = { removeTime(e) },
-                    onMove = { moveToMyTasks(e) },
-                    onTimeline = { timelineFor = e },
-                    onDelete = { delete(e) },
-                    onMoveBack = { moveBack(e) },
+            item(key = "switch") {
+                FollowUpsBar(
+                    done = showDone,
+                    openCount = all.size,
+                    doneCount = finished.size,
+                    show = show,
+                    sort = sort,
+                    starredOnly = starredOnly,
+                    onDoneTab = onDoneTab,
+                    onShow = onShow,
+                    onSort = onSort,
+                    onStarred = onStarred,
                 )
             }
+            if (!showDone && waiting > 0) {
+                item(key = "to-schedule") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
+            }
+
             fun block(key: String, title: String, count: String, color: Color, list: List<FuEntry>) {
                 if (list.isEmpty()) return
-                item(key = "group-$key") { DayHeader(title, count, color) }
+                item(key = "group-$key") { Box(Modifier.animateItem()) { DayHeader(title, count, color) } }
                 itemsIndexed(list, key = { _, e -> e.key }) { i, e ->
-                    Box(
-                        Modifier
-                            .animateItem()
-                            .then(if (outlined == e.key) Modifier.border(2.5.dp, cs.primary, RoundedCornerShape(18.dp)) else Modifier)
-                    ) { row(e, rowPos(i, list.size)) }
+                    Box(Modifier.animateItem()) { fu.Card(e, rowPos(i, list.size), now, starred(e), highlighted = outlined == e.key) }
                 }
             }
 
@@ -578,11 +459,11 @@ private fun FollowUpsAll(
                     block("done-$day", RowFmt.dayTitle(day), "${list.size} done", cs.onSurfaceVariant, list)
                 }
             } else {
-                if (all.isEmpty() && noTime.isEmpty()) {
+                if (all.isEmpty()) {
                     item(key = "empty") {
                         EmptyPicture(
                             Icons.Rounded.PhoneCallback,
-                            "Nothing to follow up",
+                            if (starredOnly || show != FollowUpsUi.ALL) "Nothing here" else "Nothing to follow up",
                             "Remind yourself to call someone, text them, or both.",
                             button = "＋ Follow-up",
                             onButton = { showNew = true }
@@ -609,24 +490,6 @@ private fun FollowUpsAll(
                         }
                     }
                 }
-                if (noTime.isNotEmpty()) {
-                    item(key = "group-notime") { DayHeader("No time", "${noTime.size}", cs.onSurfaceVariant) }
-                    itemsIndexed(noTime, key = { _, t -> "notime-${t.id}" }) { i, t ->
-                        Box(Modifier.animateItem()) {
-                            NoTimeRow(
-                                t = t,
-                                pos = rowPos(i, noTime.size),
-                                expanded = openKey == "notime-${t.id}",
-                                onToggle = { openKey = if (openKey == "notime-${t.id}") null else "notime-${t.id}" },
-                                onCall = { dial(ctx, t.number) },
-                                onSetTime = { setTime(t) },
-                                onEdit = { editItem = t },
-                                onMove = { itemToMyTasks(t) },
-                                onDelete = { deleteItem(t) },
-                            )
-                        }
-                    }
-                }
             }
         }
         SlimTitleBar(listState, "Follow-ups", padding.calculateTopPadding(), Modifier.align(Alignment.TopCenter))
@@ -634,106 +497,7 @@ private fun FollowUpsAll(
     }
 
     if (showNew) FollowUpDialog(onDismiss = { showNew = false })
-    editLink?.let { link ->
-        val e = every.firstOrNull { (it.call?.linkId ?: it.text?.linkId) == link }
-        FollowUpDialog(
-            onDismiss = { editLink = null },
-            linkId = link,
-            onMoveToMyTasks = e?.takeIf { it.open }?.let { en -> { moveToMyTasks(en) } },
-        )
-    }
-    editItem?.let { t ->
-        FollowUpDialog(onDismiss = { editItem = null }, item = t, onMoveToMyTasks = { itemToMyTasks(t) })
-    }
-
-    snoozeFor?.let { e ->
-        SnoozeSheet(
-            heading = "Snooze",
-            about = e.title,
-            onPick = { ms -> snoozeFor = null; snooze(e, ms) },
-            onPickTime = { snoozeFor = null; pickTimeFor = e },
-            onDismiss = { snoozeFor = null },
-            plusRow = true
-        )
-    }
-    newTimeFor?.let { e ->
-        val hasTexts = e.call != null && !e.call.done && e.textActive
-        SnoozeSheet(
-            heading = "New time",
-            about = e.title,
-            onPick = { ms -> newTimeFor = null; newTime(e, ms) },
-            onPickTime = { newTimeFor = null; pickTimeFor = e },
-            onDismiss = { newTimeFor = null; moveTexts = true },
-            footer = if (hasTexts) ({ TextsMoveSwitch(moveTexts) { moveTexts = it } }) else null
-        )
-    }
-    pickTimeFor?.let { e ->
-        DateTimePickerFlow(
-            initialMs = maxOf(e.at, now + 60_000L),
-            onPicked = { ms -> pickTimeFor = null; newTime(e, ms) },
-            onDismiss = { pickTimeFor = null; moveTexts = true }
-        )
-    }
-    reviewLaterFor?.let { e ->
-        SnoozeSheet(
-            heading = "Review later",
-            about = e.title,
-            onPick = { ms -> reviewLaterFor = null; reviewLater(e, ms) },
-            onPickTime = { reviewLaterFor = null },
-            onDismiss = { reviewLaterFor = null },
-            plusRow = true
-        )
-    }
-    setTimeFor?.let { t ->
-        SetTimeSheet(
-            heading = "Set time",
-            about = t.headline,
-            onPick = { ms ->
-                setTimeFor = null
-                FollowUps.setTime(ctx, t, ms)
-                Toast.makeText(ctx, "Set · ${Fmt.dueLabel(ms)}", Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = { setTimeFor = null },
-        )
-    }
-    timelineFor?.let { e ->
-        val c = e.call?.let { r -> calls.firstOrNull { it.id == r.id } ?: r }
-        if (c != null) CallHistoryDialog(r = c, onDismiss = { timelineFor = null })
-        else e.text?.let { t -> HistoryDialog(r = texts.firstOrNull { it.id == t.id } ?: t, onDismiss = { timelineFor = null }) }
-    }
-    textsFor?.let { t ->
-        TextsSheet(
-            t = texts.firstOrNull { it.id == t.id } ?: t,
-            onDismiss = { textsFor = null },
-            onSendNow = { r -> textsFor = null; sendFor = r },
-            onChange = { r -> textsFor = null; editLink = FollowUps.ensureLink(ctx, null, r) },
-            onStop = { r ->
-                textsFor = null
-                val before = r
-                SmsStore.markDone(r.id, linked = false)
-                scope.offerUndo(snack, "Texts stopped") { SmsStore.restore(before) }
-            },
-        )
-    }
-
-    sendFor?.let { r ->
-        AlertDialog(
-            onDismissRequest = { sendFor = null },
-            title = { Text("Send now?") },
-            text = { Text("Sends “${r.message}” to ${r.title} now.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    sendFor = null
-                    if (!r.isBurst && SmsSender.InFlight.busy(ctx, r.id, System.currentTimeMillis())) {
-                        Toast.makeText(ctx, "Already sending this message", Toast.LENGTH_SHORT).show()
-                    } else {
-                        SmsSender.sendDue(ctx, r.id, manual = true)
-                    }
-                }) { Text("Send") }
-            },
-            dismissButton = { TextButton(onClick = { sendFor = null }) { Text("Cancel") } }
-        )
-    }
+    fu.Sheets()
 }
 
 /** The time picker in a sheet for a follow-up waiting with no time: one tap sets it. */
@@ -772,21 +536,23 @@ fun FollowUpsHeader(status: String, red: Boolean) {
 }
 
 /**
- * A follow-up as one slim row: time, the task in bold, the person, chips. Small round buttons on the chips line
- * say what it has: 📞 blue for the call, 💬 green for the texts, grey with ✓ once that part is finished, and WA
- * opens his WhatsApp chat with the reminder typed. Tapping the row opens it in place with every action.
+ * A follow-up as the My tasks card: tick = Done, the task in bold, the time box with 📞 💬 inside (red when late),
+ * the person, then 📞 WA and ★. Tapping opens it in place: the details, 🕘 New time and the links.
  */
 @Composable
-private fun FollowUpRow(
+internal fun FollowUpCard(
     e: FuEntry,
     pos: RowPos,
     now: Long,
+    ticking: Boolean,
+    starred: Boolean,
     expanded: Boolean,
+    highlighted: Boolean,
     onToggle: () -> Unit,
+    onTick: () -> Unit,
+    onStar: () -> Unit,
     onCall: () -> Unit,
     onTexts: (SmsReminder) -> Unit,
-    onDone: () -> Unit,
-    onSnooze: () -> Unit,
     onNewTime: () -> Unit,
     onReviewLater: () -> Unit,
     onEdit: () -> Unit,
@@ -794,215 +560,116 @@ private fun FollowUpRow(
     onMove: () -> Unit,
     onTimeline: () -> Unit,
     onDelete: () -> Unit,
-    onMoveBack: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val call = e.call
     val text = e.text
     val overdue = e.callPending && call!!.dueAt <= now
     val finished = !e.open
-    val noTask = call != null && call.note.isBlank() && text == null
+    val hasNumber = e.number.isNotBlank()
 
     val chips = buildList {
         if (finished) {
             when {
                 e.moved -> add(RowChip("Moved to My tasks", ChipTone.BLUE, Icons.Rounded.CheckBox))
                 text?.review == SmsReminder.Review.REPLIED || text?.log?.any { it.status == SmsLogEntry.Status.REPLIED_DONE } == true ->
-                    add(RowChip("Replied “${text!!.doneReply}”", ChipTone.GREEN, Icons.Rounded.Check))
+                    add(RowChip("replied", ChipTone.GREEN, Icons.Rounded.Check))
             }
-        } else {
-            if (overdue) add(RowChip(RowFmt.late(call!!.dueAt, now), ChipTone.RED))
-            if (e.callPending && text != null && e.textActive) add(RowChip(Fmt.timeOnly(call!!.dueAt), ChipTone.BLUE, Icons.Rounded.Call))
-        }
-        if (text != null && !finished) {
+        } else if (text != null) {
             when {
-                e.textActive -> {
-                    val base = text.baseTimes
-                    val label = when {
-                        text.groupCount > 1 -> base.filter { it >= text.nextTextAt - text.groupGapMin * 60_000L * text.groupCount }
-                            .ifEmpty { listOf(text.nextTextAt) }.joinToString(" · ") { Fmt.timeOnly(it) } + " · burst ${text.groupCount}"
-                        text.slots.isNotEmpty() -> (text.burstIndex until text.burstCount).joinToString(" · ") { Fmt.timeOnly(text.textAt(it)) }
-                        text.isBurst && text.burstIndex > 0 -> "${text.burstIndex} of ${text.burstCount} sent"
-                        text.isBurst -> text.burstLabel ?: ""
-                        else -> Fmt.timeOnly(text.alarmAt)
-                    }
-                    add(RowChip(label, ChipTone.GREEN, Icons.Rounded.Sms))
-                }
-                text.review == SmsReminder.Review.REPLIED -> add(RowChip("Replied “${text.doneReply}”", ChipTone.GREEN, Icons.Rounded.Check))
+                text.review == SmsReminder.Review.REPLIED -> add(RowChip("replied", ChipTone.GREEN, Icons.Rounded.Check))
                 text.review == SmsReminder.Review.NOT_SENT -> add(RowChip("Text not sent", ChipTone.RED))
-                text.review != null -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
+                text.review != null && !text.done -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
             }
-            if (text.tracked && text.code.isNotEmpty()) add(RowChip(text.code, ChipTone.BLUE, Icons.Rounded.Tag))
         }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
-        if (!finished && call != null && call.autopilot && text != null) add(RowChip("Autopilot", ChipTone.MUTED, Icons.Rounded.Bolt))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
-        if (call != null && call.repeatLabel != null && e.callPending) add(RowChip(call.repeatLabel!!, ChipTone.MUTED, Icons.Rounded.AutoMode))
     }
 
-    val (timeTop, timeSub) = when {
-        finished -> (if (e.moved) "Moved" else "Done") to Fmt.timeOnly(e.finishedAt)
-        e.inReview -> when {
-            e.textReview && text!!.review == SmsReminder.Review.REPLIED -> "Replied" to RowFmt.doneSub(text.reviewAt)
-            e.textReview -> (if (text!!.review == SmsReminder.Review.NOT_SENT) "Failed" else "Sent") to RowFmt.doneSub(text.reviewAt)
-            else -> "Done" to RowFmt.doneSub(call!!.doneAt)
-        }
-        else -> Fmt.timeOnly(e.at) to (if (!e.callPending && e.textActive && text!!.burstIndex > 0) "next text" else RowFmt.timeSub(e.at, now))
+    val time = when {
+        finished -> Fmt.dueLabel(e.finishedAt)
+        else -> Fmt.dueLabel(e.at)
     }
-    val hasNumber = e.number.isNotBlank()
+    val icons = when {
+        call != null && text != null -> TimeIcons.BOTH
+        call != null -> TimeIcons.CALL
+        else -> TimeIcons.TEXT
+    }
     val timelineCount = (call?.historyLines()?.size ?: 0) + (text?.log?.size ?: 0)
     val timelineLabel = if (timelineCount > 0) "Timeline ($timelineCount)" else "Timeline"
 
-    TaskRow(
-        pos = pos,
-        timeTop = timeTop,
-        timeSub = timeSub,
-        timeRed = overdue,
+    val details = buildList {
+        val parts = mutableListOf<String>()
+        if (call != null) parts += "📞 Call " + Fmt.dueLabel(if (call.done) call.doneAt else call.dueAt) + if (call.done) " (done)" else ""
+        if (text != null) {
+            val times = when {
+                !e.textActive -> if (text.done) "finished" else "all sent"
+                text.groupCount > 1 -> text.baseTimes.filter { it >= text.nextTextAt - text.groupGapMin * 60_000L * text.groupCount }
+                    .ifEmpty { listOf(text.nextTextAt) }.joinToString(", ") { Fmt.timeOnly(it) } + " · burst ${text.groupCount}"
+                text.slots.isNotEmpty() -> (text.burstIndex until text.burstCount).joinToString(", ") { Fmt.timeOnly(text.textAt(it)) }
+                text.isBurst && text.burstIndex > 0 -> "${text.burstIndex} of ${text.burstCount} sent"
+                text.isBurst -> text.burstLabel ?: Fmt.timeOnly(text.alarmAt)
+                else -> Fmt.dueLabel(text.alarmAt)
+            }
+            parts += "💬 Texts $times"
+        }
+        add(parts.joinToString(" · "))
+        val more = listOfNotNull(
+            (call?.code?.takeIf { it.isNotEmpty() } ?: text?.takeIf { it.tracked }?.code?.takeIf { it.isNotEmpty() })?.let { "# Task no. $it" },
+            call?.repeatLabel?.takeIf { e.callPending },
+            "Skip my call if ${Names.first(e.person) ?: "they"} replies".takeIf { !finished && call != null && call.autopilot && text != null },
+        )
+        if (more.isNotEmpty()) add(more.joinToString(" · "))
+        if (e.name.isNotBlank() && hasNumber) add("${e.person} · ${e.number}")
+    }
+
+    TaskCard(
         title = e.title,
-        titleStyle = when {
-            finished -> TitleStyle.DONE
-            noTask -> TitleStyle.NO_TASK
-            else -> TitleStyle.NORMAL
-        },
-        person = e.person,
-        personDetail = e.number.takeIf { e.name.isNotBlank() && it.isNotBlank() },
+        done = finished || ticking,
+        onTick = onTick,
+        tickEnabled = !(finished && e.moved),
+        time = time,
+        late = overdue,
+        timeIcons = icons,
+        person = Names.first(e.person) ?: e.person,
         chips = chips,
+        starred = starred,
+        onStar = onStar,
+        onCall = if (hasNumber && call != null) onCall else null,
+        onWhatsApp = if (hasNumber) ({
+            if (call != null) WhatsApp.forCall(ctx, call) else if (text != null) WhatsApp.forText(ctx, text)
+        }) else null,
         expanded = expanded,
         onClick = onToggle,
-        bottomActions = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (call != null) {
-                    RoundAction(
-                        Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, hasNumber,
-                        finished = !e.callPending && !e.callReview, onClick = onCall
-                    )
-                }
-                if (text != null) {
-                    RoundAction(
-                        Icons.Rounded.Sms, "Texts", cs.secondary, cs.onSecondary,
-                        finished = !e.textActive, onClick = { onTexts(text) }
-                    )
-                }
-                if (hasNumber) {
-                    WhatsAppAction {
-                        if (call != null) WhatsApp.forCall(ctx, call) else if (text != null) WhatsApp.forText(ctx, text)
-                    }
+        pos = pos,
+        highlighted = highlighted,
+    ) {
+        CardPanel(
+            details = details,
+            onNewTime = if (finished) null else onNewTime,
+            links = buildList {
+                if (finished) {
+                    add(RowLink(timelineLabel, onClick = onTimeline))
+                    add(RowLink("Delete", danger = true, onClick = onDelete))
+                } else {
+                    if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
+                    add(RowLink("Edit", onClick = onEdit))
+                    if (!e.inReview) add(RowLink("Remove time", onClick = onRemoveTime))
+                    add(RowLink("Move to My tasks", onClick = onMove))
+                    if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
+                    add(RowLink(timelineLabel, onClick = onTimeline))
+                    add(RowLink("Delete", danger = true, onClick = onDelete))
                 }
             }
-        },
-        expandedContent = {
-            when {
-                finished -> RowActions(
-                    actions = listOfNotNull(
-                        RowAction("Not done, move back", Icons.AutoMirrored.Rounded.Undo, ActionStyle.ORANGE, onMoveBack).takeIf { !e.moved },
-                        RowAction("Call again", Icons.Rounded.Replay, ActionStyle.FILLED, onCall).takeIf { hasNumber },
-                    ),
-                    links = listOf(
-                        RowLink(timelineLabel, onClick = onTimeline),
-                        RowLink("Delete", danger = true, onClick = onDelete),
-                    )
-                )
-                e.inReview -> RowActions(
-                    actions = listOfNotNull(
-                        RowAction("Call now", Icons.Rounded.Call, ActionStyle.FILLED, onCall).takeIf { hasNumber },
-                        RowAction("New time", Icons.Rounded.Schedule, ActionStyle.OUTLINED, onNewTime),
-                        RowAction("Mark done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
-                    ),
-                    links = listOf(
-                        RowLink("Review later", onClick = onReviewLater),
-                        RowLink("Edit", onClick = onEdit),
-                        RowLink("Move to My tasks", onClick = onMove),
-                        RowLink(timelineLabel, onClick = onTimeline),
-                        RowLink("Delete", danger = true, onClick = onDelete),
-                    )
-                )
-                else -> RowActions(
-                    actions = listOfNotNull(
-                        RowAction("Call", Icons.Rounded.Call, ActionStyle.FILLED, onCall).takeIf { hasNumber },
-                        RowAction("New time", Icons.Rounded.Schedule, ActionStyle.OUTLINED, onNewTime),
-                        RowAction("Done", Icons.Rounded.Check, ActionStyle.GREEN, onDone),
-                        // Snooze only once the call is due: it moves my call, not his texts.
-                        RowAction("Snooze", Icons.Rounded.Snooze, ActionStyle.OUTLINED, onSnooze).takeIf { overdue },
-                    ),
-                    links = listOf(
-                        RowLink("Edit", onClick = onEdit),
-                        RowLink("Remove time", onClick = onRemoveTime),
-                        RowLink("Move to My tasks", onClick = onMove),
-                        RowLink(timelineLabel, onClick = onTimeline),
-                        RowLink("Delete", danger = true, onClick = onDelete),
-                    )
-                )
-            }
-        },
-    )
+        )
+    }
 }
 
-/** A follow-up waiting with no time (To schedule), under "No time". */
-@Composable
-private fun NoTimeRow(
-    t: ToScheduleItem,
-    pos: RowPos,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    onCall: () -> Unit,
-    onSetTime: () -> Unit,
-    onEdit: () -> Unit,
-    onMove: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val cs = MaterialTheme.colorScheme
-    val ctx = LocalContext.current
-    val chips = buildList {
-        if (t.needsDetails) add(RowChip("Needs details", ChipTone.ORANGE, Icons.Rounded.Warning, onEdit))
-        if (t.textOn && !t.needsDetails) add(RowChip("Texts paused", ChipTone.ORANGE))
-        add(RowChip("＋ Set time", ChipTone.BLUE, onClick = onSetTime))
-    }
-    TaskRow(
-        pos = pos,
-        timeTop = "No time",
-        timeSub = null,
-        timeRed = false,
-        title = t.headline,
-        titleStyle = if (t.note.isBlank() && t.message.isBlank()) TitleStyle.NO_TASK else TitleStyle.NORMAL,
-        person = t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() },
-        personDetail = t.number.takeIf { t.name.isNotBlank() && it.isNotBlank() },
-        chips = chips,
-        expanded = expanded,
-        onClick = onToggle,
-        bottomActions = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (t.callOn && t.number.isNotBlank()) {
-                    RoundAction(Icons.Rounded.Call, "Call", cs.primary, cs.onPrimary, onClick = onCall)
-                }
-                if (t.textOn && t.number.isNotBlank()) {
-                    RoundAction(Icons.Rounded.Sms, "Texts", cs.secondary, cs.onSecondary, onClick = onEdit)
-                }
-                if (t.number.isNotBlank()) {
-                    WhatsAppAction { WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, t.code, t.headline, 0L, t.name)) }
-                }
-            }
-        },
-        expandedContent = {
-            RowActions(
-                actions = listOfNotNull(
-                    RowAction(if (t.needsDetails) "Add details" else "Set time", Icons.Rounded.Schedule, ActionStyle.FILLED, onSetTime),
-                    RowAction("Call", Icons.Rounded.Call, ActionStyle.OUTLINED, onCall).takeIf { t.number.isNotBlank() },
-                ),
-                links = listOf(
-                    RowLink("Edit", onClick = onEdit),
-                    RowLink("Move to My tasks", onClick = onMove),
-                    RowLink("Delete", danger = true, onClick = onDelete),
-                )
-            )
-        },
-    )
-}
 
 /** 💬 on a row: what was sent, what is coming (with its burst), replies, and Send next now / Change times / Stop. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TextsSheet(
+internal fun TextsSheet(
     t: SmsReminder,
     onDismiss: () -> Unit,
     onSendNow: (SmsReminder) -> Unit,

@@ -320,16 +320,14 @@ private object Screen {
     const val DAILY_WA = 29
     const val CALENDAR_SETTINGS = 30
     const val APPEARANCE = 31
+    const val MY_DAY_SETTINGS = 32
+    const val OVERDUE = 33
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
 private fun tabFor(item: WorkItem): Int = when (item.kind) {
     WorkItem.Kind.CALL -> {
-        CallsUi.tabRequest.value = when {
-            item.inReview -> CallsUi.TO_REVIEW
-            item.overdue -> CallsUi.OVERDUE
-            else -> CallsUi.TO_CALL
-        }
+        CallsUi.showRequest.value = item.id
         callsTab()
     }
     WorkItem.Kind.TEXT -> {
@@ -357,15 +355,15 @@ private object Tab {
     const val COUNT = 6
 }
 
-/** The Follow-ups tab, opened on its Calls list. */
+/** The Follow-ups tab, showing everything (a call request then picks Open or Done and scrolls to it). */
 private fun callsTab(): Int {
-    FollowUpsUi.view.value = FollowUpsUi.CALLS
+    FollowUpsUi.view.value = FollowUpsUi.ALL
     return Tab.FOLLOW_UPS
 }
 
-/** The Follow-ups tab, opened on its Texts list. */
+/** The Follow-ups tab, showing everything (a text request then picks Open or Done and scrolls to it). */
 private fun textsTab(): Int {
-    FollowUpsUi.view.value = FollowUpsUi.TEXTS
+    FollowUpsUi.view.value = FollowUpsUi.ALL
     return Tab.FOLLOW_UPS
 }
 
@@ -492,6 +490,14 @@ private fun AppRoot(
                     onOpenWhatsApp = { open(Screen.WHATSAPP_SETTINGS) },
                     onOpenCalendar = { open(Screen.CALENDAR_SETTINGS) },
                     onOpenAppearance = { open(Screen.APPEARANCE) },
+                    onOpenMyDay = { open(Screen.MY_DAY_SETTINGS) },
+                )
+                Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
+                    resumeKey = resumeKey,
+                    onBack = { back() },
+                    onOpenMorningSummary = { open(Screen.MORNING_SETTINGS) },
+                    onOpenReview = { open(Screen.REVIEW_SETTINGS) },
+                    onOpenDossier = { open(Screen.DOSSIER_SETTINGS) },
                 )
                 Screen.NOTIFICATION_SETTINGS -> NotificationSettingsScreen(onBack = { back() })
                 Screen.DAILY_LIST_SETTINGS -> DailyListSettingsScreen(onBack = { back() }, onOpenPeople = { open(Screen.PEOPLE) })
@@ -574,6 +580,7 @@ private fun AppRoot(
                 Screen.TEXT_SETTINGS -> TextMessageSettingsScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW_SETTINGS -> ReviewSettingsScreen(onBack = { back() })
                 Screen.TO_SCHEDULE -> ToScheduleScreen(onBack = { back() })
+                Screen.OVERDUE -> OverdueScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.REVIEW -> {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
                     ReviewPage(
@@ -693,7 +700,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
               CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
-                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey)
+                    Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey, onOpenToSchedule = { open(Screen.TO_SCHEDULE) })
                     Tab.FOLLOW_UPS -> FollowUpsScreen(
                         resumeKey = resumeKey,
                         onOpenTextSettings = { open(Screen.TEXT_SETTINGS) },
@@ -726,6 +733,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
+                        onOpenOverdue = { open(Screen.OVERDUE) },
                         onOpenMyTasks = { sub ->
                             MyTasksUi.tabRequest.value = sub
                             onTab(Tab.MY_TASKS)

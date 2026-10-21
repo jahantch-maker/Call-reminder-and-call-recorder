@@ -425,10 +425,12 @@ class SmsActionReceiver : BroadcastReceiver() {
 }
 
 /**
- * Hears incoming texts, only when "Stop when the person texts back the task number" is on. A text that is
- * only task numbers (8 digits like 26101104; spaces anywhere are fine, several numbers are fine) moves each of
- * that person's open tasks with those numbers to To review. A text with anything else in it (even "Done") is
- * ignored, and nothing else about incoming texts is read or kept.
+ * Hears incoming texts, only when "Stop when the person texts back the task number" is on. Only texts from a
+ * person with an open task number in them count:
+ *  - the number alone, or with a "done" word (done, ok, ho gaya, kar diya, ✓ …): that task goes to To review;
+ *  - the number with anything else ("26102003 material nahi aya"): kept as a reply to read (see [ReplyNotes]),
+ *    never taken as Done;
+ *  - no open number in it: ignored, and nothing about it is read or kept.
  */
 class SmsReplyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -446,12 +448,30 @@ class SmsReplyReceiver : BroadcastReceiver() {
 }
 
 object TaskReplies {
-    /** The task numbers in [body], or null when it holds anything but digits and spaces. */
+    /** Words that mean "done" around a task number. Longer ones first, so "ho gaya" goes before "ho". */
+    private val DONE_WORDS = listOf(
+        "kar diya", "kar dia", "kr diya", "kr dia", "kardiya", "kardia", "krdiya", "krdia",
+        "ho gaya", "ho gya", "ho gia", "hogaya", "hogya", "hogia",
+        "done", "okay", "ok", "okk", "jee", "ji",
+    )
+
+    /** The task numbers in [body], or null when it holds anything but digits, spaces and "done" words. */
     fun digitsOf(body: String): String? {
-        val t = body.trim()
+        var t = body.lowercase()
+        DONE_WORDS.forEach { w -> t = t.replace(Regex("(?<![a-z])" + Regex.escape(w) + "(?![a-z])"), " ") }
+        // Punctuation, ✓, ✅ and other emoji around the number don't change what it says.
+        t = t.filter { it.isLetterOrDigit() || it.isWhitespace() }.trim()
         if (t.isEmpty() || !t.all { it.isDigit() || it.isWhitespace() }) return null
         return t.filter { it.isDigit() }.takeIf { it.length >= 8 }
     }
+
+    /** Open task numbers written anywhere in [body] (spaces inside a number are fine). */
+    fun numbersIn(body: String, open: Set<String>): List<String> =
+        Regex("\\d[\\d ]*\\d").findAll(body).toList().flatMap { m ->
+            val digits = m.value.filter { it.isDigit() }
+            if (digits.length < 8) emptyList()
+            else split(digits, open) ?: open.filter { digits.contains(it) }
+        }.distinct()
 
     /** Cuts [digits] into numbers from [open], all of it; null when some part isn't one of them. */
     fun split(digits: String, open: Set<String>): List<String>? {
@@ -474,9 +494,15 @@ object TaskReplies {
     }
 
     fun handle(ctx: Context, from: String, body: String) {
-        val digits = digitsOf(body) ?: return
-        val codes = split(digits, openCodes(ctx, from)) ?: return
-        codes.forEach { close(ctx, from, it) }
+        val open = openCodes(ctx, from)
+        if (open.isEmpty()) return
+        val codes = digitsOf(body)?.let { split(it, open) }
+        if (codes != null) {
+            codes.forEach { ReplyNotes.clear(ctx, it); close(ctx, from, it) }
+            return
+        }
+        // More than a "done": keep it for you to read, never as Done.
+        numbersIn(body, open).forEach { ReplyNotes.add(ctx, from, it, body.trim()) }
     }
 
     private fun close(ctx: Context, from: String, code: String) {

@@ -135,6 +135,7 @@ object NotifIds {
     fun dossierBefore(id: Long) = 33_000_000 + id.toInt()
     fun replied(id: Long) = 34_000_000 + id.toInt()
     fun dailyList(key: String) = 35_000_000 + (key.hashCode() and 0xFFFF)
+    fun replyNote(code: String) = 36_000_000 + (code.hashCode() and 0xFFFF)
     /** "N follow-ups came due while your phone was off". */
     const val MISSED_WHILE_OFF = 1_099_500
 }

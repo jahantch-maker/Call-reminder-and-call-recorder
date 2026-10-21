@@ -81,6 +81,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.animation.animateContentSize
 
 // Each has a light and a dark version, so the Review pages read well in both modes.
 private val LateRed: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
@@ -103,6 +105,7 @@ object ReviewActions {
     }
 
     fun done(ctx: android.content.Context, item: ReviewItem) {
+        ReplyNotes.clear(ctx, item.code)
         when (item.kind) {
             ReviewItem.Kind.CALL -> ReminderStore.markDone(item.id)
             ReviewItem.Kind.CALL_REVIEW -> ReminderStore.reviewed(item.id)
@@ -130,6 +133,7 @@ object ReviewActions {
 
     /** [reason] is the optional "Why not done?", kept in his history. */
     fun newTime(ctx: android.content.Context, item: ReviewItem, ms: Long, reason: String = "") {
+        ReplyNotes.clear(ctx, item.code)
         when (item.kind) {
             ReviewItem.Kind.CALL -> {
                 val before = ReminderStore.get(item.id) ?: return
@@ -275,6 +279,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     }
                 }
                 items(list, key = { "${sec.key}-${it.key}" }) { item ->
+                    Box(Modifier.animateItem()) {
                     ReviewRow(
                         item = item,
                         now = now,
@@ -286,6 +291,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                         onNewTime = { newTimeFor = item },
                         onDetails = { editFor = ToScheduleStore.items.value.firstOrNull { it.id == item.id } },
                     )
+                    }
                 }
             }
         }
@@ -1095,7 +1101,14 @@ private fun CountBox(n: String, label: String, color: Color, modifier: Modifier)
 
 /** Home's Review card under search: count, breakdown, ▶ Start review and Open; Resume / End while a session waits. */
 @Composable
-fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onResume: () -> Unit) {
+fun ReviewHomeCard(
+    resumeKey: Int,
+    onStart: () -> Unit,
+    onOpen: () -> Unit,
+    onResume: () -> Unit,
+    onOpenOverdue: () -> Unit = onOpen,
+    onOpenToSchedule: () -> Unit = onOpen,
+) {
     val ctx = LocalContext.current
     val s by ReviewSession.state.collectAsState()
     val calls by ReminderStore.items.collectAsState()
@@ -1104,85 +1117,87 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
     val mine by MyTaskStore.items.collectAsState()
     LaunchedEffect(resumeKey) { ReviewSession.init(ctx) }
     val counts = remember(calls, texts, sched, mine, resumeKey) { ReviewData.shownCounts(ctx) }
-    // The red number is what "Start review" goes through; shown sections left out of the session
-    // (like "Still due today") stay in the plain line under it only.
+    fun count(g: ReviewPrefs.Group) = counts.filter { ReviewPrefs.groupOf(it.first) == g }.sumOf { it.second }
+    val replied = count(ReviewPrefs.Group.REPLIED)
+    val overdue = count(ReviewPrefs.Group.OVERDUE)
+    val schedule = count(ReviewPrefs.Group.SCHEDULE)
+    val all = replied + overdue + schedule
+    // "Start review" goes through the parts switched on in Settings › Review.
     val total = remember(counts) { counts.filter { ReviewPrefs.session(ctx, it.first) }.sumOf { it.second } }
+    val cs = MaterialTheme.colorScheme
+    val dark = LocalDarkTheme.current
 
-    if (s.active) {
-        Surface(shape = RoundedCornerShape(20.dp), color = PausedBg, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+    Surface(shape = RoundedCornerShape(20.dp), color = cs.surface, shadowElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp).animateContentSize(androidx.compose.animation.core.tween(220)),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onOpen)) {
+                Text("✋ Needs you", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                if (all > 0) {
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        if (s.status == ReviewSession.Status.PAUSED) "⏸ Continue review · ${s.total - s.handled} left" else "▶ Review session running",
-                        color = PausedFg, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f)
+                        "$all",
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(cs.error).padding(horizontal = 7.dp, vertical = 1.dp)
                     )
-                    Text("${s.handled} / ${s.total}", color = PausedFg, fontWeight = FontWeight.Bold)
                 }
-                remember(s) { ReviewSession.nextName(ctx) }?.let { Text("Next: $it", color = PausedFg.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { ReviewSession.resume(ctx); onResume() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk)
-                    ) { Text("▶ Continue", fontWeight = FontWeight.Bold) }
-                    OutlinedButton(onClick = { ReviewSession.clear(ctx) }, modifier = Modifier.weight(1f)) { Text("End", color = PausedFg) }
+                Spacer(Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val green = if (dark) Color(0xFF173D33) to Color(0xFF7FE0C2) else Color(0xFFDDF5EC) to Color(0xFF0B6B55)
+                val red = if (dark) Color(0xFF4A1E24) to Color(0xFFFF9AA4) else Color(0xFFFFE1E3) to Color(0xFFA61B2B)
+                val amber = Tones.amber.bg to Tones.amber.fg
+                NeedTile(replied, "Replied,\ncheck it", green, Modifier.weight(1f), onOpen)
+                NeedTile(overdue, "Overdue", red, Modifier.weight(1f), onOpenOverdue)
+                NeedTile(schedule, "To\nschedule", amber, Modifier.weight(1f), onOpenToSchedule)
+            }
+            val paused = s.active && s.status == ReviewSession.Status.PAUSED
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = {
+                        when {
+                            paused -> { ReviewSession.resume(ctx); onResume() }
+                            s.active -> onResume()
+                            else -> onStart()
+                        }
+                    },
+                    enabled = s.active || total > 0,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = if (s.active) ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk) else ButtonDefaults.buttonColors(),
+                ) {
+                    Text(
+                        when {
+                            paused -> "▶ Continue · ${s.total - s.handled} left"
+                            s.active -> "▶ Review running · ${s.handled}/${s.total}"
+                            total > 0 -> "▶ Start review · $total"
+                            else -> "Nothing to review"
+                        },
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                androidx.compose.animation.AnimatedVisibility(visible = s.active) {
+                    TextButton(onClick = { ReviewSession.clear(ctx) }) { Text("End", color = cs.onSurfaceVariant) }
                 }
             }
         }
-        return
     }
-    // The accent gradient card. Deeper in dark mode so white text stays readable.
-    val cs = MaterialTheme.colorScheme
-    val dark = LocalDarkTheme.current
-    val g1 = if (dark) androidx.compose.ui.graphics.lerp(cs.primary, Color.Black, 0.35f) else cs.primary
-    val g2 = if (dark) androidx.compose.ui.graphics.lerp(LocalAccent2.current, Color.Black, 0.3f) else LocalAccent2.current
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(22.dp),
-        color = Color.Transparent,
-        shadowElevation = 4.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            Modifier
-                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(g1, g2)))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📋 Review", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                if (total > 0) {
-                    Text(
-                        "$total",
-                        color = cs.error,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color.White).padding(horizontal = 8.dp, vertical = 1.dp)
-                    )
-                }
+}
+
+/** One coloured tile on Needs you: the count and what it is; tap opens that list. */
+@Composable
+private fun NeedTile(n: Int, label: String, colors: Pair<Color, Color>, modifier: Modifier, onClick: () -> Unit) {
+    val (bg, fg) = colors
+    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = bg, contentColor = fg, modifier = modifier.height(48.dp)) {
+        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.animation.AnimatedContent(n, label = "needCount") { v ->
+                Text("$v", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
             }
-            Text(
-                counts.filter { it.second > 0 }.joinToString(" · ") { (sec, n) -> "$n ${sec.title.lowercase()}" }.ifBlank { "Nothing waiting" },
-                color = Color.White.copy(alpha = 0.9f),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onStart,
-                    enabled = total > 0,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = g1,
-                        disabledContainerColor = Color.White.copy(alpha = 0.35f),
-                        disabledContentColor = Color.White.copy(alpha = 0.8f)
-                    )
-                ) { Text("▶ Start review", fontWeight = FontWeight.Bold) }
-                OutlinedButton(
-                    onClick = onOpen,
-                    modifier = Modifier.weight(1f),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f))
-                ) { Text("Open", color = Color.White, fontWeight = FontWeight.Bold) }
-            }
+            Spacer(Modifier.width(6.dp))
+            Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
         }
     }
 }
@@ -1193,78 +1208,17 @@ fun ReviewHomeCard(resumeKey: Int, onStart: () -> Unit, onOpen: () -> Unit, onRe
 @Composable
 fun ReviewSectionsSettings() {
     val ctx = LocalContext.current
-    val density = LocalDensity.current
-    var order by remember { mutableStateOf(ReviewPrefs.order(ctx)) }
     var tick by remember { mutableIntStateOf(0) }
-    var dragging by remember { mutableStateOf<ReviewSection?>(null) }
-    var offset by remember { mutableFloatStateOf(0f) }
-    val rowH = 96.dp
-    val rowPx = with(density) { rowH.toPx() }
-
-    SectionCard(
-        title = "Sections",
-        subtitle = "Show = on the Review page. Session = included in \"Start review\". Drag ≡ to reorder. " +
-            "The 1 PM / 6 PM popup and the Home card count only the shown ones."
-    ) {
-        Column {
-            order.forEach { sec ->
-                val isDrag = dragging == sec
-                androidx.compose.runtime.key(sec) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(rowH)
-                            .zIndex(if (isDrag) 1f else 0f)
-                            .graphicsLayer { translationY = if (isDrag) offset else 0f }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (isDrag) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Rounded.DragHandle,
-                                    contentDescription = "Drag to reorder",
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .padding(6.dp)
-                                        .pointerInput(sec) {
-                                            detectDragGestures(
-                                                onDragStart = { dragging = sec; offset = 0f },
-                                                onDragEnd = { dragging = null; offset = 0f; ReviewPrefs.setOrder(ctx, order) },
-                                                onDragCancel = { dragging = null; offset = 0f },
-                                                onDrag = { change, d ->
-                                                    change.consume()
-                                                    offset += d.y
-                                                    val idx = order.indexOf(sec)
-                                                    val target = (idx + (offset / rowPx).roundToInt()).coerceIn(0, order.lastIndex)
-                                                    if (target != idx) {
-                                                        order = order.toMutableList().apply { removeAt(idx); add(target, sec) }
-                                                        offset -= (target - idx) * rowPx
-                                                    }
-                                                }
-                                            )
-                                        }
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Text("${sec.emoji} ${sec.title}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val show = remember(tick) { ReviewPrefs.show(ctx, sec) }
-                                        val ses = remember(tick) { ReviewPrefs.session(ctx, sec) }
-                                        Text("Show", style = MaterialTheme.typography.bodySmall)
-                                        Switch(checked = show, onCheckedChange = { ReviewPrefs.setShow(ctx, sec, it); tick++ },
-                                            modifier = Modifier.padding(horizontal = 6.dp))
-                                        Text("Session", style = MaterialTheme.typography.bodySmall)
-                                        Switch(checked = ses, enabled = show, onCheckedChange = { ReviewPrefs.setSession(ctx, sec, it); tick++ },
-                                            modifier = Modifier.padding(horizontal = 6.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
+    SectionCard(title = "In Start review", subtitle = "Always in this order. Turn off what you don't want in the session.") {
+        ReviewPrefs.Group.values().forEachIndexed { i, g ->
+            if (i > 0) HorizontalDivider()
+            val on = remember(tick) { ReviewPrefs.inSession(ctx, g) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${g.emoji} ${g.title}", style = MaterialTheme.typography.bodyLarge)
+                    Text(g.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Switch(checked = on, onCheckedChange = { ReviewPrefs.setInSession(ctx, g, it); tick++ })
             }
         }
     }

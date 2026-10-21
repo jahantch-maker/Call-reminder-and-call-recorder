@@ -252,9 +252,23 @@ object ReminderStore {
     @Synchronized
     fun postpone(id: Long, newDueAt: Long, reason: String) {
         val cur = get(id) ?: return
-        val entry = Delay(System.currentTimeMillis(), cur.dueAt, newDueAt, reason.trim())
-        save(_items.value.map { if (it.id == id) it.copy(delays = it.delays + entry) else it })
-        reschedule(id, newDueAt, logAs = null)
+        // Only a move after the due time has passed counts as Delayed; moving it earlier on is just planning.
+        if (cur.dueAt <= System.currentTimeMillis()) {
+            val entry = Delay(System.currentTimeMillis(), cur.dueAt, newDueAt, reason.trim())
+            save(_items.value.map { if (it.id == id) it.copy(delays = it.delays + entry) else it })
+        }
+        reschedule(id, newDueAt, logAs = if (cur.dueAt <= System.currentTimeMillis()) null else "Moved to")
+    }
+
+    /** New time from a card: moves it, and counts Delayed only when its due time had already passed. */
+    @Synchronized
+    fun newTime(id: Long, newDueAt: Long) {
+        val cur = get(id) ?: return
+        if (!cur.done && cur.dueAt <= System.currentTimeMillis()) {
+            val entry = Delay(System.currentTimeMillis(), cur.dueAt, newDueAt, "")
+            save(_items.value.map { if (it.id == id) it.copy(delays = it.delays + entry) else it })
+        }
+        reschedule(id, newDueAt, "Moved to")
     }
 
     /**

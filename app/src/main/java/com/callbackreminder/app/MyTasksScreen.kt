@@ -106,6 +106,9 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import androidx.compose.runtime.key
+import androidx.compose.runtime.SideEffect
+import androidx.compose.animation.core.MutableTransitionState
 
 /** Which list My tasks shows; a notification can ask for one. */
 object MyTasksUi {
@@ -127,7 +130,7 @@ private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault(
 
 /** Refreshes "overdue" and "was due" labels while a screen is open. */
 @Composable
-private fun rememberNow(resumeKey: Int): Long {
+internal fun rememberNow(resumeKey: Int): Long {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -141,9 +144,10 @@ private fun rememberNow(resumeKey: Int): Long {
 
 /** The My tasks tab: your Tasks in lists (like Google Tasks), and the Dossier you tick every day. */
 @Composable
-fun MyTasksScreen(resumeKey: Int) {
+fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     val ctx = LocalContext.current
     val tasks by MyTaskStore.items.collectAsState()
+    val toSchedule by ToScheduleStore.items.collectAsState()
     val lists by MyTaskStore.lists.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
@@ -219,11 +223,16 @@ fun MyTasksScreen(resumeKey: Int) {
     // then is it marked done; marking it at once moved it out of the list before anything could be seen.
     var ticking by remember { mutableStateOf(setOf<Long>()) }
     var leaving by remember { mutableStateOf(setOf<Long>()) }
+    // Tapping a card opens it in place (details, New time and the links); tapping again closes it.
+    var openTask by rememberSaveable { mutableStateOf<Long?>(null) }
+    var newTimeFor by remember { mutableStateOf<MyTask?>(null) }
+    var newPickFor by remember { mutableStateOf<MyTask?>(null) }
     fun tick(t: MyTask) {
         val before = t
         if (t.done) {
+            Arrivals.arrive("mt-${t.id}")
             MyTaskStore.setDone(t.id, false)
-            scope.offerUndo(snack, "Not done · ${t.title}") { MyTaskStore.restore(before) }
+            scope.offerUndo(snack, "Not done · ${t.title}") { Arrivals.arrive("mt-${t.id}"); MyTaskStore.restore(before) }
             return
         }
         if (t.id in ticking) return
@@ -235,12 +244,14 @@ fun MyTasksScreen(resumeKey: Int) {
             MyTaskStore.setDone(t.id, true)
             ticking = ticking - t.id
             leaving = leaving - t.id
-            scope.offerUndo(snack, "Done · ${t.title}") { MyTaskStore.restore(before) }
+            // Undo brings it back with the same slide, not in one jump.
+            scope.offerUndo(snack, "Done · ${t.title}") { Arrivals.arrive("mt-${t.id}"); MyTaskStore.restore(before) }
         }
     }
     fun deleteTask(t: MyTask) {
+        if (openTask == t.id) openTask = null
         MyTaskStore.delete(t.id)
-        scope.offerUndo(snack, "Deleted · ${t.title}") { MyTaskStore.restore(t) }
+        scope.offerUndo(snack, "Deleted · ${t.title}") { Arrivals.arrive("mt-${t.id}"); MyTaskStore.restore(t) }
     }
     fun dossierTick(t: DossierTask) {
         val rec = records[DossierStore.key(t.id, day)]
@@ -265,31 +276,42 @@ fun MyTasksScreen(resumeKey: Int) {
 
     @Composable
     fun row(t: MyTask, showList: Boolean, handle: Modifier? = null) {
-        androidx.compose.animation.AnimatedVisibility(
-            visible = t.id !in leaving,
-            enter = androidx.compose.animation.EnterTransition.None,
-            exit = androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { it / 3 } +
-                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(240)) +
-                androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(280)),
-        ) {
-        GTaskRow(
-            t = t,
-            finishing = t.id in ticking,
-            now = now,
-            listName = if (showList) MyTaskStore.listName(t.listId) else null,
-            highlighted = t.id == highlightId,
-            handle = handle,
-            onTick = { tick(t) },
-            onStar = { MyTaskStore.setStar(t.id, !t.starred) },
-            onOpen = { editTask = t },
-            onRemoveTime = {
-                val before = t
-                MyTaskStore.edit(t.id, t.title, t.note, 0L, t.name, t.number, remindBefore = emptyList())
-                scope.offerUndo(snack, "Time removed · in To schedule") { MyTaskStore.restore(before) }
-            },
-            onMoveToFollowUps = { moveFor = t },
-            onDelete = { deleteTask(t) },
-        )
+        key(t.id) {
+            // Comes in with a slide when it returns (Undo, Not done); leaves with one when ticked.
+            val state = remember { MutableTransitionState("mt-${t.id}" !in Arrivals.keys.value) }
+            LaunchedEffect(Unit) { Arrivals.seen("mt-${t.id}") }
+            SideEffect { state.targetState = t.id !in leaving }
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = state,
+                enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(280)) +
+                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(280)) +
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it / 3 },
+                exit = androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { it / 3 } +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(240)) +
+                    androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(280)),
+            ) {
+                MyTaskCard(
+                    t = t,
+                    finishing = t.id in ticking,
+                    now = now,
+                    listName = if (showList) MyTaskStore.listName(t.listId) else null,
+                    highlighted = t.id == highlightId,
+                    handle = handle,
+                    expanded = openTask == t.id,
+                    onToggle = { openTask = if (openTask == t.id) null else t.id },
+                    onTick = { tick(t) },
+                    onStar = { MyTaskStore.setStar(t.id, !t.starred) },
+                    onEdit = { editTask = t },
+                    onNewTime = { newTimeFor = t },
+                    onRemoveTime = {
+                        val before = t
+                        MyTaskStore.edit(t.id, t.title, t.note, 0L, t.name, t.number, remindBefore = emptyList())
+                        scope.offerUndo(snack, "Time removed · in To schedule") { MyTaskStore.restore(before) }
+                    },
+                    onMoveToFollowUps = { moveFor = t },
+                    onDelete = { deleteTask(t) },
+                )
+            }
         }
     }
 
@@ -349,6 +371,8 @@ fun MyTasksScreen(resumeKey: Int) {
             }
 
             if (sub == MyTasksUi.ONE_TIME) {
+                val waiting = toSchedule.size + tasks.count { !it.done && !it.timed }
+                if (waiting > 0) item(key = "waiting") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
                 item(key = "lists") {
                     ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
                 }
@@ -479,6 +503,7 @@ fun MyTasksScreen(resumeKey: Int) {
                     }
                 }
                 items(todays, key = { "d${it.id}" }) { t ->
+                    Box(Modifier.animateItem()) {
                     DossierRow(
                         t = t,
                         day = day,
@@ -493,6 +518,7 @@ fun MyTasksScreen(resumeKey: Int) {
                         onStar = { DossierStore.setStar(t.id, !t.starred) },
                         highlighted = -t.id == highlightId,
                     )
+                    }
                 }
                 if (notToday.isNotEmpty()) {
                     item(key = "not-today") {
@@ -505,6 +531,7 @@ fun MyTasksScreen(resumeKey: Int) {
                         )
                     }
                     items(notToday, key = { "n${it.id}" }) { t ->
+                        Box(Modifier.animateItem()) {
                         DossierRow(
                             t = t,
                             day = day,
@@ -520,6 +547,7 @@ fun MyTasksScreen(resumeKey: Int) {
                             onStar = { DossierStore.setStar(t.id, !t.starred) },
                             highlighted = -t.id == highlightId,
                         )
+                        }
                     }
                 }
             }
@@ -562,6 +590,33 @@ fun MyTasksScreen(resumeKey: Int) {
     moveFor?.let { t -> FollowUpDialog(onDismiss = { moveFor = null }, fromMyTask = t) }
     editDossier?.let { t -> DossierTaskDialog(existing = t, onDismiss = { editDossier = null }, onSwitchKind = null) }
 
+    newTimeFor?.let { t ->
+        SnoozeSheet(
+            heading = "New time",
+            about = t.title,
+            onPick = { ms ->
+                newTimeFor = null
+                openTask = null
+                MyTaskStore.setDue(t.id, ms)
+                scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { MyTaskStore.restore(t) }
+            },
+            onPickTime = { newTimeFor = null; newPickFor = t },
+            onDismiss = { newTimeFor = null },
+            plusRow = true
+        )
+    }
+    newPickFor?.let { t ->
+        DateTimePickerFlow(
+            initialMs = maxOf(t.dueAt, System.currentTimeMillis() + 60_000L),
+            onPicked = { ms ->
+                newPickFor = null
+                openTask = null
+                MyTaskStore.setDue(t.id, ms)
+                scope.offerUndo(snack, "Moved to ${Fmt.dueLabel(ms)}") { MyTaskStore.restore(t) }
+            },
+            onDismiss = { newPickFor = null }
+        )
+    }
     whyFor?.let { t ->
         WhyNotSheet(t = t, day = day, rec = records[DossierStore.key(t.id, day)], onDismiss = { whyFor = null })
     }
@@ -633,33 +688,8 @@ private fun HintText(text: String) {
 /** One-time / Dossier switch, used on the tab and in the New task window. */
 @Composable
 private fun KindTabs(selected: Int, oneTimeLabel: String, dossierLabel: String, onSelect: (Int) -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(Modifier.padding(4.dp)) {
-            listOf(MyTasksUi.ONE_TIME to oneTimeLabel, MyTasksUi.DOSSIER to dossierLabel).forEach { (kind, label) ->
-                val on = kind == selected
-                Surface(
-                    onClick = { onSelect(kind) },
-                    shape = RoundedCornerShape(11.dp),
-                    color = if (on) MaterialTheme.colorScheme.surface else Color.Transparent,
-                    shadowElevation = if (on) 1.dp else 0.dp,
-                    modifier = Modifier.weight(1f).height(40.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            label,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                            color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-        }
-    }
+    val kinds = listOf(MyTasksUi.ONE_TIME, MyTasksUi.DOSSIER)
+    BoxTabs(listOf(oneTimeLabel, dossierLabel), kinds.indexOf(selected).coerceAtLeast(0), { onSelect(kinds[it]) })
 }
 
 /** The round tick box. Ticking fills it with a soft pop, draws the check in and gives a light buzz. */
