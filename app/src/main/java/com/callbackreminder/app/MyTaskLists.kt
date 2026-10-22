@@ -215,6 +215,7 @@ internal fun MyTaskCard(
             },
             late = overdue,
             person = if (t.hasPerson) Names.first(t.personTitle) ?: t.personTitle else null,
+            chips = listOfNotNull(Held.label(Held.countMine(ctx, t.id))?.takeIf { !t.done }?.let { RowChip(it, ChipTone.ORANGE) }),
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,

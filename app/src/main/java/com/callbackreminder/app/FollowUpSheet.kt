@@ -254,7 +254,7 @@ fun FollowUpSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
-            ShortTimeRow(selected = null, plusRow = true, dialogTitle = "New time", onPick = { moveTo(it) })
+            ShortTimeRow(selected = null, plusRow = true, dialogTitle = "New time", onPick = { moveTo(it) }, sameBase = task.dueAt)
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = { showPicker = true }) {
                 Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -531,7 +531,7 @@ fun TextFollowUpSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
-                ShortTimeRow(selected = null, plusRow = true, dialogTitle = "Call again at", onPick = { callLater(it) })
+                ShortTimeRow(selected = null, plusRow = true, dialogTitle = "Call again at", onPick = { callLater(it) }, sameBase = task.taskDue.takeIf { it > 0L } ?: task.dueAt)
                 Spacer(Modifier.height(6.dp))
                 TextButton(onClick = { showPicker = true }) {
                     Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))

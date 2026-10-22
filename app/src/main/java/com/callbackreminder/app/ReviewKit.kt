@@ -315,6 +315,8 @@ object ReviewSession {
         val pausedAt: Long = 0L,
         val remindAt: Long = 0L,
         val day: String = "",
+        /** Which of the 4 parts each queued item belongs to (see [PARTS]), so the bars still count it once it's done. */
+        val parts: Map<String, Int> = emptyMap(),
     ) {
         val current: String? get() = queue.getOrNull(pos)
         val total: Int get() = queue.size
@@ -352,6 +354,10 @@ object ReviewSession {
                 pausedAt = s.getLong("pausedAt", 0L),
                 remindAt = s.getLong("remindAt", 0L),
                 day = s.getString("day", "")!!,
+                parts = list("parts").mapNotNull { e ->
+                    val k = e.substringBeforeLast('=', "")
+                    e.substringAfterLast('=').toIntOrNull()?.let { n -> k to n }
+                }.filter { it.first.isNotBlank() }.toMap(),
             )
         }
         // A new day: what was left goes first into the next review (never dropped), then a fresh start.
@@ -382,6 +388,7 @@ object ReviewSession {
             .putLong("pausedAt", s.pausedAt)
             .putLong("remindAt", s.remindAt)
             .putString("day", s.day)
+            .putString("parts", s.parts.entries.joinToString(",") { "${it.key}=${it.value}" })
             .commit()
     }
 
@@ -397,17 +404,38 @@ object ReviewSession {
      * come first, oldest first, then everything else that is waiting now.
      */
     fun start(ctx: Context, mode: String): Boolean {
-        val items = ReviewData.queue(ctx, mode).map { it.key }
+        val found = ReviewData.queue(ctx, mode)
+        val parts = found.associate { it.key to partOf(it.section) }
+        val items = found.map { it.key }
         val fresh = items.toSet()
         val left = (carry(ctx) + leftovers(init(ctx))).distinct().filter { it in fresh }
-        val queue = left + items.filter { it !in left }
+        // Part by part (left-overs first inside each part), so each part's bar fills in one go.
+        val queue = (left + items.filter { it !in left }).sortedBy { parts[it] ?: 0 }
         if (queue.isEmpty()) return false
         cancelReminder(ctx)
         ReviewReminder.cancelSnooze(ctx)
         setCarry(ctx, emptyList())
-        set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today()))
+        set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today(), parts = parts))
         return true
     }
+
+    /** The 4 parts of a session, in order: emoji and name. */
+    val PARTS = listOf("✅" to "Replied", "🔴" to "Late follow-ups", "☑" to "Late My tasks", "🕘" to "To schedule")
+
+    fun partOf(section: ReviewSection): Int = when (section) {
+        ReviewSection.REPLIED -> 0
+        ReviewSection.OVERDUE, ReviewSection.DUE_TODAY -> 1
+        ReviewSection.MY_LATE -> 2
+        ReviewSection.SCHED_FU, ReviewSection.SCHED_MY -> 3
+    }
+
+    /** Per part: how many are behind you and how many there are, for the bars at the top. */
+    fun partCounts(s: State): List<Pair<Int, Int>> = PARTS.indices.map { i ->
+        val keys = s.queue.withIndex().filter { (s.parts[it.value] ?: 0) == i }
+        keys.count { it.index < s.pos } to keys.size
+    }
+
+    fun currentPart(s: State): Int = s.current?.let { s.parts[it] } ?: 0
 
     /** Moves past items that were finished elsewhere meanwhile. Ends when nothing is left. */
     fun current(ctx: Context): ReviewItem? {
@@ -522,8 +550,11 @@ object ReviewSession {
         if (s.status != Status.PAUSED) return
         cancelReminder(ctx)
         // What became due while paused joins at the end, so your place doesn't jump.
-        val added = ReviewData.queue(ctx, s.mode).map { it.key }.filter { it !in s.queue }
-        set(ctx, s.copy(status = Status.RUNNING, queue = s.queue + added, pausedAt = 0L, remindAt = 0L))
+        val added = ReviewData.queue(ctx, s.mode).filter { it.key !in s.queue }
+        set(ctx, s.copy(
+            status = Status.RUNNING, queue = s.queue + added.map { it.key }, pausedAt = 0L, remindAt = 0L,
+            parts = s.parts + added.associate { it.key to partOf(it.section) },
+        ))
     }
 
     fun remindLater(ctx: Context, minutes: Int = 15) {
@@ -635,6 +666,39 @@ object ReviewSession {
             .setAutoCancel(true)
             .setContentIntent(openIntent(ctx, REQ_REMIND + 6, resume = true))
         NotificationManagerCompat.from(ctx).notify(NOTIF_ID + 1, b.build())
+    }
+}
+
+/**
+ * How often a task was pushed on in review (a new time on a late one, Tomorrow same time or Leave for now at the
+ * end). From 3 the task shows an orange "Held N×" tag, so the ones you keep avoiding stand out.
+ */
+object Held {
+    const val SHOW_FROM = 3
+    private fun p(c: Context) = c.applicationContext.getSharedPreferences("review_held", Context.MODE_PRIVATE)
+
+    /** One name per task, whichever list it is in (a replied call and its late call are the same task). */
+    fun key(item: ReviewItem): String = when (item.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> "c:${item.id}"
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> "t:${item.id}"
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> "m:${item.id}"
+        ReviewItem.Kind.SCHED_FU -> "s:${item.id}"
+    }
+
+    fun count(c: Context, item: ReviewItem): Int = p(c).getInt(key(item), 0)
+    fun countCall(c: Context, id: Long): Int = p(c).getInt("c:$id", 0)
+    fun countText(c: Context, id: Long): Int = p(c).getInt("t:$id", 0)
+    fun countMine(c: Context, id: Long): Int = p(c).getInt("m:$id", 0)
+
+    /** The tag text, or null below [SHOW_FROM]. */
+    fun label(n: Int): String? = if (n >= SHOW_FROM) "Held ${n}×" else null
+
+    /** One more push; the returned Undo takes it back. */
+    fun push(c: Context, item: ReviewItem): () -> Unit {
+        val k = key(item)
+        val before = p(c).getInt(k, 0)
+        p(c).edit().putInt(k, before + 1).apply()
+        return { p(c).edit().putInt(k, before).apply() }
     }
 }
 

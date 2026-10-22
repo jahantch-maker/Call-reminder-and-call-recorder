@@ -428,9 +428,10 @@ object MyTaskStore {
 
     /** Sets (or clears, with 0) the time, e.g. "Set time" in To review. */
     @Synchronized
-    fun setDue(id: Long, dueAt: Long) {
+    fun setDue(id: Long, dueAt: Long, reason: String = "") {
         val old = get(id) ?: return
-        val t = old.copy(dueAt = dueAt, events = old.events + listOfNotNull(timeEvent(old.dueAt, dueAt)))
+        val why = reason.trim().takeIf { it.isNotEmpty() }?.let { TaskEvent(System.currentTimeMillis(), "Why not done: $it") }
+        val t = old.copy(dueAt = dueAt, events = old.events + listOfNotNull(timeEvent(old.dueAt, dueAt), why))
         save(_items.value.map { if (it.id == id) t else it })
         TaskAlarms.cancelTaskNotification(appCtx, id)
         if (!t.done) TaskAlarms.scheduleTask(appCtx, t)
