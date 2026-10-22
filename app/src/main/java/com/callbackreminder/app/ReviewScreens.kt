@@ -83,6 +83,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.rounded.Person
 
 // Each has a light and a dark version, so the Review pages read well in both modes.
 private val LateRed: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFF8A80) else Color(0xFFC62828)
@@ -150,7 +152,7 @@ object ReviewActions {
                     SmsStore.addLog(item.id, SmsLogEntry(System.currentTimeMillis(), SmsLogEntry.Status.MARKED_NOT_DONE, "Why not done: ${reason.trim()}"))
                 }
             }
-            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.setDue(item.id, ms)
+            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.setDue(item.id, ms, reason)
             ReviewItem.Kind.SCHED_FU -> {
                 val t = ToScheduleStore.items.value.firstOrNull { it.id == item.id } ?: return
                 val ready = if (!t.callOn && !t.textOn) t.copy(callOn = true) else t
@@ -424,11 +426,11 @@ private fun ReviewChip(text: String) {
 // ---------------------------------------------------------------- Session
 
 /**
- * The review session, one item at a time: calls get the Next card (Call / WhatsApp / Done / New time; you tap
- * each call and your usual after-call popup follows), the rest a card with buttons that fit. Back pauses it.
- * Every Done and every time set here offers Undo for a few seconds.
+ * The review session, one task at a time, in 4 parts (Replied, Late follow-ups, Late My tasks, To schedule), each
+ * with its own bar at the top. Up next on top, the task card at the bottom: its text grows upward, while the quick
+ * times, the one bar (✓ Done · 🕘 New time · 📞 Call · WA) and Skip stay in the same spot for every task.
+ * Back pauses it. Every Done and every time set here offers Undo just above the card.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -469,25 +471,35 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
         tick++
     }
     val item = remember(s, calls, texts, sched, mine, tick) { if (s.status == ReviewSession.Status.RUNNING) ReviewSession.current(ctx) else null }
-    val upNext = remember(s, calls, texts, tick) { if (item?.isCall == true || item?.isReplied == true) ReviewSession.upNext(ctx) else emptyList() }
+    val upNext = remember(s, calls, texts, sched, mine, tick) { if (item != null) ReviewSession.upNext(ctx, 3) else emptyList() }
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ReviewItem?>(null) }
-    // Off to WhatsApp from the card: leaving the app then doesn't pause the session.
-    val toWhatsApp = remember { booleanArrayOf(false) }
+    var historyFor by remember { mutableStateOf<ReviewItem?>(null) }
+    // "Why not done?" typed on the card, saved in its history with the new time.
+    var reason by remember(item?.key) { mutableStateOf("") }
+    // Off to WhatsApp, or a call that isn't a follow-up call: leaving the app then doesn't pause the session.
+    val leaving = remember { booleanArrayOf(false) }
 
-    /** Done, a new time or Review later from the card, with Undo for a few seconds (puts the task and the session back). */
-    fun handled(item: ReviewItem, message: String, act: () -> Unit) {
+    /**
+     * Done, a new time or Skip on a replied one, with Undo for a few seconds (puts the task and the session back).
+     * [act] returns its own extra Undo, if any (the Held count).
+     */
+    fun handled(item: ReviewItem, message: String, act: () -> (() -> Unit)?) {
         val before = ReviewSession.state.value
         val undo = ReviewActions.snapshot(item)
-        act()
-        scope.offerUndo(snack, message) { undo(); ReviewSession.restore(ctx, before) }
+        val more = act()
+        scope.offerUndo(snack, message) { undo(); more?.invoke(); ReviewSession.restore(ctx, before) }
     }
 
     fun setTime(item: ReviewItem, ms: Long) {
         RecentPicks.record(ctx, ms)
-        handled(item, "Set · ${Fmt.dueLabel(ms)} · ${item.title}") {
-            ReviewActions.newTime(ctx, item, ms)
+        val why = reason
+        handled(item, (if (item.at > 0L && !item.isReplied) "Moved to " else "Set · ") + "${Fmt.dueLabel(ms)} · ${item.title}") {
+            ReviewActions.newTime(ctx, item, ms, why)
+            // A late or replied task pushed on once more counts towards its "Held N×" tag.
+            val held = if (item.isCall || item.isReplied || item.kind == ReviewItem.Kind.MY_TASK) Held.push(ctx, item) else null
             ReviewSession.markNewTime(ctx)
+            held
         }
     }
 
@@ -501,8 +513,8 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) toWhatsApp[0] = false
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && !toWhatsApp[0]) {
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) leaving[0] = false
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && !leaving[0]) {
                 val st = ReviewSession.state.value
                 // From any card (My tasks and To schedule too), so the session never stays "running" by mistake.
                 if (st.status == ReviewSession.Status.RUNNING && st.awaiting.isEmpty()) ReviewSession.pause(ctx)
@@ -512,25 +524,43 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
 
+    /** 📞 on a task that isn't a follow-up call (My task, To schedule, Up next): just dial, the session waits. */
+    fun dialOnly(n: ReviewItem) {
+        leaving[0] = true
+        if (ReviewActions.canCall(n)) ReviewActions.call(ctx, n) else dial(ctx, n.number)
+    }
+
+    fun whatsApp(n: ReviewItem) {
+        leaving[0] = true
+        if (!WhatsApp.forItem(ctx, n)) leaving[0] = false
+    }
+
     val callsMode = s.mode == ReviewSession.MODE_CALLS
-    Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snack) }) { padding ->
+    val running = s.status == ReviewSession.Status.RUNNING && item != null
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 8.dp)
+                .padding(horizontal = 12.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 IconButton(onClick = { back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-                Text(if (callsMode) "Call session" else "Review session", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (callsMode) "Call session" else "Review session",
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)
+                )
+                if (running) {
+                    TextButton(onClick = { ReviewSession.finish(ctx) }) { Text("■ Stop", color = LateRed, fontWeight = FontWeight.Bold) }
+                }
             }
             when (s.status) {
                 ReviewSession.Status.ENDED -> SessionSummary(
                     s,
                     offerUndo = { msg, undo -> scope.offerUndo(snack, msg, undo) },
+                    snackHost = { SnackbarHost(snack) },
                     onClose = { ReviewSession.clear(ctx); onBack() },
+                    modifier = Modifier.weight(1f),
                 )
                 ReviewSession.Status.PAUSED -> SessionBanner(s, onResume = { ReviewSession.resume(ctx) }, onEnd = { ReviewSession.clear(ctx); onBack() })
                 ReviewSession.Status.IDLE -> {
@@ -538,144 +568,181 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                     Button(onClick = onBack) { Text("Back to Review") }
                 }
                 ReviewSession.Status.RUNNING -> if (item != null) {
-                    Row {
-                        Text("${s.handled + 1} of ${s.total}", modifier = Modifier.weight(1f))
-                        Text("${s.done} done · ${s.skipped.size} skipped", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PartBars(s)
+                    // Up next on top; the card below keeps its place whatever is here.
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
+                        if (upNext.isNotEmpty()) {
+                            Text("UP NEXT", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+                            val now = remember(item.key) { System.currentTimeMillis() }
+                            upNext.forEachIndexed { i, n -> UpNextCard(n, now, rowPos(i, upNext.size), onCall = { dialOnly(n) }, onWhatsApp = { whatsApp(n) }) }
+                        }
                     }
-                    LinearProgressIndicator(
-                        progress = { if (s.total == 0) 0f else s.handled.toFloat() / s.total },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // Undo shows here, above the card, never over it.
+                    SnackbarHost(snack)
                     SessionCard(
                         item = item,
                         awaiting = s.awaiting == item.key,
+                        reason = reason,
+                        onReason = { reason = it },
                         onCall = {
-                            callUndo[0] = item to (ReviewSession.state.value to ReviewActions.snapshot(item))
-                            ReviewSession.calling(ctx, item.key)
-                            ReviewActions.call(ctx, item)
+                            if (ReviewActions.canCall(item)) {
+                                callUndo[0] = item to (ReviewSession.state.value to ReviewActions.snapshot(item))
+                                ReviewSession.calling(ctx, item.key)
+                                ReviewActions.call(ctx, item)
+                            } else dialOnly(item)
                         },
-                        onWhatsApp = {
-                            toWhatsApp[0] = true
-                            if (!WhatsApp.forItem(ctx, item)) toWhatsApp[0] = false
-                        },
+                        onWhatsApp = { whatsApp(item) },
                         onBackFromCall = { settle(); tick++ },
                         onDone = {
                             handled(item, (if (item.isReplied) "Accepted · " else "Done · ") + item.title) {
                                 ReviewActions.done(ctx, item)
                                 ReviewSession.markDone(ctx)
+                                null
                             }
                         },
                         onTime = { ms -> setTime(item, ms) },
                         onPickTime = { newTimeFor = item },
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
                         onEdit = { editFor = item },
+                        onHistory = when (item.kind) {
+                            ReviewItem.Kind.SCHED_FU -> null
+                            else -> ({ historyFor = item })
+                        },
                         onSkip = {
                             if (item.isReplied) {
-                                handled(item, "Review later · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
+                                handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
                                     ReviewSession.reviewLater(ctx, item)
+                                    null
                                 }
                             } else ReviewSession.skip(ctx)
                         },
-                        onStop = { ReviewSession.finish(ctx) },
                     )
-                    if (upNext.isNotEmpty()) {
-                        Text("UP NEXT", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-                        upNext.forEach { n ->
-                            // Task first, the person small under it.
-                            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                Text(n.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (n.person.isNotBlank()) {
-                                    Text(n.person, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                                }
-                            }
-                        }
-                    }
                 }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 
     newTimeFor?.let { it0 ->
-        if (it0.isCall || it0.isReplied) {
-            // Overdue or replied follow-up: the short time row plus an optional "Why not done?".
-            NewTimeReasonDialog(
-                title = (if (it0.isReplied) "Not done · " else "New time · ") + it0.title,
-                person = it0.person,
-                onPick = { ms, reason ->
+        // My tasks: your busy times crossed out and the best free slots for its length.
+        val busy = if (it0.isMine) PickBusy(it0.lengthMin, it0.id) else null
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalPickBusy provides busy,
+            LocalSameBase provides it0.at.takeIf { a -> a > 0L && !it0.isReplied },
+        ) {
+            TimePickerDialog(
+                title = (if (it0.at > 0L) "New time · " else "Set time · ") + it0.title,
+                selected = null,
+                onPick = { ms ->
                     newTimeFor = null
-                    handled(it0, "Moved to ${Fmt.dueLabel(ms)} · ${it0.title}") {
-                        ReviewActions.newTime(ctx, it0, ms, reason)
-                        ReviewSession.markNewTime(ctx)
-                    }
+                    setTime(it0, ms)
                 },
                 onDismiss = { newTimeFor = null },
             )
-        } else {
-            // My tasks: your busy times crossed out and the best free slots for its length.
-            val busy = if (it0.isMine) PickBusy(it0.lengthMin, it0.id) else null
-            androidx.compose.runtime.CompositionLocalProvider(LocalPickBusy provides busy) {
-                TimePickerDialog(
-                    title = (if (it0.at > 0L) "New time · " else "Set time · ") + it0.title,
-                    selected = null,
-                    onPick = { ms ->
-                        newTimeFor = null
-                        setTime(it0, ms)
-                    },
-                    onDismiss = { newTimeFor = null },
-                )
-            }
         }
     }
     // ✏️ Edit: the task's own editor; the session carries on from the same card after it closes.
     editFor?.let { e -> TaskEditorDialog(task = OpenTask.of(e), onDismiss = { editFor = null; tick++ }) }
+    historyFor?.let { h ->
+        val close = { historyFor = null }
+        when (h.kind) {
+            ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(h.id)?.let { CallHistoryDialog(it, close) }
+            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(h.id)?.let { HistoryDialog(it, close) }
+            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(h.id)?.let { MyTaskHistoryDialog(it, close) }
+            ReviewItem.Kind.SCHED_FU -> {}
+        }
+    }
 }
 
-/** New time on a session card: the task as the title, then why it isn't done (optional), then tap a time and it saves. */
+/** One small bar per part: its name, how far you are (x/y), the current one bold, finished ones ✓. */
 @Composable
-private fun NewTimeReasonDialog(title: String, person: String, onPick: (Long, String) -> Unit, onDismiss: () -> Unit) {
-    var reason by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                if (person.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                        Avatar(text = person, size = 20.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(person, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    }
-                }
+private fun PartBars(s: ReviewSession.State) {
+    val cs = MaterialTheme.colorScheme
+    val counts = ReviewSession.partCounts(s)
+    val cur = ReviewSession.currentPart(s)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ReviewSession.PARTS.forEachIndexed { i, (emoji, name) ->
+            val (behind, total) = counts[i]
+            if (total == 0) return@forEachIndexed
+            val finished = behind >= total
+            val on = i == cur && !finished
+            val progress by androidx.compose.animation.core.animateFloatAsState(
+                behind.toFloat() / total, androidx.compose.animation.core.tween(300), label = "partBar"
+            )
+            val ink = when {
+                on -> cs.primary
+                finished -> DoneInk
+                else -> cs.onSurfaceVariant
             }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ShortTimeRow(selected = null, showSelected = false, dialogTitle = "New time", onPick = { onPick(it, reason) })
-                OutlinedTextField(
-                    value = reason,
-                    onValueChange = { reason = it },
-                    label = { Text("Why not done? (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            Column(Modifier.weight(1f)) {
                 Text(
-                    "Saved in the task's history. Its texts move to the new time too. Tap a time to save.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (finished) "✓ $name" else "$emoji $name",
+                    fontSize = 10.5.sp, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold, color = ink,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
+                LinearProgressIndicator(
+                    progress = { progress },
+                    color = if (finished) DoneGreen else cs.primary.copy(alpha = if (on) 1f else 0.45f),
+                    trackColor = cs.surfaceVariant,
+                    drawStopIndicator = {},
+                    gapSize = 0.dp,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).height(if (on) 6.dp else 4.dp).clip(RoundedCornerShape(3.dp))
+                )
+                Text("$behind/$total", fontSize = 10.sp, color = ink, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        }
+    }
+}
+
+private val DoneInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF7FE0C2) else Color(0xFF0B6B55)
+
+/** A task waiting after this one: THE card, with no tick (Done is on the card below). */
+@Composable
+private fun UpNextCard(n: ReviewItem, now: Long, pos: RowPos, onCall: () -> Unit, onWhatsApp: () -> Unit) {
+    val ctx = LocalContext.current
+    TaskCard(
+        title = n.title,
+        done = false,
+        onTick = {},
+        showTick = false,
+        time = if (n.at > 0L) whenLabel(n.at, now) else null,
+        late = n.at in 1..now && !n.isReplied,
+        timeIcons = timeIconsOf(n),
+        person = n.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
+        chips = taskChips(ctx, n),
+        onCall = if (n.number.isNotBlank()) onCall else null,
+        onWhatsApp = if (n.number.isNotBlank()) onWhatsApp else null,
+        onClick = {},
+        pos = pos,
     )
 }
 
+private fun timeIconsOf(n: ReviewItem) = when (n.kind) {
+    ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> TimeIcons.CALL
+    ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> TimeIcons.TEXT
+    else -> TimeIcons.NONE
+}
+
+/** The small chips after the time and person: #number, Held N×. */
+private fun taskChips(ctx: android.content.Context, n: ReviewItem): List<RowChip> = listOfNotNull(
+    n.code.takeIf { it.isNotBlank() }?.let { RowChip("#$it", ChipTone.BLUE) },
+    Held.label(Held.count(ctx, n))?.let { RowChip(it, ChipTone.ORANGE) },
+)
+
+/**
+ * The card at the bottom. Its top (the task, chips, "Why not done?", Edit · History) changes with each task and
+ * grows upward; under it the quick times, the bar and Skip never move.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SessionCard(
     item: ReviewItem,
     awaiting: Boolean,
+    reason: String,
+    onReason: (String) -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onBackFromCall: () -> Unit,
@@ -684,163 +751,214 @@ private fun SessionCard(
     onPickTime: () -> Unit,
     onPerson: (String, String) -> Unit,
     onEdit: () -> Unit,
+    onHistory: (() -> Unit)?,
     onSkip: () -> Unit,
-    onStop: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(22.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    when (item.kind) {
-                        ReviewItem.Kind.CALL, ReviewItem.Kind.TEXT -> "NEXT"
-                        ReviewItem.Kind.SCHED_FU -> "TO SCHEDULE · FOLLOW-UP"
-                        ReviewItem.Kind.SCHED_MY -> "TO SCHEDULE · MY TASK"
-                        ReviewItem.Kind.MY_TASK -> "MY TASK · OVERDUE"
-                        else -> "REPLIED · CHECK IT"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = cs.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
+    val noPerson = item.number.isBlank()
+    // A follow-up can't get a time before it has a person.
+    val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && noPerson
+    var addingPerson by remember(item.key) { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(22.dp), color = cs.surface, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = item,
+                contentKey = { it.key },
+                transitionSpec = {
+                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 3 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260))) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 3 } +
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)))
+                },
+                modifier = Modifier.weight(1f, fill = false),
+                label = "sessionTask",
+            ) { it0 ->
+                CardTop(
+                    it0, awaiting && it0.key == item.key, reason, onReason,
+                    addingPerson = addingPerson && it0.key == item.key,
+                    onPerson = { n, num -> addingPerson = false; onPerson(n, num) },
+                    onEdit = onEdit, onHistory = onHistory,
                 )
+            }
+            Spacer(Modifier.height(10.dp))
+            QuickRow(item, enabled = !needsPerson, onTime = onTime, onPickTime = onPickTime)
+            Spacer(Modifier.height(8.dp))
+            TaskActionBar(
+                onDone = onDone,
+                onNewTime = if (needsPerson) null else onPickTime,
+                onCall = if (noPerson) null else onCall,
+                onWhatsApp = if (noPerson) null else onWhatsApp,
+                newTimeLabel = if (item.at > 0L) "New time" else "Set time",
+                onAddPerson = if (needsPerson) ({ addingPerson = !addingPerson }) else null,
+            )
+            Spacer(Modifier.height(6.dp))
+            if (awaiting) {
+                Button(
+                    onClick = onBackFromCall,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("Next ›", fontWeight = FontWeight.Bold) }
+            } else {
+                val back = remember(item.key) { if (item.isReplied) ReviewData.nextReviewAt(ctx) else 0L }
                 OutlinedButton(
-                    onClick = onEdit,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                    modifier = Modifier.height(32.dp)
-                ) { Text("✏️ Edit", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            }
-            // Task first, the person small under it.
-            Text(item.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            if (item.person.isNotBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(text = item.person, size = 22.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(item.person, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (item.isCall && item.number.isNotBlank() && item.number != item.person) {
-                        Text(" · ${item.number}", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1)
-                    }
+                    onClick = onSkip,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text(
+                        if (item.isReplied) "⏭ Skip · back " + (if (dayWord(back) == "Today") "at " else "${dayWord(back)} ") + Fmt.timeOnly(back)
+                        else "⏭ Skip",
+                        fontWeight = FontWeight.SemiBold, maxLines = 1
+                    )
                 }
-            }
-            if (item.code.isNotBlank() || item.chips.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (item.code.isNotBlank()) CodeChip(item.code)
-                    item.chips.forEach { ReviewChip(it) }
-                }
-            }
-
-            when (item.kind) {
-                ReviewItem.Kind.CALL, ReviewItem.Kind.TEXT -> {
-                    if (awaiting) {
-                        Text("Back from the call? Your after-call popup saves how it went.", color = cs.onSurfaceVariant)
-                        BigButton("Next ›", onClick = onBackFromCall)
-                        OutlinedButton(onClick = onCall, modifier = Modifier.fillMaxWidth()) { Text("📞 Call again") }
-                    } else {
-                        // One row: call him, WhatsApp him, or settle it without calling.
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (item.number.isNotBlank()) {
-                                SmallTile("📞", "Call", CallBlue, Modifier.weight(1f), onCall)
-                                SmallTile("🟢", "WhatsApp", WhatsAppGreen, Modifier.weight(1f), onWhatsApp)
-                            }
-                            SmallTile("✓", "Done", DoneGreen, Modifier.weight(1f), onDone)
-                            SmallTile("🕘", "New time", NewTimeBlue, Modifier.weight(1f), onPickTime)
-                        }
-                    }
-                }
-                ReviewItem.Kind.CALL_REVIEW, ReviewItem.Kind.TEXT_REVIEW -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TileButton("✓", "Accept", DoneGreen, Modifier.weight(1f), onDone)
-                        TileButton("🕘", "Not done · New time", NewTimeBlue, Modifier.weight(1f), onPickTime)
-                    }
-                    if (item.number.isNotBlank()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            WideTile("📞", "Call", CallBlue, Modifier.weight(1f), onCall)
-                            WideTile("🟢", "WhatsApp", WhatsAppGreen, Modifier.weight(1f), onWhatsApp)
-                        }
-                    }
-                }
-                ReviewItem.Kind.MY_TASK -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SmallTile("✓", "Done", DoneGreen, Modifier.weight(1f), onDone)
-                        SmallTile("🕘", "New time", NewTimeBlue, Modifier.weight(1f), onPickTime)
-                    }
-                    QuickTimes(item, onTime)
-                }
-                ReviewItem.Kind.SCHED_FU, ReviewItem.Kind.SCHED_MY -> {
-                    if (item.kind == ReviewItem.Kind.SCHED_FU && item.number.isBlank()) {
-                        PersonPicker(prompt = "Pick person first") { n, num -> onPerson(n, num) }
-                    } else {
-                        QuickTimes(item, onTime)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (item.kind == ReviewItem.Kind.SCHED_FU) {
-                                // Follow-ups don't book time, but never outside your working hours: your next work start.
-                                val start = remember { ReviewData.nextWorkStart(ctx) }
-                                OutlinedButton(onClick = { onTime(start) }, modifier = Modifier.weight(1f)) {
-                                    Text("🌅 ${dayWord(start)} ${Fmt.timeOnly(start)}", maxLines = 1)
-                                }
-                            }
-                            OutlinedButton(onClick = onPickTime, modifier = Modifier.weight(1f)) { Text("📅 Pick time") }
-                        }
-                    }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onSkip, modifier = Modifier.weight(1f).height(48.dp)) {
-                    Text(if (item.isReplied) "🕘 Review later" else "⏭ Skip")
-                }
-                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f).height(48.dp)) { Text("■ Stop", color = LateRed) }
             }
         }
     }
 }
 
-/** Recently used times, then (My tasks) up to 6 best free slots from your Calendar inside working hours. */
+/** The card's top: what kind it is, the task (4 lines, "more"), its chips, "Why not done?" and Edit · History. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun QuickTimes(item: ReviewItem, onTime: (Long) -> Unit) {
+private fun CardTop(
+    item: ReviewItem,
+    awaiting: Boolean,
+    reason: String,
+    onReason: (String) -> Unit,
+    addingPerson: Boolean,
+    onPerson: (String, String) -> Unit,
+    onEdit: () -> Unit,
+    onHistory: (() -> Unit)?,
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val now = remember(item.key) { System.currentTimeMillis() }
-    val recent = remember(item.key) { RecentPicks.load(ctx) }
-    if (recent.isNotEmpty()) {
-        Text("RECENTLY USED TIMES", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-        RecentChips(recent, now, null) { ms -> onTime(ms) }
-    }
-    if (!item.isMine) return
-    val slots = remember(item.key) { ReviewData.freeSlots(ctx, item.lengthMin, item.id, 6, now) }
-    Text(
-        "BEST FREE SLOTS FOR MY TASKS · ${CalendarData.lengthLabel(item.lengthMin.toLong()).uppercase()}",
-        style = MaterialTheme.typography.labelMedium,
-        color = cs.onSurfaceVariant
-    )
-    if (slots.isEmpty()) {
+    var more by remember(item.key) { mutableStateOf(false) }
+    var long by remember(item.key) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            if (WorkHours.isSet(ctx)) "No free time in your working hours in the next 2 weeks" else "Set your working hours in Calendar to see free slots",
-            style = MaterialTheme.typography.bodySmall,
-            color = cs.onSurfaceVariant
+            when (item.kind) {
+                ReviewItem.Kind.CALL, ReviewItem.Kind.TEXT -> "LATE FOLLOW-UP"
+                ReviewItem.Kind.SCHED_FU -> "TO SCHEDULE · FOLLOW-UP"
+                ReviewItem.Kind.SCHED_MY -> "TO SCHEDULE · MY TASK"
+                ReviewItem.Kind.MY_TASK -> "LATE MY TASK"
+                else -> "REPLIED · CHECK IT"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = cs.onSurfaceVariant,
         )
-        return
+        Text(
+            item.title,
+            fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold,
+            maxLines = if (more) Int.MAX_VALUE else 4,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!more) long = it.hasVisualOverflow },
+            modifier = Modifier.animateContentSize(androidx.compose.animation.core.tween(200)),
+        )
+        if (long || more) {
+            Text(
+                if (more) "less" else "more",
+                color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable { more = !more }
+            )
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TimeBox(if (item.at > 0L) whenLabel(item.at, now) else null, item.at in 1..now && !item.isReplied, timeIconsOf(item))
+            if (item.person.isNotBlank()) {
+                TaskChip(Names.first(item.person) ?: item.person, CHIP_PLAIN,
+                    icon = { Icon(androidx.compose.material.icons.Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) })
+            }
+            taskChips(ctx, item).forEach { SmallChip(it) }
+            item.chips.filter { !it.endsWith("late") }.forEach { ReviewChip(it) }
+        }
+        if (awaiting) {
+            Text("Back from the call? Your after-call popup saves how it went. Tap Next.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+        }
+        if (item.isCall || item.isReplied || item.kind == ReviewItem.Kind.MY_TASK) {
+            OutlinedTextField(
+                value = reason,
+                onValueChange = onReason,
+                placeholder = { Text("Why not done? (optional)", fontSize = 14.sp) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        androidx.compose.animation.AnimatedVisibility(visible = addingPerson) {
+            PersonPicker(prompt = "Pick the person first") { n, num -> onPerson(n, num) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("Edit", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable(onClick = onEdit).padding(vertical = 2.dp))
+            if (onHistory != null) {
+                Text("History", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                    modifier = Modifier.clickable(onClick = onHistory).padding(vertical = 2.dp))
+            }
+        }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        slots.chunked(3).forEach { rowSlots ->
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                rowSlots.forEach { ms ->
+}
+
+/**
+ * The quick times, one row: "Tmrw same" first, then your 3 recent times (follow-ups) or the 3 best free slots
+ * for its length (My tasks), then 📅 Pick. Greyed until a follow-up has its person.
+ */
+@Composable
+private fun QuickRow(item: ReviewItem, enabled: Boolean, onTime: (Long) -> Unit, onPickTime: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val now = remember(item.key) { System.currentTimeMillis() }
+    // A replied task's time is when he replied, not a due time: tomorrow at work start instead.
+    val base = item.at.takeIf { it > 0L && !item.isReplied }
+    Box {
+        Row(
+            Modifier.fillMaxWidth().graphicsLayer { alpha = if (enabled) 1f else 0.35f },
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (item.isMine) {
+                val (same, copied) = remember(item.key) { SameTime.next(ctx, base) }
+                val slots = remember(item.key) {
+                    ReviewData.freeSlots(ctx, item.lengthMin, item.id, 6, now).filter { it / 60_000L != same / 60_000L }.take(3)
+                }
+                SameTimeChip(same, copied, now, modifier = Modifier.weight(1f), onPick = onTime)
+                slots.forEach { ms ->
                     Column(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(SlotGreenBg)
-                            .border(1.5.dp, SlotGreen, RoundedCornerShape(10.dp))
+                            .border(1.5.dp, SlotGreen, RoundedCornerShape(12.dp))
                             .clickable { onTime(ms) }
-                            .padding(vertical = 3.dp),
+                            .padding(vertical = 4.dp, horizontal = 2.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(dayWord(ms), fontSize = 10.sp, color = SlotGreenInk.copy(alpha = 0.75f), maxLines = 1)
-                        Text(Fmt.timeOnly(ms), fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, color = SlotGreenInk, maxLines = 1)
+                        Text(dayWord(ms), fontSize = 10.5.sp, color = SlotGreenInk.copy(alpha = 0.75f), maxLines = 1)
+                        Text(Fmt.timeOnly(ms), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlotGreenInk, maxLines = 1)
                     }
                 }
-                repeat(3 - rowSlots.size) { Spacer(Modifier.weight(1f)) }
+                repeat(3 - slots.size) { Spacer(Modifier.weight(1f)) }
+            } else {
+                val recent = remember(item.key) { RecentPicks.load(ctx) }
+                Box(Modifier.weight(4f)) { RecentChips(recent, now, null, base = base, onPick = onTime) }
             }
+            Column(
+                Modifier
+                    .width(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.5.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onPickTime)
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("📅", fontSize = 10.5.sp, maxLines = 1)
+                Text("Pick", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cs.primary, maxLines = 1)
+            }
+        }
+        if (!enabled) {
+            Box(Modifier.matchParentSize().clickable {
+                Toast.makeText(ctx, "Add a person first", Toast.LENGTH_SHORT).show()
+            })
         }
     }
 }
@@ -861,72 +979,20 @@ private fun dayWord(ms: Long): String {
     }
 }
 
-/** The task number, first in the chip row. */
-@Composable
-private fun CodeChip(code: String) {
-    Text(
-        "#$code",
-        fontSize = 12.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .padding(horizontal = 7.dp, vertical = 2.dp)
-    )
-}
-
-@Composable
-private fun BigButton(label: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(64.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = CallBlue, contentColor = Color(0xFF0B1A4A))
-    ) { Text(label, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-}
-
-@Composable
-private fun TileButton(icon: String, label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = color, modifier = modifier.height(96.dp)) {
-        Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(icon, fontSize = 24.sp, color = Color(0xFF0B1A2A))
-            Text(label, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A2A), fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-    }
-}
-
-@Composable
-private fun SmallTile(icon: String, label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = color, modifier = modifier.height(76.dp)) {
-        Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(icon, fontSize = 20.sp, color = Color(0xFF0B1A2A))
-            Text(label, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A2A), fontSize = 12.sp, maxLines = 1)
-        }
-    }
-}
-
-/** A low tile with the icon beside the label (Call / WhatsApp under Accept on a replied card). */
-@Composable
-private fun WideTile(icon: String, label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = color, modifier = modifier.height(52.dp)) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Text(icon, fontSize = 16.sp, color = Color(0xFF0B1A2A))
-            Spacer(Modifier.width(8.dp))
-            Text(label, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A2A), fontSize = 14.sp, maxLines = 1)
-        }
-    }
-}
-
-private val NewTimeBlue = Color(0xFFC9D6FF)
-
 /**
- * The end: counts, then what is still open. Skipped ones with a time in working hours move to the same time on
- * the next working day; replied ones put to Review later are never moved (Accept or Not done here, or leave them);
- * ones with no time or a time outside working hours are listed with Set time.
+ * The end: Done / New time / Left, then what is still open in one list with the All | Timed | No time box. It
+ * walks you through: Timed first, all ticked (→ Tmrw, same time or ⏸ Leave for now), then No time, all ticked
+ * (🕘 Set time or ⏸ Leave for now), then "All sorted ✓". Leave for now moves nothing: back at the next review.
+ * Replied ones you skipped are already back at the next review; Accept or Not done here if you checked them.
  */
 @Composable
-private fun SessionSummary(s: ReviewSession.State, offerUndo: (String, () -> Unit) -> Unit, onClose: () -> Unit) {
+private fun SessionSummary(
+    s: ReviewSession.State,
+    offerUndo: (String, () -> Unit) -> Unit,
+    snackHost: @Composable () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier,
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val calls by ReminderStore.items.collectAsState()
@@ -938,18 +1004,51 @@ private fun SessionSummary(s: ReviewSession.State, offerUndo: (String, () -> Uni
     val later = remember(s, calls, texts) {
         (s.later.mapNotNull { ReviewData.findLater(ctx, it) } + left.filter { it.isReplied }).distinctBy { it.key }
     }
-    val movable = left.filter { !it.isReplied && ReviewData.sameTimeNextDay(ctx, it.at) != null }
-    val notMoved = left.filter { !it.isReplied && ReviewData.sameTimeNextDay(ctx, it.at) == null }
-    var unticked by remember { mutableStateOf(setOf<String>()) }
-    val ticked = movable.filter { it.key !in unticked }
-    var other by remember { mutableStateOf(false) }
+    var leftAlone by remember { mutableStateOf(setOf<String>()) }
+    val open = left.filter { !it.isReplied && it.key !in leftAlone }
+    val timed = open.filter { it.at > 0L }
+    val untimed = open.filter { it.at <= 0L }
+    var tab by remember { mutableIntStateOf(if (timed.isNotEmpty()) 1 else if (untimed.isNotEmpty()) 2 else 0) }
+    val shown = when (tab) {
+        1 -> timed
+        2 -> untimed
+        else -> open
+    }
+    // Every task ticked whenever a tab opens.
+    var unticked by remember(tab) { mutableStateOf(setOf<String>()) }
+    val ticked = shown.filter { it.key !in unticked }
+    var pickFor by remember { mutableStateOf<List<ReviewItem>?>(null) }
     var timeFor by remember { mutableStateOf<ReviewItem?>(null) }
+    val handledAny = s.handled > 0 || left.isNotEmpty()
+
+    /** On to the other tab while it has tasks, so you are walked through without looking for it. */
+    fun after(acted: Set<String>) {
+        val t = timed.any { it.key !in acted }
+        val u = untimed.any { it.key !in acted }
+        tab = when (tab) {
+            1 -> if (u) 2 else if (t) 1 else 0
+            2 -> if (t) 1 else if (u) 2 else 0
+            else -> if (u) 2 else if (t) 1 else 0
+        }
+    }
 
     /** Moves [items] (each to [whenFor] its own time), with one Undo for all of them. */
-    fun move(items: List<ReviewItem>, label: String, whenFor: (ReviewItem) -> Long?) {
-        val undos = items.map { ReviewActions.snapshot(it) }
-        items.forEach { i -> whenFor(i)?.let { ReviewActions.newTime(ctx, i, it) } }
+    fun move(items: List<ReviewItem>, label: String, held: Boolean, whenFor: (ReviewItem) -> Long) {
+        val undos = items.map { ReviewActions.snapshot(it) } + if (held) items.map { Held.push(ctx, it) } else emptyList()
+        items.forEach { i -> ReviewActions.newTime(ctx, i, whenFor(i)) }
         offerUndo("Moved ${items.size} $label") { undos.forEach { it() } }
+        after(items.map { it.key }.toSet())
+    }
+
+    fun leave(items: List<ReviewItem>) {
+        val keys = items.map { it.key }.toSet()
+        val undos = items.map { Held.push(ctx, it) }
+        leftAlone = leftAlone + keys
+        offerUndo("Left for now · ${items.size} back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
+            undos.forEach { it() }
+            leftAlone = leftAlone - keys
+        }
+        after(keys)
     }
 
     fun one(item: ReviewItem, message: String, act: () -> Unit) {
@@ -958,104 +1057,147 @@ private fun SessionSummary(s: ReviewSession.State, offerUndo: (String, () -> Uni
         offerUndo(message) { undo() }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        Text("🎉 Session finished", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.CenterHorizontally))
-        Text(
-            listOfNotNull(
-                "${s.handled} items · $minutes min",
-                "${s.done} done",
-                "${s.newTime} new time",
-                "${s.skipped.size} skipped",
-                s.noAnswer.size.takeIf { it > 0 }?.let { "$it no answer twice" },
-                s.later.size.takeIf { it > 0 }?.let { "$it review later" },
-            ).joinToString(" · "),
-            color = cs.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
+    Column(modifier.fillMaxWidth()) {
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("🎉 Session finished", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text(
+                "${s.handled} tasks · $minutes min",
+                color = cs.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CountBox("${s.done}", "Done", DoneGreen, Modifier.weight(1f))
+                CountBox("${s.newTime}", "New time", SameOrange, Modifier.weight(1f))
+                CountBox("${open.size + later.size}", "Left", LateRed, Modifier.weight(1f))
+            }
 
-        if (movable.isNotEmpty()) {
-            Surface(shape = RoundedCornerShape(18.dp), color = PausedBg, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Move to tomorrow, same time", color = PausedFg, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("Untick any you want to leave as they are", style = MaterialTheme.typography.bodySmall, color = PausedFg.copy(alpha = 0.8f))
-                    movable.forEach { it0 ->
-                        val on = it0.key !in unticked
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
-                            unticked = if (on) unticked + it0.key else unticked - it0.key
-                        }) {
-                            Checkbox(checked = on, onCheckedChange = { c -> unticked = if (c) unticked - it0.key else unticked + it0.key })
-                            SummaryText(it0, listOf(it0.person, "now ${Fmt.timeOnly(it0.at)}"), Modifier.weight(1f))
-                            Text("→ ${dayWord(ReviewData.sameTimeNextDay(ctx, it0.at)!!)} ${Fmt.timeOnly(it0.at)}",
-                                color = DoneGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+            if (open.isNotEmpty()) {
+                BoxTabs(listOf("All · ${open.size}", "Timed · ${timed.size}", "No time · ${untimed.size}"), tab, { tab = it })
+                Text(
+                    when (tab) {
+                        1 -> "Had a time. Move them to tomorrow, same time, or leave them for now."
+                        2 -> "No time yet. Give them one time together, or leave them for now."
+                        else -> "Everything still open. Untick any you want to keep out."
+                    },
+                    style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
+                )
+                if (shown.isEmpty()) {
+                    Text("Nothing here", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                }
+                Surface(shape = RoundedCornerShape(18.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        shown.forEachIndexed { i, it0 ->
+                            if (i > 0) HorizontalDivider(color = cs.surfaceVariant)
+                            val on = it0.key !in unticked
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                                unticked = if (on) unticked + it0.key else unticked - it0.key
+                            }.padding(end = 12.dp)) {
+                                Checkbox(checked = on, onCheckedChange = { c -> unticked = if (c) unticked - it0.key else unticked + it0.key })
+                                SummaryText(
+                                    it0,
+                                    listOf(
+                                        it0.person.ifBlank { if (it0.isMine) "My task" else "" },
+                                        if (it0.at > 0L) Fmt.timeOnly(it0.at) else "no time",
+                                        Held.label(Held.count(ctx, it0)),
+                                    ),
+                                    Modifier.weight(1f)
+                                )
+                                if (it0.at > 0L) {
+                                    val to = ReviewData.sameTimeNextDay(ctx, it0.at) ?: ReviewData.nextWorkStart(ctx)
+                                    Text("→ ${dayWord(to)} ${Fmt.timeOnly(to)}", color = DoneInk, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                                } else {
+                                    TextButton(onClick = { timeFor = it0 }) { Text("🕘 Set", fontSize = 13.sp) }
+                                }
+                            }
                         }
                     }
-                    Button(
-                        onClick = { move(ticked, "to the same time tomorrow") { ReviewData.sameTimeNextDay(ctx, it.at) } },
-                        enabled = ticked.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = PausedFg, contentColor = PausedInk)
-                    ) { Text("Move ${ticked.size} · same time tomorrow", fontWeight = FontWeight.Bold) }
-                    TextButton(onClick = { other = true }, enabled = ticked.isNotEmpty(), modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                        Text("🕘 Other time", color = PausedFg)
-                    }
+                }
+            } else if (handledAny) {
+                Surface(shape = RoundedCornerShape(18.dp), color = RepliedBg, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "All sorted ✓",
+                        color = RepliedFg, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(16.dp)
+                    )
                 }
             }
-        }
+            if (leftAlone.isNotEmpty()) {
+                Text(
+                    "⏸ ${leftAlone.size} left for now · back at your next review (${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))})",
+                    style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
+                )
+            }
 
-        if (later.isNotEmpty()) {
-            Surface(shape = RoundedCornerShape(18.dp), color = RepliedBg, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Replied, review later · ${later.size}", color = RepliedFg, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("Back at your next review time. Checked it already? Tap below", style = MaterialTheme.typography.bodySmall,
-                        color = RepliedFg.copy(alpha = 0.8f))
-                    later.forEach { it0 ->
-                        Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                            SummaryText(it0, listOf(it0.person, it0.at.takeIf { at -> at > System.currentTimeMillis() }?.let { at -> "back ${Fmt.dueLabel(at)}" }))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        one(it0, "Accepted · ${it0.title}") { ReviewActions.done(ctx, it0) }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("✓ Accept", color = RepliedFg, fontWeight = FontWeight.Bold) }
-                                OutlinedButton(onClick = { timeFor = it0 }, modifier = Modifier.weight(1f)) {
-                                    Text("🕘 Not done · New time", maxLines = 1, fontSize = 13.sp)
+            if (later.isNotEmpty()) {
+                Surface(shape = RoundedCornerShape(18.dp), color = RepliedBg, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Replied, skipped · ${later.size}", color = RepliedFg, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Back at your next review time. Checked it already? Tap below", style = MaterialTheme.typography.bodySmall,
+                            color = RepliedFg.copy(alpha = 0.8f))
+                        later.forEach { it0 ->
+                            Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                SummaryText(it0, listOf(it0.person, it0.at.takeIf { at -> at > System.currentTimeMillis() }?.let { at -> "back ${Fmt.dueLabel(at)}" }))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                    OutlinedButton(
+                                        onClick = { one(it0, "Accepted · ${it0.title}") { ReviewActions.done(ctx, it0) } },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("✓ Done", color = RepliedFg, fontWeight = FontWeight.Bold) }
+                                    OutlinedButton(onClick = { timeFor = it0 }, modifier = Modifier.weight(1f)) {
+                                        Text("🕘 New time", maxLines = 1, fontSize = 13.sp)
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            Spacer(Modifier.height(4.dp))
         }
-
-        if (notMoved.isNotEmpty()) {
-            Surface(shape = RoundedCornerShape(18.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Not moved · ${notMoved.size}", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("No time yet, or a time outside your working hours", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-                    notMoved.forEach { it0 ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            SummaryText(
-                                it0,
-                                listOf(it0.person.ifBlank { if (it0.isMine) "My task" else "" }, if (it0.at > 0L) Fmt.timeOnly(it0.at) else "no time"),
-                                Modifier.weight(1f)
-                            )
-                            OutlinedButton(onClick = { timeFor = it0 }) { Text("🕘 Set time", fontSize = 13.sp) }
-                        }
-                    }
+        snackHost()
+        if (open.isNotEmpty() && shown.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                if (tab == 1) {
+                    Button(
+                        onClick = {
+                            move(ticked, "to tomorrow, same time", held = true) { ReviewData.sameTimeNextDay(ctx, it.at) ?: ReviewData.nextWorkStart(ctx) }
+                        },
+                        enabled = ticked.isNotEmpty(),
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SameOrange, contentColor = Color(0xFF3A2000))
+                    ) { Text("→ Tmrw, same time · ${ticked.size}", fontWeight = FontWeight.Bold, maxLines = 1) }
+                } else {
+                    Button(
+                        onClick = { pickFor = ticked },
+                        enabled = ticked.isNotEmpty(),
+                        modifier = Modifier.weight(1f).height(48.dp),
+                    ) { Text("🕘 Set time · ${ticked.size}", fontWeight = FontWeight.Bold, maxLines = 1) }
                 }
+                OutlinedButton(
+                    onClick = { leave(ticked) },
+                    enabled = ticked.isNotEmpty(),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text("⏸ Leave for now", fontWeight = FontWeight.SemiBold, maxLines = 1) }
             }
         }
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
     }
-    if (other) {
-        TimePickerDialog(title = "Move ${ticked.size} to", selected = null, onPick = { ms ->
-            other = false
-            move(ticked, "to ${Fmt.dueLabel(ms)}") { ms }
-        }, onDismiss = { other = false })
+    pickFor?.let { items ->
+        val single = items.singleOrNull()
+        val busy = if (single?.isMine == true) PickBusy(single.lengthMin, single.id) else null
+        androidx.compose.runtime.CompositionLocalProvider(LocalPickBusy provides busy) {
+            TimePickerDialog(title = if (single != null) "Set time · ${single.title}" else "Set time for ${items.size}", selected = null, onPick = { ms ->
+                pickFor = null
+                RecentPicks.record(ctx, ms)
+                move(items, "to ${Fmt.dueLabel(ms)}", held = false) { ms }
+            }, onDismiss = { pickFor = null })
+        }
     }
     timeFor?.let { it0 ->
         val busy = if (it0.isMine) PickBusy(it0.lengthMin, it0.id) else null
@@ -1065,6 +1207,7 @@ private fun SessionSummary(s: ReviewSession.State, offerUndo: (String, () -> Uni
                 selected = null,
                 onPick = { ms ->
                     timeFor = null
+                    RecentPicks.record(ctx, ms)
                     one(it0, "Set · ${Fmt.dueLabel(ms)} · ${it0.title}") { ReviewActions.newTime(ctx, it0, ms) }
                 },
                 onDismiss = { timeFor = null },
@@ -1079,7 +1222,7 @@ private val RepliedFg: Color @Composable get() = if (LocalDarkTheme.current) Col
 /** A task on the finished screen: the task in bold, small details (person, time) under it. */
 @Composable
 private fun SummaryText(item: ReviewItem, details: List<String?>, modifier: Modifier = Modifier) {
-    Column(modifier) {
+    Column(modifier.padding(vertical = 6.dp)) {
         Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         val line = details.filterNotNull().filter { it.isNotBlank() }.joinToString(" · ")
         if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -1089,9 +1232,9 @@ private fun SummaryText(item: ReviewItem, details: List<String?>, modifier: Modi
 @Composable
 private fun CountBox(n: String, label: String, color: Color, modifier: Modifier) {
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, modifier = modifier) {
-        Column(Modifier.padding(vertical = 16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.padding(vertical = 12.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             // The bright tile colours are too pale as text on white, so light mode uses a deeper shade.
-            Text(n, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (LocalDarkTheme.current) color else androidx.compose.ui.graphics.lerp(color, Color.Black, 0.45f))
+            Text(n, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = if (LocalDarkTheme.current) color else androidx.compose.ui.graphics.lerp(color, Color.Black, 0.45f))
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

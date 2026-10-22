@@ -595,6 +595,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         SnoozeSheet(
             heading = "New time",
             about = t.title,
+            sameBase = t.dueAt.takeIf { t.timed },
             onPick = { ms ->
                 newTimeFor = null
                 openTask = null

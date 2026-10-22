@@ -327,6 +327,7 @@ private fun AlertCard(
                     SnoozeSheet(
                         heading = "Snooze",
                         about = r.headline(),
+                        sameBase = r.dueAt,
                         onPick = { ms -> snoozeOpen = false; onSnooze(ms) },
                         onPickTime = { snoozeOpen = false; onPickTime() },
                         onDismiss = { snoozeOpen = false },

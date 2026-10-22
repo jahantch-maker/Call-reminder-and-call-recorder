@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -103,14 +104,29 @@ object TimeGrid {
 object RecentPicks {
     private const val KEY = "recent_picks"
     const val MAX = 3
+    /** One more is kept, to fill in when a recent time is the same as "Tomorrow, same time". */
+    private const val KEEP = MAX + 1
 
-    fun load(c: Context): List<Long> =
-        AppSettings.getString(c, KEY).split(",").mapNotNull { it.toLongOrNull() }.take(MAX)
+    fun load(c: Context): List<Long> = loadAll(c).take(MAX)
+
+    fun loadAll(c: Context): List<Long> =
+        AppSettings.getString(c, KEY).split(",").mapNotNull { it.toLongOrNull() }.take(KEEP)
 
     fun record(c: Context, ms: Long) {
         val minute = ms / 60_000L * 60_000L
-        val list = (listOf(minute) + load(c).filter { it != minute }).take(MAX)
+        val list = (listOf(minute) + loadAll(c).filter { it != minute }).take(KEEP)
         AppSettings.setString(c, KEY, list.joinToString(","))
+    }
+}
+
+/** The task's current time, for the "Tomorrow, same time" chip. Null: your work start on the next working day. */
+val LocalSameBase = androidx.compose.runtime.compositionLocalOf<Long?> { null }
+
+/** "Tomorrow, same time": the same clock time on the next working day, inside working hours, else your work start. */
+object SameTime {
+    fun next(ctx: Context, base: Long?): Pair<Long, Boolean> {
+        val same = base?.takeIf { it > 0L }?.let { ReviewData.sameTimeNextDay(ctx, it) }
+        return if (same != null) same to true else ReviewData.nextWorkStart(ctx) to false
     }
 }
 
@@ -198,9 +214,9 @@ fun TimePickerPanel(
             }
         }
 
-        if (showRecent && recent.isNotEmpty()) {
+        if (showRecent) {
             PanelLabel("RECENT")
-            RecentChips(recent, now, selected ?: picked, latest) { ms ->
+            RecentChips(recent, now, selected ?: picked, latest, base = LocalSameBase.current ?: selected) { ms ->
                 val d = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
                 days.indexOf(d).takeIf { it >= 0 }?.let { dayIndex = it }
                 pick(ms)
@@ -319,22 +335,41 @@ fun TimePickerPanel(
     }
 }
 
-/** The last 3 picks as chips (day over time). Passed ones, and ones after [latest], are greyed. */
+/**
+ * "Tomorrow, same time" first (orange), then the last 3 picks as chips (day over time). Passed ones, and ones after
+ * [latest], are greyed. [base] is the task's time the first chip copies (null: your work start).
+ */
 @Composable
-fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, compact: Boolean = false, onPick: (Long) -> Unit) {
+fun RecentChips(
+    recent: List<Long>,
+    now: Long,
+    on: Long?,
+    latest: Long? = null,
+    compact: Boolean = false,
+    base: Long? = LocalSameBase.current,
+    onPick: (Long) -> Unit,
+) {
+    val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val zone = ZoneId.systemDefault()
     val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        recent.forEach { ms ->
+    val (same, copied) = remember(base) { SameTime.next(ctx, base) }
+    // A recent time equal to it is left out, and the next one fills its place.
+    val shown = remember(recent, same) {
+        (recent + RecentPicks.loadAll(ctx)).distinct().filter { it / 60_000L != same / 60_000L }.take(RecentPicks.MAX)
+    }
+    fun dayWord(at: java.time.ZonedDateTime, passed: Boolean) = when (at.toLocalDate()) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> at.format(DateTimeFormatter.ofPattern(if (passed) "EEE d" else "EEE d MMM", Locale.getDefault()))
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        SameTimeChip(same, copied, now, on, latest, compact, Modifier.weight(1f), onPick = onPick)
+        shown.forEach { ms ->
             val passed = ms <= now
             val off = passed || (latest != null && ms > latest)
             val at = Instant.ofEpochMilli(ms).atZone(zone)
-            val dayText = when (at.toLocalDate()) {
-                today -> "Today"
-                today.plusDays(1) -> "Tomorrow"
-                else -> at.format(DateTimeFormatter.ofPattern(if (passed) "EEE d" else "EEE d MMM", Locale.getDefault()))
-            } + if (passed) " · passed" else ""
+            val dayText = dayWord(at, passed) + if (passed) " · passed" else ""
             val sel = on == ms
             Column(
                 Modifier
@@ -358,9 +393,56 @@ fun RecentChips(recent: List<Long>, now: Long, on: Long?, latest: Long? = null, 
                 )
             }
         }
-        repeat(RecentPicks.MAX - recent.size) { Spacer(Modifier.weight(1f)) }
+        repeat(RecentPicks.MAX - shown.size) { Spacer(Modifier.weight(1f)) }
     }
 }
+
+/** The orange "Tmrw same" chip: [same] from [SameTime.next] ([copied] false: your work start, shown with the day only). */
+@Composable
+fun SameTimeChip(
+    same: Long,
+    copied: Boolean,
+    now: Long,
+    on: Long? = null,
+    latest: Long? = null,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+    onPick: (Long) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val zone = ZoneId.systemDefault()
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val at = Instant.ofEpochMilli(same).atZone(zone)
+    val off = latest != null && same > latest
+    val sel = on == same
+    val amber = Tones.amber
+    val day = if (at.toLocalDate() == today.plusDays(1)) "Tmrw" else at.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (sel) SameOrange else amber.bg)
+            .border(1.5.dp, if (off) cs.outlineVariant else SameOrange, RoundedCornerShape(12.dp))
+            .clickable(enabled = !off) { onPick(same) }
+            .padding(vertical = if (compact) 1.dp else 4.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(if (copied) "$day same" else day, fontSize = if (compact) 9.5.sp else 10.5.sp,
+            color = if (sel) Color(0xFF3A2000) else amber.fg.copy(alpha = 0.85f), maxLines = 1)
+        Text(
+            at.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())),
+            fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold,
+            color = when {
+                sel -> Color(0xFF3A2000)
+                off -> cs.outline
+                else -> amber.fg
+            },
+            maxLines = 1
+        )
+    }
+}
+
+/** The "Tomorrow, same time" chip's border. */
+val SameOrange = Color(0xFFFF9F43)
 
 /** The green colours of the "Text <first name>" card, for its chips, buttons and picker. */
 @Composable
@@ -404,6 +486,8 @@ fun ShortTimeRow(
     compact: Boolean = false,
     /** Shown first on the compact line (the text times). */
     leading: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null,
+    /** The time "Tomorrow, same time" copies; by default the chosen time. */
+    sameBase: Long? = selected?.takeIf { it > 0L },
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -467,7 +551,7 @@ fun ShortTimeRow(
                     }
                 }
             }
-            if (recent.isNotEmpty()) {
+            CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
                 RecentChips(recent, now, if (showSelected) selected else null, latest, compact = true) { pick(it) }
             }
         }
@@ -508,8 +592,8 @@ fun ShortTimeRow(
                 }
             }
         }
-        if (recent.isNotEmpty()) {
-            PanelLabel("RECENT")
+        PanelLabel("RECENT")
+        CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
             RecentChips(recent, now, if (showSelected) selected else null, latest) { pick(it) }
         }
         androidx.compose.material3.OutlinedButton(
@@ -519,14 +603,16 @@ fun ShortTimeRow(
         ) { Text(pickLabel, fontWeight = FontWeight.SemiBold) }
     }
     if (open) {
-        TimePickerDialog(
-            title = dialogTitle,
-            selected = if (showSelected) selected else null,
-            latest = latest,
-            note = latestNote,
-            onPick = { open = false; recent = RecentPicks.load(ctx); onPick(it) },
-            onDismiss = { open = false },
-        )
+        CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
+            TimePickerDialog(
+                title = dialogTitle,
+                selected = if (showSelected) selected else null,
+                latest = latest,
+                note = latestNote,
+                onPick = { open = false; recent = RecentPicks.load(ctx); onPick(it) },
+                onDismiss = { open = false },
+            )
+        }
     }
 }
 

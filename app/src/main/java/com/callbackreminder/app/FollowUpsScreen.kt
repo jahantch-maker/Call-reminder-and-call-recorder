@@ -584,6 +584,8 @@ internal fun FollowUpCard(
         }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
+        // Pushed on again and again in review.
+        if (!finished) Held.label(call?.let { Held.countCall(ctx, it.id) } ?: text?.let { Held.countText(ctx, it.id) } ?: 0)?.let { add(RowChip(it, ChipTone.ORANGE)) }
     }
 
     val time = when {

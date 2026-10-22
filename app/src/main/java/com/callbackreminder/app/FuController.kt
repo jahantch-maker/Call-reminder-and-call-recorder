@@ -210,6 +210,7 @@ internal class FuController(
             SnoozeSheet(
                 heading = "New time",
                 about = e.title,
+                sameBase = e.call?.dueAt ?: e.text?.taskDue?.takeIf { it > 0L },
                 onPick = { ms -> newTimeFor = null; newTime(e, ms) },
                 onPickTime = { newTimeFor = null; pickTimeFor = e },
                 onDismiss = { newTimeFor = null; moveTexts = true },

@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -31,6 +33,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Schedule
@@ -43,6 +47,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -96,6 +102,8 @@ fun TaskCard(
     highlighted: Boolean = false,
     handle: Modifier? = null,
     tickEnabled: Boolean = true,
+    /** False in the review session, where the ✓ Done button does it. */
+    showTick: Boolean = true,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -119,8 +127,10 @@ fun TaskCard(
                 .padding(start = 12.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TickCircle(done = done, enabled = tickEnabled, onClick = onTick)
-            Spacer(Modifier.width(12.dp))
+            if (showTick) {
+                TickCircle(done = done, enabled = tickEnabled, onClick = onTick)
+                Spacer(Modifier.width(12.dp))
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val titleColor by animateColorAsState(
                     if (done) cs.onSurfaceVariant else if (highlighted) cs.primary else cs.onSurface,
@@ -151,9 +161,13 @@ fun TaskCard(
                     chips.forEach { SmallChip(it) }
                 }
             }
-            if (onCall != null || onWhatsApp != null) {
-                Spacer(Modifier.width(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Opened, 📞 and WA move into the bar under the details.
+            AnimatedVisibility(
+                visible = (onCall != null || onWhatsApp != null) && !(expanded && expandedContent != null),
+                enter = expandHorizontally(tween(200)) + fadeIn(tween(200)),
+                exit = shrinkHorizontally(tween(180)) + fadeOut(tween(140)),
+            ) {
+                Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (onCall != null) RoundAction(Icons.Rounded.Call, "Call", cs.primaryContainer, cs.onPrimaryContainer, onClick = onCall)
                     if (onWhatsApp != null) WhatsAppAction(onClick = onWhatsApp)
                 }
@@ -170,8 +184,9 @@ fun TaskCard(
             enter = expandVertically(tween(220)) + fadeIn(tween(220)),
             exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = 52.dp, end = 12.dp, bottom = 10.dp)) {
-                expandedContent?.invoke(this)
+            Column(Modifier.fillMaxWidth().padding(start = if (showTick) 52.dp else 12.dp, end = 12.dp, bottom = 10.dp)) {
+                val acts = CardActions(done, if (tickEnabled && !done) onTick else null, onCall, onWhatsApp)
+                CompositionLocalProvider(LocalCardActions provides acts) { expandedContent?.invoke(this) }
             }
         }
     }
@@ -190,9 +205,14 @@ fun TimeBox(time: String?, late: Boolean, icons: TimeIcons = TimeIcons.NONE) {
     else TaskChip(time, if (late) CHIP_RED else CHIP_PLAIN, icon = iconRow)
 }
 
+/** The opened card's own Done (its tick), 📞 and WA, for the bar in its panel. */
+class CardActions(val done: Boolean, val onDone: (() -> Unit)?, val onCall: (() -> Unit)?, val onWhatsApp: (() -> Unit)?)
+
+val LocalCardActions = compositionLocalOf<CardActions?> { null }
+
 /**
- * What an opened card shows: a few detail lines, the one 🕘 New time button (or [buttonLabel], like "Set time")
- * and small links. No Call or Done here: 📞 and the tick are already on the card.
+ * What an opened card shows: a few detail lines, the same bar as the review session (✓ Done · 🕘 New time, or
+ * [buttonLabel] like "Set time" · 📞 Call · WA) and small links. A finished card keeps only its links.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -206,7 +226,18 @@ fun CardPanel(
     details.forEach {
         Text(it, fontSize = 12.5.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
     }
-    if (onNewTime != null) {
+    val acts = LocalCardActions.current
+    if (acts != null && !acts.done && (onNewTime != null || acts.onDone != null)) {
+        Spacer(Modifier.height(6.dp))
+        TaskActionBar(
+            onDone = acts.onDone,
+            onNewTime = onNewTime,
+            onCall = acts.onCall,
+            onWhatsApp = acts.onWhatsApp,
+            newTimeLabel = buttonLabel,
+            compact = true,
+        )
+    } else if (onNewTime != null) {
         Spacer(Modifier.height(6.dp))
         val (obg, ofg) = chipColors(ChipTone.ORANGE)
         Button(
@@ -234,6 +265,68 @@ fun CardPanel(
                     modifier = Modifier.clickable(onClick = l.onClick).padding(vertical = 5.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * The one action bar, the same in the review session and in every opened card: ✓ Done · 🕘 New time · 📞 Call ·
+ * WA, always in these 4 places. A missing action is greyed in its place, so the others never move.
+ * [onAddPerson] puts one "Add person" where 📞 and WA go (a follow-up with no person yet).
+ */
+@Composable
+fun TaskActionBar(
+    onDone: (() -> Unit)?,
+    onNewTime: (() -> Unit)?,
+    onCall: (() -> Unit)?,
+    onWhatsApp: (() -> Unit)?,
+    newTimeLabel: String = "New time",
+    onAddPerson: (() -> Unit)? = null,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    val dark = LocalDarkTheme.current
+    val green = if (dark) Color(0xFF173D33) to Color(0xFF7FE0C2) else Color(0xFFDDF5EC) to Color(0xFF0B6B55)
+    val orange = chipColors(ChipTone.ORANGE)
+    val blue = if (dark) Color(0xFF1E2A55) to Color(0xFFB9C8FF) else Color(0xFFE3EAFF) to Color(0xFF1F3A93)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        BarSlot(Icons.Rounded.Check, "Done", green, onDone, compact, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Schedule, newTimeLabel, orange, onNewTime, compact, Modifier.weight(1f))
+        if (onAddPerson != null) {
+            BarSlot(Icons.Rounded.PersonAdd, "Add person", blue, onAddPerson, compact, Modifier.weight(2f))
+        } else {
+            BarSlot(Icons.Rounded.Call, "Call", blue, onCall, compact, Modifier.weight(1f))
+            BarSlot(null, "WhatsApp", WhatsAppGreen to WhatsAppInk, onWhatsApp, compact, Modifier.weight(1f))
+        }
+    }
+}
+
+/** One place in [TaskActionBar]: icon over label ([icon] null draws "WA"); greyed when [onClick] is null. */
+@Composable
+private fun BarSlot(
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    label: String,
+    tone: Pair<Color, Color>,
+    onClick: (() -> Unit)?,
+    compact: Boolean,
+    modifier: Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val on = onClick != null
+    val bg by animateColorAsState(if (on) tone.first else cs.surfaceVariant, tween(200), label = "barBg")
+    val fg by animateColorAsState(if (on) tone.second else cs.onSurfaceVariant.copy(alpha = 0.45f), tween(200), label = "barFg")
+    Surface(
+        onClick = { onClick?.invoke() },
+        enabled = on,
+        shape = RoundedCornerShape(if (compact) 12.dp else 14.dp),
+        color = bg,
+        contentColor = fg,
+        modifier = modifier.height(if (compact) 44.dp else 54.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 17.dp else 20.dp))
+            else Text("WA", color = fg, fontWeight = FontWeight.Black, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 17.sp)
+            Text(label, color = fg, fontWeight = FontWeight.Bold, fontSize = if (compact) 10.5.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

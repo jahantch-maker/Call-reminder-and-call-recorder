@@ -607,6 +607,8 @@ fun SnoozeSheet(
     onDismiss: () -> Unit,
     plusRow: Boolean = false,
     footer: (@Composable () -> Unit)? = null,
+    /** The task's time, for "Tomorrow, same time". */
+    sameBase: Long? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -626,7 +628,7 @@ fun SnoozeSheet(
                 overflow = TextOverflow.Ellipsis
             )
             footer?.invoke()
-            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick)
+            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick, sameBase = sameBase)
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }
         }
