@@ -1,10 +1,8 @@
 package com.callbackreminder.app
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -182,34 +180,6 @@ object TeamUi {
     }
 }
 
-internal fun Context.findActivity(): Activity? {
-    var c: Context? = this
-    while (c is ContextWrapper) {
-        if (c is Activity) return c
-        c = c.baseContext
-    }
-    return null
-}
-
-// ---------------------------------------------------------------- small pieces
-
-@Composable
-private fun TeamHeading(text: String) {
-    Text(
-        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.4.sp,
-        color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-    )
-}
-
-@Composable
-private fun TeamTag(text: String) {
-    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-        Text(
-            text, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-        )
-    }
-}
 
 @Composable
 private fun TeamChipView(c: RowChip) {

@@ -393,7 +393,7 @@ object TeamRepo {
         val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
         val c = code.trim().uppercase()
         val doc = db().collection("codes").document(c).get().await()
-        val t = doc.getString("teamId") ?: return "No team has the code $c. Check the letters with your manager."
+        val t = doc.getString("teamId") ?: throw IllegalStateException("No team has the code $c. Check the letters with your manager.")
         db().collection("teams").document(t).collection("members").document(u.uid).set(
             memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, System.currentTimeMillis(), myName)
         ).await()
@@ -469,8 +469,12 @@ object TeamRepo {
     }
 
     /** Chart and role changes; everyone under [m] gets their manager list redone too. */
-    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, phone: String): String? = try {
+    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, phone: String): String? {
         if (reportsTo == m.uid || m.uid in chainFrom(reportsTo)) return "${m.first} can't report to someone under them."
+        return setChartNow(m, reportsTo, role, phone)
+    }
+
+    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, phone: String): String? = try {
         members().document(m.uid).update(
             mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone.trim(), "managers" to chainFrom(reportsTo))
         ).await()
