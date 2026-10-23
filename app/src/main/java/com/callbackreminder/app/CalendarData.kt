@@ -430,6 +430,11 @@ object CalendarData {
  * Set by a task editor around its time picker: the picker then crosses out busy times, outlines in green
  * where the task's length fits, and shows the 3 best free slots of the day.
  */
-class PickBusy(val lengthMin: Int, val excludeTaskId: Long)
+class PickBusy(
+    val lengthMin: Int,
+    val excludeTaskId: Long,
+    /** Set: the picker shows HOW LONG first and passes the chosen length back (a task with no length yet). */
+    val onLength: ((Int) -> Unit)? = null,
+)
 
 val LocalPickBusy = compositionLocalOf<PickBusy?> { null }

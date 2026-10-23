@@ -177,6 +177,8 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     var note by remember { mutableStateOf(call.prefillNote) }
     var step by remember { mutableStateOf(PostCallStep.CHOOSE) }
     var showPicker by remember { mutableStateOf(false) }
+    // My task: how long it takes, needed when it gets a time (the Calendar books it).
+    var myLength by remember { mutableIntStateOf(0) }
     var callOn by remember { mutableStateOf(true) }
     var alsoText by remember { mutableStateOf(false) }
     val text = rememberTextPlanState()
@@ -239,6 +241,10 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     }
 
     fun saveMyTask(due: Long) {
+        if (due > 0L && myLength <= 0) {
+            Toast.makeText(ctx, "Pick how long first", Toast.LENGTH_SHORT).show()
+            return
+        }
         MyTaskStore.add(
             title = taskText(),
             note = "",
@@ -246,6 +252,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             name = callerName ?: typedName,
             number = callerNumber ?: "",
             listId = list,
+            durationMin = myLength,
         )
         Toast.makeText(
             ctx,
@@ -450,8 +457,16 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                 )
             }
             Spacer(Modifier.height(10.dp))
+            if (!followUp) {
+                HowLongRow(myLength, onLength = { myLength = it })
+                Spacer(Modifier.height(6.dp))
+            }
             // One tap on a time saves it, right here in the popup.
-            ShortTimeRow(selected = null, plusRow = true, onPick = { if (followUp) saveFollowUp(it) else saveMyTask(it) })
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalPickBusy provides if (followUp) null else PickBusy(myLength, -1L) { myLength = it }
+            ) {
+                ShortTimeRow(selected = null, plusRow = true, onPick = { if (followUp) saveFollowUp(it) else saveMyTask(it) })
+            }
             Spacer(Modifier.height(8.dp))
             RemoveTimeButton(label = "No time · set it later") { if (followUp) saveFollowUp(null) else saveMyTask(0L) }
             Row(

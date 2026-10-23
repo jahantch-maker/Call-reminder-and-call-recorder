@@ -627,7 +627,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
 
     newTimeFor?.let { it0 ->
         // My tasks: your busy times crossed out and the best free slots for its length.
-        val busy = if (it0.isMine) PickBusy(it0.lengthMin, it0.id) else null
+        val busy = if (it0.isMine) myBusy(it0) else null
         androidx.compose.runtime.CompositionLocalProvider(
             LocalPickBusy provides busy,
             LocalSameBase provides it0.at.takeIf { a -> a > 0L && !it0.isReplied },
@@ -899,59 +899,39 @@ private fun CardTop(
 }
 
 /**
- * The quick times, one row: "Tmrw same" first, then your 3 recent times (follow-ups) or the 3 best free slots
- * for its length (My tasks), then 📅 Pick. Greyed until a follow-up has its person.
+ * The quick times. My tasks: HOW LONG first, then BEST FREE SLOTS for that length with 📅 Pick, then RECENT
+ * ("Tmrw same" + your 3 recent, red when busy); slots and Recent wait until a length is picked. Follow-ups:
+ * RECENT and Pick (calls don't book time). Greyed until a follow-up has its person.
  */
 @Composable
 private fun QuickRow(item: ReviewItem, enabled: Boolean, onTime: (Long) -> Unit, onPickTime: () -> Unit) {
     val ctx = LocalContext.current
-    val cs = MaterialTheme.colorScheme
     val now = remember(item.key) { System.currentTimeMillis() }
     // A replied task's time is when he replied, not a due time: tomorrow at work start instead.
     val base = item.at.takeIf { it > 0L && !item.isReplied }
+    val recent = remember(item.key) { RecentPicks.load(ctx) }
     Box {
-        Row(
+        Column(
             Modifier.fillMaxWidth().graphicsLayer { alpha = if (enabled) 1f else 0.35f },
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (item.isMine) {
-                val (same, copied) = remember(item.key) { SameTime.next(ctx, base) }
-                val slots = remember(item.key) {
-                    ReviewData.freeSlots(ctx, item.lengthMin, item.id, 6, now).filter { it / 60_000L != same / 60_000L }.take(3)
-                }
-                SameTimeChip(same, copied, now, modifier = Modifier.weight(1f), onPick = onTime)
-                slots.forEach { ms ->
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(SlotGreenBg)
-                            .border(1.5.dp, SlotGreen, RoundedCornerShape(12.dp))
-                            .clickable { onTime(ms) }
-                            .padding(vertical = 4.dp, horizontal = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(dayWord(ms), fontSize = 10.5.sp, color = SlotGreenInk.copy(alpha = 0.75f), maxLines = 1)
-                        Text(Fmt.timeOnly(ms), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlotGreenInk, maxLines = 1)
-                    }
-                }
-                repeat(3 - slots.size) { Spacer(Modifier.weight(1f)) }
+                val mine by MyTaskStore.items.collectAsState()
+                val len = mine.firstOrNull { it.id == item.id }?.durationMin ?: item.lengthMin
+                HowLongRow(len, onLength = { MyTaskStore.setLength(item.id, it) })
+                FreeSlotsRow(len, item.id, null, onPick = onTime, onPickTime = onPickTime)
+                ChipHeading("RECENT")
+                RecentChips(recent, now, null, base = base, busy = PickBusy(len, item.id), enabled = len > 0, onPick = onTime)
             } else {
-                val recent = remember(item.key) { RecentPicks.load(ctx) }
-                Box(Modifier.weight(4f)) { RecentChips(recent, now, null, base = base, onPick = onTime) }
-            }
-            Column(
-                Modifier
-                    .width(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.5.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
-                    .clickable(onClick = onPickTime)
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("📅", fontSize = 10.5.sp, maxLines = 1)
-                Text("Pick", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cs.primary, maxLines = 1)
+                ChipHeading("RECENT")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.weight(4f)) { RecentChips(recent, now, null, base = base, onPick = onTime) }
+                    PickChip(Modifier.width(48.dp), onClick = onPickTime)
+                }
             }
         }
         if (!enabled) {
@@ -962,9 +942,9 @@ private fun QuickRow(item: ReviewItem, enabled: Boolean, onTime: (Long) -> Unit,
     }
 }
 
-private val SlotGreen = Color(0xFF2E9E5B)
-private val SlotGreenBg: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF123A24) else Color(0xFFE3F6EA)
-private val SlotGreenInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFBDF5D2) else Color(0xFF145A32)
+/** A My task's picker: its current length (HOW LONG first when it has none), saved as you pick it. */
+private fun myBusy(item: ReviewItem): PickBusy =
+    PickBusy(MyTaskStore.get(item.id)?.durationMin ?: item.lengthMin, item.id) { MyTaskStore.setLength(item.id, it) }
 
 /** Today, Tomorrow, or the short day and date. */
 private fun dayWord(ms: Long): String {
@@ -1189,7 +1169,7 @@ private fun SessionSummary(
     }
     pickFor?.let { items ->
         val single = items.singleOrNull()
-        val busy = if (single?.isMine == true) PickBusy(single.lengthMin, single.id) else null
+        val busy = if (single?.isMine == true) myBusy(single) else null
         androidx.compose.runtime.CompositionLocalProvider(LocalPickBusy provides busy) {
             TimePickerDialog(title = if (single != null) "Set time · ${single.title}" else "Set time for ${items.size}", selected = null, onPick = { ms ->
                 pickFor = null
@@ -1199,7 +1179,7 @@ private fun SessionSummary(
         }
     }
     timeFor?.let { it0 ->
-        val busy = if (it0.isMine) PickBusy(it0.lengthMin, it0.id) else null
+        val busy = if (it0.isMine) myBusy(it0) else null
         androidx.compose.runtime.CompositionLocalProvider(LocalPickBusy provides busy) {
             TimePickerDialog(
                 title = (if (it0.isReplied) "Not done · " else "Set time · ") + it0.title,
