@@ -577,8 +577,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         if (upNext.isNotEmpty()) {
                             Text("UP NEXT", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
-                            val now = remember(item.key) { System.currentTimeMillis() }
-                            upNext.forEachIndexed { i, n -> UpNextCard(n, now, rowPos(i, upNext.size), onCall = { dialOnly(n) }, onWhatsApp = { whatsApp(n) }) }
+                            UpNextList(upNext)
                         }
                     }
                     // Undo shows here, above the card, never over it.
@@ -699,25 +698,25 @@ private fun PartBars(s: ReviewSession.State) {
 
 private val DoneInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF7FE0C2) else Color(0xFF0B6B55)
 
-/** A task waiting after this one: THE card, with no tick (Done is on the card below). */
+/** What comes after this one: only the task text, one block with thin lines between (no buttons, chips or ticks). */
 @Composable
-private fun UpNextCard(n: ReviewItem, now: Long, pos: RowPos, onCall: () -> Unit, onWhatsApp: () -> Unit) {
-    val ctx = LocalContext.current
-    TaskCard(
-        title = n.title,
-        done = false,
-        onTick = {},
-        showTick = false,
-        time = if (n.at > 0L) whenLabel(n.at, now) else null,
-        late = n.at in 1..now && !n.isReplied,
-        timeIcons = timeIconsOf(n),
-        person = n.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
-        chips = taskChips(ctx, n),
-        onCall = if (n.number.isNotBlank()) onCall else null,
-        onWhatsApp = if (n.number.isNotBlank()) onWhatsApp else null,
-        onClick = {},
-        pos = pos,
-    )
+private fun UpNextList(items: List<ReviewItem>) {
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = RoundedCornerShape(16.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
+        Column {
+            items.forEachIndexed { i, n ->
+                if (i > 0) HorizontalDivider(color = cs.surfaceVariant)
+                Text(
+                    n.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
+        }
+    }
 }
 
 private fun timeIconsOf(n: ReviewItem) = when (n.kind) {
