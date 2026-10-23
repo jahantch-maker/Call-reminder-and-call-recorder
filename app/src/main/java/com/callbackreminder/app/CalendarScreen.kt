@@ -319,7 +319,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
     /** Undo text after a slide or stretch, with ⚠ when it now overlaps your own items. */
     fun clashNote(id: Long): String {
         val t = MyTaskStore.get(id) ?: return ""
-        val n = CalendarData.clashes(ctx, t.dueAt, t.durationMin, id).size
+        val n = CalendarData.clashes(ctx, t.dueAt, t.length, id).size
         return if (n > 0) " · ⚠ clashes with $n" else ""
     }
 

@@ -570,9 +570,8 @@ fun FollowUpDialog(
                 fromMyTask != null -> fromMyTask.dueAt.takeIf { it > 0L }
                 initialDue == null -> null
                 initialDue > 0L -> initialDue
-                // No time until there is a person: a quick save of just the task goes to To schedule.
-                (item?.number ?: initialNumber).isBlank() -> null
-                else -> defaultCallTime(ctx, now)
+                // No time until you pick one, every time: a save with no time goes to To schedule.
+                else -> null
             }
         )
     }
@@ -711,7 +710,6 @@ fun FollowUpDialog(
             PersonPicker(prompt = "Who is this follow-up with? (optional)") { n, num ->
                 name = n
                 number = num
-                if (due == null && callOn && !editing && item == null && anchor == 0L) due = defaultCallTime(ctx, System.currentTimeMillis())
             }
         } else {
             ContactCard(name = name, number = number, onClear = { name = ""; number = "" }, compact = true)
@@ -739,7 +737,6 @@ fun FollowUpDialog(
             compact = true,
             onChange = { on ->
                 callOn = on
-                if (on && due == null && anchor == 0L) setDue(defaultCallTime(ctx, System.currentTimeMillis()))
             },
         ) {
             ShortTimeRow(
@@ -749,6 +746,12 @@ fun FollowUpDialog(
                 pickLabel = "📅 Pick",
                 plusRow = true,
                 compact = true,
+                leading = {
+                    ChipHeading("WHEN", modifier = Modifier.align(Alignment.CenterVertically))
+                    if (due == null) {
+                        Text("No time", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.align(Alignment.CenterVertically))
+                    }
+                },
                 onPick = { setDue(it) },
             )
             if (due == null) {

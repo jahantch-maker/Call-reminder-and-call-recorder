@@ -6,6 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -473,7 +474,7 @@ internal fun MyTaskDialog(
     onMoveToFollowUps: ((MyTask) -> Unit)? = null,
     /** A new task's time and length to start with (the Calendar's "＋ Add" in a free gap). */
     initialDue: Long = 0L,
-    initialLength: Int = MyTaskStore.DEFAULT_LENGTH,
+    initialLength: Int = 0,
     /** A new task's text to start with (the widget's 🎤). */
     initialTitle: String = "",
     /** Opened in place (a person page, Home, the review session): "Show in My tasks ›", History and WA. */
@@ -485,13 +486,16 @@ internal fun MyTaskDialog(
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var showNote by remember { mutableStateOf(existing?.note?.isNotBlank() == true) }
     var due by remember { mutableLongStateOf(existing?.dueAt ?: initialDue) }
-    var showTime by remember { mutableStateOf(existing?.timed == true || initialDue > 0L) }
+    // New tasks show the time rows at once, with no time and no length yet: both are chosen every time.
+    var showTime by remember { mutableStateOf(existing == null || existing.timed || initialDue > 0L) }
     var length by remember { mutableIntStateOf(existing?.durationMin ?: initialLength) }
     var customLength by remember { mutableStateOf(false) }
     var pickAnother by remember { mutableStateOf(false) }
     // "Keep both" on the clash warning: remembered for that time and length only.
     var keptClash by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var picked by remember { mutableStateOf<Long?>(null) }
+    var recent by remember { mutableStateOf(RecentPicks.load(ctx)) }
+    val openedAt = remember { System.currentTimeMillis() }
     var list by remember { mutableLongStateOf(existing?.listId ?: listId.takeIf { it >= 0 } ?: MyTaskStore.UNSORTED) }
     var starred by remember { mutableStateOf(existing?.starred ?: false) }
     var name by remember { mutableStateOf(existing?.name ?: personName) }
@@ -530,9 +534,21 @@ internal fun MyTaskDialog(
         }
     }
 
+    // A time needs a length, so the Calendar books the real time; with no time the length can wait.
+    val needLength = due > 0L && length <= 0
+
+    fun pickTime(ms: Long) {
+        RecentPicks.record(ctx, ms)
+        recent = RecentPicks.load(ctx)
+        due = ms
+        picked = ms
+    }
+
     fun save() {
+        if (needLength) return
         val t = if (existing == null) {
             MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
+                .also { if (due <= 0L) android.widget.Toast.makeText(ctx, "Saved · no time yet, in To schedule", android.widget.Toast.LENGTH_SHORT).show() }
         } else {
             MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
             MyTaskStore.get(existing.id) ?: return
@@ -561,7 +577,9 @@ internal fun MyTaskDialog(
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
+                label = { Text("Task *") },
                 placeholder = { Text("New task") },
+                trailingIcon = voiceMic(title) { title = it },
                 textStyle = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.fillMaxWidth().padding(end = 8.dp).focusRequester(focus),
                 shape = RoundedCornerShape(14.dp)
@@ -578,44 +596,43 @@ internal fun MyTaskDialog(
                 )
             }
             if (showTime) {
-                // WHEN: the time with 📅 Pick beside it (✕ removes the time), +15m to +2h and Recent. Free slots are in Pick.
-                val pickBusy = remember(length, existing?.id) { PickBusy(length, existing?.id ?: -1L) }
-                CompositionLocalProvider(LocalPickBusy provides pickBusy) {
-                    Box(Modifier.padding(end = 8.dp)) {
-                        ShortTimeRow(
-                            selected = due.takeIf { it > 0L },
-                            onClear = if (due > 0L) ({ due = 0L; picked = null; before = emptyList() }) else null,
-                            pickLabel = "📅 Pick",
-                            plusRow = true,
-                            compact = true,
-                            leading = { RowLabel("WHEN", Modifier.align(Alignment.CenterVertically)) },
-                            onPick = { ms -> due = ms; picked = ms },
-                        )
+                // WHEN, IN (urgent ones), HOW LONG first, then the free slots for that length and Recent:
+                // the same rows and headings as the review session's My task card.
+                Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RowLabel("WHEN")
+                        Spacer(Modifier.width(6.dp))
+                        if (due > 0L) {
+                            Row(
+                                Modifier
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), RoundedCornerShape(9.dp))
+                                    .padding(start = 8.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🕒 " + Fmt.dueLabel(due), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(" ✕", fontSize = 13.sp, modifier = Modifier.clickable { due = 0L; picked = null; before = emptyList() }.padding(horizontal = 5.dp))
+                            }
+                        } else {
+                            Text("No time", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                        }
                     }
-                }
-                // How long it takes: the Calendar books this much time and checks it for clashes.
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RowLabel("HOW LONG")
-                    MyTaskStore.LENGTH_CHOICES.forEach { m ->
-                        androidx.compose.material3.FilterChip(
-                            selected = length == m,
-                            onClick = { length = m },
-                            label = { Text(lengthChip(m)) },
-                        )
+                    ChipHeading("IN")
+                    PlusRow(compact = true) { pickTime(it) }
+                    HowLongRow(length, onLength = { length = it })
+                    if (needLength) {
+                        Text("Pick how long to save it with a time", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeedOrange)
                     }
-                    val custom = length !in MyTaskStore.LENGTH_CHOICES
-                    androidx.compose.material3.FilterChip(
-                        selected = custom,
-                        onClick = { customLength = true },
-                        label = { Text(if (custom) "✎ " + lengthChip(length) else "✎") },
-                    )
+                    FreeSlotsRow(length, existing?.id ?: -1L, due.takeIf { it > 0L }, onPick = { pickTime(it) }, onPickTime = { pickAnother = true }, compact = true)
+                    ChipHeading("RECENT")
+                    RecentChips(
+                        recent, openedAt, due.takeIf { it > 0L }, compact = true,
+                        base = existing?.dueAt?.takeIf { it > 0L },
+                        busy = PickBusy(length, existing?.id ?: -1L), enabled = length > 0,
+                    ) { pickTime(it) }
                 }
                 val clashes = remember(due, length, existing?.id) {
-                    if (due > 0L) CalendarData.clashes(ctx, due, length, existing?.id ?: -1L) else emptyList()
+                    if (due > 0L && length > 0) CalendarData.clashes(ctx, due, length, existing?.id ?: -1L) else emptyList()
                 }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = clashes.isNotEmpty() && keptClash != (due to length),
@@ -728,14 +745,13 @@ internal fun MyTaskDialog(
                         Icon(Icons.Rounded.Person, contentDescription = "Add person", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                voiceMic(title) { title = it }?.invoke()
                 Spacer(Modifier.weight(1f))
                 if (existing != null && onDelete != null) {
                     IconButton(onClick = { onDelete(existing); onDismiss() }) {
                         Icon(Icons.Rounded.Delete, contentDescription = "Delete task", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                TextButton(enabled = title.isNotBlank(), onClick = { save() }) {
+                TextButton(enabled = title.isNotBlank() && !needLength, onClick = { save() }) {
                     Text("Save", fontWeight = FontWeight.Bold)
                 }
             }
@@ -763,11 +779,11 @@ internal fun MyTaskDialog(
         )
     }
     if (pickAnother) {
-        CompositionLocalProvider(LocalPickBusy provides PickBusy(length, existing?.id ?: -1L)) {
+        CompositionLocalProvider(LocalPickBusy provides PickBusy(length, existing?.id ?: -1L) { length = it }) {
             TimePickerDialog(
-                title = "Pick another time",
+                title = if (due > 0L) "Pick another time" else "Pick time",
                 selected = due.takeIf { it > 0L },
-                onPick = { ms -> due = ms; picked = ms; pickAnother = false },
+                onPick = { ms -> due = ms; picked = ms; recent = RecentPicks.load(ctx); pickAnother = false },
                 onDismiss = { pickAnother = false },
             )
         }

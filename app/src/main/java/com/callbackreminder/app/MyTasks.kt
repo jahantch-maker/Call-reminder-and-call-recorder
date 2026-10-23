@@ -35,13 +35,18 @@ data class MyTask(
     val position: Long = createdAt,
     /** Extra heads-ups before the due time, in minutes (e.g. 60 and 1440 for 1 hour and 1 day before). */
     val remindBefore: List<Int> = emptyList(),
-    /** How long it takes, in minutes (the Calendar books this much time from [dueAt]). */
+    /** How long it takes, in minutes (the Calendar books this much time from [dueAt]); 0 = not chosen yet. */
     val durationMin: Int = MyTaskStore.DEFAULT_LENGTH,
     /** What happened to it, oldest first (kept since v0.31; older tasks start empty). */
     val events: List<TaskEvent> = emptyList(),
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
-    val endAt: Long get() = dueAt + durationMin * 60_000L
+    /** The length was chosen (new tasks have none until they get a time). */
+    val hasLength: Boolean get() = durationMin > 0
+
+    /** The length the Calendar books: the chosen one, else the old 30 min. */
+    val length: Int get() = if (durationMin > 0) durationMin else MyTaskStore.DEFAULT_LENGTH
+    val endAt: Long get() = dueAt + length * 60_000L
     val timed: Boolean get() = dueAt > 0L
     val personTitle: String get() = name.ifBlank { number }
 }
@@ -248,7 +253,26 @@ object MyTaskStore {
 
     /** A new task's length when you don't pick one (the Calendar's "How long?"). */
     const val DEFAULT_LENGTH = 30
-    val LENGTH_CHOICES = listOf(15, 30, 60, 90, 120, 180)
+
+    /** The HOW LONG chips when you haven't set your own (Settings › Time picker). */
+    val DEFAULT_LENGTH_CHOICES = listOf(15, 30, 60, 90, 120, 180)
+    const val MAX_LENGTH_CHOICES = 8
+    private const val LENGTH_CHOICES_KEY = "length_chips"
+
+    /** Your HOW LONG chips, shortest first. */
+    fun lengthChoices(c: Context): List<Int> =
+        AppSettings.getString(c, LENGTH_CHOICES_KEY).split(",").mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 5..(24 * 60) }.distinct().sorted().take(MAX_LENGTH_CHOICES)
+            .ifEmpty { DEFAULT_LENGTH_CHOICES }
+
+    fun setLengthChoices(c: Context, minutes: List<Int>) =
+        AppSettings.setString(
+            c, LENGTH_CHOICES_KEY,
+            minutes.filter { it in 5..(24 * 60) }.distinct().sorted().take(MAX_LENGTH_CHOICES).joinToString(",")
+        )
+
+    /** A length as saved: 0 (not chosen) stays 0, anything else 5 min to 24 h. */
+    private fun cleanLength(m: Int): Int = if (m <= 0) 0 else m.coerceIn(5, 24 * 60)
 
     private val _lists = MutableStateFlow(listOf(TaskList(UNSORTED, "Unsorted")))
     /** Unsorted first, then your lists in your order. */
@@ -350,7 +374,7 @@ object MyTaskStore {
     fun add(
         title: String, note: String, dueAt: Long, name: String, number: String,
         listId: Long = UNSORTED, starred: Boolean = false, remindBefore: List<Int> = emptyList(),
-        durationMin: Int = DEFAULT_LENGTH,
+        durationMin: Int = 0,
     ): MyTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -369,7 +393,7 @@ object MyTaskStore {
             starred = starred,
             position = minOf(top, now),
             remindBefore = remindBefore.distinct().sorted(),
-            durationMin = durationMin.coerceIn(5, 24 * 60),
+            durationMin = cleanLength(durationMin),
             events = listOf(TaskEvent(now, if (dueAt > 0L) "Created · due ${Fmt.dueLabel(dueAt)}" else "Created · no time")),
         )
         save(_items.value + t)
@@ -389,7 +413,7 @@ object MyTaskStore {
             title = title.trim(), note = note.trim(), dueAt = dueAt, name = name.trim(), number = number.trim(),
             listId = listId ?: old.listId, starred = starred ?: old.starred,
             remindBefore = remindBefore?.distinct()?.sorted() ?: old.remindBefore,
-            durationMin = durationMin?.coerceIn(5, 24 * 60) ?: old.durationMin,
+            durationMin = durationMin?.let { cleanLength(it) } ?: old.durationMin,
             events = old.events + listOfNotNull(timeEvent(old.dueAt, dueAt)),
         )
         save(_items.value.map { if (it.id == id) t else it })

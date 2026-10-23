@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.rounded.Close
@@ -182,8 +183,17 @@ fun TimePickerPanel(
         mutableIntStateOf(start)
     }
     var picked by remember { mutableStateOf(selected) }
+    // A My task with no length yet: HOW LONG first, then the free slots and the grid's green fits follow it.
+    val busyIn = LocalPickBusy.current
+    val askLength = busyIn?.onLength != null
+    var len by remember { mutableIntStateOf(busyIn?.lengthMin ?: 0) }
+    val busy = remember(busyIn, len) { busyIn?.takeIf { len > 0 }?.let { PickBusy(len, it.excludeTaskId) } }
 
     fun pick(ms: Long) {
+        if (askLength && len <= 0) {
+            android.widget.Toast.makeText(ctx, "Pick how long first", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         picked = ms
         RecentPicks.record(ctx, ms)
         onPick(ms)
@@ -195,28 +205,18 @@ fun TimePickerPanel(
     }
 
     Column(Modifier.fillMaxWidth()) {
+        if (askLength) {
+            HowLongRow(len, onLength = { len = it; busyIn?.onLength?.invoke(it) }, modifier = Modifier.padding(top = 6.dp))
+        }
         if (plusRow) {
             PanelLabel("IN")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("+15m" to 15, "+30m" to 30, "+1h" to 60, "+2h" to 120).forEach { (label, min) ->
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(PlusBg)
-                            .clickable { pick(now + min * 60_000L) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(label, color = PlusFg, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                    }
-                }
-            }
+            PlusRow { pick(it) }
         }
 
         if (showRecent) {
             PanelLabel("RECENT")
-            RecentChips(recent, now, selected ?: picked, latest, base = LocalSameBase.current ?: selected) { ms ->
+            RecentChips(recent, now, selected ?: picked, latest, base = LocalSameBase.current ?: selected,
+                busy = busy, enabled = !askLength || len > 0) { ms ->
                 val d = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
                 days.indexOf(d).takeIf { it >= 0 }?.let { dayIndex = it }
                 pick(ms)
@@ -285,9 +285,12 @@ fun TimePickerPanel(
 
         val day = days[dayIndex]
         // A task editor with a length: busy times crossed out, green outline where it fits, best free slots.
-        val busy = LocalPickBusy.current
         val dayBlocks = remember(day, busy) { busy?.let { CalendarData.blocks(ctx, day, it.excludeTaskId) } }
         val window = remember(day, busy) { busy?.let { WorkHours.window(ctx, day) } }
+        if (askLength && busy == null) {
+            PanelLabel("BEST FREE SLOTS")
+            Text("Pick how long to see free slots", fontSize = 13.sp, color = cs.outline)
+        }
         if (busy != null) {
             val best = remember(day, busy) { CalendarData.bestSlots(ctx, day, busy.lengthMin, busy.excludeTaskId) }
             PanelLabel("BEST FREE SLOTS · ${CalendarData.lengthLabel(busy.lengthMin.toLong())}")
@@ -347,6 +350,10 @@ fun RecentChips(
     latest: Long? = null,
     compact: Boolean = false,
     base: Long? = LocalSameBase.current,
+    /** A My task's length: times it would clash at get a red border and "busy". */
+    busy: PickBusy? = null,
+    /** False (a My task with no length yet): greyed, a tap says to pick how long first. */
+    enabled: Boolean = true,
     onPick: (Long) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -354,6 +361,12 @@ fun RecentChips(
     val zone = ZoneId.systemDefault()
     val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     val (same, copied) = remember(base) { SameTime.next(ctx, base) }
+    val pickIt: (Long) -> Unit = { ms ->
+        if (enabled) onPick(ms)
+        else android.widget.Toast.makeText(ctx, "Pick how long first", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun clashes(ms: Long) = busy != null && busy.lengthMin > 0 && ms > now &&
+        CalendarData.clashes(ctx, ms, busy.lengthMin, busy.excludeTaskId).isNotEmpty()
     // A recent time equal to it is left out, and the next one fills its place.
     val shown = remember(recent, same) {
         (recent + RecentPicks.loadAll(ctx)).distinct().filter { it / 60_000L != same / 60_000L }.take(RecentPicks.MAX)
@@ -363,21 +376,28 @@ fun RecentChips(
         today.plusDays(1) -> "Tomorrow"
         else -> at.format(DateTimeFormatter.ofPattern(if (passed) "EEE d" else "EEE d MMM", Locale.getDefault()))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        SameTimeChip(same, copied, now, on, latest, compact, Modifier.weight(1f), onPick = onPick)
+    val busyAt = remember(shown, same, busy?.lengthMin, enabled) {
+        if (!enabled) emptySet() else (shown + same).filter { clashes(it) }.toSet()
+    }
+    Row(
+        Modifier.fillMaxWidth().then(if (enabled) Modifier else Modifier.alpha(0.4f)),
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        SameTimeChip(same, copied, now, on, latest, compact, Modifier.weight(1f), busy = same in busyAt, onPick = pickIt)
         shown.forEach { ms ->
             val passed = ms <= now
             val off = passed || (latest != null && ms > latest)
             val at = Instant.ofEpochMilli(ms).atZone(zone)
-            val dayText = dayWord(at, passed) + if (passed) " · passed" else ""
+            val clash = ms in busyAt
+            val dayText = dayWord(at, passed) + if (passed) " · passed" else if (clash) " · busy" else ""
             val sel = on == ms
             Column(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (sel) cs.primary else cs.surface)
-                    .border(1.5.dp, if (off) cs.outlineVariant else cs.primary, RoundedCornerShape(12.dp))
-                    .clickable(enabled = !off) { onPick(ms) }
+                    .border(1.5.dp, if (off) cs.outlineVariant else if (clash) BusyRed else cs.primary, RoundedCornerShape(12.dp))
+                    .clickable(enabled = !off) { pickIt(ms) }
                     .padding(vertical = if (compact) 1.dp else 4.dp, horizontal = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -386,7 +406,7 @@ fun RecentChips(
                     off -> cs.outline
                     else -> cs.primary
                 }
-                Text(dayText, fontSize = if (compact) 9.5.sp else 10.5.sp, color = if (sel) cs.onPrimary else cs.outline, maxLines = 1)
+                Text(dayText, fontSize = if (compact) 9.5.sp else 10.5.sp, color = if (sel) cs.onPrimary else if (clash) BusyRed else cs.outline, maxLines = 1)
                 Text(
                     at.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())),
                     fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1
@@ -407,6 +427,8 @@ fun SameTimeChip(
     latest: Long? = null,
     compact: Boolean = false,
     modifier: Modifier = Modifier,
+    /** Your own items already book this time: red border and "busy". */
+    busy: Boolean = false,
     onPick: (Long) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -421,13 +443,13 @@ fun SameTimeChip(
         modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (sel) SameOrange else amber.bg)
-            .border(1.5.dp, if (off) cs.outlineVariant else SameOrange, RoundedCornerShape(12.dp))
+            .border(1.5.dp, if (off) cs.outlineVariant else if (busy) BusyRed else SameOrange, RoundedCornerShape(12.dp))
             .clickable(enabled = !off) { onPick(same) }
             .padding(vertical = if (compact) 1.dp else 4.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(if (copied) "$day same" else day, fontSize = if (compact) 9.5.sp else 10.5.sp,
-            color = if (sel) Color(0xFF3A2000) else amber.fg.copy(alpha = 0.85f), maxLines = 1)
+        Text((if (copied) "$day same" else day) + if (busy) " · busy" else "", fontSize = if (compact) 9.5.sp else 10.5.sp,
+            color = if (sel) Color(0xFF3A2000) else if (busy) BusyRed else amber.fg.copy(alpha = 0.85f), maxLines = 1)
         Text(
             at.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())),
             fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold,
@@ -535,22 +557,10 @@ fun ShortTimeRow(
                 )
             }
             if (plusRow) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    listOf("+15m" to 15, "+30m" to 30, "+1h" to 60, "+2h" to 120).forEach { (label, min) ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(28.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(PlusBg)
-                                .clickable { pick(System.currentTimeMillis() + min * 60_000L) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(label, color = PlusFg, fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
-                        }
-                    }
-                }
+                ChipHeading("IN")
+                PlusRow(compact = true) { pick(it) }
             }
+            ChipHeading("RECENT")
             CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
                 RecentChips(recent, now, if (showSelected) selected else null, latest, compact = true) { pick(it) }
             }
@@ -576,23 +586,10 @@ fun ShortTimeRow(
             }
         }
         if (plusRow) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("+15m" to 15, "+30m" to 30, "+1h" to 60, "+2h" to 120).forEach { (label, min) ->
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(PlusBg)
-                            .clickable { pick(System.currentTimeMillis() + min * 60_000L) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(label, color = PlusFg, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                    }
-                }
-            }
+            ChipHeading("IN")
+            PlusRow { pick(it) }
         }
-        PanelLabel("RECENT")
+        ChipHeading("RECENT")
         CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
             RecentChips(recent, now, if (showSelected) selected else null, latest) { pick(it) }
         }
@@ -778,18 +775,187 @@ fun TimeChipGrid(
 }
 
 @Composable
-private fun PanelLabel(text: String) {
+private fun PanelLabel(text: String, warn: Boolean = false) {
+    ChipHeading(text, warn = warn, modifier = Modifier.padding(top = 10.dp, bottom = 5.dp))
+}
+
+/** The small grey heading over every chip row (IN, HOW LONG, BEST FREE SLOTS, RECENT), the same in every window. */
+@Composable
+fun ChipHeading(text: String, warn: Boolean = false, modifier: Modifier = Modifier) {
     Text(
         text,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.5.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 10.dp, bottom = 5.dp)
+        color = if (warn) NeedOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = modifier
     )
 }
 
+/** Orange for "pick how long first". */
+val NeedOrange: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFF0AA5A) else Color(0xFFC0640A)
+private val BusyRed = Color(0xFFEB5050)
+
+/** +15m / +30m / +1h / +2h from now (urgent tasks, Snooze, after-call popup). */
+@Composable
+fun PlusRow(compact: Boolean = false, onPick: (Long) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 6.dp)) {
+        listOf("+15m" to 15, "+30m" to 30, "+1h" to 60, "+2h" to 120).forEach { (label, min) ->
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(if (compact) 28.dp else 36.dp)
+                    .clip(RoundedCornerShape(if (compact) 8.dp else 10.dp))
+                    .background(PlusBg)
+                    .clickable { onPick(System.currentTimeMillis() + min * 60_000L) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(label, color = PlusFg, fontWeight = FontWeight.ExtraBold, fontSize = if (compact) 12.5.sp else 14.sp)
+            }
+        }
+    }
+}
+
+/**
+ * HOW LONG: your own length chips (Settings › Time picker) and ✎ for any length. With no length yet the
+ * heading turns orange ("pick one first"): free slots and Recent wait for it.
+ */
+@Composable
+fun HowLongRow(length: Int, onLength: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val choices = remember { MyTaskStore.lengthChoices(ctx) }
+    var custom by remember { mutableStateOf(false) }
+    val need = length <= 0
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        ChipHeading(if (need) "HOW LONG · pick one first" else "HOW LONG", warn = need)
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            choices.forEach { m ->
+                val on = length == m
+                androidx.compose.material3.FilterChip(
+                    selected = on,
+                    onClick = { onLength(m) },
+                    label = { Text(lengthChip(m), fontWeight = FontWeight.Bold, color = if (need) NeedOrange else androidx.compose.ui.graphics.Color.Unspecified) },
+                    border = if (need) BorderStroke(1.dp, NeedOrange.copy(alpha = 0.7f))
+                        else androidx.compose.material3.FilterChipDefaults.filterChipBorder(enabled = true, selected = on),
+                )
+            }
+            val isCustom = length > 0 && length !in choices
+            androidx.compose.material3.FilterChip(
+                selected = isCustom,
+                onClick = { custom = true },
+                label = { Text(if (isCustom) "✎ " + lengthChip(length) else "✎", fontWeight = FontWeight.Bold) },
+            )
+        }
+    }
+    if (custom) {
+        LengthDialog(initial = if (length > 0) length else MyTaskStore.DEFAULT_LENGTH, onDismiss = { custom = false }) {
+            custom = false
+            onLength(it)
+        }
+    }
+}
+
+/** Today, Tomorrow, or the short day and date, over a slot chip's time. */
+private fun slotDay(ms: Long): String {
+    val zone = ZoneId.systemDefault()
+    val d = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    val today = LocalDate.now(zone)
+    return when (d) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> d.format(DateTimeFormatter.ofPattern("EEE d", Locale.getDefault()))
+    }
+}
+
+/**
+ * BEST FREE SLOTS · length: the next 3 free starts (green) for [lengthMin], then 📅 Pick. With no length yet
+ * the slots wait: "Pick how long to see free slots".
+ */
+@Composable
+fun FreeSlotsRow(
+    lengthMin: Int,
+    excludeTaskId: Long,
+    selected: Long?,
+    onPick: (Long) -> Unit,
+    onPickTime: () -> Unit,
+    compact: Boolean = false,
+) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        ChipHeading(if (lengthMin > 0) "BEST FREE SLOTS · ${CalendarData.lengthLabel(lengthMin.toLong())}" else "BEST FREE SLOTS")
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (lengthMin > 0) {
+                val slots = remember(lengthMin, excludeTaskId) { ReviewData.freeSlots(ctx, lengthMin, excludeTaskId, 3) }
+                if (slots.isEmpty()) {
+                    Text("No free time in working hours", fontSize = 12.sp, color = cs.outline, modifier = Modifier.weight(3f))
+                } else {
+                    slots.forEach { ms ->
+                        val on = selected == ms
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (on) FitGreen else FitGreenBg)
+                                .border(1.5.dp, FitGreen, RoundedCornerShape(12.dp))
+                                .clickable { onPick(ms) }
+                                .padding(vertical = if (compact) 1.dp else 4.dp, horizontal = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(slotDay(ms), fontSize = if (compact) 9.5.sp else 10.5.sp,
+                                color = if (on) Color.White else FitGreenInk.copy(alpha = 0.75f), maxLines = 1)
+                            Text(Fmt.timeOnly(ms), fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold,
+                                color = if (on) Color.White else FitGreenInk, maxLines = 1)
+                        }
+                    }
+                    repeat(3 - slots.size) { Spacer(Modifier.weight(1f)) }
+                }
+            } else {
+                Text(
+                    "Pick how long to see free slots",
+                    fontSize = 12.sp,
+                    color = cs.outline,
+                    maxLines = 2,
+                    modifier = Modifier
+                        .weight(3f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 8.dp, vertical = if (compact) 4.dp else 7.dp)
+                )
+            }
+            PickChip(Modifier.weight(1f), compact, onPickTime)
+        }
+    }
+}
+
+/** 📅 Pick: opens the full picker. */
+@Composable
+fun PickChip(modifier: Modifier = Modifier, compact: Boolean = false, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.5.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = if (compact) 1.dp else 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("📅", fontSize = if (compact) 9.5.sp else 10.5.sp, maxLines = 1)
+        Text("Pick", fontSize = if (compact) 12.sp else 13.sp, fontWeight = FontWeight.Bold, color = cs.primary, maxLines = 1)
+    }
+}
+
 /** Settings › Time picker: the grid's first time, last time and gap, with a preview. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TimePickerSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -797,6 +963,8 @@ fun TimePickerSettingsScreen(onBack: () -> Unit) {
     var end by remember { mutableIntStateOf(TimeGrid.end(ctx)) }
     var gap by remember { mutableIntStateOf(TimeGrid.gap(ctx)) }
     var editing by remember { mutableStateOf<String?>(null) }
+    var lengths by remember { mutableStateOf(MyTaskStore.lengthChoices(ctx)) }
+    var addLength by remember { mutableStateOf(false) }
 
     SettingsPage(title = "Time picker", onBack = onBack) {
         SectionCard(
@@ -824,6 +992,51 @@ fun TimePickerSettingsScreen(onBack: () -> Unit) {
             }
         }
         SectionCard(
+            title = "How long chips",
+            subtitle = "Your quick lengths for My tasks, up to ${MyTaskStore.MAX_LENGTH_CHOICES}. Tap ✕ to remove one. ✎ for any other length is always there."
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    lengths.forEach { m ->
+                        androidx.compose.material3.InputChip(
+                            selected = false,
+                            onClick = {},
+                            label = { Text(lengthChip(m), fontWeight = FontWeight.Bold) },
+                            trailingIcon = {
+                                Text(
+                                    "✕",
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.clickable(enabled = lengths.size > 1) {
+                                        MyTaskStore.setLengthChoices(ctx, lengths - m)
+                                        lengths = MyTaskStore.lengthChoices(ctx)
+                                    }.padding(2.dp)
+                                )
+                            },
+                        )
+                    }
+                    if (lengths.size < MyTaskStore.MAX_LENGTH_CHOICES) {
+                        androidx.compose.material3.AssistChip(
+                            onClick = { addLength = true },
+                            label = { Text("＋ Add", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                        )
+                    }
+                }
+                Text(
+                    "Reset to " + MyTaskStore.DEFAULT_LENGTH_CHOICES.joinToString(" · ") { lengthChip(it) },
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        MyTaskStore.setLengthChoices(ctx, MyTaskStore.DEFAULT_LENGTH_CHOICES)
+                        lengths = MyTaskStore.lengthChoices(ctx)
+                    }.padding(vertical = 4.dp)
+                )
+            }
+        }
+        SectionCard(
             title = "Preview",
             subtitle = "Recent shows your last 3 picks (day and time). Times already gone today are greyed out."
         ) {
@@ -844,6 +1057,13 @@ fun TimePickerSettingsScreen(onBack: () -> Unit) {
         )
     }
 
+    if (addLength) {
+        LengthDialog(initial = MyTaskStore.DEFAULT_LENGTH, onDismiss = { addLength = false }) { m ->
+            addLength = false
+            MyTaskStore.setLengthChoices(ctx, lengths + m)
+            lengths = MyTaskStore.lengthChoices(ctx)
+        }
+    }
     editing?.let { which ->
         val m = if (which == "start") start else end
         ClockDialog(
