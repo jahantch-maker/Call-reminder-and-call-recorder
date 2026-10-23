@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -12,8 +13,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.35.0"
+        versionCode = 51
+        versionName = "0.36.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.
@@ -62,4 +63,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // Home screen widgets
     implementation("androidx.glance:glance-appwidget:1.1.1")
+    // Team edition: Google sign-in, the shared task list (works offline, syncs when data is on) and the
+    // background check every 15 minutes.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

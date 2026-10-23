@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Phone
@@ -130,6 +131,7 @@ fun SettingsScreen(
     onOpenCalendar: () -> Unit = {},
     onOpenAppearance: () -> Unit = {},
     onOpenMyDay: () -> Unit = {},
+    onOpenTeam: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -159,6 +161,22 @@ fun SettingsScreen(
     val offDays by OffDays.mask.collectAsState()
 
     SettingsPage(title = "Settings", onBack = onBack) {
+        val teamUser by TeamRepo.user.collectAsState()
+        val team by TeamRepo.team.collectAsState()
+        val teamMe by TeamRepo.me.collectAsState()
+        val teamMembers by TeamRepo.members.collectAsState()
+        NavRow(
+            icon = Icons.Rounded.Groups,
+            title = "Team",
+            summary = when {
+                teamUser == null -> "Not set up · tap to make or join your team"
+                teamMe?.pending == true -> "Waiting for approval"
+                team != null && teamMe?.active == true -> "${team!!.name} · ${teamMembers.count { it.active }} members · code ${team!!.code}" +
+                    teamMembers.count { it.pending }.let { if (it > 0) " · $it waiting" else "" }
+                else -> "Signed in · make or join a team"
+            },
+            onClick = onOpenTeam
+        )
         val look by Appearance.version.collectAsState()
         NavRow(
             icon = Icons.Rounded.Palette,

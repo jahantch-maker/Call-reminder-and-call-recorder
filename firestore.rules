@@ -1,0 +1,63 @@
+rules_version = '2';
+
+// Callback Reminder · Team edition (Firebase project rafiq-builders).
+// Paste this into Firebase console › Firestore Database › Rules › Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function member(t) { return get(/databases/$(database)/documents/teams/$(t)/members/$(me())).data; }
+    function isMember(t) { return exists(/databases/$(database)/documents/teams/$(t)/members/$(me())); }
+    function isActive(t) { return isMember(t) && member(t).status == 'active'; }
+    function isAdmin(t) { return isActive(t) && member(t).role in ['owner', 'admin']; }
+    function isOwner(t) { return get(/databases/$(database)/documents/teams/$(t)).data.ownerUid == me(); }
+
+    // Join codes: anyone signed in can look one up; made once with the team.
+    match /codes/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && isOwner(request.resource.data.teamId);
+    }
+
+    // Which team a person is in (to find it again on a new phone). Only your own.
+    match /users/{uid} {
+      allow read, write: if signedIn() && uid == me();
+    }
+
+    match /teams/{t} {
+      allow read: if signedIn() && isMember(t);
+      allow create: if signedIn() && request.resource.data.ownerUid == me();
+      allow update: if signedIn() && isOwner(t) && request.resource.data.ownerUid == resource.data.ownerUid;
+
+      match /members/{uid} {
+        allow read: if signedIn() && (uid == me() || isActive(t));
+        // Asking to join: yourself, as a pending member. The owner's own row when the team is made.
+        allow create: if signedIn() && uid == me() && (
+          (request.resource.data.status == 'pending' && request.resource.data.role == 'member') ||
+          (isOwner(t) && request.resource.data.role == 'owner' && request.resource.data.status == 'active'));
+        // Owner/Admin: approve, chart, role, remove. Yourself: only harmless fields.
+        allow update: if signedIn() && (
+          (isAdmin(t) && resource.data.role != 'owner' && request.resource.data.role != 'owner') ||
+          (isAdmin(t) && uid == me()) ||
+          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone'])));
+        // Leaving (yourself) or declining a request (Owner/Admin).
+        allow delete: if signedIn() && (uid == me() || (isAdmin(t) && resource.data.role != 'owner'));
+      }
+
+      // Team tasks: seen by the giver, the person it is for, and everyone above either of them.
+      match /tasks/{task} {
+        allow read: if signedIn() && me() in resource.data.viewers && isActive(t);
+        allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
+        allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
+          && request.resource.data.fromUid == resource.data.fromUid
+          && request.resource.data.toUid == resource.data.toUid;
+      }
+
+      // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.
+      match /days/{uid} {
+        allow write: if signedIn() && uid == me() && isActive(t);
+        allow read: if signedIn() && isActive(t) && (uid == me() || me() in resource.data.managers);
+      }
+    }
+  }
+}

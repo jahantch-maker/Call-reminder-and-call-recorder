@@ -15,5 +15,6 @@ class CallbackApp : Application() {
         Notifier.createChannels(this)
         SmsNotifier.createChannel(this)
         WidgetSync.start(this)
+        TeamRepo.init(this)
     }
 }

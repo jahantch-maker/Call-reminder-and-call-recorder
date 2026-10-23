@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "318801821677",
+    "project_id": "rafiq-builders",
+    "storage_bucket": "rafiq-builders.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318801821677:android:3682588de26ccb08e231e4",
+        "android_client_info": {
+          "package_name": "com.callbackreminder.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "318801821677-5uc3iq7823raipqnu8ojh5elsb95artp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.callbackreminder.app",
+            "certificate_hash": "eef9cf035e5cd01aeb54309a89b25e4d8cb12bc8"
+          }
+        },
+        {
+          "client_id": "318801821677-enjj03pgn87j5ae5n2llo2gbop4irhr9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2Sf8e6rOC7g_Mt-RvSGosUn-3wjMDNSs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "318801821677-enjj03pgn87j5ae5n2llo2gbop4irhr9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

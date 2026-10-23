@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
@@ -44,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -198,6 +200,11 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
     val ctx = LocalContext.current
     var showRecent by remember { mutableStateOf(false) }
     var showUsed by remember { mutableStateOf(false) }
+    var showTeam by remember { mutableStateOf(false) }
+    // 👥 Team comes first, only for people in a team (and only the people below them).
+    val teamMe by TeamRepo.me.collectAsState()
+    val teamMembers by TeamRepo.members.collectAsState()
+    val hasTeam = teamMe?.active == true && remember(teamMembers) { TeamRepo.belowMe().isNotEmpty() }
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -236,14 +243,14 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val contactsButton: @Composable (Modifier) -> Unit = { m ->
             OutlinedButton(
                 onClick = {
                     contactLauncher.launch(
                         Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
                     )
                 },
-                modifier = Modifier.weight(1f),
+                modifier = m,
                 shape = RoundedCornerShape(14.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
@@ -251,12 +258,14 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
                 Spacer(Modifier.width(6.dp))
                 Text("Contacts", maxLines = 1)
             }
+        }
+        val recentButton: @Composable (Modifier) -> Unit = { m ->
             OutlinedButton(
                 onClick = {
                     if (CallLookup.hasPermission(ctx)) showRecent = true
                     else callLogPermission.launch(Manifest.permission.READ_CALL_LOG)
                 },
-                modifier = Modifier.weight(1f),
+                modifier = m,
                 shape = RoundedCornerShape(14.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
@@ -265,15 +274,49 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
                 Text("Recent calls", maxLines = 1)
             }
         }
-        OutlinedButton(
-            onClick = { showUsed = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Used recently", maxLines = 1)
+        val usedButton: @Composable (Modifier) -> Unit = { m ->
+            OutlinedButton(
+                onClick = { showUsed = true },
+                modifier = m,
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Rounded.People, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Used recently", maxLines = 1)
+            }
+        }
+        if (hasTeam) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Button(
+                    onClick = { showTeam = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Icon(Icons.Rounded.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Team", maxLines = 1, fontWeight = FontWeight.Bold)
+                }
+                contactsButton(Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                recentButton(Modifier.weight(1f))
+                usedButton(Modifier.weight(1f))
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                contactsButton(Modifier.weight(1f))
+                recentButton(Modifier.weight(1f))
+            }
+            usedButton(Modifier.fillMaxWidth())
+        }
+    }
+
+    if (showTeam) {
+        TeamPickDialog(onDismiss = { showTeam = false }) { m ->
+            showTeam = false
+            onPicked(m.name, m.phone)
         }
     }
 
