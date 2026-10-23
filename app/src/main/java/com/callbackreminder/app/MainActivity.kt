@@ -516,6 +516,7 @@ private fun AppRoot(
                     onOpenCalls = { showTab(callsTab()) },
                     onOpenTexts = { showTab(textsTab()) },
                     onOpenMyTasks = { showTab(Tab.MY_TASKS) },
+                    onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
                     onOpenPerson = {
                         PeopleUi.current.value = it
                         open(Screen.PERSON)

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sms
@@ -214,7 +215,7 @@ val SETTINGS_INDEX = listOf(
 private class Hit(val title: String, val sub: String, val done: Boolean, val icon: ImageVector, val open: () -> Unit)
 
 /**
- * Universal search: one box for calls, texts, My tasks, Dossier, people, recordings and settings.
+ * Universal search: one box for calls, follow-ups waiting in To schedule, texts, My tasks, Dossier, people, recordings and settings.
  * Results come under a heading each (top 3, "See all"), pending first and done greyed below.
  * Its ⚙ chooses what it looks in.
  */
@@ -225,6 +226,7 @@ fun SearchScreen(
     onOpenCalls: () -> Unit,
     onOpenTexts: () -> Unit,
     onOpenMyTasks: () -> Unit,
+    onOpenToSchedule: () -> Unit,
     onOpenPerson: (String) -> Unit,
     onOpenRecordings: () -> Unit,
     onOpenSetting: (String) -> Unit,
@@ -237,6 +239,7 @@ fun SearchScreen(
     var expanded by remember { mutableStateOf(setOf<String>()) }
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
+    val waiting by ToScheduleStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
@@ -275,6 +278,14 @@ fun SearchScreen(
                 onOpenCalls()
             }
         },
+        "To schedule" to waiting.filter { t -> task(t.note) || task(t.message) || name(t.name) || num(t.number) }
+            .sortedByDescending { it.createdAt }
+            .map { t ->
+                Hit(t.headline, listOfNotNull(t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() }, "no time yet").joinToString(" · "), false, Icons.Rounded.Schedule) {
+                    ToScheduleUi.show.value = t.id
+                    onOpenToSchedule()
+                }
+            },
         "Texts" to texts.filter { t -> task(t.message) || task(t.code) || name(t.name) || num(t.number) }.map { t ->
             Hit(t.message, listOf(t.title, if (t.done) "done" else Fmt.dueLabel(t.alarmAt)).joinToString(" · "), t.done, Icons.Rounded.Sms) {
                 SmsUi.showRequest.value = t.id
