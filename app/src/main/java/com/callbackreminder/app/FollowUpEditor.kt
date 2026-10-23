@@ -598,6 +598,7 @@ fun FollowUpDialog(
     var starred by remember { mutableStateOf(item?.starred ?: editCall?.starred ?: fromMyTask?.starred ?: false) }
     var showDue by remember { mutableStateOf(false) }
     var showAutoHelp by remember { mutableStateOf(false) }
+    var sameAsk by remember { mutableStateOf<FollowUps.Same?>(null) }
 
     val hasPerson = number.isNotBlank()
     val callEff = callOn && hasPerson
@@ -643,6 +644,27 @@ fun FollowUpDialog(
     }
     val first = Names.first(name)
 
+    /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
+    fun save(same: FollowUps.Same?) {
+        val plan = if (textEff) text.plan(task) else null
+        val pilot = autopilot && callEff && textEff
+        val timed = when {
+            editing -> FollowUps.update(ctx, linkId, name, number, task, saveDue, callEff, pilot, plan, starred)
+            same?.sched != null -> FollowUps.create(ctx, name, number, task, saveDue, callEff, pilot, plan, starred, from = same.sched)
+            same != null -> FollowUps.update(ctx, same.linkId, name, number, task, saveDue, callEff, pilot, plan, starred)
+            else -> FollowUps.create(ctx, name, number, task, saveDue, callEff, pilot, plan, starred, from = item)
+        }
+        if (same != null) item?.let { ToScheduleStore.remove(it.id) }
+        fromMyTask?.let { MyTaskStore.delete(it.id) }
+        if (!timed) {
+            val needs = !hasPerson || (!callEff && !textEff)
+            Toast.makeText(ctx, if (needs) "Saved · Needs details, in To schedule" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
+        } else if (fromMyTask != null) {
+            Toast.makeText(ctx, "Moved to Follow-ups", Toast.LENGTH_SHORT).show()
+        }
+        onDismiss()
+    }
+
     FormDialog(
         title = heading,
         onDismiss = cancel,
@@ -679,21 +701,9 @@ fun FollowUpDialog(
             }
         },
         onConfirm = {
-            val plan = if (textEff) text.plan(task) else null
-            val pilot = autopilot && callEff && textEff
-            val timed = if (editing) {
-                FollowUps.update(ctx, linkId, name, number, task, saveDue, callEff, pilot, plan, starred)
-            } else {
-                FollowUps.create(ctx, name, number, task, saveDue, callEff, pilot, plan, starred, from = item)
-            }
-            fromMyTask?.let { MyTaskStore.delete(it.id) }
-            if (!timed) {
-                val needs = !hasPerson || (!callEff && !textEff)
-                Toast.makeText(ctx, if (needs) "Saved · Needs details, in To schedule" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
-            } else if (fromMyTask != null) {
-                Toast.makeText(ctx, "Moved to Follow-ups", Toast.LENGTH_SHORT).show()
-            }
-            onDismiss()
+            // A new one that copies an open follow-up for the same person asks first (Update it / Save as new).
+            val same = if (editing) null else FollowUps.findSame(number, task, skipSched = item?.id ?: 0L)
+            if (same != null) sameAsk = same else save(null)
         },
     ) {
         // A. Person
@@ -805,6 +815,14 @@ fun FollowUpDialog(
             onDismiss = { showDue = false }
         )
     }
+    sameAsk?.let { same ->
+        SameTaskDialog(
+            same,
+            onCancel = { sameAsk = null },
+            onSaveNew = { sameAsk = null; save(null) },
+            onUpdate = { sameAsk = null; save(same) },
+        )
+    }
     if (showAutoHelp) {
         AlertDialog(
             onDismissRequest = { showAutoHelp = false },
@@ -820,6 +838,55 @@ fun FollowUpDialog(
             confirmButton = { TextButton(onClick = { showAutoHelp = false }) { Text("OK") } }
         )
     }
+}
+
+/**
+ * "Already in To schedule / Follow-ups": a new follow-up has the same person and task as an open one.
+ * Update it puts the new time and settings on that one; Save as new keeps both.
+ */
+@Composable
+fun SameTaskDialog(same: FollowUps.Same, onCancel: () -> Unit, onSaveNew: () -> Unit, onUpdate: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val waiting = same.sched != null
+    val who = Names.first(same.name) ?: same.name.ifBlank { "This person" }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(if (waiting) "Already in To schedule" else "Already in Follow-ups") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (waiting) "$who already has this task waiting for a time:" else "$who already has this task with a time:")
+                Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(same.task, fontWeight = FontWeight.Bold, color = cs.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = RoundedCornerShape(8.dp), color = NoTimeOrange.copy(alpha = 0.22f)) {
+                                Text(
+                                    if (waiting) "📞 No time yet" else "📞 ${Fmt.dueLabel(same.due)}",
+                                    color = NoTimeOrange, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                            Surface(shape = RoundedCornerShape(8.dp), color = Color.Transparent, border = BorderStroke(1.dp, cs.outline)) {
+                                Text(
+                                    "👤 $who", color = cs.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        if (same.savedAt > 0L) Text("Saved ${Fmt.dueLabel(same.savedAt)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    }
+                }
+                Text("Update it puts your new time and settings on that one. No second copy.")
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+                TextButton(onClick = onSaveNew) { Text("Save as new") }
+                androidx.compose.material3.Button(onClick = onUpdate) { Text("Update it", fontWeight = FontWeight.Bold) }
+            }
+        },
+    )
 }
 
 private val CallCardBg = Color(0xFF3D5AFE).copy(alpha = 0.16f)

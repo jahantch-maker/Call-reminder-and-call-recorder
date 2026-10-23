@@ -183,6 +183,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     val lists by MyTaskStore.lists.collectAsState()
     var list by remember { mutableLongStateOf(MyTaskStore.UNSORTED) }
     var listMenu by remember { mutableStateOf(false) }
+    var sameAsk by remember { mutableStateOf<Pair<FollowUps.Same, Long?>?>(null) }
 
     val callerName = call.name.takeIf { it.isNotBlank() }
     val callerNumber = call.number.takeIf { it.isNotBlank() }
@@ -209,9 +210,11 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
     /** The task line: the note, or "Follow up on call with Ali" when nothing was typed. */
     fun taskText() = note.trim().ifBlank { "Follow up on call with $person" }
 
-    fun saveFollowUp(due: Long?) {
+    fun saveFollowUp(due: Long?, same: FollowUps.Same? = null, checked: Boolean = false) {
         val number = callerNumber ?: ""
         val task = taskText()
+        // The same task for this person is already open: ask Update it / Save as new first.
+        if (!checked) FollowUps.findSame(number, task)?.let { sameAsk = it to due; return }
         val textOn = alsoText && number.isNotBlank()
         val plan = if (textOn) {
             // No text time picked yet: a sensible one from the call time.
@@ -220,10 +223,13 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             }
             text.plan(task)
         } else null
-        val timed = FollowUps.create(
-            ctx, callerName ?: typedName, number, task, due,
-            callOn = callOn && number.isNotBlank(), autopilot = false, text = plan, starred = false,
-        )
+        val who = callerName ?: typedName
+        val on = callOn && number.isNotBlank()
+        val timed = if (same != null && same.sched == null) {
+            FollowUps.update(ctx, same.linkId, who, number, task, due, on, autopilot = false, text = plan, starred = false)
+        } else {
+            FollowUps.create(ctx, who, number, task, due, callOn = on, autopilot = false, text = plan, starred = false, from = same?.sched)
+        }
         Toast.makeText(
             ctx,
             if (timed && due != null) "Follow-up set · ${Fmt.dueLabel(due)}" else "Saved to Follow-ups · no time yet (To schedule)",
@@ -247,6 +253,15 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             Toast.LENGTH_SHORT
         ).show()
         onNext()
+    }
+
+    sameAsk?.let { (same, due) ->
+        SameTaskDialog(
+            same,
+            onCancel = { sameAsk = null },
+            onSaveNew = { sameAsk = null; saveFollowUp(due, checked = true) },
+            onUpdate = { sameAsk = null; saveFollowUp(due, same, checked = true) },
+        )
     }
 
     PopupSheetFrame(onDismiss = onNext) {
