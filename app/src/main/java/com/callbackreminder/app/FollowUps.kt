@@ -132,6 +132,41 @@ object FollowUps {
         )
     }
 
+    /** The task words as compared for [findSame]: small letters, single spaces. */
+    private fun taskKey(t: String): String = t.trim().lowercase().replace(Regex("\\s+"), " ")
+
+    /**
+     * An open follow-up for the same person with the same task: waiting in To schedule ([sched]), or with a time
+     * ([linkId], due at [due]).
+     */
+    data class Same(
+        val sched: ToScheduleItem?,
+        val linkId: Long,
+        val due: Long,
+        val savedAt: Long,
+        val name: String,
+        val task: String,
+    )
+
+    /**
+     * The open follow-up that a new one for [number] about [task] would copy, or null. [skipSched] is the To
+     * schedule item being saved itself. Done ones, and ones waiting in To review, don't count.
+     */
+    fun findSame(number: String, task: String, skipSched: Long = 0L): Same? {
+        val key = taskKey(task)
+        if (number.isBlank() || key.isEmpty()) return null
+        ToScheduleStore.items.value
+            .firstOrNull { it.id != skipSched && SmsStore.sameNumber(it.number, number) && taskKey(it.note) == key }
+            ?.let { return Same(it, 0L, 0L, it.createdAt, it.name, it.note) }
+        ReminderStore.items.value
+            .firstOrNull { !it.done && !it.review && it.linkId != 0L && SmsStore.sameNumber(it.number, number) && taskKey(it.note) == key }
+            ?.let { return Same(null, it.linkId, it.dueAt, it.createdAt, it.name, it.note) }
+        SmsStore.items.value
+            .firstOrNull { !it.done && it.review == null && it.linkId != 0L && SmsStore.sameNumber(it.number, number) && taskKey(it.message) == key }
+            ?.let { return Same(null, it.linkId, it.taskDue.takeIf { d -> d > 0L } ?: it.dueAt, it.createdAt, it.name, it.message) }
+        return null
+    }
+
     /**
      * Saves a new follow-up. With no due time, or with neither a call nor texts (a quick save of just the task),
      * it waits in To schedule and under No time. [from] is the To schedule item it came from: its history, task
