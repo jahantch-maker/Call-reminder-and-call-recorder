@@ -121,6 +121,9 @@ object MyTasksUi {
 
     /** The outlined task's row is on screen (the list stops scrolling down to find it). */
     val seen = MutableStateFlow(0L)
+
+    /** Counts up once the list has scrolled to the outlined task: its row then brings all of itself into view. */
+    val bring = MutableStateFlow(0)
     val showDossier = MutableStateFlow<Long?>(null)
 }
 
@@ -178,8 +181,6 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         starredOnly = false
         if (t.done) completedOpen = true
         highlightId = id
-        delay(3_000L)
-        if (highlightId == id) highlightId = null
     }
     val showDossierReq by MyTasksUi.showDossier.collectAsState()
     LaunchedEffect(showDossierReq) {
@@ -188,8 +189,6 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         sub = MyTasksUi.DOSSIER
         dossierStarred = false
         highlightId = -id
-        delay(3_000L)
-        if (highlightId == -id) highlightId = null
     }
     if (listSel != ALL_LISTS && lists.none { it.id == listSel }) listSel = MyTaskStore.UNSORTED
     val current = lists.firstOrNull { it.id == listSel }
@@ -328,11 +327,19 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     ) { padding ->
         Box(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-        // An outlined task further down: scroll until its row shows (it then brings itself fully into view).
+        // An outlined task further down: scroll until its row shows, then it brings itself fully into view (asked
+        // again after the scroll, which starts from the top and would undo an earlier one). Outlined 3 s after that.
         LaunchedEffect(highlightId) {
-            val id = highlightId?.takeIf { it > 0L } ?: return@LaunchedEffect
-            MyTasksUi.seen.value = 0L
-            listState.revealUntil { MyTasksUi.seen.value == id }
+            val id = highlightId ?: return@LaunchedEffect
+            if (id > 0L) {
+                MyTasksUi.seen.value = 0L
+                listState.revealUntil { MyTasksUi.seen.value == id }
+                MyTasksUi.bring.value++
+            } else {
+                listState.revealKey("d${-id}", "n${-id}")
+            }
+            delay(3_000L)
+            if (highlightId == id) highlightId = null
         }
         LazyColumn(
             state = listState,

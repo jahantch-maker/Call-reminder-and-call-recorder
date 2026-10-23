@@ -196,8 +196,9 @@ internal fun MyTaskCard(
     val overdue = !t.done && t.timed && t.dueAt <= now
     // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val bringTick by MyTasksUi.bring.collectAsState()
     if (highlighted) {
-        LaunchedEffect(t.id) {
+        LaunchedEffect(t.id, bringTick) {
             MyTasksUi.seen.value = t.id
             kotlinx.coroutines.delay(60L)
             runCatching { bring.bringIntoView() }

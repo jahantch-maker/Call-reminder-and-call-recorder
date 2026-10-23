@@ -37,6 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.runtime.snapshotFlow
 
 /** A task opened in place (not in its own tab): a call, a text, a To schedule follow-up or a My task. */
 sealed class OpenTask {
@@ -226,9 +229,13 @@ fun MyTaskHistoryDialog(t: MyTask, onDismiss: () -> Unit) {
  * by its key), then lets that row bring itself fully into view. Gives up at the end of the list.
  */
 suspend fun LazyListState.revealUntil(found: () -> Boolean) {
+    // Wait until the list is drawn: a scroll before that moves nothing, and the search gave up at once.
+    withTimeoutOrNull(2_000L) {
+        snapshotFlow { layoutInfo.totalItemsCount > 0 && layoutInfo.viewportSize.height > 0 }.first { it }
+    }
     delay(150L)
     scrollToItem(0)
-    repeat(60) {
+    repeat(80) {
         delay(40L)
         if (found()) return
         val step = layoutInfo.viewportSize.height * 0.7f
@@ -236,11 +243,11 @@ suspend fun LazyListState.revealUntil(found: () -> Boolean) {
     }
 }
 
-/** Scrolls a list to the item with [key] (a whole row of its own). */
-suspend fun LazyListState.revealKey(key: Any) {
+/** Scrolls a list to the item with one of [keys] (a whole row of its own). */
+suspend fun LazyListState.revealKey(vararg keys: Any) {
     revealUntil {
-        val hit = layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
+        val hit = layoutInfo.visibleItemsInfo.firstOrNull { it.key in keys }
         hit != null && hit.offset + hit.size <= layoutInfo.viewportEndOffset
     }
-    layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.let { animateScrollToItem(maxOf(0, it.index - 1)) }
+    layoutInfo.visibleItemsInfo.firstOrNull { it.key in keys }?.let { animateScrollToItem(maxOf(0, it.index - 1)) }
 }

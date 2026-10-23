@@ -35,12 +35,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /*
  * The two lists behind Home's Needs you tiles: To schedule (no time yet) and Overdue. Both have the
  * Follow-ups | My tasks box at the top and the same cards as everywhere else.
  */
+
+object ToScheduleUi {
+    /** Search tapped a follow-up waiting here: scroll to it and outline it for a moment. */
+    val show = MutableStateFlow<Long?>(null)
+}
 
 /** Back arrow, the page name with its count, then the Follow-ups | My tasks box. */
 @Composable
@@ -171,9 +177,24 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
     val scope = rememberCoroutineScope()
     val my = remember { MyCardActions(scope, snack) }
     val now = rememberNow(0)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var outlined by remember { mutableStateOf<Long?>(null) }
+    val showReq by ToScheduleUi.show.collectAsState()
+    // Search asked for one: scroll to it, outline it for 3 s, then clear the ask (clearing it first would cancel this).
+    LaunchedEffect(showReq) {
+        val id = showReq ?: return@LaunchedEffect
+        tab = 0
+        outlined = id
+        listState.revealKey("fu-$id")
+        kotlinx.coroutines.delay(3_000L)
+        if (outlined == id) outlined = null
+        ToScheduleUi.show.value = null
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { ToScheduleUi.show.value = null } }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snack) }) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -225,6 +246,7 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
                             expanded = openKey == t.id,
                             onClick = { openKey = if (openKey == t.id) null else t.id },
                             pos = rowPos(i, fus.size),
+                            highlighted = outlined == t.id,
                         ) {
                             CardPanel(
                                 details = listOf(

@@ -394,13 +394,14 @@ private fun FollowUpsAll(
         Box(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         var outlined by remember { mutableStateOf<String?>(null) }
+        // Cleared only at the end: clearing it first restarted this effect and cancelled the scroll.
         LaunchedEffect(reveal) {
             val key = reveal ?: return@LaunchedEffect
-            onRevealed()
             outlined = key
             listState.revealKey(key)
             kotlinx.coroutines.delay(3_000L)
             if (outlined == key) outlined = null
+            onRevealed()
         }
         LazyColumn(
             state = listState,
