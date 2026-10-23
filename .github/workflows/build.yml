@@ -2,9 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+    branches: [classic]
 
 permissions:
   contents: write
@@ -32,14 +30,13 @@ jobs:
           name: callback-reminder-apk
           path: app/build/outputs/apk/release/app-release.apk
 
-      - name: Publish as "latest" release (easy download on a phone)
-        if: github.event_name != 'pull_request'
+      - name: Publish as "classic" release (easy download on a phone)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk CallbackReminder.apk
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest CallbackReminder.apk \
-            --title "Latest build" \
+          cp app/build/outputs/apk/release/app-release.apk CallbackClassic.apk
+          gh release delete classic --yes --cleanup-tag || true
+          gh release create classic CallbackClassic.apk \
+            --title "Callback Classic (frozen v0.35)" --latest=false \
             --notes "Build #${{ github.run_number }}" \
             --target "${{ github.sha }}"
