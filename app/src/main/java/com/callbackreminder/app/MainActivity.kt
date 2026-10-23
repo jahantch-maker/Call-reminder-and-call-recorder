@@ -108,6 +108,8 @@ class MainActivity : ComponentActivity() {
         const val OPEN_CALENDAR = "calendar"
         /** With [OPEN_MY_TASKS]: the task to show (outlined for a moment). */
         const val EXTRA_TASK = "task_id"
+        /** A team notification: the Team inbox. */
+        const val OPEN_TEAM = "team"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -134,6 +136,7 @@ class MainActivity : ComponentActivity() {
         ToScheduleStore.init(this)
         MyTaskStore.init(this)
         DossierStore.init(this)
+        CrashLog.guard(this, "Team") { TeamRepo.start(this) }
         // Setting alarms must never stop the app from opening.
         CrashLog.guard(this, "Setting reminders at start") {
             ReviewReminder.schedule(this)
@@ -227,6 +230,11 @@ class MainActivity : ComponentActivity() {
                 showTab(Tab.CALENDAR)
                 return
             }
+            OPEN_TEAM -> {
+                intent?.removeExtra(EXTRA_OPEN)
+                showTab(Tab.HOME, Screen.TEAM_INBOX)
+                return
+            }
             OPEN_MY_DAY -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 MorningSummary.cancelNotification(this)
@@ -276,11 +284,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         visible = false
+        TeamRepo.onForeground(this, false)
         super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
+        TeamRepo.onForeground(this, true)
         resumeTick.intValue = resumeTick.intValue + 1
     }
 }
@@ -325,6 +335,9 @@ private object Screen {
     /** To schedule with only follow-ups / only My tasks (the waiting links on those tabs). */
     const val TO_SCHEDULE_FU = 34
     const val TO_SCHEDULE_MINE = 35
+    const val TEAM_SETTINGS = 36
+    const val TEAM_INBOX = 37
+    const val TEAM_DAY = 38
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -429,6 +442,17 @@ private fun AppRoot(
         )
     }
 
+    // A team page asked for from anywhere (Needs you, the Team picker, a chart row).
+    val teamRequest by TeamUi.request.collectAsState()
+    LaunchedEffect(teamRequest) {
+        when (teamRequest) {
+            TeamUi.SETTINGS -> open(Screen.TEAM_SETTINGS)
+            TeamUi.INBOX -> open(Screen.TEAM_INBOX)
+            TeamUi.DAY -> open(Screen.TEAM_DAY)
+        }
+        if (teamRequest != null) TeamUi.request.value = null
+    }
+
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {
         if (openTabKey > 0) {
@@ -494,6 +518,7 @@ private fun AppRoot(
                     onOpenCalendar = { open(Screen.CALENDAR_SETTINGS) },
                     onOpenAppearance = { open(Screen.APPEARANCE) },
                     onOpenMyDay = { open(Screen.MY_DAY_SETTINGS) },
+                    onOpenTeam = { open(Screen.TEAM_SETTINGS) },
                 )
                 Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
                     resumeKey = resumeKey,
@@ -510,6 +535,9 @@ private fun AppRoot(
                 Screen.WHATSAPP_SETTINGS -> WhatsAppSettingsScreen(onBack = { back() })
                 Screen.CALENDAR_SETTINGS -> CalendarSettingsScreen(onBack = { back() })
                 Screen.APPEARANCE -> AppearanceSettingsScreen(onBack = { back() })
+                Screen.TEAM_SETTINGS -> TeamSettingsScreen(onBack = { back() })
+                Screen.TEAM_INBOX -> TeamInboxScreen(onBack = { back() })
+                Screen.TEAM_DAY -> TeamDayScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },

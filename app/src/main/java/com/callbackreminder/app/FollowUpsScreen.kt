@@ -568,6 +568,11 @@ internal fun FollowUpCard(
     val overdue = e.callPending && call!!.dueAt <= now
     val finished = !e.open
     val hasNumber = e.number.isNotBlank()
+    // A task you gave a team member (or passed down): its status chip, and Received, thanks / Not done yet.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val teamV by TeamSync.version.collectAsState()
+    val teamLink = call?.linkId?.takeIf { it != 0L } ?: text?.linkId ?: 0L
+    val teamTask = remember(teamLink, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, teamLink, teamTasks) else null }
 
     val chips = buildList {
         if (finished) {
@@ -583,6 +588,7 @@ internal fun FollowUpCard(
                 text.review != null && !text.done -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
             }
         }
+        teamTask?.let { addAll(TeamUi.giverChips(it)) }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
         // Pushed on again and again in review.
@@ -665,6 +671,12 @@ internal fun FollowUpCard(
                 }
             }
         )
+        teamTask?.let { tt ->
+            if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt)
+            else if (tt.asking && tt.fromUid == TeamRepo.uid) TextButton(onClick = { TeamUi.request.value = TeamUi.INBOX }) {
+                Text("${tt.toFirst} asks for more time · answer ›")
+            }
+        }
     }
 }
 

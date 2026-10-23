@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -600,8 +601,14 @@ fun FollowUpDialog(
     var sameAsk by remember { mutableStateOf<FollowUps.Same?>(null) }
 
     val hasPerson = number.isNotBlank()
+    // A team member below you: the task goes to his app (For box, His date | My time, no Text card).
+    val teamUsers by TeamRepo.members.collectAsState()
+    val teamMember = remember(number, teamUsers) { if (editing) null else TeamRepo.memberByNumber(number) }
+    var myTime by remember { mutableStateOf(false) }
+    var deadline by remember { mutableLongStateOf(0L) }
+    var urgent by remember { mutableStateOf(false) }
     val callEff = callOn && hasPerson
-    val textEff = textOn && hasPerson
+    val textEff = textOn && hasPerson && teamMember == null
 
     fun snapshot() = listOf(name, number, task, due, callOn, textOn, autopilot, starred) + text.snapshot()
     val start = remember { snapshot() }
@@ -631,6 +638,8 @@ fun FollowUpDialog(
     }
     val anyTime = !text.parked && ((callOn && due != null) || (textOn && text.times.isNotEmpty()))
     val problem = when {
+        teamMember != null && task.isBlank() -> "Write the task first"
+        teamMember != null && myTime && due == null -> "Pick your time, or tap His date"
         taskRequired && !editing && item == null && task.isBlank() -> "Write the task first"
         !hasPerson && anyTime -> "Pick a person or remove the time"
         textEff -> text.problem(task, needTimes = callEff && due != null)
@@ -645,6 +654,21 @@ fun FollowUpDialog(
 
     /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
     fun save(same: FollowUps.Same?) {
+        if (teamMember != null) {
+            val link = TeamSync.giveFromDialog(ctx, teamMember, task, deadline, urgent, if (myTime) due else null, callOn = callEff)
+            if (link == null) {
+                Toast.makeText(ctx, "Couldn't send it to ${teamMember.first}: check Settings › Team", Toast.LENGTH_LONG).show()
+                return
+            }
+            item?.let { ToScheduleStore.remove(it.id) }
+            fromMyTask?.let {
+                TeamSync.onMovedToFollowUps(ctx, it.id, link, teamMember.name)
+                MyTaskStore.delete(it.id)
+            }
+            Toast.makeText(ctx, "Sent to ${teamMember.first}'s app", Toast.LENGTH_SHORT).show()
+            onDismiss()
+            return
+        }
         val plan = if (textEff) text.plan(task) else null
         val pilot = autopilot && callEff && textEff
         val timed = when {
@@ -654,7 +678,11 @@ fun FollowUpDialog(
             else -> FollowUps.create(ctx, name, number, task, saveDue, callEff, pilot, plan, starred, from = item)
         }
         if (same != null) item?.let { ToScheduleStore.remove(it.id) }
-        fromMyTask?.let { MyTaskStore.delete(it.id) }
+        fromMyTask?.let {
+            // A task from your manager passed on to someone outside the app: the link follows it.
+            if (TeamLinks.teamTaskOfMyTask(ctx, it.id) != null) TeamSync.onMovedToFollowUps(ctx, it.id, TeamSync.linkForNew(ctx, number, task), name)
+            MyTaskStore.delete(it.id)
+        }
         if (!timed) {
             val needs = !hasPerson || (!callEff && !textEff)
             Toast.makeText(ctx, if (needs) "Saved · Needs details, in To schedule" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
@@ -701,7 +729,7 @@ fun FollowUpDialog(
         },
         onConfirm = {
             // A new one that copies an open follow-up for the same person asks first (Update it / Save as new).
-            val same = if (editing) null else FollowUps.findSame(number, task, skipSched = item?.id ?: 0L)
+            val same = if (editing || teamMember != null) null else FollowUps.findSame(number, task, skipSched = item?.id ?: 0L)
             if (same != null) sameAsk = same else save(null)
         },
     ) {
@@ -713,6 +741,10 @@ fun FollowUpDialog(
             }
         } else {
             ContactCard(name = name, number = number, onClear = { name = ""; number = "" }, compact = true)
+            if (teamMember != null) {
+                Text("👥 ${teamMember.first} is on the app: the task goes to his phone", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
         }
         // B. Task
         OutlinedTextField(
@@ -739,7 +771,17 @@ fun FollowUpDialog(
                 callOn = on
             },
         ) {
-            ShortTimeRow(
+            if (teamMember != null) {
+                TeamWhenBox(myTime = myTime, onChange = { myTime = it })
+                if (!myTime) {
+                    Text(
+                        "${teamMember.first} picks his date by your deadline. Your call reminder follows his date.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (teamMember == null || myTime) ShortTimeRow(
                 selected = due,
                 onClear = if (due != null) ({ setDue(null) }) else null,
                 dialogTitle = "Pick call time",
@@ -754,7 +796,15 @@ fun FollowUpDialog(
                 },
                 onPick = { setDue(it) },
             )
-            if (due == null) {
+            if (teamMember != null && myTime && due != null) {
+                Text(
+                    "📌 This becomes ${teamMember.first}'s date. He can only ask for more time.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (due == null && teamMember == null) {
                 Text(
                     "No call time: it waits in To schedule until you set one.",
                     style = MaterialTheme.typography.bodySmall,
@@ -763,8 +813,19 @@ fun FollowUpDialog(
             }
         }
 
+        if (teamMember != null) {
+            TeamForBox(
+                member = teamMember,
+                deadline = deadline,
+                onDeadline = { deadline = it },
+                urgent = urgent,
+                onUrgent = { on -> urgent = on; if (on) starred = true },
+            )
+        }
+
         // Text him (green): text times and the message; Repeat, Tracking number, Burst and Autopilot under Customise.
-        TextGreenTheme {
+        // Not for a team member: the app delivers it.
+        if (teamMember == null) TextGreenTheme {
             FeatureCard(
                 tint = TextCardBg,
                 icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87)) },

@@ -54,6 +54,8 @@ enum class NotifType(
         locked = "Android needs it while the microphone records. It is already silent."
     ),
     BANKING("Recording and backup", "Recording is off", "Every 10 min after \"Switch off for banking\"", NotifLevel.SOUND),
+    TEAM("Team", "Team tasks", "New task, Done, more time asked, date picked, not seen", NotifLevel.SOUND),
+
     BACKUP_FAILED(
         "Recording and backup", "Backup failed", "The nightly backup couldn't be saved", NotifLevel.SOUND,
         locked = "Always on: you need to know when your data isn't safe."
@@ -136,6 +138,7 @@ object NotifIds {
     fun replied(id: Long) = 34_000_000 + id.toInt()
     fun dailyList(key: String) = 35_000_000 + (key.hashCode() and 0xFFFF)
     fun replyNote(code: String) = 36_000_000 + (code.hashCode() and 0xFFFF)
+    fun team(key: String) = 37_000_000 + (key.hashCode() and 0xFFFF)
     /** "N follow-ups came due while your phone was off". */
     const val MISSED_WHILE_OFF = 1_099_500
 }

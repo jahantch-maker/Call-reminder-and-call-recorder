@@ -195,6 +195,12 @@ internal fun MyTaskCard(
 ) {
     val ctx = LocalContext.current
     val overdue = !t.done && t.timed && t.dueAt <= now
+    // A task from your manager (↘ chip, his deadline, Pick your date) and the 🔒 Private mark.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val teamV by TeamSync.version.collectAsState()
+    val inTeam = TeamRepo.activeNow
+    val teamTask = remember(t.id, teamTasks, teamV) { if (inTeam) TeamUi.taskOfMyTask(ctx, t.id, teamTasks) else null }
+    val isPriv = remember(t.id, teamV) { inTeam && TeamLinks.isPrivate(ctx, t.id) }
     // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val bringTick by MyTasksUi.bring.collectAsState()
@@ -217,7 +223,9 @@ internal fun MyTaskCard(
             },
             late = overdue,
             person = if (t.hasPerson) Names.first(t.personTitle) ?: t.personTitle else null,
-            chips = listOfNotNull(Held.label(Held.countMine(ctx, t.id))?.takeIf { !t.done }?.let { RowChip(it, ChipTone.ORANGE) }),
+            chips = listOfNotNull(Held.label(Held.countMine(ctx, t.id))?.takeIf { !t.done }?.let { RowChip(it, ChipTone.ORANGE) }) +
+                (teamTask?.let { TeamUi.receiverChips(it) } ?: emptyList()) +
+                listOfNotNull(RowChip("🔒", ChipTone.MUTED).takeIf { isPriv && !t.done }),
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
@@ -246,9 +254,13 @@ internal fun MyTaskCard(
                     add(RowLink("Edit", onClick = onEdit))
                     if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
                     if (!t.done && onMoveToFollowUps != null) add(RowLink("Move to Follow-ups", onClick = onMoveToFollowUps))
+                    if (inTeam && teamTask == null && !t.done) add(RowLink(if (isPriv) "🔒 Private: on" else "🔒 Private", onClick = {
+                        TeamLinks.setPrivate(ctx, t.id, !isPriv)
+                    }))
                     if (onDelete != null) add(RowLink("Delete", danger = true, onClick = onDelete))
                 }
             )
+            teamTask?.let { TeamReceiverButtons(it, myTaskId = t.id) }
         }
     }
 }

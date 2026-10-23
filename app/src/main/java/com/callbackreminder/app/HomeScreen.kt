@@ -202,6 +202,9 @@ fun HomeScreen(
                     onOpenToSchedule = onOpenToSchedule,
                 )
             }
+            item(key = "team_needs") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { TeamNeedsLines() }
+            }
 
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
