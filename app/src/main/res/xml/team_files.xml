@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Team edition: the photo the camera app saves for a task message, shared only with that camera app. -->
+<paths>
+    <cache-path name="team" path="team/" />
+</paths>

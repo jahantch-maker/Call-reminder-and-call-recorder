@@ -676,6 +676,16 @@ internal fun FollowUpCard(
             else if (tt.asking && tt.fromUid == TeamRepo.uid) TextButton(onClick = { TeamUi.request.value = TeamUi.INBOX }) {
                 Text("${tt.toFirst} asks for more time · answer ›")
             }
+            TextButton(onClick = { TeamUi.openTimeline(tt.id) }) {
+                Text(
+                    when {
+                        tt.stuck -> "⚠ ${tt.toFirst} is stuck · answer ›"
+                        tt.asks -> "❓ ${tt.toFirst} asks · answer ›"
+                        TeamSync.unread(ctx, tt, TeamRepo.uid) -> "💬 New message · open ›"
+                        else -> "💬 Conversation"
+                    }
+                )
+            }
         }
     }
 }

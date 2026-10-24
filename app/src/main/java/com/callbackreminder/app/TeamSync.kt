@@ -98,7 +98,21 @@ object TeamSync {
         }
     }
 
-    private fun sig(t: TeamTask) = "${t.status}|${t.due}|${t.moreAt}"
+    private fun sig(t: TeamTask) = "${t.status}|${t.due}|${t.moreAt}|${t.lastMsgAt}"
+    private fun msgOf(sig: String?): Long = sig?.split('|')?.getOrNull(3)?.toLongOrNull() ?: 0L
+
+    /** You opened the task's Timeline up to [at]: its "new" chip goes. */
+    fun markRead(c: Context, taskId: String, at: Long) {
+        val m = TeamLinks.map(c, "read")
+        if ((m[taskId]?.toLongOrNull() ?: 0L) >= at) return
+        m[taskId] = at.toString()
+        TeamLinks.putMap(c, "read", m)
+        version.value++
+    }
+
+    /** A message from someone else you haven't opened yet. */
+    fun unread(c: Context, t: TeamTask, me: String?): Boolean =
+        t.lastMsgAt > 0L && t.lastMsgBy != me && t.lastMsgAt > (TeamLinks.map(c, "read")[t.id]?.toLongOrNull() ?: 0L)
     private fun dueOf(sig: String?): Long? = sig?.split('|')?.getOrNull(1)?.toLongOrNull()
     private fun statusOf(sig: String?): String? = sig?.split('|')?.getOrNull(0)
     private fun moreOf(sig: String?): Long = sig?.split('|')?.getOrNull(2)?.toLongOrNull() ?: 0L
@@ -124,6 +138,17 @@ object TeamSync {
                 val before = last[t.id]
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
+                // A new message from someone else on the task.
+                if (before != null && t.lastMsgAt > msgOf(before) && t.lastMsgBy != me && t.lastMsgBy.isNotEmpty()) {
+                    val who = TeamRepo.member(t.lastMsgBy)?.first ?: if (t.lastMsgBy == t.fromUid) t.fromFirst else t.toFirst
+                    val head = when {
+                        t.stuck && t.stuckAt == t.lastMsgAt -> "⚠ $who is stuck"
+                        t.asks && t.askAt == t.lastMsgAt -> "❓ $who asks"
+                        else -> who
+                    }
+                    notify(c, "msg:${t.id}", "$head · ${t.title}".take(80), t.lastMsgText,
+                        mine = if (t.toUid == me) recv[t.id]?.toLongOrNull() else null, taskId = t.id)
+                }
                 last[t.id] = sig(t)
             }
             TeamLinks.putMap(c, "recv", recv)
@@ -280,6 +305,11 @@ object TeamSync {
                 }
                 val local = recv[t.id]?.toLongOrNull()?.let { MyTaskStore.get(it) } ?: continue
                 when {
+                    local.done && t.open && t.photoProof && t.proofAt == 0L -> {
+                        // Photo proof was asked for: Done waits for the photo.
+                        MyTaskStore.setDone(local.id, false)
+                        notify(c, "proof:${t.id}", "📷 ${t.fromFirst} asked for a photo", "${t.title}\nOpen the task and tap ✅ Done with photo.", mine = local.id)
+                    }
                     local.done && t.open -> TeamRepo.markDone(t)
                     t.open && local.dueAt != t.due -> {
                         val endOfDeadline = if (t.deadline > 0L) endOfDay(t.deadline) else Long.MAX_VALUE
@@ -338,8 +368,9 @@ object TeamSync {
      */
     fun giveFromDialog(
         c: Context, to: TeamMember, title: String, deadline: Long, urgent: Boolean, myTime: Long?, callOn: Boolean,
+        photoProof: Boolean = false, brief: List<TeamAttach> = emptyList(),
     ): Long? {
-        val id = TeamRepo.give(to, title, deadline, urgent, myTime) ?: return null
+        val id = TeamRepo.give(to, title, deadline, urgent, myTime, photoProof, brief) ?: return null
         val link = FollowUps.newLink(c)
         val item = ToScheduleStore.put(
             ToScheduleItem(id = 0L, name = to.name, number = to.phone, note = title.trim(), createdAt = 0L, callOn = callOn, starred = urgent, linkId = link)
@@ -459,10 +490,11 @@ object TeamSync {
 
     // ------------------------------------------------------------ notifications
 
-    private fun notify(c: Context, key: String, title: String, text: String, mine: Long?) {
+    private fun notify(c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null) {
         val intent = Intent(c, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        if (mine != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, mine)
+        if (taskId != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM).putExtra(MainActivity.EXTRA_TEAM_TASK, taskId)
+        else if (mine != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, mine)
         else intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM)
         val open = PendingIntent.getActivity(c, NotifIds.team(key), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = NotificationCompat.Builder(c, Notifier.bannerChannel(c))

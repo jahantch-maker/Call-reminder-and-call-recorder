@@ -110,6 +110,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_TASK = "task_id"
         /** A team notification: the Team inbox. */
         const val OPEN_TEAM = "team"
+        /** With [OPEN_TEAM]: the team task whose Timeline to open. */
+        const val EXTRA_TEAM_TASK = "team_task"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -231,8 +233,13 @@ class MainActivity : ComponentActivity() {
                 return
             }
             OPEN_TEAM -> {
+                val task = intent?.getStringExtra(EXTRA_TEAM_TASK)
                 intent?.removeExtra(EXTRA_OPEN)
-                showTab(Tab.HOME, Screen.TEAM_INBOX)
+                intent?.removeExtra(EXTRA_TEAM_TASK)
+                if (task != null) {
+                    TeamUi.timelineOf.value = task
+                    openStack(listOf(Screen.TEAM_INBOX, Screen.TEAM_TIMELINE))
+                } else showTab(Tab.HOME, Screen.TEAM_INBOX)
                 return
             }
             OPEN_MY_DAY -> {
@@ -338,6 +345,7 @@ private object Screen {
     const val TEAM_SETTINGS = 36
     const val TEAM_INBOX = 37
     const val TEAM_DAY = 38
+    const val TEAM_TIMELINE = 39
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -449,6 +457,7 @@ private fun AppRoot(
             TeamUi.SETTINGS -> open(Screen.TEAM_SETTINGS)
             TeamUi.INBOX -> open(Screen.TEAM_INBOX)
             TeamUi.DAY -> open(Screen.TEAM_DAY)
+            TeamUi.TIMELINE -> open(Screen.TEAM_TIMELINE)
         }
         if (teamRequest != null) TeamUi.request.value = null
     }
@@ -538,6 +547,7 @@ private fun AppRoot(
                 Screen.TEAM_SETTINGS -> TeamSettingsScreen(onBack = { back() })
                 Screen.TEAM_INBOX -> TeamInboxScreen(onBack = { back() })
                 Screen.TEAM_DAY -> TeamDayScreen(onBack = { back() })
+                Screen.TEAM_TIMELINE -> TeamTimelineScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
                 Screen.SEARCH -> SearchScreen(
                     onBack = { back() },
