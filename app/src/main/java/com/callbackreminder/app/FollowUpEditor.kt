@@ -607,6 +607,8 @@ fun FollowUpDialog(
     var myTime by remember { mutableStateOf(false) }
     var deadline by remember { mutableLongStateOf(0L) }
     var urgent by remember { mutableStateOf(false) }
+    var photoProof by remember { mutableStateOf(false) }
+    var attach by remember { mutableStateOf<List<TeamAttach>>(emptyList()) }
     val callEff = callOn && hasPerson
     val textEff = textOn && hasPerson && teamMember == null
 
@@ -655,7 +657,8 @@ fun FollowUpDialog(
     /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
     fun save(same: FollowUps.Same?) {
         if (teamMember != null) {
-            val link = TeamSync.giveFromDialog(ctx, teamMember, task, deadline, urgent, if (myTime) due else null, callOn = callEff)
+            val link = TeamSync.giveFromDialog(ctx, teamMember, task, deadline, urgent, if (myTime) due else null, callOn = callEff,
+                photoProof = photoProof, brief = attach)
             if (link == null) {
                 Toast.makeText(ctx, "Couldn't send it to ${teamMember.first}: check Settings › Team", Toast.LENGTH_LONG).show()
                 return
@@ -820,6 +823,10 @@ fun FollowUpDialog(
                 onDeadline = { deadline = it },
                 urgent = urgent,
                 onUrgent = { on -> urgent = on; if (on) starred = true },
+                photoProof = photoProof,
+                onPhotoProof = { photoProof = it },
+                attach = attach,
+                onAttach = { attach = it },
             )
         }
 

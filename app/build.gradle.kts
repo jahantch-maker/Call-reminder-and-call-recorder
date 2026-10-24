@@ -13,8 +13,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.36.0"
+        versionCode = 52
+        versionName = "0.37.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.
@@ -73,4 +73,5 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

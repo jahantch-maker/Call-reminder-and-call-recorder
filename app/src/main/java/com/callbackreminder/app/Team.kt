@@ -86,7 +86,22 @@ data class TeamTask(
     val reason: String,
     val passedTo: String,
     val events: List<TaskEvent>,
+    /** ❓ Ask waiting for the giver's answer (the no-date timer pauses meanwhile). */
+    val askAt: Long = 0L,
+    /** ⚠ Stuck: a blocker, red until the giver answers. */
+    val stuckAt: Long = 0L,
+    val stuckText: String = "",
+    /** The newest message on the task: when, from whom, and a short preview. */
+    val lastMsgAt: Long = 0L,
+    val lastMsgBy: String = "",
+    val lastMsgText: String = "",
+    /** 📷 Photo proof needed: his Done asks for a photo. [proofAt] is when he sent it. */
+    val photoProof: Boolean = false,
+    val proofAt: Long = 0L,
+    val mediaCleared: Boolean = false,
 ) {
+    val asks: Boolean get() = open && askAt > 0L
+    val stuck: Boolean get() = open && stuckAt > 0L
     val open: Boolean get() = status in Team.OPEN_STATES
     val hisDate: Boolean get() = dateBy == Team.HIS_DATE
     /** He asked for more time and you haven't answered yet. */
@@ -121,6 +136,32 @@ object Team {
     /** Letters that can't be mixed up when read out (no I, O, L, 0, 1). */
     private const val CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
     fun newCode(): String = (1..6).map { CODE_LETTERS.random() }.joinToString("")
+
+    const val TEXT = "text"
+    const val VOICE = "voice"
+    const val PHOTO = "photo"
+    const val ASK = "ask"
+    const val STUCK = "stuck"
+    const val PROOF = "proof"
+    const val BRIEF = "brief"
+
+    /** Photos and voice notes are kept this long after a task closes; the text stays. */
+    const val MEDIA_DAYS = 90L
+}
+
+/** One message on a task's Timeline: typed, a voice note or a photo; [tag] marks ❓ Ask, ⚠ Stuck, proof or the brief. */
+data class TeamMsg(
+    val id: String,
+    val at: Long,
+    val fromUid: String,
+    val fromName: String,
+    val kind: String,
+    val tag: String,
+    val text: String,
+    val data: ByteArray?,
+    val durMs: Long,
+) {
+    val fromFirst: String get() = Names.first(fromName) ?: fromName
 }
 
 /** Settings › Team › Date rules: when a missing date or an unseen task comes to you. Kept on this phone. */
@@ -520,7 +561,8 @@ object TeamRepo {
 
     /** Gives [to] a task. Returns its id (null when it couldn't be saved, e.g. signed out). */
     fun give(
-        to: TeamMember, title: String, deadline: Long, urgent: Boolean, giverDue: Long?,
+        to: TeamMember, title: String, deadline: Long, urgent: Boolean, giverDue: Long?, photoProof: Boolean = false,
+        brief: List<TeamAttach> = emptyList(),
     ): String? {
         val u = auth().currentUser ?: return null
         val me = _me.value ?: return null
@@ -543,9 +585,24 @@ object TeamRepo {
                 "seenAt" to 0L, "doneAt" to 0L, "checkedAt" to 0L,
                 "moreDue" to 0L, "moreReason" to "", "moreAt" to 0L,
                 "reason" to "", "passedTo" to "",
+                "askAt" to 0L, "stuckAt" to 0L, "stuckText" to "",
+                "lastMsgAt" to (if (brief.isEmpty()) 0L else now), "lastMsgBy" to (if (brief.isEmpty()) "" else u.uid),
+                "lastMsgText" to (brief.lastOrNull()?.let { if (it.kind == Team.VOICE) "🎤 Voice note" else "📷 Photo" } ?: ""),
+                "photoProof" to photoProof, "proofAt" to 0L,
                 "events" to listOf(ev(if (fixed) "Given by ${me.first} · date ${Fmt.dueLabel(giverDue!!)}" else "Given by ${me.first}")),
             )
         )
+        // The photos and voice notes added in New follow-up: the first messages on the Timeline.
+        brief.forEachIndexed { i, a ->
+            ref.collection("msgs").document().set(
+                mapOf(
+                    "at" to now + i, "fromUid" to u.uid, "fromName" to me.name, "kind" to a.kind, "tag" to Team.BRIEF,
+                    "text" to "", "durMs" to a.durMs, "viewers" to viewers,
+                    "data" to com.google.firebase.firestore.Blob.fromBytes(a.data),
+                )
+            )
+        }
+        if (brief.isNotEmpty()) TeamSync.markRead(appCtx, ref.id, now + brief.size)
         return ref.id
     }
 
@@ -570,6 +627,13 @@ object TeamRepo {
         (f["seenAt"] as? Long)?.let { x = x.copy(seenAt = it) }
         (f["doneAt"] as? Long)?.let { x = x.copy(doneAt = it) }
         (f["passedTo"] as? String)?.let { x = x.copy(passedTo = it) }
+        (f["askAt"] as? Long)?.let { x = x.copy(askAt = it) }
+        (f["stuckAt"] as? Long)?.let { x = x.copy(stuckAt = it) }
+        (f["stuckText"] as? String)?.let { x = x.copy(stuckText = it) }
+        (f["lastMsgAt"] as? Long)?.let { x = x.copy(lastMsgAt = it) }
+        (f["lastMsgBy"] as? String)?.let { x = x.copy(lastMsgBy = it) }
+        (f["lastMsgText"] as? String)?.let { x = x.copy(lastMsgText = it) }
+        (f["proofAt"] as? Long)?.let { x = x.copy(proofAt = it) }
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
     }
@@ -602,7 +666,8 @@ object TeamRepo {
     }
 
     fun markDone(t: TeamTask) {
-        update(t, mapOf("status" to Team.DONE, "doneAt" to System.currentTimeMillis()), "✅ Done by ${t.toFirst}")
+        update(t, mapOf("status" to Team.DONE, "doneAt" to System.currentTimeMillis(), "askAt" to 0L, "stuckAt" to 0L),
+            if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}")
     }
 
     /** Received, thanks ✓: closes it and thanks him. */
@@ -626,6 +691,85 @@ object TeamRepo {
 
     fun cancel(t: TeamTask) {
         update(t, mapOf("status" to Team.CANCELLED), "Cancelled by ${t.fromFirst}")
+    }
+
+    // ------------------------------------------------------------ talking on a task
+
+    private fun msgs(taskId: String) = tasksRef().document(taskId).collection("msgs")
+
+    /**
+     * Sends a message on [t]'s Timeline (it shows at once and goes up when data is on). [tag] ❓ Ask pauses his
+     * no-date timer until the giver answers; ⚠ Stuck shows red. Any message from the giver answers both.
+     */
+    fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L): Boolean {
+        val u = auth().currentUser ?: return false
+        val me = _me.value ?: return false
+        if (teamId == null) return false
+        val now = System.currentTimeMillis()
+        val doc = mutableMapOf<String, Any>(
+            "at" to now, "fromUid" to u.uid, "fromName" to me.name, "kind" to kind, "tag" to tag,
+            "text" to text.trim(), "durMs" to durMs, "viewers" to t.viewers,
+        )
+        if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
+        msgs(t.id).document().set(doc)
+        val preview = when (kind) {
+            Team.VOICE -> "🎤 Voice note"
+            Team.PHOTO -> "📷 Photo" + if (text.isNotBlank()) ": ${text.trim()}" else ""
+            else -> text.trim()
+        }.take(120)
+        val f = mutableMapOf<String, Any>("lastMsgAt" to now, "lastMsgBy" to u.uid, "lastMsgText" to preview)
+        var event: String? = null
+        when (tag) {
+            Team.ASK -> f["askAt"] = now
+            Team.STUCK -> { f["stuckAt"] = now; f["stuckText"] = if (kind == Team.VOICE) "🎤 Voice note" else text.trim().take(120) }
+            Team.PROOF -> f["proofAt"] = now
+        }
+        if (u.uid == t.fromUid && tag.isEmpty() && (t.askAt > 0L || t.stuckAt > 0L)) {
+            f["askAt"] = 0L
+            f["stuckAt"] = 0L
+            event = if (t.askAt > 0L) "❓ Answered · date timer running again" else "⚠ ${t.fromFirst} answered"
+        }
+        update(t, f, event)
+        TeamSync.markRead(appCtx, t.id, now)
+        return true
+    }
+
+    /** The Timeline's messages, oldest first (null until the first read). */
+    fun watchMsgs(taskId: String, onChange: (List<TeamMsg>) -> Unit): ListenerRegistration? {
+        if (teamId == null) return null
+        val u = uid ?: return null
+        return msgs(taskId).whereArrayContains("viewers", u).addSnapshotListener { s, _ ->
+            s ?: return@addSnapshotListener
+            onChange(s.documents.map { d ->
+                TeamMsg(
+                    id = d.id,
+                    at = d.getLong("at") ?: 0L,
+                    fromUid = d.getString("fromUid").orEmpty(),
+                    fromName = d.getString("fromName").orEmpty(),
+                    kind = d.getString("kind") ?: Team.TEXT,
+                    tag = d.getString("tag").orEmpty(),
+                    text = d.getString("text").orEmpty(),
+                    data = d.getBlob("data")?.toBytes(),
+                    durMs = d.getLong("durMs") ?: 0L,
+                )
+            }.sortedBy { it.at })
+        }
+    }
+
+    /** Photos and voice notes of tasks you gave that closed over [Team.MEDIA_DAYS] days ago are removed (text stays). */
+    suspend fun clearOldMedia() {
+        val u = uid ?: return
+        if (teamId == null) return
+        val cutoff = System.currentTimeMillis() - Team.MEDIA_DAYS * 24 * 3_600_000L
+        _tasks.value.filter { it.fromUid == u && !it.open && it.status != Team.DONE && !it.mediaCleared && (it.events.lastOrNull()?.at ?: it.createdAt) < cutoff }
+            .forEach { t ->
+                runCatching {
+                    msgs(t.id).whereArrayContains("viewers", u).get().await().documents
+                        .filter { it.getString("kind") != Team.TEXT }
+                        .forEach { it.reference.update(mapOf("data" to FieldValue.delete(), "text" to (it.getString("text").orEmpty() + " (removed after 90 days)"))) }
+                    tasksRef().document(t.id).update("mediaCleared", true).await()
+                }
+            }
     }
 
     // ------------------------------------------------------------ his day
@@ -668,6 +812,7 @@ object TeamRepo {
         TeamSync.apply(c, list, foreground)
         TeamSync.pushLocal(c)
         uploadDay(c)
+        clearOldMedia()
     }
 
     // ------------------------------------------------------------ reading documents
@@ -716,5 +861,14 @@ object TeamRepo {
             val m = e as? Map<*, *> ?: return@mapNotNull null
             TaskEvent((m["at"] as? Number)?.toLong() ?: 0L, m["text"] as? String ?: "")
         }?.sortedBy { it.at } ?: emptyList(),
+        askAt = s.getLong("askAt") ?: 0L,
+        stuckAt = s.getLong("stuckAt") ?: 0L,
+        stuckText = s.getString("stuckText").orEmpty(),
+        lastMsgAt = s.getLong("lastMsgAt") ?: 0L,
+        lastMsgBy = s.getString("lastMsgBy").orEmpty(),
+        lastMsgText = s.getString("lastMsgText").orEmpty(),
+        photoProof = s.getBoolean("photoProof") ?: false,
+        proofAt = s.getLong("proofAt") ?: 0L,
+        mediaCleared = s.getBoolean("mediaCleared") ?: false,
     )
 }
