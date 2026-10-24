@@ -690,6 +690,8 @@ object DossierStore {
     @Synchronized
     fun tick(taskId: Long, date: LocalDate, now: Long = System.currentTimeMillis()): Boolean {
         if (Dossier.isLocked(date, now)) return false
+        // A team block with 📷 Photo proof waits for its photo (the photo window opens).
+        if (TeamDossier.holdTick(appCtx, taskId, date)) return false
         val r = DossierRecord(taskId, date.toString(), doneAt = now, reason = "")
         saveRecords(_records.value + (key(taskId, date) to r))
         TaskAlarms.cancelDossierNotification(appCtx, taskId)

@@ -97,7 +97,7 @@ internal fun WorkBlock(
                             done = done,
                             onTick = {
                                 val ok = if (done) DossierStore.untick(t.id, day) else DossierStore.tick(t.id, day)
-                                if (!ok) Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+                                if (!ok) TeamDossier.lockedToast(ctx)
                             },
                             time = Fmt.dueLabel(w.at),
                             late = w.overdue && !done,

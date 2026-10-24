@@ -174,6 +174,8 @@ object DailyList {
         val wa = mutableListOf<String>()
         val sms = mutableListOf<String>()
         people(ctx).forEach { key ->
+            // On the team now: the app brings him his tasks, no list.
+            if (TeamDossier.isMemberKey(key)) return@forEach
             build(ctx, key) ?: return@forEach
             if (bySms(ctx, key)) sms += key
             if (byWhatsApp(ctx, key)) wa += key

@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -878,7 +884,8 @@ fun TeamDayScreen(onBack: () -> Unit) {
         val myFirst = me?.first
         fun num(v: Any?) = (v as? Number)?.toLong() ?: 0L
         val rows: List<Map<String, Any?>> = when (tab) { 0 -> tasks; 1 -> fus; else -> dossier }
-        if (day == null) Text("${m.first}'s phone hasn't sent his day yet. It does when he opens the app.", color = cs.onSurfaceVariant)
+        if (tab == 2) TeamDossierTab(m, if (day == null) null else dossier)
+        else if (day == null) Text("${m.first}'s phone hasn't sent his day yet. It does when he opens the app.", color = cs.onSurfaceVariant)
         else if (rows.isEmpty()) Text("Nothing for today.", color = cs.onSurfaceVariant)
         else TaskGroup {
             Column {
@@ -920,6 +927,164 @@ fun TeamDayScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------- his Dossier (Phase 3)
+
+/**
+ * Dossier tab of his day: the blocks you set (Owner: tap to edit, ＋ Add block), with today's tick times, late
+ * ticks in orange, 📷 photos, reasons and voice notes from his phone. [today] is null until his phone sent his day.
+ */
+@Composable
+private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
+    val cs = MaterialTheme.colorScheme
+    val team by TeamRepo.team.collectAsState()
+    val owner = team?.ownerUid == TeamRepo.uid && m.role != Team.OWNER
+    var blocks by remember(m.uid) { mutableStateOf<List<TeamBlock>?>(null) }
+    var edit by remember { mutableStateOf<TeamBlock?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf<Pair<TeamBlock?, Map<String, Any?>?>?>(null) }
+    DisposableEffect(m.uid) {
+        val reg = TeamDossier.watch(m.uid) { blocks = it }
+        onDispose { reg?.remove() }
+    }
+    fun num(v: Any?) = (v as? Number)?.toLong() ?: 0L
+    val rows = today.orEmpty()
+    val byBlock = rows.filter { !(it["blockId"] as? String).isNullOrBlank() }.associateBy { it["blockId"] as String }
+    val list = blocks.orEmpty()
+    // Today's blocks first (from his phone), then the ones not on today, then his own dossier tasks.
+    val todayIds = byBlock.keys
+    val ordered = list.filter { it.id in todayIds } + list.filter { it.id !in todayIds }
+    val own = rows.filter { (it["blockId"] as? String).isNullOrBlank() }
+    val now = System.currentTimeMillis()
+
+    if (today == null) Text("${m.first}'s phone hasn't sent his day yet. It does when he opens the app.", color = cs.onSurfaceVariant)
+    if (ordered.isEmpty() && own.isEmpty() && today != null) {
+        Text(if (owner) "No Dossier set for ${m.first} yet." else "Nothing for today.", color = cs.onSurfaceVariant)
+    }
+    if (ordered.isNotEmpty() || own.isNotEmpty()) TaskGroup {
+        Column {
+            val all: List<Pair<TeamBlock?, Map<String, Any?>?>> = ordered.map { it to byBlock[it.id] } + own.map { null to it }
+            all.forEachIndexed { i, (b, r) ->
+                val doneAt = num(r?.get("doneAt"))
+                val done = doneAt > 0L
+                val due = num(r?.get("due"))
+                val end = if (b != null && due > 0L) due + (if (b.endMinute > b.minute) b.endMinute - b.minute else 30) * 60_000L else due
+                val late = done && end > 0L && doneAt > end
+                val reason = r?.get("reason") as? String
+                val chips = buildList {
+                    if (b?.proof == true) add(RowChip(if (r?.get("photo") == true) "📷 photo ›" else "📷 proof", if (r?.get("photo") == true) ChipTone.BLUE else ChipTone.MUTED))
+                    if (late) add(RowChip("late " + Fmt.timeOnly(doneAt), ChipTone.ORANGE))
+                    if (!done && !reason.isNullOrBlank()) add(RowChip("💬 $reason", ChipTone.ORANGE))
+                    if (r?.get("voice") == true) add(RowChip("🎤 voice ›", ChipTone.BLUE))
+                    if (r != null && !done && reason.isNullOrBlank() && due in 1 until now) add(RowChip("No reason yet", ChipTone.MUTED))
+                    if (r == null) add(RowChip("Not today", ChipTone.MUTED))
+                }
+                TaskCard(
+                    title = b?.title ?: (r?.get("title") as? String ?: ""),
+                    done = done,
+                    onTick = {},
+                    tickEnabled = false,
+                    time = when {
+                        done && !late -> "✓ " + Fmt.timeOnly(doneAt)
+                        done -> "✓ " + Fmt.timeOnly(doneAt)
+                        b != null -> b.rangeLabel
+                        else -> r?.get("time") as? String
+                    },
+                    late = !done && due in 1 until now,
+                    sub = b?.frequency ?: (r?.get("frequency") as? String),
+                    chips = chips,
+                    onClick = { open = b to r },
+                    pos = rowPos(i, all.size),
+                )
+            }
+        }
+    }
+    if (owner) {
+        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            Text("＋ Add block for ${m.first}", fontWeight = FontWeight.Bold)
+        }
+        Text("Only you can change ${m.first}'s Dossier. He ticks it on his phone.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+    }
+
+    open?.let { (b, r) ->
+        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; edit = b }) { open = null }
+    }
+    val cur = blocks.orEmpty()
+    if (adding) {
+        DossierTaskDialog(
+            existing = null, onDismiss = { adding = false }, onSwitchKind = null,
+            team = TeamBlockEdit(m.first, null, onSave = { nb -> TeamDossier.save(m, cur + nb) }, onDelete = null),
+        )
+    }
+    edit?.let { b ->
+        DossierTaskDialog(
+            existing = b.toTask(), onDismiss = { edit = null }, onSwitchKind = null,
+            team = TeamBlockEdit(
+                m.first, b,
+                onSave = { nb -> TeamDossier.save(m, cur.map { if (it.id == nb.id) nb else it }) },
+                onDelete = { TeamDossier.save(m, cur.filter { it.id != b.id }) },
+            ),
+        )
+    }
+}
+
+/** One block on his day: tick time, the 📷 photo, his reason and voice note; Edit for the Owner. */
+@Composable
+private fun TeamBlockDayDialog(
+    m: TeamMember, b: TeamBlock?, r: Map<String, Any?>?, canEdit: Boolean, onEdit: () -> Unit, onDismiss: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val date = r?.get("date") as? String
+    val blockId = b?.id
+    var photo by remember { mutableStateOf<ByteArray?>(null) }
+    var caption by remember { mutableStateOf("") }
+    var voice by remember { mutableStateOf<ByteArray?>(null) }
+    var voiceMs by remember { mutableLongStateOf(0L) }
+    val playing by TeamMedia.playing.collectAsState()
+    LaunchedEffect(blockId, date) {
+        if (blockId == null || date == null) return@LaunchedEffect
+        if (r?.get("photo") == true) TeamDossier.fetchProof(m.uid, blockId, date, TeamDossier.PHOTO) { d, c, _ -> photo = d; caption = c }
+        if (r?.get("voice") == true) TeamDossier.fetchProof(m.uid, blockId, date, TeamDossier.VOICE) { d, _, ms -> voice = d; voiceMs = ms }
+    }
+    val doneAt = (r?.get("doneAt") as? Number)?.toLong() ?: 0L
+    val reason = r?.get("reason") as? String
+    AlertDialog(
+        onDismissRequest = { TeamMedia.stopPlaying(); onDismiss() },
+        title = { Text(b?.title ?: (r?.get("title") as? String).orEmpty()) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text((b?.rangeLabel ?: (r?.get("time") as? String).orEmpty()) + " · " + (b?.frequency ?: (r?.get("frequency") as? String).orEmpty()),
+                    fontSize = 13.sp, color = cs.onSurfaceVariant)
+                Text(
+                    when {
+                        r == null -> "Not on today."
+                        doneAt > 0L -> "✓ Ticked at ${Fmt.timeOnly(doneAt)}"
+                        !reason.isNullOrBlank() -> "Not done: “$reason”"
+                        else -> "Not ticked yet · no reason yet"
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (b?.proof == true) Text("📷 Photo proof on tick", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                if (r?.get("photo") == true) {
+                    val bmp = remember(photo) { photo?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
+                    if (bmp != null) Image(bmp, contentDescription = "Photo proof", contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+                    else Text("Loading photo…", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                    if (caption.isNotBlank()) Text("“$caption”", fontSize = 13.sp)
+                }
+                if (r?.get("voice") == true) {
+                    val v = voice
+                    OutlinedButton(onClick = { v?.let { TeamMedia.play(ctx, "dossier-$blockId-$date", it) } }, enabled = v != null) {
+                        Text(if (playing == "dossier-$blockId-$date") "■ Stop" else "▶ Voice note ${if (voiceMs > 0) TeamMedia.duration(voiceMs) else ""}")
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { TeamMedia.stopPlaying(); onDismiss() }) { Text("Close") } },
+        dismissButton = { if (canEdit) TextButton(onClick = onEdit) { Text("Edit block") } },
+    )
 }
 
 // ---------------------------------------------------------------- Home: Needs you lines

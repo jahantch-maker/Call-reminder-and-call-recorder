@@ -62,6 +62,18 @@ service cloud.firestore {
         }
       }
 
+      // Each member's Dossier: only the Owner sets it; he and the people above him read it.
+      match /dossier/{uid} {
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || me() in resource.data.viewers);
+        allow write: if signedIn() && isActive(t) && isOwner(t);
+      }
+
+      // 📷 Dossier photo proofs and "why not done" voice notes: written by him, read by the people above him.
+      match /proofs/{p} {
+        allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
+        allow create, update: if signedIn() && isActive(t) && request.resource.data.uid == me() && me() in request.resource.data.viewers;
+      }
+
       // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.
       match /days/{uid} {
         allow write: if signedIn() && uid == me() && isActive(t);

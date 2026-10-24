@@ -474,9 +474,15 @@ object TeamSync {
             .sortedWith(compareBy({ it.done }, { it.dueAt }))
             .take(60)
             .map { r -> mapOf("title" to r.note.ifBlank { "Call back" }, "name" to r.title, "due" to r.dueAt, "done" to r.done, "doneAt" to r.doneAt) }
+        val open = Dossier.openDay(System.currentTimeMillis())
         val dossier = DossierStore.todays().map { d ->
-            val rec = DossierStore.record(d.id, Dossier.openDay(System.currentTimeMillis()))
-            mapOf("title" to d.title, "time" to d.rangeLabel, "doneAt" to (rec?.doneAt ?: 0L), "reason" to (rec?.reason ?: ""), "due" to d.dueAt(today))
+            val rec = DossierStore.record(d.id, open)
+            mapOf(
+                "title" to d.title, "time" to d.rangeLabel, "frequency" to d.frequency, "doneAt" to (rec?.doneAt ?: 0L),
+                "reason" to (rec?.reason ?: ""), "due" to d.dueAt(open), "date" to open.toString(),
+                "blockId" to (TeamDossier.blockOf(c, d.id) ?: ""), "proof" to TeamDossier.needsProof(c, d.id),
+                "photo" to TeamDossier.sent(c, d.id, open, TeamDossier.PHOTO), "voice" to TeamDossier.sent(c, d.id, open, TeamDossier.VOICE),
+            )
         }
         return mapOf(
             "managers" to managers,

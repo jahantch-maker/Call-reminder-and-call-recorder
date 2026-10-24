@@ -95,6 +95,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
@@ -257,7 +258,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         val wasDone = rec?.done == true
         val ok = if (wasDone) DossierStore.untick(t.id, day) else DossierStore.tick(t.id, day)
         if (!ok) {
-            Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+            TeamDossier.lockedToast(ctx)
             return
         }
         scope.offerUndo(snack, if (wasDone) "Not done · ${t.title}" else "Done · ${t.title}") {
@@ -268,6 +269,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         }
     }
     fun deleteDossier(t: DossierTask) {
+        if (TeamDossier.isTeam(ctx, t.id)) return
         val recs = records.filterValues { it.taskId == t.id }
         DossierStore.delete(t.id)
         scope.offerUndo(snack, "Deleted · ${t.title}") { DossierStore.restore(t, recs) }
@@ -521,8 +523,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         onTick = { dossierTick(t) },
                         onWhy = { whyFor = t },
                         onOpen = { historyFor = t },
-                        onEdit = { editDossier = t },
-                        onDelete = { deleteDossier(t) },
+                        onEdit = { editDossier = t }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
+                        onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
                         onStar = { DossierStore.setStar(t.id, !t.starred) },
                         highlighted = -t.id == highlightId,
                     )
@@ -550,8 +552,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                             onTick = {},
                             onWhy = {},
                             onOpen = { historyFor = t },
-                            onEdit = { editDossier = t },
-                            onDelete = { deleteDossier(t) },
+                            onEdit = { editDossier = t }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
+                            onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
                             onStar = { DossierStore.setStar(t.id, !t.starred) },
                             highlighted = -t.id == highlightId,
                         )
@@ -681,7 +683,7 @@ private fun MenuLabel(text: String) {
 
 private fun tickOrUntick(ctx: android.content.Context, t: DossierTask, day: LocalDate, rec: DossierRecord?) {
     val ok = if (rec?.done == true) DossierStore.untick(t.id, day) else DossierStore.tick(t.id, day)
-    if (!ok) Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+    if (!ok) TeamDossier.lockedToast(ctx)
 }
 
 @Composable
@@ -856,6 +858,11 @@ private fun DossierRow(
     var menuOpen by remember { mutableStateOf(false) }
     val done = rec?.done == true
     val wasDue = today && !done && t.dueAt(day) <= now
+    // Team edition: a block the Owner set (tick only), maybe with 📷 photo proof.
+    val ctx = LocalContext.current
+    TeamSync.version.collectAsState().value
+    val teamBlock = TeamDossier.isTeam(ctx, t.id)
+    val proof = teamBlock && TeamDossier.needsProof(ctx, t.id)
     Card(
         onClick = onOpen,
         border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
@@ -886,8 +893,11 @@ private fun DossierRow(
                         wasDue -> append(" · was due")
                         !today -> nextDay(t, day)?.let { append(" · next ").append(it.format(dayFmt)) }
                     }
+                    if (proof) append(if (done && TeamDossier.sent(ctx, t.id, day, TeamDossier.PHOTO)) " · 📷 sent" else " · 📷 proof")
                 }
                 Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (teamBlock) Text("🔒 Set by ${TeamDossier.ownerFirst()} · you can tick, not edit", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (showScore) {
                     val (d, total) = DossierStore.monthScore(t, now)
                     if (total > 0) {
@@ -993,6 +1003,26 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
                 maxLines = 4,
                 shape = RoundedCornerShape(14.dp)
             )
+            if (TeamDossier.isTeam(ctx, t.id)) {
+                // Team block: a voice note instead of typing, sent to the Owner with the reason.
+                var recording by remember { mutableStateOf(false) }
+                TeamSync.version.collectAsState().value
+                val hasVoice = TeamDossier.sent(ctx, t.id, day, TeamDossier.VOICE)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("OR VOICE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                    TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
+                        if (TeamDossier.sendProof(ctx, t.id, day, TeamDossier.VOICE, b, durMs = d)) {
+                            if (reason.isBlank()) reason = "🎤 Voice note"
+                            Toast.makeText(ctx, "Voice note sent to ${TeamDossier.ownerFirst()}", Toast.LENGTH_SHORT).show()
+                        }
+                    }, size = 40.dp)
+                    Text(
+                        when { recording -> "Recording… release to send"; hasVoice -> "🎤 Voice note sent · hold to replace"; else -> "hold 🎤 to record" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Text(
                 "Saved in this task's History. You can change it until 3:00 AM. If you tick the task later, the reason is removed.",
                 style = MaterialTheme.typography.bodySmall,
@@ -1001,7 +1031,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = {
-                        if (!DossierStore.tick(t.id, day)) Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+                        if (!DossierStore.tick(t.id, day)) TeamDossier.lockedToast(ctx)
                         onDismiss()
                     },
                     modifier = Modifier.weight(1f).height(48.dp),
@@ -1015,7 +1045,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
                 Button(
                     onClick = {
                         if (!DossierStore.setReason(t.id, day, reason)) {
-                            Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+                            TeamDossier.lockedToast(ctx)
                         }
                         onDismiss()
                     },
@@ -1029,8 +1059,20 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
 
 /** New dossier task, or Edit: the title, the days it repeats on, the time (required) and "remind me before". */
 @Composable
-internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, onSwitchKind: (() -> Unit)?) {
+internal fun DossierTaskDialog(
+    existing: DossierTask?, onDismiss: () -> Unit, onSwitchKind: (() -> Unit)?, team: TeamBlockEdit? = null,
+) {
     val ctx = LocalContext.current
+    if (team == null && existing != null && TeamDossier.isTeam(ctx, existing.id)) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(existing.title) },
+            text = { Text("🔒 Set by ${TeamDossier.ownerFirst()}. You can tick it or say why not, but only ${TeamDossier.ownerFirst()} can change it.") },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        )
+        return
+    }
+    var proof by remember { mutableStateOf(team?.block?.proof ?: false) }
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var monthly by remember { mutableStateOf((existing?.monthDay ?: 0) > 0) }
@@ -1045,16 +1087,16 @@ internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, on
     var onOffDay by remember { mutableStateOf(existing?.onOffDay ?: false) }
     var showClock by remember { mutableStateOf(false) }
     var showEndClock by remember { mutableStateOf(false) }
-    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay) }
+    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof) }
     val cancel = rememberDiscardGuard(
-        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay) != start },
+        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof) != start },
         onClose = onDismiss,
     )
 
     TaskWindow(
-        title = if (existing == null) "New task" else "Edit dossier task",
+        title = if (team != null) "Dossier block · ${team.name}" else if (existing == null) "New task" else "Edit dossier task",
         onDismiss = cancel,
-        saveLabel = "Save dossier task",
+        saveLabel = if (team != null) "Save" else "Save dossier task",
         canSave = title.isNotBlank() && minute != null && endMinute != null && (monthly || days != 0),
         onSave = {
             minute?.let { m ->
@@ -1063,6 +1105,16 @@ internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, on
                 val rb = if (remind) remindMin else 0
                 val end = endMinute ?: minOf(m + 30, 24 * 60)
                 val weeks = if (monthly) 1 else everyWeeks
+                if (team != null) {
+                    team.onSave(
+                        TeamBlock(
+                            id = team.block?.id ?: TeamBlock.newId(), title = title.trim(), note = note.trim(), minute = m, endMinute = end,
+                            days = d, monthDay = md, everyWeeks = weeks, onOffDay = onOffDay, remindBefore = rb, proof = proof,
+                        )
+                    )
+                    onDismiss()
+                    return@let
+                }
                 if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred, end, weeks, onOffDay)
                 else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred, end, weeks, onOffDay)
                 onDismiss()
@@ -1091,7 +1143,7 @@ internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, on
             shape = RoundedCornerShape(14.dp)
         )
 
-        StarSwitchRow(starred) { starred = it }
+        if (team == null) StarSwitchRow(starred) { starred = it }
 
         Text("Repeats", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -1216,6 +1268,31 @@ internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, on
                 }
             }
         }
+        if (team != null) {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("📷", fontSize = 20.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Photo proof on tick", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "His tick opens the camera first. No photo, no tick.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = proof, onCheckedChange = { proof = it })
+                }
+            }
+            Text(
+                "Only you can change ${team.name}'s Dossier.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            team.onDelete?.let { del ->
+                TextButton(onClick = { del(); onDismiss() }) { Text("Delete this block", color = MaterialTheme.colorScheme.error) }
+            }
+        }
     }
 
     if (showClock) {
@@ -1254,6 +1331,9 @@ internal fun DossierTaskDialog(existing: DossierTask?, onDismiss: () -> Unit, on
         LaunchedEffect(s, e) { endMinute = minOf(s + 30, 24 * 60) }
     }
 }
+
+/** The Owner editing a member's Dossier block: whose it is, the block (null = new), and what Save / Delete do. */
+class TeamBlockEdit(val name: String, val block: TeamBlock?, val onSave: (TeamBlock) -> Unit, val onDelete: (() -> Unit)?)
 
 private fun remindLabel(m: Int) = if (m >= 60) "${m / 60} hour" else "$m min"
 

@@ -531,3 +531,44 @@ internal fun TeamAttachRow(attach: List<TeamAttach>, onAttach: (List<TeamAttach>
         }
     }
 }
+
+/**
+ * 📷 photo proof for a team Dossier block: shown over any screen when such a block is ticked. The photo goes to
+ * the Owner, then the tick goes through (its time is the tick time).
+ */
+@Composable
+fun TeamDossierProofHost() {
+    val ctx = LocalContext.current
+    val ask by TeamDossier.asking.collectAsState()
+    val (id, date) = ask ?: return
+    val t = DossierStore.get(id)
+    if (t == null) {
+        LaunchedEffect(ask) { TeamDossier.asking.value = null }
+        return
+    }
+    var photo by remember(ask) { mutableStateOf<ByteArray?>(null) }
+    val pick = rememberTeamPhotoPicker { photo = it }
+    val close = { TeamDossier.asking.value = null }
+    val bytes = photo
+    if (bytes == null) {
+        AlertDialog(
+            onDismissRequest = close,
+            title = { Text("📷 ${t.title} · photo proof") },
+            text = { Text("${TeamDossier.ownerFirst()} asked for a photo to tick ${t.title}. Take one or pick it from the gallery.") },
+            confirmButton = { Button(onClick = pick) { Text("Add photo") } },
+            dismissButton = { TextButton(onClick = close) { Text("Cancel") } },
+        )
+    } else {
+        TeamPhotoCaptionDialog(
+            bytes, title = "📷 ${t.title} · photo proof", button = "✓ Tick",
+            body = "${TeamDossier.ownerFirst()} asked for a photo to tick ${t.title}.", onRetake = { photo = null; pick() },
+            onDismiss = close,
+        ) { caption ->
+            if (TeamDossier.sendProof(ctx, id, date, TeamDossier.PHOTO, bytes, caption)) {
+                if (!DossierStore.tick(id, date)) Toast.makeText(ctx, "This day is locked in History", Toast.LENGTH_SHORT).show()
+                TaskAlarms.cancelDossierNotification(ctx, id)
+            } else Toast.makeText(ctx, "Couldn't send the photo", Toast.LENGTH_SHORT).show()
+            close()
+        }
+    }
+}

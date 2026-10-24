@@ -346,8 +346,8 @@ class TaskReceiver : BroadcastReceiver() {
             TaskAlarms.ACTION_DOSSIER_DONE -> {
                 val date = intent.getStringExtra(TaskAlarms.EXTRA_DATE)
                     ?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return
-                DossierStore.tick(id, date)
-                TaskAlarms.cancelDossierNotification(context, id)
+                // A 📷 team block waits for its photo: the notification stays until he adds it in the app.
+                if (DossierStore.tick(id, date) || !TeamDossier.needsProof(context, id)) TaskAlarms.cancelDossierNotification(context, id)
             }
             TaskAlarms.ACTION_DOSSIER_NUDGE -> TaskAlarms.fireNudge(context)
             MorningSummary.ACTION_FIRE -> MorningSummary.fire(context)
