@@ -10,11 +10,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.callbackreminder.app"
+        applicationId = "com.callbackreminder.app.test"
         minSdk = 26
         targetSdk = 35
         versionCode = 52
-        versionName = "0.37.0"
+        versionName = "0.37.0-test"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.

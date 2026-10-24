@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Callback Reminder</string>
+    <string name="app_name">CR Test</string>
     <string name="rec_a11y_label">Callback Reminder call recording</string>
     <string name="rec_a11y_desc">Lets Callback Reminder keep the microphone working while it records a call. It does not read or change anything on your screen.</string>
     <string name="widget_follow_ups_label">Follow-ups</string>

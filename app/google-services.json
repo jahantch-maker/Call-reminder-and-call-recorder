@@ -41,6 +41,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318801821677:android:3682588de26ccb08e231e4",
+        "android_client_info": {
+          "package_name": "com.callbackreminder.app.test"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "318801821677-enjj03pgn87j5ae5n2llo2gbop4irhr9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2Sf8e6rOC7g_Mt-RvSGosUn-3wjMDNSs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "318801821677-enjj03pgn87j5ae5n2llo2gbop4irhr9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
