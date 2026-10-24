@@ -573,6 +573,23 @@ internal fun FollowUpCard(
     val teamV by TeamSync.version.collectAsState()
     val teamLink = call?.linkId?.takeIf { it != 0L } ?: text?.linkId ?: 0L
     val teamTask = remember(teamLink, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, teamLink, teamTasks) else null }
+    // Deleting a task you gave takes it off his phone too, after one line to confirm.
+    var askDelete by remember { mutableStateOf(false) }
+    val delete: () -> Unit = {
+        if (teamTask != null && teamTask.fromUid == TeamRepo.uid && teamTask.open) askDelete = true else onDelete()
+    }
+    if (askDelete && teamTask != null) {
+        AlertDialog(
+            onDismissRequest = { askDelete = false },
+            title = { Text("Delete for you and ${teamTask.toFirst}?") },
+            confirmButton = {
+                TextButton(onClick = { askDelete = false; TeamRepo.cancel(teamTask); onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Keep") } },
+        )
+    }
 
     val chips = buildList {
         if (finished) {
@@ -652,6 +669,7 @@ internal fun FollowUpCard(
         onClick = onToggle,
         pos = pos,
         highlighted = highlighted,
+        corner = teamTask?.takeIf { it.fromUid == TeamRepo.uid && !finished }?.let { tt -> { TeamTicks(tt) } },
     ) {
         CardPanel(
             details = details,
@@ -659,7 +677,7 @@ internal fun FollowUpCard(
             links = buildList {
                 if (finished) {
                     add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = onDelete))
+                    add(RowLink("Delete", danger = true, onClick = delete))
                 } else {
                     if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
                     add(RowLink("Edit", onClick = onEdit))
@@ -667,15 +685,12 @@ internal fun FollowUpCard(
                     add(RowLink("Move to My tasks", onClick = onMove))
                     if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
                     add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = onDelete))
+                    add(RowLink("Delete", danger = true, onClick = delete))
                 }
             }
         )
         teamTask?.let { tt ->
             if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt)
-            else if (tt.asking && tt.fromUid == TeamRepo.uid) TextButton(onClick = { TeamUi.request.value = TeamUi.INBOX }) {
-                Text("${tt.toFirst} asks for more time · answer ›")
-            }
             TextButton(onClick = { TeamUi.openTimeline(tt.id) }) {
                 Text(
                     when {

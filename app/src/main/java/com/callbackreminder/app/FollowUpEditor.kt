@@ -703,7 +703,8 @@ fun FollowUpDialog(
         bottomStart = extras?.let { x -> { TaskExtraButtons(x) } },
         titleAction = {
             extras?.onShowInList?.let { go -> ShowInListLink(extras.listName) { onDismiss(); go() } }
-            IconButton(onClick = { starred = !starred }) {
+            // A team member: 🔴 Urgent is the only switch (it is the ⭐ on both phones).
+            if (teamMember == null) IconButton(onClick = { starred = !starred }) {
                 Icon(
                     if (starred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                     contentDescription = if (starred) "Important" else "Mark important",
@@ -822,7 +823,7 @@ fun FollowUpDialog(
                 deadline = deadline,
                 onDeadline = { deadline = it },
                 urgent = urgent,
-                onUrgent = { on -> urgent = on; if (on) starred = true },
+                onUrgent = { on -> urgent = on; starred = on },
                 photoProof = photoProof,
                 onPhotoProof = { photoProof = it },
                 attach = attach,

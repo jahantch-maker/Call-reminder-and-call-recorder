@@ -98,7 +98,7 @@ object TeamSync {
         }
     }
 
-    private fun sig(t: TeamTask) = "${t.status}|${t.due}|${t.moreAt}|${t.lastMsgAt}"
+    private fun sig(t: TeamTask) = "${t.status}|${t.due}|${t.moreAt}|${t.lastMsgAt}|${t.urgent}"
     private fun msgOf(sig: String?): Long = sig?.split('|')?.getOrNull(3)?.toLongOrNull() ?: 0L
 
     /** You opened the task's Timeline up to [at]: its "new" chip goes. */
@@ -116,6 +116,7 @@ object TeamSync {
     private fun dueOf(sig: String?): Long? = sig?.split('|')?.getOrNull(1)?.toLongOrNull()
     private fun statusOf(sig: String?): String? = sig?.split('|')?.getOrNull(0)
     private fun moreOf(sig: String?): Long = sig?.split('|')?.getOrNull(2)?.toLongOrNull() ?: 0L
+    private fun urgentOf(sig: String?): Boolean? = sig?.split('|')?.getOrNull(4)?.toBooleanStrictOrNull()
 
     private fun initStores(c: Context) {
         ReminderStore.init(c)
@@ -178,12 +179,13 @@ object TeamSync {
             t.open -> {
                 if (local == null) {
                     val made = MyTaskStore.add(
-                        title = t.title, note = "From ${t.fromFirst}", dueAt = t.due, name = "", number = "",
+                        title = t.title, note = "", dueAt = t.due, name = "", number = "",
                         starred = t.urgent,
                     )
                     recv[t.id] = made.id.toString()
                 } else {
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
+                    if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
                     if (t.due > 0L && local.dueAt != t.due && (before == null || remoteMoved)) MyTaskStore.setDue(local.id, t.due)
                 }
             }
@@ -194,6 +196,7 @@ object TeamSync {
             t.status == Team.DONE || t.status == Team.CHECKED -> local?.let { if (!it.done) MyTaskStore.setDone(it.id, true) }
         }
         if (t.status == Team.SENT && foreground) TeamRepo.markSeen(t)
+        else if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
 
         // What he hears about.
         val was = statusOf(before)
@@ -203,11 +206,11 @@ object TeamSync {
                     t.title + if (t.hisDate && t.due == 0L) "\nPick your date" + (if (t.deadline > 0L) " by ${Fmt.dueLabel(t.deadline)}" else "") else "\nDate: ${Fmt.dueLabel(t.due)}",
                     mine = recv[t.id]?.toLongOrNull())
             was != null && was != t.status && t.status == Team.REOPENED ->
-                notify(c, "re:${t.id}", "Not done yet · ${t.fromFirst}", "${t.title}\n“${t.reason}”", mine = recv[t.id]?.toLongOrNull())
+                notify(c, "re:${t.id}", "Not done yet · ${t.fromFirst}", t.title + if (t.reason.isBlank()) "" else "\n“${t.reason}”", mine = recv[t.id]?.toLongOrNull())
             was != null && was != t.status && t.status == Team.CHECKED ->
                 notify(c, "ok:${t.id}", "${t.fromFirst}: Received, thanks ✓", t.title, mine = recv[t.id]?.toLongOrNull())
             was != null && was != t.status && t.status == Team.CANCELLED ->
-                notify(c, "x:${t.id}", "Task cancelled by ${t.fromFirst}", t.title, mine = null)
+                notify(c, "x:${t.id}", "Task removed by ${t.fromFirst}", t.title, mine = null)
             moreOf(before) > 0L && t.moreAt == 0L ->
                 notify(c, "more:${t.id}", if (t.due == t.moreDue) "More time given ✓" else "${t.fromFirst} kept the date",
                     "${t.title}\nDate: ${Fmt.dueLabel(t.due)}", mine = recv[t.id]?.toLongOrNull())
@@ -230,8 +233,20 @@ object TeamSync {
                         ReminderStore.reschedule(pending.id, t.due, "${t.toFirst}'s date:")
                     }
                 }
-                t.status == Team.CHECKED || t.status == Team.CANCELLED || t.status == Team.RETURNED ->
+                // His Done waits in Home › Replied, check it (your call-back becomes the one to check).
+                t.status == Team.DONE && statusOf(before) != Team.DONE -> {
+                    if (pending != null) ReminderStore.markDone(pending.id, review = true)
+                    else if (calls.none { it.review }) ToScheduleStore.items.value.firstOrNull { it.linkId == link }?.let { s ->
+                        val r = ReminderStore.add(s.name, s.number, s.note, System.currentTimeMillis(), createdAs = "Given to ${t.toFirst}", starred = s.starred)
+                        ReminderStore.setLink(r.id, link, false)
+                        ReminderStore.markDone(r.id, review = true)
+                        ToScheduleStore.remove(s.id)
+                    }
+                }
+                t.status == Team.CHECKED || t.status == Team.CANCELLED || t.status == Team.RETURNED -> {
                     if (t.status != Team.RETURNED) calls.filter { !it.done }.forEach { ReminderStore.markDone(it.id) }
+                    calls.filter { it.done && it.review }.forEach { ReminderStore.reviewed(it.id) }
+                }
             }
         }
         val was = statusOf(before) ?: return
@@ -319,7 +334,7 @@ object TeamSync {
                             // His date is fixed (or past the deadline): back to the agreed date.
                             MyTaskStore.setDue(local.id, t.due)
                             notify(c, "fixed:${t.id}", "Date stays ${if (t.due > 0L) Fmt.dueLabel(t.due) else "open"}",
-                                "${t.title}\nUse “Need more time” to ask ${t.fromFirst} for a later date.", mine = local.id)
+                                "${t.title}\nLate? Tell ${t.fromFirst} in the Timeline.", mine = local.id)
                         }
                     }
                 }
@@ -327,7 +342,10 @@ object TeamSync {
             if (t.fromUid == me) {
                 val link = given[t.id]?.toLongOrNull() ?: continue
                 val calls = ReminderStore.items.value.filter { it.linkId == link }
-                if ((t.open || t.status == Team.DONE) && calls.isNotEmpty() && calls.all { it.done } &&
+                if (t.status == Team.DONE && calls.any { !it.done && it.events.any { e -> e.what == "Done, sent to To review" } }) {
+                    // You gave his Done a new time in review: it goes back to him as not done yet.
+                    TeamRepo.notDoneYet(t, "")
+                } else if ((t.open || t.status == Team.DONE) && calls.isNotEmpty() && calls.all { it.done && !it.review } &&
                     !FollowUps.wasMoved(calls.maxByOrNull { it.id }, null)
                 ) TeamRepo.check(t)
             }

@@ -104,6 +104,8 @@ fun TaskCard(
     tickEnabled: Boolean = true,
     /** False in the review session, where the ✓ Done button does it. */
     showTick: Boolean = true,
+    /** WhatsApp-style ticks in the bottom-right corner (team tasks you gave). */
+    corner: (@Composable () -> Unit)? = null,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -149,16 +151,19 @@ fun TaskCard(
                     Text(note, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (sub != null) Text(sub, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-                FlowRow(
-                    Modifier.padding(top = 3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    TimeBox(time, late && !done, timeIcons)
-                    if (!person.isNullOrBlank()) {
-                        TaskChip(person, CHIP_PLAIN, icon = { Icon(Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) })
+                Row(verticalAlignment = Alignment.Bottom) {
+                    FlowRow(
+                        Modifier.weight(1f).padding(top = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TimeBox(time, late && !done, timeIcons)
+                        if (!person.isNullOrBlank()) {
+                            TaskChip(person, CHIP_PLAIN, icon = { Icon(Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) })
+                        }
+                        chips.forEach { SmallChip(it) }
                     }
-                    chips.forEach { SmallChip(it) }
+                    corner?.invoke()
                 }
             }
             // Opened, 📞 and WA move into the bar under the details.

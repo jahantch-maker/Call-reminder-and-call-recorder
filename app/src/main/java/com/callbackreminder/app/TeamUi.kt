@@ -82,10 +82,11 @@ import java.util.Locale
 
 /** Team screens and the small team parts of other screens (chips, Needs you lines, the For box). */
 object TeamUi {
-    /** A page to open: [SETTINGS], [INBOX] or [DAY] (with [dayOf]). AppRoot opens it and clears this. */
+    /** A page to open: [SETTINGS], [DAY] (with [dayOf]), or the Follow-ups / My tasks tab. AppRoot opens it and clears this. */
     val request = MutableStateFlow<String?>(null)
     const val SETTINGS = "settings"
-    const val INBOX = "inbox"
+    const val FOLLOW_UPS = "followups"
+    const val MY_TASKS = "mytasks"
     const val DAY = "day"
     const val TIMELINE = "timeline"
 
@@ -119,15 +120,13 @@ object TeamUi {
         return tasks.firstOrNull { it.id == id }
     }
 
-    /** Your side: one status chip (Sent → Seen → his date → Done, check it), plus Urgent / asks / passed on. */
+    /** Your side: one status chip (his date → Done, check it), plus Urgent / asks / passed on. Sent / Seen are the ticks. */
     fun giverChips(t: TeamTask): List<RowChip> = buildList {
         if (t.urgent && t.open) add(RowChip("🔴 Urgent", ChipTone.RED))
         if (t.open && t.stuck) add(RowChip("⚠ Stuck", ChipTone.RED))
         if (t.open && t.asks) add(RowChip("❓ Needs your answer", ChipTone.ORANGE))
         when {
             t.asking -> add(RowChip("⏳ asks till ${shortDate(t.moreDue)}", ChipTone.ORANGE))
-            t.status == Team.SENT -> add(RowChip("✓ Sent ${Fmt.timeOnly(t.createdAt)}", ChipTone.MUTED))
-            t.status == Team.SEEN -> add(RowChip("✓✓ Seen ${Fmt.timeOnly(t.seenAt)}", ChipTone.BLUE))
             t.status == Team.REOPENED -> add(RowChip("Not done yet", ChipTone.RED))
             t.status == Team.DATED && t.hisDate -> add(RowChip("📅 his date", ChipTone.ORANGE))
             t.status == Team.DATED -> add(RowChip("📌 fixed date", ChipTone.MUTED))
@@ -154,7 +153,7 @@ object TeamUi {
     }
 
     /** One line in Needs you: what it says and how many. */
-    data class Need(val text: String, val count: Int, val tone: ChipTone)
+    data class Need(val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false)
 
     fun needs(c: Context, tasks: List<TeamTask>, me: String?): List<Need> {
         if (me == null) return emptyList()
@@ -162,12 +161,6 @@ object TeamUi {
         val given = tasks.filter { it.fromUid == me }
         val noDateMin = TeamRules.noDateMin(c)
         return buildList {
-            given.filter { it.status == Team.DONE }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("✅ ${it.size} done, check it · " + it.joinToString(", ") { t -> t.toFirst }.take(40), it.size, ChipTone.GREEN))
-            }
-            given.filter { it.asking }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("⏳ ${it.size} asking for more time · " + it.joinToString(", ") { t -> t.toFirst }.take(40), it.size, ChipTone.ORANGE))
-            }
             given.filter { it.open && it.stuck }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED))
             }
@@ -180,10 +173,10 @@ object TeamUi {
                 add(Need("📅 ${it.size} waiting for his date · " + it.map { t -> t.toFirst }.distinct().joinToString(", ") + " · ${h} h", it.size, ChipTone.ORANGE))
             }
             tasks.filter { it.toUid == me && it.open && it.hisDate && it.due == 0L }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("📅 ${it.size} task${if (it.size == 1) "" else "s"} need your date", it.size, ChipTone.ORANGE))
+                add(Need("📅 ${it.size} task${if (it.size == 1) "" else "s"} need your date", it.size, ChipTone.ORANGE, mine = true))
             }
             tasks.filter { it.toUid == me && it.status == Team.REOPENED }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("↩ ${it.size} sent back: not done yet", it.size, ChipTone.RED))
+                add(Need("↩ ${it.size} sent back: not done yet", it.size, ChipTone.RED, mine = true))
             }
         }
     }
@@ -201,7 +194,8 @@ object TeamUi {
 
     fun lastSeenLabel(m: TeamMember): String = when {
         m.lastSeen <= 0L -> "Not opened yet"
-        m.onlineToday() -> "Online today · ${Fmt.timeOnly(m.lastSeen)}"
+        m.onlineNow() -> "🟢 Online now"
+        m.onlineToday() -> "Last seen today ${Fmt.timeOnly(m.lastSeen)}"
         else -> "Last seen ${Fmt.dueLabel(m.lastSeen)}"
     }
 }
@@ -415,12 +409,6 @@ private fun TeamActive(
         }
     }
 
-    FilledTonalButton(onClick = { TeamUi.request.value = TeamUi.INBOX }, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Rounded.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Team tasks · ${tasks.count { it.open || it.status == Team.DONE }} open")
-    }
-
     if (admin && waiting.isNotEmpty()) {
         TeamHeading("Waiting for you · ${waiting.size}")
         waiting.forEach { w ->
@@ -463,7 +451,7 @@ private fun TeamActive(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(m.first, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(6.dp))
-                        OnlineDot(m.onlineToday())
+                        OnlineDot(m.onlineNow())
                     }
                     Text(m.roleLabel + (if (openFromMe > 0) " · $openFromMe open from you" else ""), fontSize = 12.sp, color = cs.onSurfaceVariant)
                 }
@@ -603,115 +591,6 @@ private fun TeamChartDialog(
             confirmButton = { Button(onClick = { confirmRemove = false; onRemove() }) { Text("Remove") } },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
         )
-    }
-}
-
-// ---------------------------------------------------------------- Team tasks (inbox)
-
-@Composable
-fun TeamInboxScreen(onBack: () -> Unit) {
-    val tasks by TeamRepo.tasks.collectAsState()
-    val me by TeamRepo.me.collectAsState()
-    val uid = me?.uid
-    SettingsPage(title = "Team tasks", onBack = onBack) {
-        if (me?.active != true || uid == null) {
-            Text("Join or make a team in Settings › Team first.")
-            TextButton(onClick = { TeamUi.request.value = TeamUi.SETTINGS }) { Text("Open Settings › Team") }
-            return@SettingsPage
-        }
-        val given = tasks.filter { it.fromUid == uid }
-        val mine = tasks.filter { it.toUid == uid }
-        val below = tasks.filter { it.fromUid != uid && it.toUid != uid && (it.open || it.status == Team.DONE) }
-        fun section(title: String, list: List<TeamTask>, content: @Composable (TeamTask) -> Unit): (@Composable () -> Unit)? =
-            if (list.isEmpty()) null else ({
-                TeamHeading("$title · ${list.size}")
-                list.forEach { content(it) }
-            })
-        val parts = listOfNotNull(
-            section("Done, check it", given.filter { it.status == Team.DONE }) { TeamGivenCard(it) },
-            section("Asking for more time", given.filter { it.asking }) { TeamGivenCard(it) },
-            section("Given to you", mine.filter { it.open }.sortedBy { if (it.due == 0L) 0L else it.due }) { TeamMineCard(it) },
-            section("Waiting for a date", given.filter { it.open && it.due == 0L && !it.asking }) { TeamGivenCard(it) },
-            section("With a date", given.filter { it.open && it.due > 0L && !it.asking }.sortedBy { it.due }) { TeamGivenCard(it) },
-            section("In your team", below.sortedByDescending { it.createdAt }.take(30)) { TeamViewCard(it) },
-            section("Closed", (given + mine).filter { !it.open && it.status != Team.DONE }.sortedByDescending { it.events.lastOrNull()?.at ?: it.createdAt }.take(15)) { TeamViewCard(it) },
-        )
-        if (parts.isEmpty()) Text("No team tasks yet. Give one with New follow-up › 👥 Team.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        parts.forEach { it() }
-    }
-}
-
-@Composable
-private fun TeamTaskHead(t: TeamTask, sub: String, chips: List<RowChip>) {
-    val ctx = LocalContext.current
-    TeamSync.version.collectAsState().value
-    val all = if (TeamSync.unread(ctx, t, TeamRepo.uid)) chips + RowChip("💬 new", ChipTone.BLUE) else chips
-    Text(t.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (t.lastMsgText.isNotBlank()) Text("💬 ${t.lastMsgText}", fontSize = 12.5.sp, maxLines = 1,
-        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-    if (all.isNotEmpty()) TeamChips(all)
-}
-
-/** A task you gave: its status, and what you can do now. */
-@Composable
-private fun TeamGivenCard(t: TeamTask) {
-    var setDate by remember { mutableStateOf(false) }
-    var cancel by remember { mutableStateOf(false) }
-    TeamCard(onClick = { TeamUi.openTimeline(t.id) }) {
-        TeamTaskHead(
-            t,
-            "👤 ${t.toFirst} · given ${Fmt.dueLabel(t.createdAt)}" + (if (t.due > 0L) " · date ${Fmt.dueLabel(t.due)}" else " · no date yet") +
-                (if (t.deadline > 0L) " · deadline ${TeamUi.shortDate(t.deadline)}" else ""),
-            TeamUi.giverChips(t),
-        )
-        when {
-            t.status == Team.DONE -> TeamCheckButtons(t)
-            t.asking -> {
-                Text("Wants until ${Fmt.dueLabel(t.moreDue)} · “${t.moreReason}”", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { TeamRepo.answerMoreTime(t, true) }) { Text("Give more time") }
-                    OutlinedButton(onClick = { TeamRepo.answerMoreTime(t, false) }) { Text("Keep the date") }
-                }
-            }
-            t.open -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { setDate = true }) { Text(if (t.due == 0L) "Set date myself" else "Change date") }
-                TextButton(onClick = { cancel = true }) { Text("Cancel task", color = MaterialTheme.colorScheme.error) }
-            }
-        }
-    }
-    if (setDate) {
-        DateTimePickerFlow(
-            initialMs = t.due.takeIf { it > 0L } ?: (System.currentTimeMillis() + 3_600_000L),
-            onPicked = { TeamRepo.setGiverDate(t, it); setDate = false },
-            onDismiss = { setDate = false },
-        )
-    }
-    if (cancel) {
-        AlertDialog(
-            onDismissRequest = { cancel = false },
-            title = { Text("Cancel this task?") },
-            text = { Text("“${t.title}” leaves ${t.toFirst}'s app.") },
-            confirmButton = { Button(onClick = { cancel = false; TeamRepo.cancel(t) }) { Text("Cancel task") } },
-            dismissButton = { TextButton(onClick = { cancel = false }) { Text("Keep") } },
-        )
-    }
-}
-
-/** A task given to you: pick your date, ask for more time, Done. */
-@Composable
-private fun TeamMineCard(t: TeamTask) {
-    TeamCard(onClick = { TeamUi.openTimeline(t.id) }) {
-        TeamTaskHead(t, "↘ From ${t.fromFirst} · given ${Fmt.dueLabel(t.createdAt)}" + if (t.due > 0L) " · your date ${Fmt.dueLabel(t.due)}" else "",
-            TeamUi.receiverChips(t))
-        TeamReceiverButtons(t, myTaskId = null)
-    }
-}
-
-@Composable
-private fun TeamViewCard(t: TeamTask) {
-    TeamCard(onClick = { TeamUi.openTimeline(t.id) }) {
-        TeamTaskHead(t, "${t.fromFirst} → ${t.toFirst}" + if (t.due > 0L) " · ${Fmt.dueLabel(t.due)}" else " · no date", TeamUi.giverChips(t))
     }
 }
 
@@ -1104,7 +983,7 @@ fun TeamNeedsLines() {
             else -> Color(0xFFF0AA5A).copy(alpha = 0.25f) to Color(0xFFE08A1E)
         }
         Surface(
-            onClick = { TeamUi.request.value = TeamUi.INBOX },
+            onClick = { TeamUi.request.value = if (n.mine) TeamUi.MY_TASKS else TeamUi.FOLLOW_UPS },
             shape = RoundedCornerShape(14.dp), color = bg, modifier = Modifier.fillMaxWidth(),
         ) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1147,7 +1026,7 @@ fun TeamPickDialog(onDismiss: () -> Unit, onPick: (TeamMember) -> Unit) {
                     ) {
                         Box {
                             Avatar(m.name, size = 36.dp)
-                            Box(Modifier.align(Alignment.BottomEnd)) { OnlineDot(m.onlineToday()) }
+                            Box(Modifier.align(Alignment.BottomEnd)) { OnlineDot(m.onlineNow()) }
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
