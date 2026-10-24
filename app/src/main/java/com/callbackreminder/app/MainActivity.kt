@@ -461,6 +461,8 @@ private fun AppRoot(
         }
         if (teamRequest != null) TeamUi.request.value = null
     }
+    // 📷 a team Dossier block ticked anywhere asks for its photo here.
+    TeamDossierProofHost()
 
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {

@@ -319,6 +319,12 @@ object TeamRepo {
                 _tasks.value = list
                 scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground) } }
             },
+            // His Dossier, as the Owner set it.
+            team.collection("dossier").document(me).addSnapshotListener { s, _ ->
+                if (s == null || !s.exists()) return@addSnapshotListener
+                val blocks = (s.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList()
+                scope.launch { CrashLog.guard(appCtx, "Team dossier") { TeamDossier.apply(appCtx, blocks) } }
+            },
         )
         touch()
     }
@@ -496,6 +502,7 @@ object TeamRepo {
                 "managers" to chainFrom(reportsTo),
             )
         ).await()
+        TeamDossier.stopDailyList(c, phone.trim())
         val moved = TeamSync.moveOpenFollowUps(c, m.copy(phone = phone.trim(), reportsTo = reportsTo, managers = chainFrom(reportsTo), status = Team.ACTIVE))
         if (moved > 0) "Moved $moved open follow-up${if (moved == 1) "" else "s"} to ${m.first}'s app" else null
     } catch (e: Exception) {
@@ -810,6 +817,10 @@ object TeamRepo {
         val list = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await().documents.map { taskOf(it) }
         _tasks.value = list
         TeamSync.apply(c, list, foreground)
+        runCatching {
+            val d = team.collection("dossier").document(u.uid).get().await()
+            if (d.exists()) TeamDossier.apply(c, (d.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList())
+        }
         TeamSync.pushLocal(c)
         uploadDay(c)
         clearOldMedia()
