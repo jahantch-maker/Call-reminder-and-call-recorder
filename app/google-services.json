@@ -44,12 +44,20 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:318801821677:android:3682588de26ccb08e231e4",
+        "mobilesdk_app_id": "1:318801821677:android:2644fa29395244a7e231e4",
         "android_client_info": {
           "package_name": "com.callbackreminder.app.test"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "318801821677-k9ue7kme5sk0taplnrcta106b6frefnd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.callbackreminder.app.test",
+            "certificate_hash": "eef9cf035e5cd01aeb54309a89b25e4d8cb12bc8"
+          }
+        },
         {
           "client_id": "318801821677-enjj03pgn87j5ae5n2llo2gbop4irhr9.apps.googleusercontent.com",
           "client_type": 3
