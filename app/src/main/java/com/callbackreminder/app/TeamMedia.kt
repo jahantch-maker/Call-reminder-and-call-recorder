@@ -1,5 +1,6 @@
 package com.callbackreminder.app
 
+import androidx.compose.material.icons.rounded.Close
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

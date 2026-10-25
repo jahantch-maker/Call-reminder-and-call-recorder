@@ -365,7 +365,7 @@ fun TextPlanSection(
                 onPick = addTime,
             )
         } else {
-        Text("TEXT TIMES", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        ChipHeading("TEXT TIMES")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             state.times.sorted().forEach { t ->
                 InputChip(

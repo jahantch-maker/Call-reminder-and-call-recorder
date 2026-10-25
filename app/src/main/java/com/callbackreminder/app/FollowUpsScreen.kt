@@ -779,10 +779,7 @@ private fun SheetLine(text: String) {
 fun ProjectsScreen() {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().background(cs.background).padding(horizontal = 16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Projects", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TopActions()
-        }
+        PageTitleRow("Projects", "Coming soon", red = false)
         Column(
             Modifier.fillMaxWidth().weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,

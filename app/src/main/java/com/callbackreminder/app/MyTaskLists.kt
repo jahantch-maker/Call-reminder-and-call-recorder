@@ -101,35 +101,54 @@ import java.time.Instant
 internal val NoTimeBg: Color @Composable get() = Tones.amber.bg
 internal val NoTimeFg: Color @Composable get() = Tones.amber.fg
 
-/** The list tabs under "Tasks": All, Unsorted, your lists, ＋ New list. [selected] -1 is All. */
+/**
+ * The list tabs under "Tasks": All, 📥 Assigned to me (in a team; a blue dot counts the new ones), your lists,
+ * ＋ New list. Tasks in no list show only in All. [selected] -1 is All, -2 Assigned to me.
+ */
 @Composable
-internal fun ListTabs(lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit) {
+internal fun ListTabs(
+    lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit,
+    assigned: Boolean = false, assignedNew: Int = 0,
+) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         ListTab("All", selected == ALL_LISTS) { onSelect(ALL_LISTS) }
-        lists.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
+        if (assigned) ListTab("Assigned to me", selected == ASSIGNED_LIST, dot = assignedNew) { onSelect(ASSIGNED_LIST) }
+        lists.filter { it.id != MyTaskStore.UNSORTED }.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
         TextButton(onClick = onNewList) { Text("＋ New list", fontWeight = FontWeight.SemiBold) }
     }
 }
 
 const val ALL_LISTS = -1L
+const val ASSIGNED_LIST = -2L
 
 @Composable
-private fun ListTab(text: String, on: Boolean, onClick: () -> Unit) {
+private fun ListTab(text: String, on: Boolean, dot: Int = 0, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
         Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text,
-            color = if (on) cs.primary else cs.onSurfaceVariant,
-            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text,
+                color = if (on) cs.primary else cs.onSurfaceVariant,
+                fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
+            )
+            if (dot > 0) {
+                Spacer(Modifier.width(4.dp))
+                Surface(color = Tones.blue.fg, shape = RoundedCornerShape(50)) {
+                    Text(
+                        "$dot", color = Tones.blue.bg, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp)
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Surface(
             color = if (on) cs.primary else Color.Transparent,
@@ -653,12 +672,13 @@ internal fun MyTaskDialog(
                     if (needLength) {
                         Text("Pick how long to save it with a time", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeedOrange)
                     }
-                    FreeSlotsRow(length, existing?.id ?: -1L, due.takeIf { it > 0L }, onPick = { pickTime(it) }, onPickTime = { pickAnother = true }, compact = true)
+                    FreeSlotsRow(length, existing?.id ?: -1L, due.takeIf { it > 0L }, onPick = { pickTime(it) }, compact = true)
                     ChipHeading("RECENT")
                     RecentChips(
                         recent, openedAt, due.takeIf { it > 0L }, compact = true,
                         base = existing?.dueAt?.takeIf { it > 0L },
                         busy = PickBusy(length, existing?.id ?: -1L), enabled = length > 0,
+                        onMore = { pickAnother = true },
                     ) { pickTime(it) }
                 }
                 val clashes = remember(due, length, existing?.id) {

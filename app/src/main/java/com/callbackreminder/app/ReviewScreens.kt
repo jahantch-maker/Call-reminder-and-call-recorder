@@ -234,7 +234,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
             item(key = "head") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-                    Text("Review", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("Review", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                     IconButton(onClick = onOpenSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Review settings") }
                 }
             }
@@ -356,6 +356,12 @@ private fun ReviewRow(
     val late = item.at in 1..now
     val sched = item.kind == ReviewItem.Kind.SCHED_FU || item.kind == ReviewItem.Kind.SCHED_MY
     val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && item.number.isBlank()
+    // A team task shows the same chips, banner, ticks and Timeline as on its own page.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val teamV by TeamSync.version.collectAsState()
+    val tt = remember(item.key, teamTasks, teamV) { if (TeamRepo.activeNow) reviewTeamTask(ctx, item, teamTasks) else null }
+    val giver = tt != null && tt.fromUid == TeamRepo.uid
+    val banner = remember(tt, teamV) { tt?.let { TeamUi.banner(ctx, it, TeamRepo.uid) } }
     TaskCard(
         title = item.title,
         done = false,
@@ -364,22 +370,38 @@ private fun ReviewRow(
         time = if (item.at > 0L) Fmt.dueLabel(item.at) else null,
         late = late,
         person = item.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
-        chips = item.chips.filterNot { it.endsWith("late") }.map { RowChip(it, ChipTone.MUTED) },
+        chips = item.chips.filterNot { it.endsWith("late") }.map { RowChip(it, ChipTone.MUTED) } +
+            (tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()),
         onCall = if (ReviewActions.canCall(item)) onCall else null,
         onWhatsApp = if (item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
         expanded = open,
         onClick = { open = !open },
         pos = RowPos.SINGLE,
+        corner = tt?.takeIf { giver }?.let { t -> { TeamTicks(t) } },
+        banner = banner,
+        urgent = tt?.let { it.urgent && it.open } == true,
     ) {
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
             links = buildList {
+                tt?.let { t -> add(RowLink(TeamUi.timelineLabel(t), onClick = { TeamUi.openTimeline(t.id) })) }
                 if (item.kind == ReviewItem.Kind.SCHED_FU) add(RowLink(if (needsPerson) "👤 Set person" else "Edit", onClick = onDetails))
             },
             onNewTime = if (needsPerson) null else onNewTime,
             buttonLabel = if (sched) "Set time" else "New time",
         )
     }
+}
+
+/** The team task behind a Review row: one you gave (a follow-up) or one given to you (a My task). */
+private fun reviewTeamTask(c: android.content.Context, item: ReviewItem, tasks: List<TeamTask>): TeamTask? {
+    val link = when (item.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(item.id)?.linkId
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(item.id)?.linkId
+        ReviewItem.Kind.SCHED_FU -> ToScheduleStore.get(item.id)?.linkId
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> return TeamUi.taskOfMyTask(c, item.id, tasks)
+    } ?: 0L
+    return TeamUi.taskOfLink(c, link, tasks)
 }
 
 @Composable
@@ -537,8 +559,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         if (upNext.isNotEmpty()) {
-                            Text("UP NEXT", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+                            ChipHeading("UP NEXT", modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
                             UpNextList(upNext)
                         }
                     }
@@ -850,12 +871,12 @@ private fun CardTop(
             PersonPicker(prompt = "Pick the person first") { n, num -> onPerson(n, num) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            Text("Edit", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.clickable(onClick = onEdit).padding(vertical = 2.dp))
             if (onHistory != null) {
-                Text("History", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                Text("Timeline", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                     modifier = Modifier.clickable(onClick = onHistory).padding(vertical = 2.dp))
             }
+            Text("Edit", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable(onClick = onEdit).padding(vertical = 2.dp))
         }
     }
 }
@@ -881,19 +902,12 @@ private fun QuickRow(item: ReviewItem, enabled: Boolean, onTime: (Long) -> Unit,
                 val mine by MyTaskStore.items.collectAsState()
                 val len = mine.firstOrNull { it.id == item.id }?.durationMin ?: item.lengthMin
                 HowLongRow(len, onLength = { MyTaskStore.setLength(item.id, it) })
-                FreeSlotsRow(len, item.id, null, onPick = onTime, onPickTime = onPickTime)
+                FreeSlotsRow(len, item.id, null, onPick = onTime)
                 ChipHeading("RECENT")
-                RecentChips(recent, now, null, base = base, busy = PickBusy(len, item.id), enabled = len > 0, onPick = onTime)
+                RecentChips(recent, now, null, base = base, busy = PickBusy(len, item.id), enabled = len > 0, onMore = onPickTime, onPick = onTime)
             } else {
                 ChipHeading("RECENT")
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.weight(4f)) { RecentChips(recent, now, null, base = base, onPick = onTime) }
-                    PickChip(Modifier.width(48.dp), onClick = onPickTime)
-                }
+                RecentChips(recent, now, null, base = base, onMore = onPickTime, onPick = onTime)
             }
         }
         if (!enabled) {
@@ -1209,7 +1223,6 @@ fun ReviewHomeCard(
     // "Start review" goes through the parts switched on in Settings › Review.
     val total = remember(counts) { counts.filter { ReviewPrefs.session(ctx, it.first) }.sumOf { it.second } }
     val cs = MaterialTheme.colorScheme
-    val dark = LocalDarkTheme.current
 
     Surface(shape = RoundedCornerShape(20.dp), color = cs.surface, shadowElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1238,6 +1251,8 @@ fun ReviewHomeCard(
                 NeedTile(overdue, "Overdue", red, Modifier.weight(1f), onOpenOverdue)
                 NeedTile(schedule, "To\nschedule", amber, Modifier.weight(1f), onOpenToSchedule)
             }
+            // 👥 ❓ questions waiting / ⚠ stuck / 📅 deadline requests: slim lines under the tiles.
+            Column { TeamNeedsLines() }
             val paused = s.active && s.status == ReviewSession.Status.PAUSED
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(

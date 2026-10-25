@@ -85,7 +85,13 @@ import java.time.ZoneId
 internal fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("History · ${r.title}" + if (r.code.isEmpty()) "" else " · ${r.code}") },
+        title = {
+            Column {
+                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
+                Text(r.title + if (r.code.isEmpty()) "" else " · ${r.code}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+        },
         text = {
             if (r.log.isEmpty()) {
                 Text("Nothing sent yet.")

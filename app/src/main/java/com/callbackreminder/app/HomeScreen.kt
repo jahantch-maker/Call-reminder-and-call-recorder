@@ -162,7 +162,7 @@ fun HomeScreen(
                         Text(
                             greeting(Instant.ofEpochMilli(now).atZone(zone).toLocalTime()),
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
                         )
                         Spacer(Modifier.width(8.dp))
@@ -207,9 +207,6 @@ fun HomeScreen(
                     onOpenToSchedule = onOpenToSchedule,
                 )
             }
-            item(key = "team_needs") {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { TeamNeedsLines() }
-            }
 
             setupBanners(status, ctx, onOpenSetup, onOpenRecordingSettings)
 
@@ -225,13 +222,7 @@ fun HomeScreen(
             }
 
             item(key = "next-title") {
-                Text(
-                    "NEXT UP",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp, start = 4.dp)
-                )
+                ChipHeading("NEXT UP", modifier = Modifier.padding(top = 2.dp, start = 4.dp))
             }
 
             if (nextUp.isEmpty()) {

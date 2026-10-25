@@ -156,8 +156,9 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     var sub by rememberSaveable { mutableIntStateOf(MyTasksUi.ONE_TIME) }
-    // Unsorted opens first; -1 is the All tab.
-    var listSel by rememberSaveable { mutableLongStateOf(MyTaskStore.UNSORTED) }
+    // All opens first; -2 is Assigned to me (team tasks given to you).
+    var listSel by rememberSaveable { mutableLongStateOf(ALL_LISTS) }
+    var fromSel by rememberSaveable { mutableStateOf<String?>(null) }
     var starredOnly by rememberSaveable { mutableStateOf(false) }
     var dossierStarred by rememberSaveable { mutableStateOf(false) }
     var completedOpen by rememberSaveable { mutableStateOf(false) }
@@ -178,7 +179,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         MyTasksUi.showTask.value = null
         val t = MyTaskStore.get(id) ?: return@LaunchedEffect
         sub = MyTasksUi.ONE_TIME
-        listSel = t.listId
+        listSel = if (t.listId == MyTaskStore.UNSORTED) ALL_LISTS else t.listId
         starredOnly = false
         if (t.done) completedOpen = true
         highlightId = id
@@ -191,7 +192,9 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         dossierStarred = false
         highlightId = -id
     }
-    if (listSel != ALL_LISTS && lists.none { it.id == listSel }) listSel = MyTaskStore.UNSORTED
+    val inTeam = TeamRepo.activeNow
+    if (listSel == MyTaskStore.UNSORTED || (listSel == ASSIGNED_LIST && !inTeam) ||
+        (listSel != ALL_LISTS && listSel != ASSIGNED_LIST && lists.none { it.id == listSel })) listSel = ALL_LISTS
     val current = lists.firstOrNull { it.id == listSel }
 
     var newKind by remember { mutableStateOf<Int?>(null) }
@@ -215,7 +218,23 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
 
     val pending = tasks.filter { !it.done }
     val overdue = pending.filter { it.timed && it.dueAt <= now }
-    val inView = if (listSel == ALL_LISTS) tasks else tasks.filter { it.listId == listSel }
+    // 📥 Assigned to me: the tasks given to you, newest given first; FROM picks one giver.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val teamV by TeamSync.version.collectAsState()
+    val teamOf = remember(tasks, teamTasks, teamV, inTeam) {
+        if (!inTeam) emptyMap()
+        else tasks.mapNotNull { t -> TeamUi.taskOfMyTask(ctx, t.id, teamTasks)?.let { t.id to it } }.toMap()
+    }
+    val assignedNew = remember(teamOf, teamV) { teamOf.values.count { it.open && TeamSync.isNew(ctx, it.id) } }
+    val givers = remember(teamOf) { teamOf.values.map { it.fromFirst }.distinct().sorted() }
+    if (fromSel != null && fromSel !in givers) fromSel = null
+    val inView = when (listSel) {
+        ALL_LISTS -> tasks
+        ASSIGNED_LIST -> tasks.filter { t -> teamOf[t.id]?.let { fromSel == null || it.fromFirst == fromSel } == true }
+        else -> tasks.filter { it.listId == listSel }
+    }
+    val newOnTop = listSel == ASSIGNED_LIST
+    val newIds = remember(teamOf, teamV) { teamOf.filterValues { it.open && TeamSync.isNew(ctx, it.id) }.keys }
     val viewPending = inView.filter { !it.done && (!starredOnly || it.starred) }
     val viewDone = inView.filter { it.done && (!starredOnly || it.starred) }.sortedByDescending { it.doneAt }
 
@@ -381,7 +400,10 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 item(key = "lists") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
-                            ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
+                            ListTabs(
+                                lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true },
+                                assigned = inTeam, assignedNew = assignedNew,
+                            )
                         }
                         StarToggle(starredOnly) { starredOnly = it }
                         Box {
@@ -420,10 +442,38 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         }
                     }
                 }
+                if (listSel == ASSIGNED_LIST && givers.size > 1) {
+                    item(key = "from") {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ChipHeading("FROM")
+                            FilterChip(selected = fromSel == null, onClick = { fromSel = null }, label = { Text("All") })
+                            givers.forEach { g -> FilterChip(selected = fromSel == g, onClick = { fromSel = if (fromSel == g) null else g }, label = { Text(g) }) }
+                        }
+                    }
+                }
+                val freshOnTop = if (newOnTop) viewPending.filter { it.id in newIds }.sortedByDescending { it.id } else emptyList()
+                if (freshOnTop.isNotEmpty()) {
+                    item(key = "g-new") {
+                        Column {
+                            DayHeader("New", "${freshOnTop.size}", MaterialTheme.colorScheme.primary)
+                            TaskGroup {
+                                freshOnTop.forEachIndexed { i, t ->
+                                    if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp))
+                                    row(t, showList = false)
+                                }
+                            }
+                        }
+                    }
+                }
                 if (viewPending.isEmpty()) {
                     item(key = "empty-one") {
                         when {
                             starredOnly -> HintText("No starred tasks here.")
+                            listSel == ASSIGNED_LIST -> HintText("Nothing given to you right now.")
                             viewDone.isNotEmpty() -> EmptyPicture(Icons.Rounded.DoneAll, "All done here", "Well done! Nothing left on this list.")
                             else -> EmptyPicture(
                                 Icons.Rounded.TaskAlt,
@@ -437,7 +487,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 }
                 if (current == null || current.byDate) {
                     // By date: Overdue / Today / Tomorrow / dates, like Follow-ups (All lists and By date lists).
-                    allGroups(viewPending, now).forEach { (title, group) ->
+                    allGroups(viewPending.filter { it !in freshOnTop }, now).forEach { (title, group) ->
                         item(key = "g-$title") {
                             Column {
                                 DayHeader(
@@ -566,7 +616,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 existing = null,
                 onDismiss = { newKind = null },
                 onSwitchKind = { newKind = MyTasksUi.DOSSIER },
-                listId = if (listSel == ALL_LISTS) MyTaskStore.UNSORTED else listSel,
+                listId = listSel.takeIf { it >= 0 } ?: MyTaskStore.UNSORTED,
             )
         }
     }
@@ -649,7 +699,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             deleteList = false
             val name = current.name
             val before = MyTaskStore.deleteList(current.id, deleteTasks)
-            listSel = MyTaskStore.UNSORTED
+            listSel = ALL_LISTS
             if (before != null) {
                 scope.offerUndo(snack, "Deleted list · $name") {
                     MyTaskStore.restoreLists(before.first, before.second)
@@ -880,7 +930,7 @@ private fun DossierRow(
         // Just the links: the tick is its Done, and its times are fixed.
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             listOfNotNull(
-                RowLink("History", onClick = onOpen),
+                RowLink("Timeline", onClick = onOpen),
                 onEdit?.let { RowLink("Edit", onClick = it) },
                 onDelete?.let { RowLink("Delete", danger = true, onClick = it) },
             ).forEach { l ->
@@ -953,7 +1003,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
                 TeamSync.version.collectAsState().value
                 val hasVoice = TeamDossier.sent(ctx, t.id, day, TeamDossier.VOICE)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("OR VOICE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                    ChipHeading("OR VOICE")
                     TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
                         if (TeamDossier.sendProof(ctx, t.id, day, TeamDossier.VOICE, b, durMs = d)) {
                             if (reason.isBlank()) reason = "🎤 Voice note"
@@ -1335,7 +1385,7 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
                     }
                 }
                 item(key = "hist-title") {
-                    Text("History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    Text("Timeline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                 }
                 if (history.isEmpty()) {
                     item(key = "none") { HintText("Its first day is ${t.start.format(dayFmt)}.") }
@@ -1475,19 +1525,20 @@ fun DossierReviewScreen(
             item(key = "header") {
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-                    Text("To review", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("To review", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                 }
             }
             item(key = "chips") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    FilterChip(
-                        selected = false,
-                        onClick = { if (callsToReview > 0 || callsOverdue == 0) onOpenCalls() else onOpenOverdueCalls() },
-                        label = { Text("Calls ${callsToReview + callsOverdue}") }
-                    )
-                    FilterChip(selected = false, onClick = onOpenTexts, label = { Text("Texts $textsToReview") })
-                    FilterChip(selected = true, onClick = {}, label = { Text("Dossier $left left") })
-                }
+                BoxTabs(
+                    labels = listOf("Calls ${callsToReview + callsOverdue}", "Texts $textsToReview", "Dossier $left left"),
+                    selected = 2,
+                    onSelect = { i ->
+                        when (i) {
+                            0 -> if (callsToReview > 0 || callsOverdue == 0) onOpenCalls() else onOpenOverdueCalls()
+                            1 -> onOpenTexts()
+                        }
+                    },
+                )
             }
             if (needsTime.isNotEmpty()) {
                 item(key = "needs-time") {
