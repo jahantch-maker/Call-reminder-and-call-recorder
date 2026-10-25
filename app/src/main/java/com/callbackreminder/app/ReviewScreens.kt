@@ -113,7 +113,10 @@ object ReviewActions {
             ReviewItem.Kind.CALL_REVIEW -> ReminderStore.reviewed(item.id)
             ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.markDone(item.id)
             ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.setDone(item.id, true)
-            ReviewItem.Kind.SCHED_FU -> ToScheduleStore.remove(item.id)
+            ReviewItem.Kind.SCHED_FU -> {
+                ToScheduleStore.items.value.firstOrNull { it.id == item.id }?.let { TeamDelete.closeGiven(ctx, it.linkId) }
+                ToScheduleStore.remove(item.id)
+            }
         }
     }
 
@@ -1228,9 +1231,9 @@ fun ReviewHomeCard(
                 Spacer(Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val green = if (dark) Color(0xFF173D33) to Color(0xFF7FE0C2) else Color(0xFFDDF5EC) to Color(0xFF0B6B55)
-                val red = if (dark) Color(0xFF4A1E24) to Color(0xFFFF9AA4) else Color(0xFFFFE1E3) to Color(0xFFA61B2B)
-                val amber = Tones.amber.bg to Tones.amber.fg
+                val green = Tones.done.pair
+                val red = Tones.late.pair
+                val amber = Tones.amber.pair
                 NeedTile(replied, "Replied,\ncheck it", green, Modifier.weight(1f), onOpen)
                 NeedTile(overdue, "Overdue", red, Modifier.weight(1f), onOpenOverdue)
                 NeedTile(schedule, "To\nschedule", amber, Modifier.weight(1f), onOpenToSchedule)

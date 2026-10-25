@@ -204,6 +204,8 @@ internal fun MyTaskCard(
     val inTeam = TeamRepo.activeNow
     val teamTask = remember(t.id, teamTasks, teamV) { if (inTeam) TeamUi.taskOfMyTask(ctx, t.id, teamTasks) else null }
     val isPriv = remember(t.id, teamV) { inTeam && TeamLinks.isPrivate(ctx, t.id) }
+    val teamBanner = remember(teamTask, teamV) { teamTask?.let { TeamUi.banner(ctx, it, TeamRepo.uid) } }
+    var history by remember { mutableStateOf(false) }
     // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val bringTick by MyTasksUi.bring.collectAsState()
@@ -232,9 +234,10 @@ internal fun MyTaskCard(
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
-            // A given task: 🔴 Urgent (set by the giver) is its star.
-            onStar = if (t.done || teamTask != null) null else onStar,
+            onStar = if (t.done) null else onStar,
             noTimeChip = teamTask == null,
+            banner = teamBanner,
+            urgent = teamTask?.let { it.urgent && it.open } == true,
             onCall = if (t.hasPerson && !t.done) ({ dial(ctx, t.number) }) else null,
             onWhatsApp = if (t.hasPerson && !t.done) ({
                 WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, "", t.title, if (t.timed) t.dueAt else 0L, t.name))
@@ -264,7 +267,9 @@ internal fun MyTaskCard(
                 ),
                 onNewTime = if (t.done) null else onNewTime,
                 buttonLabel = if (t.timed) "New time" else "Set time",
+                // The same order on every card: Timeline · Edit · (Remove time · Move to … · Private) · Delete.
                 links = buildList {
+                    add(RowLink("Timeline", onClick = { history = true }))
                     add(RowLink("Edit", onClick = onEdit))
                     if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
                     if (!t.done && onMoveToFollowUps != null) add(RowLink("Move to Follow-ups", onClick = onMoveToFollowUps))
@@ -276,6 +281,7 @@ internal fun MyTaskCard(
             )
         }
     }
+    if (history) MyTaskHistoryDialog(MyTaskStore.get(t.id) ?: t) { history = false }
 }
 
 /** Opens your Messages app on a new text to [number]. */
@@ -415,7 +421,7 @@ internal fun DeleteListDialog(list: TaskList, count: Int, onDismiss: () -> Unit,
                     else "This list has $count ${if (count == 1) "task" else "tasks"}. What should happen to them?"
                 )
                 Button(onClick = { onDelete(false) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (count == 0) "Delete list" else "Move them to Unsorted")
+                    Text(if (count == 0) "Delete list" else "Keep them (no list, in All)")
                 }
                 if (count > 0) {
                     OutlinedButton(
@@ -431,7 +437,7 @@ internal fun DeleteListDialog(list: TaskList, count: Int, onDismiss: () -> Unit,
     )
 }
 
-/** Reorder lists: ↑ ↓ for each of your lists (Unsorted always stays first). */
+/** Reorder lists: ↑ ↓ for each of your lists. */
 @Composable
 internal fun ReorderListsDialog(lists: List<TaskList>, onDismiss: () -> Unit) {
     var order by remember { mutableStateOf(lists.filter { it.id != MyTaskStore.UNSORTED }) }
@@ -440,7 +446,6 @@ internal fun ReorderListsDialog(lists: List<TaskList>, onDismiss: () -> Unit) {
         title = { Text("Reorder lists") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Unsorted always comes first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 order.forEachIndexed { i, l ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(l.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
@@ -734,7 +739,7 @@ internal fun MyTaskDialog(
                             Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                lists.firstOrNull { it.id == list }?.name ?: "Unsorted",
+                                lists.firstOrNull { it.id == list }?.name ?: "No list",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp,
                                 maxLines = 1,

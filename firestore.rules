@@ -60,6 +60,8 @@ service cloud.firestore {
           allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
           allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
             && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text'])
+              // ✓✓ Ticks: each person marks only their own seen / played time.
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy', 'playedBy'])
               // The giver hands the Timeline on with the task.
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewers'])
                 && get(/databases/$(database)/documents/teams/$(t)/tasks/$(task)).data.fromUid == me()));

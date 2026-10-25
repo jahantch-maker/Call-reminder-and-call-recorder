@@ -52,8 +52,9 @@ data class TeamMember(
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
     val roleLabel: String get() = role.replaceFirstChar { it.uppercase() }
 
-    /** Had the app open in the last 15 minutes ("🟢 Online now"). */
-    fun onlineNow(now: Long = System.currentTimeMillis()): Boolean = lastSeen > 0L && now - lastSeen < 15 * 60_000L
+    /** 🟢 Online now: the app is open on his phone (live, once Realtime Database is on), else opened in the last 15 minutes. */
+    fun onlineNow(now: Long = System.currentTimeMillis()): Boolean =
+        if (TeamPresence.known(uid)) TeamPresence.online(uid) else lastSeen > 0L && now - lastSeen < 15 * 60_000L
 
     /** Opened the app today. */
     fun onlineToday(now: Long = System.currentTimeMillis()): Boolean =
@@ -104,7 +105,24 @@ data class TeamTask(
     val mediaCleared: Boolean = false,
     /** His phone received it (WhatsApp's two grey ticks); 0 = not yet. */
     val deliveredAt: Long = 0L,
+    /** Date rules when it was given: his deadline can't be moved once set, and how often he may push it without asking. */
+    val locked: Boolean = true,
+    val freeExt: Int = 0,
+    /** Times the deadline was pushed (approved, or within the free ones). */
+    val extCount: Int = 0,
+    /** His own reminder (only his phone rings for it); 0 = at the deadline. */
+    val reminderAt: Long = 0L,
+    /** Messages sent on the Timeline, by sender; photos and voice notes in all. */
+    val nBy: Map<String, Long> = emptyMap(),
+    val nPhoto: Int = 0,
+    val nVoice: Int = 0,
+    /** The newest message each person's phone has received (two grey ticks on a bubble). */
+    val msgDel: Map<String, Long> = emptyMap(),
 ) {
+    /** His deadline is set and can't be moved by him any more (only 📅 Extend deadline). */
+    val deadlineLocked: Boolean get() = locked && due > 0L
+    /** Messages from everyone but [uid]. */
+    fun msgsFromOthers(uid: String?): Long = nBy.filterKeys { it != uid }.values.sum()
     val asks: Boolean get() = open && askAt > 0L
     val stuck: Boolean get() = open && stuckAt > 0L
     val open: Boolean get() = status in Team.OPEN_STATES
@@ -167,6 +185,12 @@ data class TeamMsg(
     val text: String,
     val data: ByteArray?,
     val durMs: Long,
+    /** Who saw it on the Timeline, and when (blue ticks once everyone has). */
+    val seenBy: Map<String, Long> = emptyMap(),
+    /** A voice note played / a photo opened full screen, by whom and when. */
+    val playedBy: Map<String, Long> = emptyMap(),
+    /** Not on the server yet (one grey tick shows a clock). */
+    val pending: Boolean = false,
 ) {
     val fromFirst: String get() = Names.first(fromName) ?: fromName
 }
@@ -186,6 +210,15 @@ object TeamRules {
     fun setSmsMin(c: Context, m: Int) = p(c).edit().putInt("sms", m).apply()
     fun workingOnly(c: Context) = p(c).getBoolean("working_only", true)
     fun setWorkingOnly(c: Context, on: Boolean) = p(c).edit().putBoolean("working_only", on).apply()
+
+    /** Deadline locked: once he sets it he can only 📅 Extend deadline (your Approve, or a free push). */
+    fun deadlineLocked(c: Context) = p(c).getBoolean("locked", true)
+    fun setDeadlineLocked(c: Context, on: Boolean) = p(c).edit().putBoolean("locked", on).apply()
+    /** Extend without asking: how many times he may push it himself (0 = Never). */
+    val FREE_EXT_CHOICES = listOf(0, 1, 2, 3)
+    fun freeExt(c: Context) = p(c).getInt("free_ext", 0)
+    fun setFreeExt(c: Context, n: Int) = p(c).edit().putInt("free_ext", n).apply()
+    fun extLabel(n: Int): String = if (n <= 0) "Never" else "${n}×"
 
     fun label(m: Int): String = when {
         m <= 0 -> "Off"
@@ -374,6 +407,7 @@ object TeamRepo {
     fun onForeground(c: Context, on: Boolean) {
         foreground = on
         aliveJob?.cancel()
+        if (::appCtx.isInitialized && activeNow) CrashLog.guard(appCtx, "Team presence") { TeamPresence.onForeground(on) }
         if (!on || !::appCtx.isInitialized) return
         CrashLog.guard(appCtx, "Team front") {
             if (auth().currentUser == null || teamId == null) return@guard
@@ -616,12 +650,20 @@ object TeamRepo {
         "Couldn't save: ${e.message ?: e.javaClass.simpleName}"
     }
 
-    /** Remove member: access ends now; their open tasks from you come back to To schedule. */
-    suspend fun remove(c: Context, m: TeamMember): String? = try {
+    /**
+     * Remove member: access ends now. His open tasks from you go to [giveTo] (same task, Timeline and deadline), or
+     * with null come back to your To schedule. Tasks others gave him go back to them.
+     */
+    suspend fun remove(c: Context, m: TeamMember, giveTo: TeamMember? = null): String? = try {
         members().document(m.uid).update("status", Team.REMOVED).await()
         _tasks.value.filter { it.toUid == m.uid && it.open }.forEach { t ->
-            tasksRef().document(t.id).update(mapOf("status" to Team.RETURNED, "events" to FieldValue.arrayUnion(ev("Returned: ${m.first} left the team")))).await()
-            if (t.fromUid == uid) TeamSync.returnToMe(c, t)
+            if (giveTo != null && giveTo.uid != m.uid && t.fromUid == uid) {
+                reassign(t, giveTo)
+                TeamSync.relinkPerson(c, t, giveTo)
+            } else {
+                tasksRef().document(t.id).update(mapOf("status" to Team.RETURNED, "events" to FieldValue.arrayUnion(ev("Returned: ${m.first} left the team")))).await()
+                if (t.fromUid == uid) TeamSync.returnToMe(c, t)
+            }
         }
         null
     } catch (e: Exception) {
@@ -641,6 +683,14 @@ object TeamRepo {
     }
 
     fun member(uid: String): TeamMember? = _members.value.firstOrNull { it.uid == uid }
+
+    /** Someone came online or went offline: their "last seen" moves, so the green dots redraw. */
+    fun presenceChanged() {
+        _members.value = _members.value.map { m ->
+            val at = TeamPresence.lastAt(m.uid)
+            if (at > m.lastSeen) m.copy(lastSeen = at) else m
+        }
+    }
 
     // ------------------------------------------------------------ tasks
 
@@ -676,7 +726,13 @@ object TeamRepo {
                 "lastMsgAt" to (if (brief.isEmpty()) 0L else now), "lastMsgBy" to (if (brief.isEmpty()) "" else u.uid),
                 "lastMsgText" to (brief.lastOrNull()?.let { if (it.kind == Team.VOICE) "🎤 Voice note" else "📷 Photo" } ?: ""),
                 "photoProof" to photoProof, "proofAt" to 0L, "deliveredAt" to 0L,
-                "events" to listOf(ev(if (fixed) "Given by ${me.first} · date ${Fmt.dueLabel(giverDue!!)}" else "Given by ${me.first}")),
+                "locked" to TeamRules.deadlineLocked(appCtx), "freeExt" to TeamRules.freeExt(appCtx), "extCount" to 0,
+                "reminderAt" to 0L, "nPhoto" to brief.count { it.kind == Team.PHOTO }, "nVoice" to brief.count { it.kind == Team.VOICE },
+                "nBy" to (if (brief.isEmpty()) emptyMap() else mapOf(u.uid to brief.size.toLong())),
+                "events" to listOf(ev(
+                    "Given by ${me.first}" + (if (fixed) " · 📅 Deadline ${TeamUi.shortWhen(giverDue!!)}" else "") +
+                        (if (deadline > 0L && !fixed) " · Latest ${TeamUi.shortWhen(deadline)}" else "")
+                )),
             )
         )
         // The photos and voice notes added in New follow-up: the first messages on the Timeline.
@@ -728,6 +784,10 @@ object TeamRepo {
         @Suppress("UNCHECKED_CAST")
         (f["viewers"] as? List<String>)?.let { x = x.copy(viewers = it) }
         (f["createdAt"] as? Long)?.let { x = x.copy(createdAt = it) }
+        (f["deadline"] as? Long)?.let { x = x.copy(deadline = it) }
+        (f["dateBy"] as? String)?.let { x = x.copy(dateBy = it) }
+        (f["extCount"] as? Int)?.let { x = x.copy(extCount = it) }
+        (f["reminderAt"] as? Long)?.let { x = x.copy(reminderAt = it) }
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
     }
@@ -746,26 +806,71 @@ object TeamRepo {
         update(t, mapOf("deliveredAt" to System.currentTimeMillis()), null)
     }
 
-    /** He picked (or moved) his date. */
+    /** "Mon 4 pm" for a new date, "Mon 4 pm → Tue 5 pm" for a change. */
+    private fun change(old: Long, new: Long): String =
+        if (old > 0L && old != new) "${TeamUi.shortWhen(old)} → ${TeamUi.shortWhen(new)}" else TeamUi.shortWhen(new)
+
+    private fun because(reason: String) = reason.trim().takeIf { it.isNotEmpty() }?.let { " · “$it”" } ?: ""
+
+    /** He set his deadline (or moved it, while it isn't locked). */
     fun setHisDate(t: TeamTask, due: Long) {
         update(t, mapOf("due" to due, "status" to Team.DATED, "seenAt" to (t.seenAt.takeIf { it > 0L } ?: System.currentTimeMillis())),
-            "${t.toFirst} picked ${Fmt.dueLabel(due)}")
+            if (t.due > 0L && t.due != due) "📅 Deadline ${change(t.due, due)}" else "📅 Deadline set · ${TeamUi.shortWhen(due)}")
     }
 
-    /** The giver sets the date himself (Urgent with no date, or "Set date myself"). */
+    /** The giver sets the deadline himself (Urgent with no date, I pick, Not done yet). */
     fun setGiverDate(t: TeamTask, due: Long) {
-        update(t, mapOf("due" to due, "dateBy" to Team.GIVER_DATE, "status" to Team.DATED, "moreAt" to 0L), "${t.fromFirst} set the date ${Fmt.dueLabel(due)}")
+        update(t, mapOf("due" to due, "dateBy" to Team.GIVER_DATE, "status" to Team.DATED, "moreAt" to 0L),
+            "📅 ${t.fromFirst} set the deadline · ${change(t.due, due)}")
+    }
+
+    /** His own reminder changed (0 = it rings at the deadline): a line on the Timeline only, the deadline stays. */
+    fun setReminder(t: TeamTask, at: Long) {
+        if (at == t.reminderAt) return
+        update(t, mapOf("reminderAt" to at), when {
+            at <= 0L -> "⏰ His reminder at the deadline"
+            t.reminderAt > 0L -> "⏰ His reminder · ${change(t.reminderAt, at)}"
+            else -> "⏰ His reminder · ${TeamUi.shortWhen(at)}"
+        })
     }
 
     fun askMoreTime(t: TeamTask, due: Long, reason: String) {
         update(t, mapOf("moreDue" to due, "moreReason" to reason.trim(), "moreAt" to System.currentTimeMillis()),
-            "${t.toFirst} asked for more time: ${Fmt.dueLabel(due)} · “${reason.trim()}”")
+            "📅 ${t.toFirst} asks to extend · ${change(t.due, due)}${because(reason)}")
+    }
+
+    /**
+     * 📅 Extend deadline: at once while he has free pushes left (Date rules › Extend without asking), else a request
+     * the giver approves. Returns true when it moved at once.
+     */
+    fun extend(t: TeamTask, due: Long, reason: String): Boolean {
+        if (t.extCount < t.freeExt) {
+            update(t, mapOf("due" to due, "deadline" to maxOf(t.deadline, due), "status" to Team.DATED, "moreAt" to 0L, "extCount" to t.extCount + 1),
+                "📅 Deadline extended · ${change(t.due, due)}${because(reason)}")
+            return true
+        }
+        askMoreTime(t, due, reason)
+        return false
+    }
+
+    /** He takes back his request before it is answered. */
+    fun cancelMore(t: TeamTask) {
+        if (t.moreAt == 0L) return
+        update(t, mapOf("moreAt" to 0L, "moreDue" to 0L, "moreReason" to ""), "📅 Extension request taken back")
     }
 
     fun answerMoreTime(t: TeamTask, ok: Boolean) {
-        if (ok) update(t, mapOf("due" to t.moreDue, "deadline" to maxOf(t.deadline, t.moreDue), "status" to Team.DATED, "moreAt" to 0L),
-            "${t.fromFirst} gave more time: ${Fmt.dueLabel(t.moreDue)}")
-        else update(t, mapOf("moreAt" to 0L), "${t.fromFirst} kept the date")
+        if (ok) update(t, mapOf("due" to t.moreDue, "deadline" to maxOf(t.deadline, t.moreDue), "status" to Team.DATED, "moreAt" to 0L, "extCount" to t.extCount + 1),
+            "📅 ${t.fromFirst} approved · Deadline ${change(t.due, t.moreDue)}")
+        else update(t, mapOf("moreAt" to 0L), "📅 ${t.fromFirst} kept the deadline · ${TeamUi.shortWhen(t.due)}")
+    }
+
+    /** Undo (10 s) of an extension, a request or an answer: the deadline and the request as they were. */
+    fun undoDeadline(before: TeamTask) {
+        update(before, mapOf(
+            "due" to before.due, "deadline" to before.deadline, "status" to before.status, "moreAt" to before.moreAt,
+            "moreDue" to before.moreDue, "moreReason" to before.moreReason, "extCount" to before.extCount,
+        ), "↩ Undone")
     }
 
     fun markDone(t: TeamTask) {
@@ -778,14 +883,27 @@ object TeamRepo {
         update(t, mapOf("status" to Team.CHECKED, "checkedAt" to System.currentTimeMillis()), "${t.fromFirst}: Received, thanks ✓")
     }
 
-    /** Not done yet: his task opens again with your reason. */
-    fun notDoneYet(t: TeamTask, reason: String) {
+    /**
+     * Not done yet: his task opens again with your reason. [newDue] [KEEP] keeps the deadline, 0 = he picks a new one
+     * (his task goes back to his To schedule), else the one you picked.
+     */
+    fun notDoneYet(t: TeamTask, reason: String, newDue: Long = KEEP) {
         val why = reason.trim()
-        update(t, mapOf("status" to Team.REOPENED, "reason" to why, "doneAt" to 0L), "${t.fromFirst}: Not done yet" + if (why.isEmpty()) "" else " · “$why”")
+        val f = mutableMapOf<String, Any>("status" to Team.REOPENED, "reason" to why, "doneAt" to 0L, "moreAt" to 0L)
+        val tail = when {
+            newDue == KEEP -> ""
+            newDue <= 0L -> { f["due"] = 0L; f["dateBy"] = Team.HIS_DATE; " · ${t.toFirst} picks a new deadline" }
+            else -> { f["due"] = newDue; f["dateBy"] = Team.GIVER_DATE; " · new deadline ${TeamUi.shortWhen(newDue)}" }
+        }
+        update(t, f, "↩ ${t.fromFirst}: Not done yet${because(why)}$tail")
     }
 
-    fun passedDown(t: TeamTask, to: String) {
-        update(t, mapOf("passedTo" to to), "${t.toFirst} passed it to $to")
+    const val KEEP = -1L
+
+    /** He moved it to his Follow-ups for someone outside the team: the same task, now with his call to them. */
+    fun passedDown(t: TeamTask, to: String, callAt: Long = 0L) {
+        update(t, mapOf("passedTo" to to),
+            "↪ ${t.toFirst} passed it to $to (outside team)" + if (callAt > 0L) " · his call ${TeamUi.shortWhen(callAt)}" else "")
     }
 
     /** A line in the task's history only (e.g. "text sent"). */
@@ -848,6 +966,10 @@ object TeamRepo {
             else -> text.trim()
         }.take(120)
         val f = mutableMapOf<String, Any>("lastMsgAt" to now, "lastMsgBy" to u.uid, "lastMsgText" to preview)
+        // Counts for "3 new on Timeline" and "Timeline · 📷 2 · 🎤 1".
+        f["nBy.${u.uid}"] = FieldValue.increment(1)
+        if (kind == Team.PHOTO) f["nPhoto"] = FieldValue.increment(1)
+        if (kind == Team.VOICE) f["nVoice"] = FieldValue.increment(1)
         var event: String? = null
         when (tag) {
             Team.ASK -> f["askAt"] = now
@@ -862,6 +984,30 @@ object TeamRepo {
         update(t, f, event)
         TeamSync.markRead(appCtx, t.id, now)
         return true
+    }
+
+    /** Messages from others you now see on the Timeline: their ticks go blue for the sender. */
+    fun markMsgsSeen(taskId: String, list: List<TeamMsg>) {
+        val u = uid ?: return
+        if (teamId == null) return
+        val now = System.currentTimeMillis()
+        list.filter { it.fromUid != u && u !in it.seenBy && !it.pending }.forEach { m ->
+            msgs(taskId).document(m.id).update("seenBy.$u", now)
+        }
+    }
+
+    /** A voice note played, or a photo opened full screen (blue for the sender once everyone has). */
+    fun markPlayed(taskId: String, m: TeamMsg) {
+        val u = uid ?: return
+        if (teamId == null || m.fromUid == u || u in m.playedBy || m.pending) return
+        msgs(taskId).document(m.id).update("playedBy.$u", System.currentTimeMillis())
+    }
+
+    /** This phone has the newest message (two grey ticks for the sender). Quiet: no Timeline line. */
+    fun markMsgDelivered(t: TeamTask) {
+        val u = uid ?: return
+        if (teamId == null || t.lastMsgAt <= (t.msgDel[u] ?: 0L) || t.lastMsgBy == u) return
+        tasksRef().document(t.id).update("msgDel.$u", t.lastMsgAt)
     }
 
     /** The Timeline's messages, oldest first (null until the first read). */
@@ -881,6 +1027,9 @@ object TeamRepo {
                     text = d.getString("text").orEmpty(),
                     data = d.getBlob("data")?.toBytes(),
                     durMs = d.getLong("durMs") ?: 0L,
+                    seenBy = longs(d.get("seenBy")),
+                    playedBy = longs(d.get("playedBy")),
+                    pending = d.metadata.hasPendingWrites(),
                 )
             }.sortedBy { it.at })
         }
@@ -956,6 +1105,9 @@ object TeamRepo {
 
     private fun strings(v: Any?): List<String> = (v as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
 
+    private fun longs(v: Any?): Map<String, Long> =
+        (v as? Map<*, *>)?.entries?.mapNotNull { (k, n) -> (k as? String)?.let { it to ((n as? Number)?.toLong() ?: 0L) } }?.toMap() ?: emptyMap()
+
     private fun memberOf(s: DocumentSnapshot) = TeamMember(
         uid = s.id,
         name = s.getString("name").orEmpty(),
@@ -1006,5 +1158,13 @@ object TeamRepo {
         proofAt = s.getLong("proofAt") ?: 0L,
         mediaCleared = s.getBoolean("mediaCleared") ?: false,
         deliveredAt = s.getLong("deliveredAt") ?: 0L,
+        locked = s.getBoolean("locked") ?: false,
+        freeExt = (s.getLong("freeExt") ?: 0L).toInt(),
+        extCount = (s.getLong("extCount") ?: 0L).toInt(),
+        reminderAt = s.getLong("reminderAt") ?: 0L,
+        nBy = longs(s.get("nBy")),
+        nPhoto = (s.getLong("nPhoto") ?: 0L).toInt(),
+        nVoice = (s.getLong("nVoice") ?: 0L).toInt(),
+        msgDel = longs(s.get("msgDel")),
     )
 }

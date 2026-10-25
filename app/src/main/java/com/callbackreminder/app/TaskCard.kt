@@ -52,6 +52,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,16 +105,21 @@ fun TaskCard(
     tickEnabled: Boolean = true,
     /** False in the review session, where the ✓ Done button does it. */
     showTick: Boolean = true,
-    /** WhatsApp-style ticks in the bottom-right corner (team tasks you gave). */
+    /** WhatsApp-style ticks pinned top-right over the card (team tasks you gave): the card never grows or moves for them. */
     corner: (@Composable () -> Unit)? = null,
+    /** The thin coloured line across the top (new messages, a question, stuck, a deadline request). */
+    banner: CardBanner? = null,
+    /** 🔴 Urgent: the whole card in a deep red tint (light pink in day mode) until it is done. */
+    urgent: Boolean = false,
     /** False hides "⏱ No time yet" (a task given to you shows its promise chip instead). */
     noTimeChip: Boolean = true,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
+    val base = if (urgent && !done) Tones.urgentCard else cs.surface
     val bg by animateColorAsState(
-        if (expanded) cs.primary.copy(alpha = if (LocalDarkTheme.current) 0.10f else 0.05f).compositeOver(cs.surface)
-        else cs.surface,
+        if (expanded) cs.primary.copy(alpha = if (LocalDarkTheme.current) 0.10f else 0.05f).compositeOver(base)
+        else base,
         tween(200), label = "cardBg"
     )
     val shape = pos?.let { rowShape(it) }
@@ -124,6 +130,8 @@ fun TaskCard(
             .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), shape ?: RoundedCornerShape(14.dp)) else Modifier)
     ) {
         if (pos == RowPos.MIDDLE || pos == RowPos.LAST) HorizontalDivider(color = cs.surfaceVariant, thickness = 1.dp)
+        CardBannerLine(banner)
+        Box(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -165,7 +173,6 @@ fun TaskCard(
                         }
                         chips.forEach { SmallChip(it) }
                     }
-                    corner?.invoke()
                 }
             }
             // Opened, 📞 and WA move into the bar under the details.
@@ -186,6 +193,8 @@ fun TaskCard(
             }
             if (onStar != null) StarButton(starred, onStar) else Spacer(Modifier.width(6.dp))
         }
+        if (corner != null) Box(Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 8.dp)) { corner() }
+        }
         AnimatedVisibility(
             visible = expanded && expandedContent != null,
             enter = expandVertically(tween(220)) + fadeIn(tween(220)),
@@ -195,6 +204,36 @@ fun TaskCard(
                 val acts = CardActions(done, if (tickEnabled && !done) onTick else null, onCall, onWhatsApp)
                 CompositionLocalProvider(LocalCardActions provides acts) { expandedContent?.invoke(this) }
             }
+        }
+    }
+}
+
+/** The thin line across a card's top: what waits on it, in its colour; tap opens it (the Timeline). */
+data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null)
+
+@Composable
+private fun CardBannerLine(banner: CardBanner?) {
+    // Kept while it slides away, so it doesn't go blank first.
+    var last by remember { androidx.compose.runtime.mutableStateOf(banner) }
+    if (banner != null) last = banner
+    AnimatedVisibility(
+        visible = banner != null,
+        enter = expandVertically(tween(220)) + fadeIn(tween(220)),
+        exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
+    ) {
+        val b = last ?: return@AnimatedVisibility
+        val (bbg, bfg) = chipColors(b.tone)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(bbg)
+                .then(if (b.onClick != null) Modifier.clickable(onClick = b.onClick) else Modifier)
+                .padding(start = 12.dp, end = 12.dp, top = 3.dp, bottom = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(b.text, color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f))
+            if (b.onClick != null) Text("›", color = bfg, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -292,10 +331,9 @@ fun TaskActionBar(
     compact: Boolean = false,
     modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
-    val dark = LocalDarkTheme.current
-    val green = if (dark) Color(0xFF173D33) to Color(0xFF7FE0C2) else Color(0xFFDDF5EC) to Color(0xFF0B6B55)
+    val green = Tones.done.pair
     val orange = chipColors(ChipTone.ORANGE)
-    val blue = if (dark) Color(0xFF1E2A55) to Color(0xFFB9C8FF) else Color(0xFFE3EAFF) to Color(0xFF1F3A93)
+    val blue = Tones.call.pair
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         BarSlot(Icons.Rounded.Check, "Done", green, onDone, compact, Modifier.weight(1f))
         BarSlot(Icons.Rounded.Schedule, newTimeLabel, orange, onNewTime, compact, Modifier.weight(1f))

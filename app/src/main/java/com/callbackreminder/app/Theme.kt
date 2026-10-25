@@ -269,7 +269,9 @@ private fun animatedScheme(t: ColorScheme): ColorScheme = t.copy(
  * Coloured chips, tiles and badges that used to be fixed light pastels. Each tone has a soft container and
  * a readable ink, picked for the current mode so they look right in light and in dark.
  */
-class Tone(val bg: Color, val fg: Color)
+class Tone(val bg: Color, val fg: Color) {
+    val pair: Pair<Color, Color> get() = bg to fg
+}
 
 object Tones {
     val red: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF47161E), Color(0xFFFFC2C8)) else Tone(Color(0xFFFFE3E6), Color(0xFF8A1424))
@@ -277,4 +279,13 @@ object Tones {
     val green: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF103F37), Color(0xFFBDF2E6)) else Tone(Color(0xFFD9F3EC), Color(0xFF0B5A4C))
     val purple: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF2E2350), Color(0xFFE3D6FF)) else Tone(Color(0xFFEDE4FF), Color(0xFF3F1F8C))
     val blue: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF1E2E5E), Color(0xFFD6E0FF)) else Tone(Color(0xFFE1E8FF), Color(0xFF1E3A8A))
+
+    // The big bar buttons (✓ Done, 📞 Call, 📅 Deadline) and Needs you tiles: one place for these colours.
+    val done: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF173D33), Color(0xFF7FE0C2)) else Tone(Color(0xFFDDF5EC), Color(0xFF0B6B55))
+    val call: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF1E2A55), Color(0xFFB9C8FF)) else Tone(Color(0xFFE3EAFF), Color(0xFF1F3A93))
+    val date: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF33285E), Color(0xFFD6CCFF)) else Tone(Color(0xFFEDE7FF), Color(0xFF4B2FA8))
+    val late: Tone @Composable get() = if (LocalDarkTheme.current) Tone(Color(0xFF4A1E24), Color(0xFFFF9AA4)) else Tone(Color(0xFFFFE1E3), Color(0xFFA61B2B))
+
+    /** 🔴 Urgent card fill: a deep red tint (light pink by day), clearly apart from the ⚠ Stuck red. */
+    val urgentCard: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF3B1619) else Color(0xFFFFEAEE)
 }

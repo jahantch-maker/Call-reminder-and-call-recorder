@@ -6,6 +6,24 @@ import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.ByteArrayOutputStream
@@ -171,4 +189,72 @@ object TeamMedia {
         val s = (ms / 1000).toInt()
         return "%d:%02d".format(s / 60, s % 60)
     }
+}
+
+/**
+ * Every photo, full screen: pinch or double-tap to zoom, drag when zoomed, swipe for the next one. [onShown] says
+ * which one is on screen (it counts as opened for the sender's blue ticks).
+ */
+@androidx.compose.runtime.Composable
+fun PhotoViewer(photos: List<ByteArray>, start: Int = 0, onDismiss: () -> Unit, onShown: (Int) -> Unit = {}) {
+    if (photos.isEmpty()) return
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = start.coerceIn(0, photos.lastIndex)) { photos.size }
+        androidx.compose.runtime.LaunchedEffect(pager.currentPage) { onShown(pager.currentPage) }
+        androidx.compose.foundation.layout.Box(
+            androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)
+        ) {
+            androidx.compose.foundation.pager.HorizontalPager(pager, modifier = androidx.compose.ui.Modifier.fillMaxSize()) { i ->
+                ZoomablePhoto(photos[i])
+            }
+            androidx.compose.material3.IconButton(
+                onClick = onDismiss,
+                modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.TopEnd)
+                    .statusBarsPadding().padding(8.dp),
+            ) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Close, contentDescription = "Close",
+                    tint = androidx.compose.ui.graphics.Color.White)
+            }
+            if (photos.size > 1) androidx.compose.material3.Text(
+                "${pager.currentPage + 1} of ${photos.size} · swipe",
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f), fontSize = 13.sp,
+                modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding().padding(16.dp),
+            )
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun ZoomablePhoto(bytes: ByteArray) {
+    val bmp = androidx.compose.runtime.remember(bytes) { TeamMedia.bitmap(bytes)?.asImageBitmap() } ?: return
+    var scale by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    var offset by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    androidx.compose.foundation.Image(
+        bmp, contentDescription = "Photo", contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { scale = if (scale > 1.1f) 1f else 2.5f; if (scale == 1f) offset = androidx.compose.ui.geometry.Offset.Zero })
+            }
+            .pointerInput(Unit) {
+                // Pinch and drag only take the touch while zoomed in, so a plain swipe still turns the page.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val zoom = event.calculateZoom()
+                        val pan = event.calculatePan()
+                        if (zoom != 1f || scale > 1f) {
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            offset = if (scale == 1f) androidx.compose.ui.geometry.Offset.Zero else offset + pan
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },
+    )
 }
