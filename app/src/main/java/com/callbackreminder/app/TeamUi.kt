@@ -1171,9 +1171,11 @@ private fun TeamBlockDayDialog(
                 if (b?.proof == true) Text("📷 Photo proof on tick", fontSize = 13.sp, color = cs.onSurfaceVariant)
                 if (r?.get("photo") == true) {
                     val bmp = remember(photo) { photo?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
+                    var big by remember { mutableStateOf(false) }
                     if (bmp != null) Image(bmp, contentDescription = "Photo proof", contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).clickable { big = true })
                     else Text("Loading photo…", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                    if (big) photo?.let { PhotoViewer(listOf(it), onDismiss = { big = false }) }
                     if (caption.isNotBlank()) Text("“$caption”", fontSize = 13.sp)
                 }
                 if (r?.get("voice") == true) {
