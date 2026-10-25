@@ -1,6 +1,11 @@
 package com.callbackreminder.app
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -225,5 +230,41 @@ fun DayClearedOverlay() {
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
             )
         }
+    }
+}
+
+/**
+ * The compact top of every tab: big title, its status (red when something is late) and "⏱ n no time ›" on one
+ * line, then 🎤 ⚙.
+ */
+@Composable
+fun PageTitleRow(title: String, status: String, red: Boolean, noTime: Int = 0, onNoTime: (() -> Unit)? = null) {
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                status, fontSize = 13.sp, color = if (red) cs.error else cs.onSurfaceVariant, maxLines = 1,
+                modifier = Modifier.padding(bottom = 3.dp)
+            )
+            if (noTime > 0 && onNoTime != null) Text(
+                " · ⏱ $noTime no time ›", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeedOrange, maxLines = 1,
+                modifier = Modifier.padding(bottom = 3.dp).clickable(onClick = onNoTime)
+            )
+        }
+        TopActions()
+    }
+}
+
+/** ☆ next to the Open | Done box: show only starred. */
+@Composable
+fun StarToggle(on: Boolean, onChange: (Boolean) -> Unit) {
+    androidx.compose.material3.IconButton(onClick = { onChange(!on) }) {
+        androidx.compose.material3.Icon(
+            if (on) androidx.compose.material.icons.Icons.Rounded.Star else androidx.compose.material.icons.Icons.Rounded.StarBorder,
+            contentDescription = if (on) "Showing starred only" else "Show starred only",
+            tint = if (on) StarGold else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

@@ -354,20 +354,17 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item(key = "header") {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("My tasks", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                        DateStatusLine(
-                            when {
-                                overdue.isNotEmpty() -> "${overdue.size} overdue"
-                                pending.isEmpty() && allTodays.isEmpty() -> "Nothing waiting"
-                                else -> "${pending.size} to do · dossier $doneToday of ${allTodays.size} done"
-                            },
-                            red = overdue.isNotEmpty()
-                        )
-                    }
-                    TopActions()
-                }
+                PageTitleRow(
+                    "My tasks",
+                    when {
+                        overdue.isNotEmpty() -> "${overdue.size} overdue"
+                        pending.isEmpty() && allTodays.isEmpty() -> "Nothing waiting"
+                        else -> "${pending.size} to do"
+                    },
+                    red = overdue.isNotEmpty(),
+                    noTime = tasks.count { !it.done && !it.timed },
+                    onNoTime = onOpenToSchedule,
+                )
             }
 
             item(key = "sub") {
@@ -380,56 +377,47 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             }
 
             if (sub == MyTasksUi.ONE_TIME) {
-                val waiting = tasks.count { !it.done && !it.timed }
-                if (waiting > 0) item(key = "waiting") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
+                // One row: the lists, ☆, and ⋮ (sort and the list's own menu).
                 item(key = "lists") {
-                    ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
-                }
-                item(key = "list-head") {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                current?.name ?: "All lists",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                if (current == null || current.byDate) "By date" else "My order",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (current != null) {
-                                Box {
-                                    IconButton(onClick = { listMenu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List menu") }
-                                    DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
-                                        MenuLabel("SORT")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            ListTabs(lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true })
+                        }
+                        StarToggle(starredOnly) { starredOnly = it }
+                        Box {
+                            IconButton(onClick = { listMenu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List menu") }
+                            DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
+                                if (current == null) {
+                                    MenuLabel("SORT")
+                                    DropdownMenuItem(text = { Text("By date") }, trailingIcon = { Icon(Icons.Rounded.Check, null) }, onClick = { listMenu = false })
+                                    MenuLabel("LIST")
+                                    DropdownMenuItem(text = { Text("Reorder lists") }, onClick = { listMenu = false; reorderLists = true })
+                                } else {
+                                    MenuLabel("SORT")
+                                    DropdownMenuItem(
+                                        text = { Text("My order (drag)") },
+                                        trailingIcon = if (!current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
+                                        onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, false) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("By date") },
+                                        trailingIcon = if (current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
+                                        onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, true) }
+                                    )
+                                    MenuLabel("LIST")
+                                    if (current.id != MyTaskStore.UNSORTED) {
+                                        DropdownMenuItem(text = { Text("Rename list") }, onClick = { listMenu = false; renameList = true })
+                                    }
+                                    DropdownMenuItem(text = { Text("Reorder lists") }, onClick = { listMenu = false; reorderLists = true })
+                                    if (current.id != MyTaskStore.UNSORTED) {
                                         DropdownMenuItem(
-                                            text = { Text("My order (drag)") },
-                                            trailingIcon = if (!current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
-                                            onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, false) }
+                                            text = { Text("Delete list", color = MaterialTheme.colorScheme.error) },
+                                            onClick = { listMenu = false; deleteList = true }
                                         )
-                                        DropdownMenuItem(
-                                            text = { Text("By date") },
-                                            trailingIcon = if (current.byDate) ({ Icon(Icons.Rounded.Check, null) }) else null,
-                                            onClick = { listMenu = false; MyTaskStore.setListByDate(current.id, true) }
-                                        )
-                                        MenuLabel("LIST")
-                                        if (current.id != MyTaskStore.UNSORTED) {
-                                            DropdownMenuItem(text = { Text("Rename list") }, onClick = { listMenu = false; renameList = true })
-                                        }
-                                        DropdownMenuItem(text = { Text("Reorder lists") }, onClick = { listMenu = false; reorderLists = true })
-                                        if (current.id != MyTaskStore.UNSORTED) {
-                                            DropdownMenuItem(
-                                                text = { Text("Delete list", color = MaterialTheme.colorScheme.error) },
-                                                onClick = { listMenu = false; deleteList = true }
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
-                        StarredFilterChip(starredOnly) { starredOnly = it }
                     }
                 }
                 if (viewPending.isEmpty()) {

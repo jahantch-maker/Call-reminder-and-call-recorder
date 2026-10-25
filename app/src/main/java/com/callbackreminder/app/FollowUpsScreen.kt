@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -211,42 +213,37 @@ fun FollowUpsBar(
         FollowUpsUi.TEXTS -> "💬 Texts only"
         else -> "Everything"
     }
-    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-        BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) })
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                FilterChip(
-                    selected = show != FollowUpsUi.ALL,
-                    onClick = { menu = true },
-                    label = { Text(filterLabel, maxLines = 1) },
-                    trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    MenuHeading("SHOW")
-                    listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                            onClick = { menu = false; onShow(v) }
-                        )
-                    }
-                    MenuHeading("SORT")
-                    listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                            onClick = { menu = false; onSort(v) }
-                        )
-                    }
+    // One row: Open | Done, ☆, and ⋮ with Show and Sort.
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) }, Modifier.weight(1f))
+        StarToggle(starredOnly, onStarred)
+        Box {
+            IconButton(onClick = { menu = true }) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Show and sort",
+                    tint = if (show != FollowUpsUi.ALL) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                MenuHeading("SHOW")
+                listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                        onClick = { menu = false; onShow(v) }
+                    )
+                }
+                MenuHeading("SORT")
+                listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                        onClick = { menu = false; onSort(v) }
+                    )
                 }
             }
-            StarredFilterChip(starredOnly, onStarred)
         }
     }
+    // A filter that is on shows as one chip you can clear.
+    if (show != FollowUpsUi.ALL) SmallChip(RowChip("$filterLabel  ✕", ChipTone.BLUE, onClick = { onShow(FollowUpsUi.ALL) }))
 }
 
 @Composable
@@ -407,7 +404,8 @@ private fun FollowUpsAll(
             ),
         ) {
             item(key = "header") {
-                FollowUpsHeader(
+                PageTitleRow(
+                    "Follow-ups",
                     when {
                         overdue.isNotEmpty() && review.isNotEmpty() -> "${overdue.size} overdue · ${review.size} to review"
                         overdue.isNotEmpty() -> "${overdue.size} overdue"
@@ -416,6 +414,8 @@ private fun FollowUpsAll(
                         else -> "${open.size} open"
                     },
                     red = overdue.isNotEmpty() || review.isNotEmpty(),
+                    noTime = waiting,
+                    onNoTime = onOpenToSchedule,
                 )
             }
             item(key = "switch") {
@@ -431,9 +431,6 @@ private fun FollowUpsAll(
                     onSort = onSort,
                     onStarred = onStarred,
                 )
-            }
-            if (!showDone && waiting > 0) {
-                item(key = "to-schedule") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
             }
 
             fun block(key: String, title: String, count: String, color: Color, list: List<FuEntry>) {
