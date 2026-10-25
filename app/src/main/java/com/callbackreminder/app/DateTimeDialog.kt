@@ -179,9 +179,23 @@ fun DateTimeDialog(
     }
 }
 
-/** Kept for the Change time / Snooze / after-call screens: the same window, without Repeat. */
+/**
+ * Every "pick a time" in the app: the one grid picker, its [title] naming what is set. The calendar opens only from
+ * its "📅 Custom date & time".
+ */
 @Composable
 fun DateTimePickerFlow(
+    initialMs: Long,
+    onPicked: (Long) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "Pick date & time",
+) {
+    TimePickerDialog(title = title, selected = initialMs.takeIf { it > 0L }, onPick = onPicked, onDismiss = onDismiss)
+}
+
+/** The calendar and clock, opened from the grid's "📅 Custom date & time". */
+@Composable
+internal fun CalendarPickerFlow(
     initialMs: Long,
     onPicked: (Long) -> Unit,
     onDismiss: () -> Unit,

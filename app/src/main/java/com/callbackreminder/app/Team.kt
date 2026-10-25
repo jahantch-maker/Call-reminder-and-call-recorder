@@ -52,7 +52,10 @@ data class TeamMember(
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
     val roleLabel: String get() = role.replaceFirstChar { it.uppercase() }
 
-    /** Opened the app today (the green dot in the Team list). */
+    /** Had the app open in the last 15 minutes ("🟢 Online now"). */
+    fun onlineNow(now: Long = System.currentTimeMillis()): Boolean = lastSeen > 0L && now - lastSeen < 15 * 60_000L
+
+    /** Opened the app today. */
     fun onlineToday(now: Long = System.currentTimeMillis()): Boolean =
         lastSeen > 0L && java.time.Instant.ofEpochMilli(lastSeen).atZone(java.time.ZoneId.systemDefault()).toLocalDate() ==
             java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
@@ -99,6 +102,8 @@ data class TeamTask(
     val photoProof: Boolean = false,
     val proofAt: Long = 0L,
     val mediaCleared: Boolean = false,
+    /** His phone received it (WhatsApp's two grey ticks); 0 = not yet. */
+    val deliveredAt: Long = 0L,
 ) {
     val asks: Boolean get() = open && askAt > 0L
     val stuck: Boolean get() = open && stuckAt > 0L
@@ -116,6 +121,8 @@ object Team {
     const val ACTIVE = "active"
     const val REMOVED = "removed"
 
+    /** The pilot company: staff only see "Ask to join" this team. */
+    const val HOME_TEAM = "Rafiq Builders"
     const val OWNER = "owner"
     const val ADMIN = "admin"
     const val MEMBER = "member"
@@ -283,8 +290,9 @@ object TeamRepo {
         listeningFor = key
         val team = db().collection("teams").document(t)
         listeners = listOf(
-            team.addSnapshotListener { s, _ -> s?.let { _team.value = teamOf(it) } },
-            team.collection("members").document(u.uid).addSnapshotListener { s, _ ->
+            team.addSnapshotListener { s, e -> if (e != null) relisten() else s?.let { _team.value = teamOf(it) } },
+            team.collection("members").document(u.uid).addSnapshotListener { s, e ->
+                if (e != null) return@addSnapshotListener relisten()
                 if (s == null) return@addSnapshotListener
                 if (!s.exists()) {
                     // Declined or removed: leave quietly.
@@ -304,20 +312,39 @@ object TeamRepo {
     }
 
     private var inner = listOf<ListenerRegistration>()
+    @Volatile private var relistening = false
+
+    /** A listener stopped with an error (no network for long, token expired): attach all again in a few seconds. */
+    private fun relisten() {
+        if (relistening) return
+        relistening = true
+        scope.launch {
+            kotlinx.coroutines.delay(5_000L)
+            relistening = false
+            if (!::appCtx.isInitialized) return@launch
+            CrashLog.guard(appCtx, "Team relisten") {
+                stopListening()
+                listen()
+            }
+        }
+    }
 
     private fun listenMembersAndTasks(t: String, me: String) {
         inner.forEach { it.remove() }
         val team = db().collection("teams").document(t)
         inner = listOf(
-            team.collection("members").addSnapshotListener { s, _ ->
+            team.collection("members").addSnapshotListener { s, e ->
+                if (e != null) return@addSnapshotListener relisten()
                 s ?: return@addSnapshotListener
                 _members.value = s.documents.map { memberOf(it) }.sortedBy { it.name.lowercase() }
             },
-            team.collection("tasks").whereArrayContains("viewers", me).addSnapshotListener { s, _ ->
+            team.collection("tasks").whereArrayContains("viewers", me).addSnapshotListener { s, e ->
+                if (e != null) return@addSnapshotListener relisten()
                 s ?: return@addSnapshotListener
                 val list = s.documents.map { taskOf(it) }
                 _tasks.value = list
-                scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground) } }
+                val fromServer = !s.metadata.isFromCache
+                scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground, complete = fromServer) } }
             },
             // His Dossier, as the Owner set it.
             team.collection("dossier").document(me).addSnapshotListener { s, _ ->
@@ -326,7 +353,7 @@ object TeamRepo {
                 scope.launch { CrashLog.guard(appCtx, "Team dossier") { TeamDossier.apply(appCtx, blocks) } }
             },
         )
-        touch()
+        touch(force = true)
     }
 
     private fun stopListening() {
@@ -337,26 +364,44 @@ object TeamRepo {
         listeningFor = null
     }
 
-    /** The app came to the front (or left it): tasks sent to you count as Seen while it's open. */
+    private var aliveJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * The app came to the front (or left it): tasks sent to you count as Seen while it's open, "last seen" is
+     * written at once and every 10 minutes while it stays open, and the tasks are read fresh from the server
+     * (a listener can miss changes after a long time in the background).
+     */
     fun onForeground(c: Context, on: Boolean) {
         foreground = on
-        if (!on || !::appCtx.isInitialized || !activeNow) return
+        aliveJob?.cancel()
+        if (!on || !::appCtx.isInitialized) return
         CrashLog.guard(appCtx, "Team front") {
+            if (auth().currentUser == null || teamId == null) return@guard
+            listen()
+            touch(force = true)
+            aliveJob = scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(10 * 60_000L)
+                    if (!foreground) break
+                    touch(force = true)
+                }
+            }
+            if (!activeNow) return@guard
             val u = uid ?: return@guard
             _tasks.value.filter { it.toUid == u && it.status == Team.SENT }.forEach { markSeen(it) }
-            touch()
             TeamSync.pushLocal(appCtx)
+            scope.launch { runCatching { fetchOnce(appCtx) }.onFailure { CrashLog.record(appCtx, it, "Team refresh") } }
         }
     }
 
-    /** "Last seen": the green dot others see. At most every 10 minutes. */
-    fun touch() {
+    /** "Last seen" for the others. [force] writes now; otherwise at most every 10 minutes. Counted only once saved. */
+    fun touch(force: Boolean = false) {
         val u = uid ?: return
         val t = teamId ?: return
         val now = System.currentTimeMillis()
-        if (now - p().getLong("touched", 0L) < 10 * 60_000L) return
-        p().edit().putLong("touched", now).apply()
+        if (!force && now - p().getLong("touched", 0L) < 10 * 60_000L) return
         db().collection("teams").document(t).collection("members").document(u).update("lastSeen", now)
+            .addOnSuccessListener { p().edit().putLong("touched", now).apply() }
     }
 
     // ------------------------------------------------------------ sign-in
@@ -436,6 +481,41 @@ object TeamRepo {
     }
 
     /** Asks to join with the 6-letter code; the Owner approves with one tap. */
+    /** The company's team ("Rafiq Builders" for the pilot): its id and name, or null when it can't be found. */
+    suspend fun findHomeTeam(): Pair<String, String>? = runCatching {
+        db().collection("codes").whereEqualTo("teamName", Team.HOME_TEAM).limit(1).get().await().documents.firstOrNull()
+            ?.let { d -> d.getString("teamId")?.let { it to (d.getString("teamName") ?: Team.HOME_TEAM) } }
+    }.getOrNull()
+
+    /** Ask to join the company's team (no code): the Owner approves. */
+    suspend fun joinTeam(teamId: String, myName: String, myPhone: String): String? = try {
+        val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
+        joinNow(u, teamId, myName, myPhone)
+    } catch (e: Exception) {
+        "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
+    }
+
+    private suspend fun joinNow(u: FirebaseUser, t: String, myName: String, myPhone: String): String? {
+        db().collection("teams").document(t).collection("members").document(u.uid).set(
+            memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, System.currentTimeMillis(), myName)
+        ).await()
+        db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
+        setTeamId(t)
+        start(appCtx)
+        return null
+    }
+
+    /**
+     * Pilot: the people who were Admins become Members (only the Owner approves and edits the chart). Once, on the
+     * Owner's phone.
+     */
+    suspend fun adminsToMembers() {
+        val me = _me.value ?: return
+        if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, it.phone) }
+        p().edit().putBoolean("admins_to_members", true).apply()
+    }
+
     suspend fun join(code: String, myName: String, myPhone: String): String? = try {
         val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
         val c = code.trim().uppercase()
@@ -595,7 +675,7 @@ object TeamRepo {
                 "askAt" to 0L, "stuckAt" to 0L, "stuckText" to "",
                 "lastMsgAt" to (if (brief.isEmpty()) 0L else now), "lastMsgBy" to (if (brief.isEmpty()) "" else u.uid),
                 "lastMsgText" to (brief.lastOrNull()?.let { if (it.kind == Team.VOICE) "🎤 Voice note" else "📷 Photo" } ?: ""),
-                "photoProof" to photoProof, "proofAt" to 0L,
+                "photoProof" to photoProof, "proofAt" to 0L, "deliveredAt" to 0L,
                 "events" to listOf(ev(if (fixed) "Given by ${me.first} · date ${Fmt.dueLabel(giverDue!!)}" else "Given by ${me.first}")),
             )
         )
@@ -641,13 +721,29 @@ object TeamRepo {
         (f["lastMsgBy"] as? String)?.let { x = x.copy(lastMsgBy = it) }
         (f["lastMsgText"] as? String)?.let { x = x.copy(lastMsgText = it) }
         (f["proofAt"] as? Long)?.let { x = x.copy(proofAt = it) }
+        (f["deliveredAt"] as? Long)?.let { x = x.copy(deliveredAt = it) }
+        (f["toUid"] as? String)?.let { x = x.copy(toUid = it) }
+        (f["toName"] as? String)?.let { x = x.copy(toName = it) }
+        (f["toPhone"] as? String)?.let { x = x.copy(toPhone = it) }
+        @Suppress("UNCHECKED_CAST")
+        (f["viewers"] as? List<String>)?.let { x = x.copy(viewers = it) }
+        (f["createdAt"] as? Long)?.let { x = x.copy(createdAt = it) }
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
     }
 
     fun markSeen(t: TeamTask) {
         if (t.status != Team.SENT) return
-        update(t, mapOf("status" to Team.SEEN, "seenAt" to System.currentTimeMillis()), "Seen by ${t.toFirst}")
+        val now = System.currentTimeMillis()
+        val f = mutableMapOf<String, Any>("status" to Team.SEEN, "seenAt" to now)
+        if (t.deliveredAt == 0L) f["deliveredAt"] = now
+        update(t, f, "Seen by ${t.toFirst}")
+    }
+
+    /** His phone has the task (two grey ticks on the giver's card). Quiet: no Timeline line. */
+    fun markDelivered(t: TeamTask) {
+        if (t.deliveredAt > 0L || t.toUid != uid) return
+        update(t, mapOf("deliveredAt" to System.currentTimeMillis()), null)
     }
 
     /** He picked (or moved) his date. */
@@ -684,7 +780,8 @@ object TeamRepo {
 
     /** Not done yet: his task opens again with your reason. */
     fun notDoneYet(t: TeamTask, reason: String) {
-        update(t, mapOf("status" to Team.REOPENED, "reason" to reason.trim(), "doneAt" to 0L), "${t.fromFirst}: Not done yet · “${reason.trim()}”")
+        val why = reason.trim()
+        update(t, mapOf("status" to Team.REOPENED, "reason" to why, "doneAt" to 0L), "${t.fromFirst}: Not done yet" + if (why.isEmpty()) "" else " · “$why”")
     }
 
     fun passedDown(t: TeamTask, to: String) {
@@ -694,6 +791,32 @@ object TeamRepo {
     /** A line in the task's history only (e.g. "text sent"). */
     fun note(t: TeamTask, text: String) {
         update(t, emptyMap(), text)
+    }
+
+    /**
+     * You changed the person in Edit: the task leaves his app and goes to [to], with the same Timeline (photos,
+     * voice, talk). His date goes; the new person picks his own (a date you fixed stays).
+     */
+    fun reassign(t: TeamTask, to: TeamMember) {
+        val u = uid ?: return
+        val me = _me.value ?: return
+        if (teamId == null || t.fromUid != u || to.uid == t.toUid) return
+        val viewers = (listOf(u, to.uid) + to.managers + me.managers).distinct()
+        val f = mutableMapOf<String, Any>(
+            "toUid" to to.uid, "toName" to to.name, "toPhone" to to.phone, "viewers" to viewers,
+            "status" to if (t.hisDate || t.due == 0L) Team.SENT else Team.DATED,
+            "seenAt" to 0L, "deliveredAt" to 0L, "doneAt" to 0L, "passedTo" to "", "askAt" to 0L, "stuckAt" to 0L,
+            "createdAt" to System.currentTimeMillis(),
+        )
+        if (t.hisDate) f["due"] = 0L
+        update(t, f, "Given to ${to.first} instead of ${t.toFirst}")
+        scope.launch {
+            runCatching {
+                msgs(t.id).whereArrayContains("viewers", u).get().await().documents.forEach { d ->
+                    d.reference.update("viewers", viewers)
+                }
+            }.onFailure { CrashLog.record(appCtx, it, "Team reassign") }
+        }
     }
 
     fun cancel(t: TeamTask) {
@@ -814,9 +937,10 @@ object TeamRepo {
         if (!me.active) return
         runCatching { _team.value = teamOf(team.get().await()) }
         runCatching { _members.value = team.collection("members").get().await().documents.map { memberOf(it) } }
-        val list = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await().documents.map { taskOf(it) }
+        val snap = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await()
+        val list = snap.documents.map { taskOf(it) }
         _tasks.value = list
-        TeamSync.apply(c, list, foreground)
+        TeamSync.apply(c, list, foreground, complete = !snap.metadata.isFromCache)
         runCatching {
             val d = team.collection("dossier").document(u.uid).get().await()
             if (d.exists()) TeamDossier.apply(c, (d.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList())
@@ -881,5 +1005,6 @@ object TeamRepo {
         photoProof = s.getBoolean("photoProof") ?: false,
         proofAt = s.getLong("proofAt") ?: 0L,
         mediaCleared = s.getBoolean("mediaCleared") ?: false,
+        deliveredAt = s.getLong("deliveredAt") ?: 0L,
     )
 }

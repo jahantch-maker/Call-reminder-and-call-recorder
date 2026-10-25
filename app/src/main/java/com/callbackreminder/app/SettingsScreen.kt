@@ -17,6 +17,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -160,120 +168,147 @@ fun SettingsScreen(
 
     val offDays by OffDays.mask.collectAsState()
 
+    var recOn by remember(resumeKey) { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_PHONE)) }
+
     SettingsPage(title = "Settings", onBack = onBack) {
         val teamUser by TeamRepo.user.collectAsState()
         val team by TeamRepo.team.collectAsState()
         val teamMe by TeamRepo.me.collectAsState()
         val teamMembers by TeamRepo.members.collectAsState()
-        NavRow(
-            icon = Icons.Rounded.Groups,
-            title = "Team",
-            summary = when {
-                teamUser == null -> "Not set up · tap to make or join your team"
+        // Who is signed in, always on top; tap = Team.
+        AccountCard(
+            name = teamUser?.displayName?.takeIf { it.isNotBlank() } ?: teamMe?.name,
+            email = teamUser?.email,
+            line = when {
+                teamUser == null -> null
                 teamMe?.pending == true -> "Waiting for approval"
-                team != null && teamMe?.active == true -> "${team!!.name} · ${teamMembers.count { it.active }} members · code ${team!!.code}" +
-                    teamMembers.count { it.pending }.let { if (it > 0) " · $it waiting" else "" }
-                else -> "Signed in · make or join a team"
+                team != null && teamMe?.active == true -> "👥 ${team!!.name} · ${teamMe!!.roleLabel}" +
+                    teamMembers.count { it.pending }.let { if (it > 0 && teamMe!!.role == Team.OWNER) " · $it waiting" else "" }
+                else -> "Not in a team yet"
             },
-            onClick = onOpenTeam
+            onClick = onOpenTeam,
         )
         val look by Appearance.version.collectAsState()
-        NavRow(
-            icon = Icons.Rounded.Palette,
-            title = "Appearance",
-            summary = remember(look) { AppearanceUi.summary(ctx) },
-            onClick = onOpenAppearance
-        )
-        NavRow(
-            icon = Icons.Rounded.BeachAccess,
-            title = "Weekly off day",
-            summary = OffDays.label(offDays),
-            onClick = onOpenOffDays
-        )
         val workHours by WorkHours.version.collectAsState()
-        NavRow(
-            icon = Icons.Rounded.CalendarMonth,
-            title = "Calendar",
-            summary = "Working hours " + remember(workHours) { WorkHours.label(ctx) },
-            onClick = onOpenCalendar
-        )
-        NavRow(
-            icon = Icons.Rounded.VerifiedUser,
-            title = "Setup",
-            summary = if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"
-            else "${setupItems.count { it }} of ${setupItems.size} permissions allowed",
-            onClick = onOpenSetup
-        )
-        NavRow(
-            icon = Icons.Rounded.Layers,
-            title = "After-call popup",
-            summary = if (popupTypes.isEmpty()) "Off for all calls" else popupTypes.joinToString(", "),
-            onClick = onOpenPopup
-        )
-        NavRow(
-            icon = Icons.Rounded.Schedule,
-            title = "Time picker",
-            summary = "${TimeGrid.clock(TimeGrid.start(ctx))} to ${TimeGrid.clock(TimeGrid.end(ctx))}, every ${TimeGrid.gap(ctx)} min",
-            onClick = onOpenQuickTimes
-        )
-        NavRow(
-            icon = Icons.Rounded.Mic,
-            title = "Call recording",
-            summary = recordingSummary,
-            onClick = onOpenRecording
-        )
-        NavRow(
-            icon = Icons.Rounded.NotificationsActive,
-            title = "Reminder style & ringtone",
-            summary = reminderSummary,
-            onClick = onOpenReminder
-        )
-        NavRow(
-            icon = Icons.Rounded.Sms,
-            title = "Text messages",
-            summary = "${BurstTemplates.load(ctx).size} burst templates · " +
-                if (BurstTemplates.stopOnReply(ctx)) "stops on a task number reply" else "reply check off",
-            onClick = onOpenTextMessages
-        )
-        // Morning summary, Review and the Dossier reminder: one card, the three pages inside it.
-        NavRow(
-            icon = Icons.Rounded.WbSunny,
-            title = "My day",
-            summary = remember(resumeKey) {
-                "Morning summary ${MorningSummary.summary(ctx)} · Review ${ReviewReminder.summary(ctx)} · Dossier reminder"
-            },
-            onClick = onOpenMyDay
-        )
-        NavRow(
-            icon = Icons.Rounded.Notifications,
-            title = "Notifications",
-            summary = remember { Notify.summary(ctx) },
-            onClick = onOpenNotifications
-        )
-        NavRow(
-            icon = Icons.Rounded.Sms,
-            title = "Daily list",
-            summary = remember { DailyList.summary(ctx) },
-            onClick = onOpenDailyList
-        )
-        NavRow(
-            icon = Icons.Rounded.Sms,
-            title = "WhatsApp",
-            summary = remember { WhatsApp.appLabel(WhatsApp.app(ctx)) + " · your reminder message" },
-            onClick = onOpenWhatsApp
-        )
-        NavRow(
-            icon = Icons.Rounded.Backup,
-            title = "Backup",
-            summary = remember(resumeKey) { Backup.summary(ctx) },
-            onClick = onOpenBackup
-        )
-        NavRow(
-            icon = Icons.Rounded.KeyboardVoice,
-            title = "Voice typing",
-            summary = remember { VoiceTyping.summary(ctx) },
-            onClick = onOpenVoiceTyping
-        )
+        BadgeGroup("GENERAL") {
+            BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
+            BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
+            BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays), onOpenOffDays)
+        }
+        BadgeGroup("CALLS & TEXTS") {
+            BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)
+            BadgeRow(Icons.Rounded.Layers, BadgeTone.GREEN, "After-call popup",
+                if (popupTypes.isEmpty()) "Off for all calls" else popupTypes.joinToString(", "), onOpenPopup)
+            BadgeRow(
+                Icons.Rounded.Mic, BadgeTone.RED, "Call recording", recordingSummary, onOpenRecording,
+                switch = if (status.recordingReady) recOn else null,
+                onSwitch = { recOn = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it) },
+            )
+            BadgeRow(Icons.Rounded.Sms, BadgeTone.INDIGO, "Text messages", "${BurstTemplates.load(ctx).size} templates · " +
+                if (BurstTemplates.stopOnReply(ctx)) "stops on reply" else "reply check off", onOpenTextMessages)
+            BadgeRow(Icons.Rounded.Chat, BadgeTone.GREEN, "WhatsApp", remember { WhatsApp.appLabel(WhatsApp.app(ctx)) }, onOpenWhatsApp)
+            BadgeRow(Icons.Rounded.Schedule, BadgeTone.BLUE, "Time picker",
+                "${TimeGrid.clock(TimeGrid.start(ctx))} to ${TimeGrid.clock(TimeGrid.end(ctx))} · ${TimeGrid.gap(ctx)} min", onOpenQuickTimes)
+        }
+        BadgeGroup("YOUR DAY") {
+            BadgeRow(Icons.Rounded.WbSunny, BadgeTone.AMBER, "My day", remember(resumeKey) {
+                "Summary ${MorningSummary.summary(ctx)} · Review ${ReviewReminder.summary(ctx)}"
+            }, onOpenMyDay)
+            BadgeRow(Icons.Rounded.Assignment, BadgeTone.TEAL, "Daily list", remember { DailyList.summary(ctx) }, onOpenDailyList)
+            BadgeRow(Icons.Rounded.Notifications, BadgeTone.RED, "Notifications", remember { Notify.summary(ctx) }, onOpenNotifications)
+        }
+        BadgeGroup("PHONE") {
+            BadgeRow(Icons.Rounded.Backup, BadgeTone.BLUE, "Backup", remember(resumeKey) { Backup.summary(ctx) }, onOpenBackup)
+            BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
+            BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
+                if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"
+                else "${setupItems.count { it }} of ${setupItems.size} permissions allowed", onOpenSetup)
+        }
+    }
+}
+
+/** The signed-in account on top of Settings: photo letter, name, email, team · role. */
+@Composable
+private fun AccountCard(name: String?, email: String?, line: String?, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cs.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                if (name.isNullOrBlank()) Icon(Icons.Rounded.Groups, contentDescription = null, tint = cs.onPrimary)
+                else Text(name.trim().take(1).uppercase(), color = cs.onPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name?.takeIf { it.isNotBlank() } ?: "Team", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(email ?: "Sign in to give tasks to your staff", fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                if (line != null) Text(
+                    line, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = cs.onPrimaryContainer, maxLines = 1,
+                    modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(6.dp)).background(cs.primaryContainer)
+                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = cs.onSurfaceVariant)
+        }
+    }
+}
+
+internal enum class BadgeTone { PURPLE, BLUE, TEAL, AMBER, GREEN, RED, INDIGO }
+
+@Composable
+private fun badgeColors(t: BadgeTone): Pair<Color, Color> {
+    val dark = LocalDarkTheme.current
+    val c = when (t) {
+        BadgeTone.PURPLE -> Color(0xFF8E7CFF)
+        BadgeTone.BLUE -> Color(0xFF4F8DFF)
+        BadgeTone.TEAL -> Color(0xFF2BB3A3)
+        BadgeTone.AMBER -> Color(0xFFF2A93B)
+        BadgeTone.GREEN -> Color(0xFF34B36B)
+        BadgeTone.RED -> Color(0xFFE5566A)
+        BadgeTone.INDIGO -> Color(0xFF6C6FF5)
+    }
+    return c.copy(alpha = if (dark) 0.22f else 0.15f) to c
+}
+
+/** One group of the badge list: small heading, then rows in one rounded block. */
+@Composable
+private fun BadgeGroup(title: String, rows: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChipHeading(title, modifier = Modifier.padding(start = 4.dp))
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) { Column(content = rows) }
+    }
+}
+
+/** A badge-list row: colour badge, name with its value under it, then › or a switch right on the row. */
+@Composable
+private fun BadgeRow(
+    icon: ImageVector, tone: BadgeTone, title: String, summary: String, onClick: () -> Unit,
+    switch: Boolean? = null, onSwitch: (Boolean) -> Unit = {},
+) {
+    val cs = MaterialTheme.colorScheme
+    val (bg, fg) = badgeColors(tone)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(bg), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(summary, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (switch != null) Switch(checked = switch, onCheckedChange = onSwitch)
+        else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = cs.onSurfaceVariant)
     }
 }
 

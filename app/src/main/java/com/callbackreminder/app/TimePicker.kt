@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -354,6 +355,8 @@ fun RecentChips(
     busy: PickBusy? = null,
     /** False (a My task with no length yet): greyed, a tap says to pick how long first. */
     enabled: Boolean = true,
+    /** A dashed 📅 Pick at the end of the row (it opens the grid). */
+    onMore: (() -> Unit)? = null,
     onPick: (Long) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -414,6 +417,7 @@ fun RecentChips(
             }
         }
         repeat(RecentPicks.MAX - shown.size) { Spacer(Modifier.weight(1f)) }
+        if (onMore != null) PickChip(Modifier.weight(0.75f), compact, onMore)
     }
 }
 
@@ -591,13 +595,8 @@ fun ShortTimeRow(
         }
         ChipHeading("RECENT")
         CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
-            RecentChips(recent, now, if (showSelected) selected else null, latest) { pick(it) }
+            RecentChips(recent, now, if (showSelected) selected else null, latest, onMore = { open = true }) { pick(it) }
         }
-        androidx.compose.material3.OutlinedButton(
-            onClick = { open = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-        ) { Text(pickLabel, fontWeight = FontWeight.SemiBold) }
     }
     if (open) {
         CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
@@ -662,13 +661,13 @@ fun TimePickerDialog(
                         onClick = { custom = true },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                    ) { Text("🕘 Custom time (clock)", fontWeight = FontWeight.SemiBold) }
+                    ) { Text("📅 Custom date & time", fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
     }
     if (custom) {
-        DateTimePickerFlow(
+        CalendarPickerFlow(
             initialMs = selected ?: (System.currentTimeMillis() + 3_600_000L),
             onPicked = { ms ->
                 custom = false
@@ -944,7 +943,16 @@ fun PickChip(modifier: Modifier = Modifier, compact: Boolean = false, onClick: (
     Column(
         modifier
             .clip(RoundedCornerShape(12.dp))
-            .border(1.5.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
+            .drawBehind {
+                drawRoundRect(
+                    color = cs.primary.copy(alpha = 0.7f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 1.5.dp.toPx(),
+                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+                    ),
+                )
+            }
             .clickable(onClick = onClick)
             .padding(vertical = if (compact) 1.dp else 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally

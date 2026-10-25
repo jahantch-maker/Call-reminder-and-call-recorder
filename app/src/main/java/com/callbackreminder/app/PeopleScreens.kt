@@ -43,6 +43,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -181,6 +183,7 @@ fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -
     var delayedOnly by rememberSaveable { mutableStateOf(false) }
     var overdueOnly by rememberSaveable { mutableStateOf(false) }
     var noReplyOnly by rememberSaveable { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
 
     val all = Work.people(now, calls, texts, myTasks)
     val shown = all
@@ -199,17 +202,45 @@ fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item(key = "head") { PageHeader("People", onBack) }
-            item(key = "sort") {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PeopleSort.values().forEach { s -> FilterChip(selected = sort == s, onClick = { sort = s }, label = { Text(s.label) }) }
+            // One row: title and counts, 🎤 ⚙ and ⋮ with SORT and SHOW ONLY; a filter that is on shows as a chip.
+            item(key = "head") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+                    Box(Modifier.weight(1f)) {
+                        PageTitleRow("People", "${all.size} people" + all.count { it.overdue > 0 }.let { if (it > 0) " · $it overdue" else "" },
+                            red = all.any { it.overdue > 0 })
+                    }
+                    Box(Modifier.padding(top = 8.dp)) {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "Sort and show") }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            ChipHeading("SORT", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                            PeopleSort.values().forEach { v ->
+                                DropdownMenuItem(
+                                    text = { Text(v.label) },
+                                    leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                                    onClick = { menu = false; sort = v }
+                                )
+                            }
+                            ChipHeading("SHOW ONLY", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                            listOf("Delayed 1+" to delayedOnly, "Has overdue" to overdueOnly, "No reply" to noReplyOnly).forEachIndexed { i, (label, on) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    leadingIcon = if (on) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                                    onClick = {
+                                        menu = false
+                                        when (i) { 0 -> delayedOnly = !delayedOnly; 1 -> overdueOnly = !overdueOnly; else -> noReplyOnly = !noReplyOnly }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            item(key = "filters") {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = delayedOnly, onClick = { delayedOnly = !delayedOnly }, label = { Text("Delayed 1+") })
-                    FilterChip(selected = overdueOnly, onClick = { overdueOnly = !overdueOnly }, label = { Text("Has overdue") })
-                    FilterChip(selected = noReplyOnly, onClick = { noReplyOnly = !noReplyOnly }, label = { Text("No reply") })
+            if (delayedOnly || overdueOnly || noReplyOnly) item(key = "filters") {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (delayedOnly) SmallChip(RowChip("Delayed 1+  ✕", ChipTone.BLUE, onClick = { delayedOnly = false }))
+                    if (overdueOnly) SmallChip(RowChip("Has overdue  ✕", ChipTone.BLUE, onClick = { overdueOnly = false }))
+                    if (noReplyOnly) SmallChip(RowChip("No reply  ✕", ChipTone.BLUE, onClick = { noReplyOnly = false }))
                 }
             }
             if (shown.isEmpty()) {
