@@ -229,7 +229,9 @@ internal fun MyTaskCard(
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
-            onStar = if (t.done) null else onStar,
+            // A given task: 🔴 Urgent (set by the giver) is its star.
+            onStar = if (t.done || teamTask != null) null else onStar,
+            noTimeChip = teamTask == null,
             onCall = if (t.hasPerson && !t.done) ({ dial(ctx, t.number) }) else null,
             onWhatsApp = if (t.hasPerson && !t.done) ({
                 WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, "", t.title, if (t.timed) t.dueAt else 0L, t.name))
@@ -240,6 +242,15 @@ internal fun MyTaskCard(
             handle = handle,
             pos = pos,
         ) {
+            if (teamTask != null) {
+                TeamReceiverPanel(
+                    teamTask, myTaskId = t.id,
+                    onDone = onTick,
+                    onReminder = if (t.done) null else onNewTime,
+                    onMove = onMoveToFollowUps,
+                )
+                return@TaskCard
+            }
             CardPanel(
                 details = listOfNotNull(
                     t.note.takeIf { it.isNotBlank() }?.let { "Note: $it" },
@@ -260,7 +271,6 @@ internal fun MyTaskCard(
                     if (onDelete != null) add(RowLink("Delete", danger = true, onClick = onDelete))
                 }
             )
-            teamTask?.let { TeamReceiverButtons(it, myTaskId = t.id) }
         }
     }
 }

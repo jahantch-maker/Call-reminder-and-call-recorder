@@ -605,7 +605,10 @@ internal fun FollowUpCard(
                 text.review != null && !text.done -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
             }
         }
-        teamTask?.let { addAll(TeamUi.giverChips(it)) }
+        teamTask?.let {
+            addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it))
+            if (TeamSync.unread(ctx, it, TeamRepo.uid)) add(RowChip("💬 new", ChipTone.BLUE))
+        }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
         // Pushed on again and again in review.
@@ -671,37 +674,29 @@ internal fun FollowUpCard(
         highlighted = highlighted,
         corner = teamTask?.takeIf { it.fromUid == TeamRepo.uid && !finished }?.let { tt -> { TeamTicks(tt) } },
     ) {
+        teamTask?.let { TeamBriefStrip(it) }
+        // A team task's Timeline is its conversation; one passed down to you can't be deleted (it is the giver's).
+        val timeline: () -> Unit = teamTask?.let { tt -> { TeamUi.openTimeline(tt.id) } } ?: onTimeline
+        val canDelete = teamTask == null || teamTask.toUid != TeamRepo.uid
         CardPanel(
             details = details,
             onNewTime = if (finished) null else onNewTime,
             links = buildList {
                 if (finished) {
-                    add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = delete))
+                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
+                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
                 } else {
                     if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
                     add(RowLink("Edit", onClick = onEdit))
-                    if (!e.inReview) add(RowLink("Remove time", onClick = onRemoveTime))
-                    add(RowLink("Move to My tasks", onClick = onMove))
+                    if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
+                    if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
                     if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
-                    add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = delete))
+                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
+                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
                 }
             }
         )
-        teamTask?.let { tt ->
-            if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt)
-            TextButton(onClick = { TeamUi.openTimeline(tt.id) }) {
-                Text(
-                    when {
-                        tt.stuck -> "⚠ ${tt.toFirst} is stuck · answer ›"
-                        tt.asks -> "❓ ${tt.toFirst} asks · answer ›"
-                        TeamSync.unread(ctx, tt, TeamRepo.uid) -> "💬 New message · open ›"
-                        else -> "💬 Conversation"
-                    }
-                )
-            }
-        }
+        teamTask?.let { tt -> if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt) }
     }
 }
 

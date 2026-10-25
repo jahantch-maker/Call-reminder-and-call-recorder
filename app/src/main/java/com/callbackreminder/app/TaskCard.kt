@@ -106,6 +106,8 @@ fun TaskCard(
     showTick: Boolean = true,
     /** WhatsApp-style ticks in the bottom-right corner (team tasks you gave). */
     corner: (@Composable () -> Unit)? = null,
+    /** False hides "⏱ No time yet" (a task given to you shows its promise chip instead). */
+    noTimeChip: Boolean = true,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -157,7 +159,7 @@ fun TaskCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        TimeBox(time, late && !done, timeIcons)
+                        if (time != null || noTimeChip) TimeBox(time, late && !done, timeIcons)
                         if (!person.isNullOrBlank()) {
                             TaskChip(person, CHIP_PLAIN, icon = { Icon(Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) })
                         }
@@ -308,7 +310,7 @@ fun TaskActionBar(
 
 /** One place in [TaskActionBar]: icon over label ([icon] null draws "WA"); greyed when [onClick] is null. */
 @Composable
-private fun BarSlot(
+internal fun BarSlot(
     icon: androidx.compose.ui.graphics.vector.ImageVector?,
     label: String,
     tone: Pair<Color, Color>,

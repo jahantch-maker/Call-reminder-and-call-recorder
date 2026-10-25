@@ -341,7 +341,8 @@ object TeamRepo {
                 s ?: return@addSnapshotListener
                 val list = s.documents.map { taskOf(it) }
                 _tasks.value = list
-                scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground) } }
+                val fromServer = !s.metadata.isFromCache
+                scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground, complete = fromServer) } }
             },
             // His Dossier, as the Owner set it.
             team.collection("dossier").document(me).addSnapshotListener { s, _ ->
@@ -684,6 +685,12 @@ object TeamRepo {
         (f["lastMsgText"] as? String)?.let { x = x.copy(lastMsgText = it) }
         (f["proofAt"] as? Long)?.let { x = x.copy(proofAt = it) }
         (f["deliveredAt"] as? Long)?.let { x = x.copy(deliveredAt = it) }
+        (f["toUid"] as? String)?.let { x = x.copy(toUid = it) }
+        (f["toName"] as? String)?.let { x = x.copy(toName = it) }
+        (f["toPhone"] as? String)?.let { x = x.copy(toPhone = it) }
+        @Suppress("UNCHECKED_CAST")
+        (f["viewers"] as? List<String>)?.let { x = x.copy(viewers = it) }
+        (f["createdAt"] as? Long)?.let { x = x.copy(createdAt = it) }
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
     }
@@ -747,6 +754,32 @@ object TeamRepo {
     /** A line in the task's history only (e.g. "text sent"). */
     fun note(t: TeamTask, text: String) {
         update(t, emptyMap(), text)
+    }
+
+    /**
+     * You changed the person in Edit: the task leaves his app and goes to [to], with the same Timeline (photos,
+     * voice, talk). His date goes; the new person picks his own (a date you fixed stays).
+     */
+    fun reassign(t: TeamTask, to: TeamMember) {
+        val u = uid ?: return
+        val me = _me.value ?: return
+        if (teamId == null || t.fromUid != u || to.uid == t.toUid) return
+        val viewers = (listOf(u, to.uid) + to.managers + me.managers).distinct()
+        val f = mutableMapOf<String, Any>(
+            "toUid" to to.uid, "toName" to to.name, "toPhone" to to.phone, "viewers" to viewers,
+            "status" to if (t.hisDate || t.due == 0L) Team.SENT else Team.DATED,
+            "seenAt" to 0L, "deliveredAt" to 0L, "doneAt" to 0L, "passedTo" to "", "askAt" to 0L, "stuckAt" to 0L,
+            "createdAt" to System.currentTimeMillis(),
+        )
+        if (t.hisDate) f["due"] = 0L
+        update(t, f, "Given to ${to.first} instead of ${t.toFirst}")
+        scope.launch {
+            runCatching {
+                msgs(t.id).whereArrayContains("viewers", u).get().await().documents.forEach { d ->
+                    d.reference.update("viewers", viewers)
+                }
+            }.onFailure { CrashLog.record(appCtx, it, "Team reassign") }
+        }
     }
 
     fun cancel(t: TeamTask) {
@@ -867,9 +900,10 @@ object TeamRepo {
         if (!me.active) return
         runCatching { _team.value = teamOf(team.get().await()) }
         runCatching { _members.value = team.collection("members").get().await().documents.map { memberOf(it) } }
-        val list = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await().documents.map { taskOf(it) }
+        val snap = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await()
+        val list = snap.documents.map { taskOf(it) }
         _tasks.value = list
-        TeamSync.apply(c, list, foreground)
+        TeamSync.apply(c, list, foreground, complete = !snap.metadata.isFromCache)
         runCatching {
             val d = team.collection("dossier").document(u.uid).get().await()
             if (d.exists()) TeamDossier.apply(c, (d.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList())

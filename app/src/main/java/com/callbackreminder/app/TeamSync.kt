@@ -127,7 +127,7 @@ object TeamSync {
     }
 
     /** The online tasks changed: bring them into his My tasks / your follow-ups, and tell whoever needs to know. */
-    fun apply(c: Context, tasks: List<TeamTask>, foreground: Boolean) {
+    fun apply(c: Context, tasks: List<TeamTask>, foreground: Boolean, complete: Boolean = true) {
         val me = TeamRepo.uid ?: return
         synchronized(lock) {
             initStores(c)
@@ -151,6 +151,17 @@ object TeamSync {
                         mine = if (t.toUid == me) recv[t.id]?.toLongOrNull() else null, taskId = t.id)
                 }
                 last[t.id] = sig(t)
+            }
+            // Tasks that left his list (read from the server): the giver gave them to someone else.
+            val ids = tasks.map { it.id }.toSet()
+            if (complete) recv.keys.filter { it !in ids }.forEach { id ->
+                recv.remove(id)?.toLongOrNull()?.let { MyTaskStore.get(it) }?.takeIf { !it.done }?.let { local ->
+                    MyTaskStore.delete(local.id)
+                    notify(c, "gone:$id", "Task given to someone else", local.title, mine = null)
+                }
+            }
+            if (complete) recvFu.keys.filter { it !in ids }.forEach { id ->
+                recvFu.remove(id)?.toLongOrNull()?.let { link -> FollowUps.finishCall(link); FollowUps.stopTexts(link) }
             }
             TeamLinks.putMap(c, "recv", recv)
             TeamLinks.putMap(c, "recvFu", recvFu)
