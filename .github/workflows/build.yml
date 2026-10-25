@@ -43,3 +43,11 @@ jobs:
             --title "Latest build" \
             --notes "Build #${{ github.run_number }}" \
             --target "${{ github.sha }}"
+      - name: Publish CR Test release
+        if: github.event_name == 'pull_request' && github.head_ref == 'claude/cr-test-copy'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk CRTest.apk
+          gh release delete cr-test --yes --cleanup-tag || true
+          gh release create cr-test CRTest.apk --title "CR Test build" --prerelease --target "${{ github.event.pull_request.head.sha }}"
