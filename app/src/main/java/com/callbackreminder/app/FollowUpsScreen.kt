@@ -750,33 +750,25 @@ internal fun TextsSheet(
             SheetLine(replied?.let { "Replied “${t.doneReply}” · ${Fmt.dueLabel(it.at)}" } ?: "No reply yet")
 
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { onSendNow(t) },
                     enabled = t.active,
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = cs.secondary, contentColor = cs.onSecondary)
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Send next now", maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Send now", maxLines = 1)
                 }
-                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Change times", maxLines = 1)
+                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("🕘 New time", maxLines = 1)
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Edit message", maxLines = 1)
-                }
-                OutlinedButton(onClick = { onStop(t) }, enabled = !t.done, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { onStop(t) }, enabled = !t.done, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Stop texts", maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Stop", maxLines = 1)
                 }
             }
         }

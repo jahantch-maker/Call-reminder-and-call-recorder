@@ -219,6 +219,9 @@ class MainActivity : ComponentActivity() {
             OPEN_FOLLOW_UPS -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 FollowUpsUi.view.value = FollowUpsUi.ALL
+                val call = intent?.getLongExtra(EXTRA_TASK, -1L) ?: -1L
+                intent?.removeExtra(EXTRA_TASK)
+                if (call >= 0) CallsUi.showRequest.value = call
                 showTab(Tab.FOLLOW_UPS)
                 return
             }

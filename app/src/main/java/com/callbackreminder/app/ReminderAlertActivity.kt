@@ -103,7 +103,7 @@ class ReminderAlertActivity : ComponentActivity() {
 
         setContent {
             CallbackTheme(dark = true) {
-                AlertScreen(onAllDone = { finish() })
+                AlertScreen(onAllDone = { finish() }, onOpenInApp = { openInApp(it) })
             }
         }
     }
@@ -127,6 +127,26 @@ class ReminderAlertActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /** "Open in app": unlock first if the phone is locked, then stop the ring and show the card in Follow-ups. */
+    private fun openInApp(id: Long) {
+        val go = {
+            RingController.dismiss(id)
+            startActivity(
+                android.content.Intent(this, MainActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_FOLLOW_UPS)
+                    .putExtra(MainActivity.EXTRA_TASK, id)
+            )
+            finish()
+        }
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (Build.VERSION.SDK_INT >= 26 && km != null && km.isKeyguardLocked) {
+            km.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() { go() }
+            })
+        } else go()
+    }
+
     /** The "Call back" button on the notification lands here. */
     private fun handleCallBack(id: Long) {
         if (id < 0) return
@@ -145,7 +165,7 @@ private val CallGreen = Color(0xFF1FB57A)
 private val GlassWhite = Color(0x24FFFFFF)
 
 @Composable
-private fun AlertScreen(onAllDone: () -> Unit) {
+private fun AlertScreen(onAllDone: () -> Unit, onOpenInApp: (Long) -> Unit) {
     val ctx = LocalContext.current
     val ids by RingController.active.collectAsState()
     val all by ReminderStore.items.collectAsState()
@@ -195,6 +215,7 @@ private fun AlertScreen(onAllDone: () -> Unit) {
                         onSnooze = { ms -> ReminderStore.reschedule(r.id, ms, "Snoozed to") },
                         onPickTime = { pickFor = r },
                         onDone = { ReminderStore.markDone(r.id) },
+                        onOpenInApp = { onOpenInApp(r.id) },
                     )
                 }
             }
@@ -220,6 +241,7 @@ private fun AlertCard(
     onSnooze: (Long) -> Unit,
     onPickTime: () -> Unit,
     onDone: () -> Unit,
+    onOpenInApp: () -> Unit,
 ) {
     val ctx = LocalContext.current
     var snoozeOpen by remember { mutableStateOf(false) }
@@ -348,6 +370,18 @@ private fun AlertCard(
                 Spacer(Modifier.width(8.dp))
                 Text("Done", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onOpenInApp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp),
+            shape = RoundedCornerShape(27.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+        ) {
+            Text("↗  Open in app", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
