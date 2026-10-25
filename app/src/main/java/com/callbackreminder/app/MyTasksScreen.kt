@@ -849,7 +849,7 @@ private fun DossierRow(
     onStar: (() -> Unit)? = null,
     highlighted: Boolean = false,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }
     val done = rec?.done == true
     val wasDue = today && !done && t.dueAt(day) <= now
     // Team edition: a block the Owner set (tick only), maybe with 📷 photo proof.
@@ -857,90 +857,52 @@ private fun DossierRow(
     TeamSync.version.collectAsState().value
     val teamBlock = TeamDossier.isTeam(ctx, t.id)
     val proof = teamBlock && TeamDossier.needsProof(ctx, t.id)
-    Card(
-        onClick = onOpen,
-        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (done) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            else MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (done) 0.dp else 1.dp)
+    // THE card: the time as a chip (red once it was due), how often, and its marks; tap opens History · Edit · Delete.
+    val chips = buildList {
+        add(RowChip(t.frequency, ChipTone.MUTED))
+        when {
+            done -> add(RowChip("✓ ${Fmt.timeOnly(rec!!.doneAt)}", ChipTone.GREEN))
+            !today -> nextDay(t, day)?.let { add(RowChip("next ${it.format(dayFmt)}", ChipTone.MUTED)) }
+        }
+        if (proof) add(RowChip(if (done && TeamDossier.sent(ctx, t.id, day, TeamDossier.PHOTO)) "📷 sent" else "📷 proof", ChipTone.MUTED))
+        if (showScore) {
+            val (d, total) = DossierStore.monthScore(t, now)
+            if (total > 0) add(RowChip("$d of $total this month", if (d * 100 / total >= 80) ChipTone.GREEN else ChipTone.ORANGE))
+        }
+        if (today && !done) {
+            val reason = rec?.reason.orEmpty()
+            add(RowChip(if (reason.isBlank()) "＋ Why not done?" else "“$reason”", ChipTone.ORANGE, onClick = onWhy))
+        }
+    }
+    TaskCard(
+        title = t.title,
+        done = done,
+        onTick = onTick,
+        tickEnabled = today,
+        time = t.timeLabel + " – " + Dossier.timeLabel(t.endMinute % (24 * 60)),
+        late = wasDue,
+        chips = chips,
+        starred = t.starred,
+        onStar = onStar,
+        expanded = open,
+        onClick = { open = !open },
+        pos = RowPos.SINGLE,
+        highlighted = highlighted,
     ) {
-        Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
-            Box(Modifier.padding(top = 2.dp)) {
-                if (today) TickCircle(done = done, onClick = onTick)
-                else TickCircle(done = false, enabled = false, onClick = {})
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+        // Just the links: the tick is its Done, and its times are fixed.
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            listOfNotNull(
+                RowLink("History", onClick = onOpen),
+                onEdit?.let { RowLink("Edit", onClick = it) },
+                onDelete?.let { RowLink("Delete", danger = true, onClick = it) },
+            ).forEach { l ->
                 Text(
-                    t.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    l.label,
+                    color = if (l.danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (done || !today) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable(onClick = l.onClick).padding(vertical = 6.dp)
                 )
-                val line = buildString {
-                    append(t.frequency)
-                    when {
-                        done -> append(" · ✓ ").append(Fmt.timeOnly(rec!!.doneAt))
-                        wasDue -> append(" · was due")
-                        !today -> nextDay(t, day)?.let { append(" · next ").append(it.format(dayFmt)) }
-                    }
-                    if (proof) append(if (done && TeamDossier.sent(ctx, t.id, day, TeamDossier.PHOTO)) " · 📷 sent" else " · 📷 proof")
-                }
-                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (teamBlock) Text("🔒 Set by ${TeamDossier.ownerFirst()} · you can tick, not edit", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (showScore) {
-                    val (d, total) = DossierStore.monthScore(t, now)
-                    if (total > 0) {
-                        Text(
-                            "This month: $d of $total · ${d * 100 / total}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (d * 100 / total >= 80) Teal else Amber
-                        )
-                    }
-                }
-                if (today && !done) {
-                    val reason = rec?.reason.orEmpty()
-                    Text(
-                        if (reason.isBlank()) "＋ Why not done?" else "“$reason” · edit",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = if (reason.isBlank()) FontWeight.Bold else FontWeight.Normal,
-                        color = Amber,
-                        modifier = Modifier.padding(top = 4.dp).clickable(onClick = onWhy)
-                    )
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    t.timeLabel + "\n– " + Dossier.timeLabel(t.endMinute % (24 * 60)),
-                    textAlign = TextAlign.End,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (wasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp, end = if (onEdit == null) 10.dp else 0.dp)
-                )
-                if (onStar != null) StarButton(t.starred, onStar)
-                else if (t.starred) Icon(Icons.Rounded.Star, contentDescription = "Starred", tint = StarGold, modifier = Modifier.padding(end = 10.dp).size(18.dp))
-                if (onEdit != null || onDelete != null) {
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(text = { Text("History") }, onClick = { menuOpen = false; onOpen() })
-                            if (onEdit != null) {
-                                DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
-                            }
-                            if (onDelete != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                    onClick = { menuOpen = false; onDelete() }
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }

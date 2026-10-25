@@ -338,7 +338,7 @@ private fun SessionBanner(s: ReviewSession.State, onResume: () -> Unit, onEnd: (
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** One item on the Review page: THE card, shut; tap to open its ✓ Done · 🕘 New time · 📞 · WA bar. */
 @Composable
 private fun ReviewRow(
     item: ReviewItem,
@@ -348,63 +348,34 @@ private fun ReviewRow(
     onNewTime: () -> Unit,
     onDetails: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    var open by remember { mutableStateOf(false) }
     val late = item.at in 1..now
-    Surface(shape = RoundedCornerShape(18.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            Text(
-                whenLabel(item.at, now),
-                color = if (late) LateRed else cs.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                modifier = Modifier.width(66.dp).padding(top = 2.dp)
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(item.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                if (item.person.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(text = item.person, size = 20.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(item.person, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                if (item.chips.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        item.chips.forEach { ReviewChip(it) }
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        when (item.kind) {
-                            ReviewItem.Kind.SCHED_FU -> {
-                                if (item.number.isBlank()) TextButton(onClick = onDetails) { Text("👤 Set person") }
-                                else TextButton(onClick = onNewTime) { Text("🕘 Set time") }
-                                TextButton(onClick = onDetails) { Text("Edit") }
-                            }
-                            ReviewItem.Kind.SCHED_MY -> TextButton(onClick = onNewTime) { Text("🕘 Set time") }
-                            ReviewItem.Kind.CALL_REVIEW, ReviewItem.Kind.TEXT_REVIEW -> {
-                                TextButton(onClick = onDone) { Text("✓ Accept") }
-                                TextButton(onClick = onNewTime) { Text("Not done · New time") }
-                            }
-                            else -> {
-                                TextButton(onClick = onDone) { Text("✓ Done") }
-                                TextButton(onClick = onNewTime) { Text("🕘 New time") }
-                            }
-                        }
-                    }
-                    // Small 📞 and WA on the same line, so the row stays as short as its text.
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
-                        if (ReviewActions.canCall(item)) {
-                            RoundAction(Icons.Rounded.Call, "Call", CallBlue, Color(0xFF0B1A4A), onClick = onCall)
-                        }
-                        if (item.number.isNotBlank()) {
-                            WhatsAppAction { WhatsApp.forItem(ctx, item) }
-                        }
-                    }
-                }
-            }
-        }
+    val sched = item.kind == ReviewItem.Kind.SCHED_FU || item.kind == ReviewItem.Kind.SCHED_MY
+    val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && item.number.isBlank()
+    TaskCard(
+        title = item.title,
+        done = false,
+        onTick = onDone,
+        tickEnabled = !sched,
+        time = if (item.at > 0L) Fmt.dueLabel(item.at) else null,
+        late = late,
+        person = item.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
+        chips = item.chips.filterNot { it.endsWith("late") }.map { RowChip(it, ChipTone.MUTED) },
+        onCall = if (ReviewActions.canCall(item)) onCall else null,
+        onWhatsApp = if (item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
+        expanded = open,
+        onClick = { open = !open },
+        pos = RowPos.SINGLE,
+    ) {
+        CardPanel(
+            details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
+            links = buildList {
+                if (item.kind == ReviewItem.Kind.SCHED_FU) add(RowLink(if (needsPerson) "👤 Set person" else "Edit", onClick = onDetails))
+            },
+            onNewTime = if (needsPerson) null else onNewTime,
+            buttonLabel = if (sched) "Set time" else "New time",
+        )
     }
 }
 
