@@ -91,7 +91,13 @@ internal fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
     val lines = r.historyLines()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("History · ${r.title}") },
+        title = {
+            Column {
+                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
+                Text(r.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+        },
         text = {
             if (lines.isEmpty()) {
                 Text("Nothing yet. From now on, every ring, snooze, call and move is listed here.")

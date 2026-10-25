@@ -110,7 +110,7 @@ fun TaskExtraButtons(x: TaskExtras) {
                 Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("History", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    Text("Timeline", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -205,7 +205,7 @@ fun MyTaskHistoryDialog(t: MyTask, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text("History", style = MaterialTheme.typography.headlineSmall)
+                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                 Text(t.title, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         },

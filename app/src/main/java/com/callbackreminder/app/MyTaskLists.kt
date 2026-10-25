@@ -101,35 +101,54 @@ import java.time.Instant
 internal val NoTimeBg: Color @Composable get() = Tones.amber.bg
 internal val NoTimeFg: Color @Composable get() = Tones.amber.fg
 
-/** The list tabs under "Tasks": All, Unsorted, your lists, ＋ New list. [selected] -1 is All. */
+/**
+ * The list tabs under "Tasks": All, 📥 Assigned to me (in a team; a blue dot counts the new ones), your lists,
+ * ＋ New list. Tasks in no list show only in All. [selected] -1 is All, -2 Assigned to me.
+ */
 @Composable
-internal fun ListTabs(lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit) {
+internal fun ListTabs(
+    lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit,
+    assigned: Boolean = false, assignedNew: Int = 0,
+) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         ListTab("All", selected == ALL_LISTS) { onSelect(ALL_LISTS) }
-        lists.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
+        if (assigned) ListTab("Assigned to me", selected == ASSIGNED_LIST, dot = assignedNew) { onSelect(ASSIGNED_LIST) }
+        lists.filter { it.id != MyTaskStore.UNSORTED }.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
         TextButton(onClick = onNewList) { Text("＋ New list", fontWeight = FontWeight.SemiBold) }
     }
 }
 
 const val ALL_LISTS = -1L
+const val ASSIGNED_LIST = -2L
 
 @Composable
-private fun ListTab(text: String, on: Boolean, onClick: () -> Unit) {
+private fun ListTab(text: String, on: Boolean, dot: Int = 0, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
         Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text,
-            color = if (on) cs.primary else cs.onSurfaceVariant,
-            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text,
+                color = if (on) cs.primary else cs.onSurfaceVariant,
+                fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
+            )
+            if (dot > 0) {
+                Spacer(Modifier.width(4.dp))
+                Surface(color = Tones.blue.fg, shape = RoundedCornerShape(50)) {
+                    Text(
+                        "$dot", color = Tones.blue.bg, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp)
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Surface(
             color = if (on) cs.primary else Color.Transparent,
@@ -204,6 +223,8 @@ internal fun MyTaskCard(
     val inTeam = TeamRepo.activeNow
     val teamTask = remember(t.id, teamTasks, teamV) { if (inTeam) TeamUi.taskOfMyTask(ctx, t.id, teamTasks) else null }
     val isPriv = remember(t.id, teamV) { inTeam && TeamLinks.isPrivate(ctx, t.id) }
+    val teamBanner = remember(teamTask, teamV) { teamTask?.let { TeamUi.banner(ctx, it, TeamRepo.uid) } }
+    var history by remember { mutableStateOf(false) }
     // Outlined after "Show in My tasks ›" or search: say it is on screen and bring all of it into view.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val bringTick by MyTasksUi.bring.collectAsState()
@@ -232,9 +253,10 @@ internal fun MyTaskCard(
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
-            // A given task: 🔴 Urgent (set by the giver) is its star.
-            onStar = if (t.done || teamTask != null) null else onStar,
+            onStar = if (t.done) null else onStar,
             noTimeChip = teamTask == null,
+            banner = teamBanner,
+            urgent = teamTask?.let { it.urgent && it.open } == true,
             onCall = if (t.hasPerson && !t.done) ({ dial(ctx, t.number) }) else null,
             onWhatsApp = if (t.hasPerson && !t.done) ({
                 WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, "", t.title, if (t.timed) t.dueAt else 0L, t.name))
@@ -264,7 +286,9 @@ internal fun MyTaskCard(
                 ),
                 onNewTime = if (t.done) null else onNewTime,
                 buttonLabel = if (t.timed) "New time" else "Set time",
+                // The same order on every card: Timeline · Edit · (Remove time · Move to … · Private) · Delete.
                 links = buildList {
+                    add(RowLink("Timeline", onClick = { history = true }))
                     add(RowLink("Edit", onClick = onEdit))
                     if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
                     if (!t.done && onMoveToFollowUps != null) add(RowLink("Move to Follow-ups", onClick = onMoveToFollowUps))
@@ -276,6 +300,7 @@ internal fun MyTaskCard(
             )
         }
     }
+    if (history) MyTaskHistoryDialog(MyTaskStore.get(t.id) ?: t) { history = false }
 }
 
 /** Opens your Messages app on a new text to [number]. */
@@ -415,7 +440,7 @@ internal fun DeleteListDialog(list: TaskList, count: Int, onDismiss: () -> Unit,
                     else "This list has $count ${if (count == 1) "task" else "tasks"}. What should happen to them?"
                 )
                 Button(onClick = { onDelete(false) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (count == 0) "Delete list" else "Move them to Unsorted")
+                    Text(if (count == 0) "Delete list" else "Keep them (no list, in All)")
                 }
                 if (count > 0) {
                     OutlinedButton(
@@ -431,7 +456,7 @@ internal fun DeleteListDialog(list: TaskList, count: Int, onDismiss: () -> Unit,
     )
 }
 
-/** Reorder lists: ↑ ↓ for each of your lists (Unsorted always stays first). */
+/** Reorder lists: ↑ ↓ for each of your lists. */
 @Composable
 internal fun ReorderListsDialog(lists: List<TaskList>, onDismiss: () -> Unit) {
     var order by remember { mutableStateOf(lists.filter { it.id != MyTaskStore.UNSORTED }) }
@@ -440,7 +465,6 @@ internal fun ReorderListsDialog(lists: List<TaskList>, onDismiss: () -> Unit) {
         title = { Text("Reorder lists") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Unsorted always comes first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 order.forEachIndexed { i, l ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(l.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
@@ -648,12 +672,13 @@ internal fun MyTaskDialog(
                     if (needLength) {
                         Text("Pick how long to save it with a time", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeedOrange)
                     }
-                    FreeSlotsRow(length, existing?.id ?: -1L, due.takeIf { it > 0L }, onPick = { pickTime(it) }, onPickTime = { pickAnother = true }, compact = true)
+                    FreeSlotsRow(length, existing?.id ?: -1L, due.takeIf { it > 0L }, onPick = { pickTime(it) }, compact = true)
                     ChipHeading("RECENT")
                     RecentChips(
                         recent, openedAt, due.takeIf { it > 0L }, compact = true,
                         base = existing?.dueAt?.takeIf { it > 0L },
                         busy = PickBusy(length, existing?.id ?: -1L), enabled = length > 0,
+                        onMore = { pickAnother = true },
                     ) { pickTime(it) }
                 }
                 val clashes = remember(due, length, existing?.id) {
@@ -734,7 +759,7 @@ internal fun MyTaskDialog(
                             Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                lists.firstOrNull { it.id == list }?.name ?: "Unsorted",
+                                lists.firstOrNull { it.id == list }?.name ?: "No list",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp,
                                 maxLines = 1,

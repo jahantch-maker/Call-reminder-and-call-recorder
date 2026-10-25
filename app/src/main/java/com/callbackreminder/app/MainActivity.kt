@@ -466,6 +466,8 @@ private fun AppRoot(
     }
     // 📷 a team Dossier block ticked anywhere asks for its photo here.
     TeamDossierProofHost()
+    // Deleting a task you gave, from any screen: "Delete for you and Basharat?"
+    TeamDeleteHost()
 
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {

@@ -274,7 +274,7 @@ object MyTaskStore {
     /** A length as saved: 0 (not chosen) stays 0, anything else 5 min to 24 h. */
     private fun cleanLength(m: Int): Int = if (m <= 0) 0 else m.coerceIn(5, 24 * 60)
 
-    private val _lists = MutableStateFlow(listOf(TaskList(UNSORTED, "Unsorted")))
+    private val _lists = MutableStateFlow(listOf(TaskList(UNSORTED, "No list")))
     /** Unsorted first, then your lists in your order. */
     val lists: StateFlow<List<TaskList>> = _lists.asStateFlow()
 
@@ -292,8 +292,8 @@ object MyTaskStore {
             listsBroken = true
             emptyList()
         }
-        val unsorted = saved.firstOrNull { it.id == UNSORTED } ?: TaskList(UNSORTED, "Unsorted")
-        return listOf(unsorted.copy(name = "Unsorted")) + saved.filter { it.id != UNSORTED }
+        val unsorted = saved.firstOrNull { it.id == UNSORTED } ?: TaskList(UNSORTED, "No list")
+        return listOf(unsorted.copy(name = "No list")) + saved.filter { it.id != UNSORTED }
     }
 
     private var listsBroken = false
@@ -307,7 +307,7 @@ object MyTaskStore {
     }
 
     fun list(id: Long): TaskList? = _lists.value.firstOrNull { it.id == id }
-    fun listName(id: Long): String = list(id)?.name ?: "Unsorted"
+    fun listName(id: Long): String = list(id)?.name ?: "No list"
 
     @Synchronized
     fun addList(name: String): TaskList {

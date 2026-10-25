@@ -13,8 +13,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 53
-        versionName = "0.38.0"
+        versionCode = 54
+        versionName = "0.39.0"
     }
 
     // A fixed test key so every new build installs as an update over the previous one.
@@ -68,6 +68,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // 🟢 Online now, live (Realtime Database presence with onDisconnect).
+    implementation("com.google.firebase:firebase-database")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")

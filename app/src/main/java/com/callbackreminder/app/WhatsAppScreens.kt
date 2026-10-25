@@ -98,7 +98,7 @@ fun WhatsAppSettingsScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text("PREVIEW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ChipHeading("PREVIEW")
             Spacer(Modifier.height(6.dp))
             val sample = remember(text) {
                 WhatsApp.message(ctx, "26101804", "Veranda bed remove, workout machine fix", System.currentTimeMillis(), "Hasnain")
@@ -190,7 +190,7 @@ fun DailyWhatsAppScreen(resumeKey: Int, onBack: () -> Unit) {
             Text("🎉 All sent.", fontWeight = FontWeight.Bold)
         }
         if (round.sms.isNotEmpty()) {
-            Text("SENT BY SMS", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ChipHeading("SENT BY SMS")
             Text(round.sms.joinToString(", ") { DailyList.nameFor(ctx, it) })
         }
     }

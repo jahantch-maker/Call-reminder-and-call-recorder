@@ -564,23 +564,12 @@ internal fun FollowUpCard(
     val teamV by TeamSync.version.collectAsState()
     val teamLink = call?.linkId?.takeIf { it != 0L } ?: text?.linkId ?: 0L
     val teamTask = remember(teamLink, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, teamLink, teamTasks) else null }
-    // Deleting a task you gave takes it off his phone too, after one line to confirm.
-    var askDelete by remember { mutableStateOf(false) }
-    val delete: () -> Unit = {
-        if (teamTask != null && teamTask.fromUid == TeamRepo.uid && teamTask.open) askDelete = true else onDelete()
-    }
-    if (askDelete && teamTask != null) {
-        AlertDialog(
-            onDismissRequest = { askDelete = false },
-            title = { Text("Delete for you and ${teamTask.toFirst}?") },
-            confirmButton = {
-                TextButton(onClick = { askDelete = false; TeamRepo.cancel(teamTask); onDelete() }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Keep") } },
-        )
-    }
+    val giver = teamTask != null && teamTask.fromUid == TeamRepo.uid
+    // Passed down to you (his side): the task is the giver's, so only its Timeline.
+    val passed = teamTask != null && teamTask.toUid == TeamRepo.uid
+    val teamBanner = remember(teamTask, teamV) { teamTask?.let { TeamUi.banner(ctx, it, TeamRepo.uid) } }
+    // Deleting a task you gave asks "Delete for you and Basharat?" (in FuController, the same for every delete).
+    val delete: () -> Unit = onDelete
 
     val chips = buildList {
         if (finished) {
@@ -596,10 +585,7 @@ internal fun FollowUpCard(
                 text.review != null && !text.done -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
             }
         }
-        teamTask?.let {
-            addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it))
-            if (TeamSync.unread(ctx, it, TeamRepo.uid)) add(RowChip("💬 new", ChipTone.BLUE))
-        }
+        teamTask?.let { addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it)) }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
         // Pushed on again and again in review.
@@ -663,28 +649,31 @@ internal fun FollowUpCard(
         onClick = onToggle,
         pos = pos,
         highlighted = highlighted,
-        corner = teamTask?.takeIf { it.fromUid == TeamRepo.uid && !finished }?.let { tt -> { TeamTicks(tt) } },
+        corner = teamTask?.takeIf { giver }?.let { tt -> { TeamTicks(tt) } },
+        banner = teamBanner,
+        urgent = teamTask?.let { it.urgent && it.open } == true,
     ) {
         teamTask?.let { TeamBriefStrip(it) }
-        // A team task's Timeline is its conversation; one passed down to you can't be deleted (it is the giver's).
+        // A team task's Timeline is its conversation.
         val timeline: () -> Unit = teamTask?.let { tt -> { TeamUi.openTimeline(tt.id) } } ?: onTimeline
-        val canDelete = teamTask == null || teamTask.toUid != TeamRepo.uid
+        val tlLabel = teamTask?.let { TeamUi.timelineLabel(it) } ?: timelineLabel
         CardPanel(
             details = details,
             onNewTime = if (finished) null else onNewTime,
+            // The same order on every card: Timeline · Edit · (Remove time · Move to … · Texts) · Delete.
             links = buildList {
+                add(RowLink(tlLabel, onClick = timeline))
+                if (passed) return@buildList
                 if (finished) {
-                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
-                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
-                } else {
-                    if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
-                    add(RowLink("Edit", onClick = onEdit))
-                    if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
-                    if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
-                    if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
-                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
-                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
+                    add(RowLink("Delete", danger = true, onClick = delete))
+                    return@buildList
                 }
+                add(RowLink("Edit", onClick = onEdit))
+                if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
+                if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
+                if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
+                if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
+                add(RowLink("Delete", danger = true, onClick = delete))
             }
         )
         teamTask?.let { tt -> if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt) }
@@ -790,10 +779,7 @@ private fun SheetLine(text: String) {
 fun ProjectsScreen() {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().background(cs.background).padding(horizontal = 16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Projects", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TopActions()
-        }
+        PageTitleRow("Projects", "Coming soon", red = false)
         Column(
             Modifier.fillMaxWidth().weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -365,7 +365,7 @@ fun TextPlanSection(
                 onPick = addTime,
             )
         } else {
-        Text("TEXT TIMES", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        ChipHeading("TEXT TIMES")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             state.times.sorted().forEach { t ->
                 InputChip(
@@ -657,7 +657,7 @@ fun FollowUpDialog(
     val anyTime = !text.parked && ((callOn && due != null) || (textOn && text.times.isNotEmpty()))
     val problem = when {
         teamMember != null && task.isBlank() -> "Write the task first"
-        teamMember != null && myTime && due == null -> "Pick your time, or tap His date"
+        teamMember != null && myTime && due == null -> "Pick your time, or tap He picks"
         taskRequired && !editing && item == null && task.isBlank() -> "Write the task first"
         !hasPerson && anyTime -> "Pick a person or remove the time"
         textEff -> text.problem(task, needTimes = callEff && due != null)
@@ -813,7 +813,7 @@ fun FollowUpDialog(
                 TeamWhenBox(myTime = myTime, onChange = { myTime = it })
                 if (!myTime) {
                     Text(
-                        "${teamMember.first} picks his date by your deadline. Your call reminder follows his date.",
+                        "${teamMember.first} picks his deadline by your Latest. Your call reminder follows his deadline.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
