@@ -707,6 +707,7 @@ private fun TeamReasonDialog(
  * then ✓ Done (📷 when a photo is asked for) · 📅 Promise date (to the giver, up to the deadline) · ⏰ My reminder
  * (his phone only), and the small Timeline / Move to Follow-ups links. No Edit or Delete: the task is the giver's.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onReminder: (() -> Unit)?, onMove: (() -> Unit)?) {
     val ctx = LocalContext.current
