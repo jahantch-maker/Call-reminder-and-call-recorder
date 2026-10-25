@@ -409,19 +409,7 @@ private fun ReviewRow(
 }
 
 @Composable
-private fun ReviewChip(text: String) {
-    val late = text.endsWith("late")
-    Text(
-        text,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        color = if (late) LateRed else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (late) LateBg else MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 7.dp, vertical = 2.dp)
-    )
-}
+private fun ReviewChip(text: String) = SmallChip(RowChip(text, if (text.endsWith("late")) ChipTone.RED else ChipTone.MUTED))
 
 // ---------------------------------------------------------------- Session
 

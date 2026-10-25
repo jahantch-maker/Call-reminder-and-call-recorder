@@ -672,14 +672,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
 }
 
 @Composable
-private fun MenuLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-    )
-}
+private fun MenuLabel(text: String) =
+    ChipHeading(text.uppercase(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
 private fun tickOrUntick(ctx: android.content.Context, t: DossierTask, day: LocalDate, rec: DossierRecord?) {
     val ok = if (rec?.done == true) DossierStore.untick(t.id, day) else DossierStore.tick(t.id, day)

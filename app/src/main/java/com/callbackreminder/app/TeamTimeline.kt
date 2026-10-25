@@ -180,20 +180,7 @@ private fun TeamChipsFlow(chips: List<RowChip>) {
 internal fun TeamChipsRow(chips: List<RowChip>) = TeamChipsFlow(chips)
 
 @Composable
-internal fun TeamSmallChip(c: RowChip) {
-    val cs = MaterialTheme.colorScheme
-    val (bg, fg) = when (c.tone) {
-        ChipTone.BLUE -> cs.primaryContainer to cs.onPrimaryContainer
-        ChipTone.RED -> cs.errorContainer to cs.onErrorContainer
-        ChipTone.GREEN -> Color(0xFF1E8E5A).copy(alpha = 0.22f) to Color(0xFF2FBF7F)
-        ChipTone.ORANGE -> Color(0xFFF0AA5A).copy(alpha = 0.22f) to Color(0xFFE08A1E)
-        ChipTone.MUTED -> cs.surfaceVariant to cs.onSurfaceVariant
-    }
-    Surface(shape = RoundedCornerShape(8.dp), color = bg) {
-        Text(c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
-    }
-}
+internal fun TeamSmallChip(c: RowChip) = SmallChip(c)
 
 /** One message: yours on the right, theirs on the left; ❓ Ask amber, ⚠ Stuck red; voice with ▶, photos tap to enlarge. */
 @Composable

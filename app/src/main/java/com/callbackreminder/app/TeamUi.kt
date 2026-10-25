@@ -221,13 +221,9 @@ object TeamUi {
 
 // ---------------------------------------------------------------- small pieces
 
+/** The one small heading (grey caps), like every chip row's. */
 @Composable
-private fun TeamHeading(text: String) {
-    Text(
-        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.4.sp,
-        color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-    )
-}
+private fun TeamHeading(text: String) = ChipHeading(text.uppercase(), modifier = Modifier.padding(start = 4.dp, top = 4.dp))
 
 @Composable
 private fun TeamTag(text: String) {
@@ -240,20 +236,7 @@ private fun TeamTag(text: String) {
 }
 
 @Composable
-private fun TeamChipView(c: RowChip) {
-    val cs = MaterialTheme.colorScheme
-    val (bg, fg) = when (c.tone) {
-        ChipTone.BLUE -> cs.primaryContainer to cs.onPrimaryContainer
-        ChipTone.RED -> cs.errorContainer to cs.onErrorContainer
-        ChipTone.GREEN -> Color(0xFF1E8E5A).copy(alpha = 0.22f) to Color(0xFF2FBF7F)
-        ChipTone.ORANGE -> Color(0xFFF0AA5A).copy(alpha = 0.22f) to Color(0xFFE08A1E)
-        ChipTone.MUTED -> cs.surfaceVariant to cs.onSurfaceVariant
-    }
-    Surface(shape = RoundedCornerShape(8.dp), color = bg) {
-        Text(c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
-    }
-}
+private fun TeamChipView(c: RowChip) = SmallChip(c)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

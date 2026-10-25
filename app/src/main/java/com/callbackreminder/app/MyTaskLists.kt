@@ -143,9 +143,12 @@ private fun ListTab(text: String, on: Boolean, onClick: () -> Unit) {
 @Composable
 internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
+    val red = chipColors(ChipTone.RED)
+    val orange = chipColors(ChipTone.ORANGE)
+    // The same chip as every other: red late, orange no time, outlined for the person and a plain time.
     val (bg, fg, border) = when (tone) {
-        CHIP_RED -> Triple(cs.errorContainer, cs.error, null)
-        CHIP_ORANGE -> Triple(NoTimeBg, NoTimeFg, null)
+        CHIP_RED -> Triple(red.first, red.second, null)
+        CHIP_ORANGE -> Triple(orange.first, orange.second, null)
         else -> Triple(Color.Transparent, cs.onSurface, BorderStroke(1.dp, cs.outlineVariant))
     }
     Surface(

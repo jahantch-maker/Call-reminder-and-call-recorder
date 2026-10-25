@@ -250,14 +250,8 @@ fun FollowUpsBar(
 }
 
 @Composable
-private fun MenuHeading(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-    )
-}
+private fun MenuHeading(text: String) =
+    ChipHeading(text.uppercase(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
 
 
 /** One follow-up in the list: a call, its texts, or both. */
@@ -793,14 +787,7 @@ internal fun TextsSheet(
 }
 
 @Composable
-private fun SheetHeading(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 10.dp)
-    )
-}
+private fun SheetHeading(text: String) = ChipHeading(text.uppercase(), modifier = Modifier.padding(top = 10.dp))
 
 @Composable
 private fun SheetLine(text: String) {
