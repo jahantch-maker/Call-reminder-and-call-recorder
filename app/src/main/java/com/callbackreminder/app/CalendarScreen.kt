@@ -448,15 +448,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
             pickCals = false
         })
     }
-    openFu?.let { f ->
-        FollowUpActions(
-            f = f,
-            onDismiss = { openFu = null },
-            onCall = { openFu = null; callFu(f) },
-            onDone = { openFu = null; doneFu(f) },
-            onSnooze = { openFu = null; snoozeFu = f },
-        )
-    }
+    openFu?.let { f -> CalFollowUpSheet(f, System.currentTimeMillis(), onDismiss = { openFu = null }) }
     hourList?.let { list ->
         HourSheet(list = list, onDismiss = { hourList = null }, onOpen = { hourList = null; openFu = it }, onCall = { callFu(it) })
     }
@@ -470,7 +462,10 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
             plusRow = true
         )
     }
-    openBlock?.let { b ->
+    openBlock?.takeIf { it.kind == CalBlock.Kind.TASK }?.let { b ->
+        CalMyTaskSheet(b.id, System.currentTimeMillis(), onDismiss = { openBlock = null })
+    }
+    openBlock?.takeIf { it.kind != CalBlock.Kind.TASK }?.let { b ->
         BlockActions(
             b = b,
             date = date,

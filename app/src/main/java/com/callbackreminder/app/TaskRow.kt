@@ -139,22 +139,23 @@ fun chipColors(tone: ChipTone): Pair<Color, Color> {
     }
 }
 
+/** THE chip: 12sp SemiBold, radius 8, in one of the [chipColors]. Every chip in the app is this one. */
 @Composable
 fun SmallChip(c: RowChip) {
     val (bg, fg) = chipColors(c.tone)
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(7.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(bg)
             .then(if (c.onClick != null) Modifier.clickable(onClick = c.onClick) else Modifier)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (c.icon != null) {
-            Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(12.dp))
+            Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(3.dp))
         }
-        Text(c.text, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(c.text, color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -628,9 +629,8 @@ fun SnoozeSheet(
                 overflow = TextOverflow.Ellipsis
             )
             footer?.invoke()
-            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick, sameBase = sameBase)
-            Spacer(Modifier.height(4.dp))
-            TextButton(onClick = onPickTime) { Text("📅 Custom date & time") }
+            // One 📅 Pick at the end of RECENT opens the grid (its calendar is inside it).
+            ShortTimeRow(selected = null, plusRow = plusRow, onPick = onPick, sameBase = sameBase, dialogTitle = heading)
         }
     }
 }

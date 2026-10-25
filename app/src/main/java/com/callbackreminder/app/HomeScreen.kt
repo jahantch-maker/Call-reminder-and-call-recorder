@@ -157,16 +157,21 @@ fun HomeScreen(
         ) {
             item(key = "header") {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    // One line: "Good morning  Tue 21 Oct".
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
                         Text(
                             greeting(Instant.ofEpochMilli(now).atZone(zone).toLocalTime()),
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier.padding(bottom = 3.dp)
                         )
                     }
                     TopActions()

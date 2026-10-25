@@ -143,9 +143,12 @@ private fun ListTab(text: String, on: Boolean, onClick: () -> Unit) {
 @Composable
 internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
+    val red = chipColors(ChipTone.RED)
+    val orange = chipColors(ChipTone.ORANGE)
+    // The same chip as every other: red late, orange no time, outlined for the person and a plain time.
     val (bg, fg, border) = when (tone) {
-        CHIP_RED -> Triple(cs.errorContainer, cs.error, null)
-        CHIP_ORANGE -> Triple(NoTimeBg, NoTimeFg, null)
+        CHIP_RED -> Triple(red.first, red.second, null)
+        CHIP_ORANGE -> Triple(orange.first, orange.second, null)
         else -> Triple(Color.Transparent, cs.onSurface, BorderStroke(1.dp, cs.outlineVariant))
     }
     Surface(
@@ -229,7 +232,9 @@ internal fun MyTaskCard(
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
-            onStar = if (t.done) null else onStar,
+            // A given task: 🔴 Urgent (set by the giver) is its star.
+            onStar = if (t.done || teamTask != null) null else onStar,
+            noTimeChip = teamTask == null,
             onCall = if (t.hasPerson && !t.done) ({ dial(ctx, t.number) }) else null,
             onWhatsApp = if (t.hasPerson && !t.done) ({
                 WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, "", t.title, if (t.timed) t.dueAt else 0L, t.name))
@@ -240,6 +245,15 @@ internal fun MyTaskCard(
             handle = handle,
             pos = pos,
         ) {
+            if (teamTask != null) {
+                TeamReceiverPanel(
+                    teamTask, myTaskId = t.id,
+                    onDone = onTick,
+                    onReminder = if (t.done) null else onNewTime,
+                    onMove = onMoveToFollowUps,
+                )
+                return@TaskCard
+            }
             CardPanel(
                 details = listOfNotNull(
                     t.note.takeIf { it.isNotBlank() }?.let { "Note: $it" },
@@ -260,7 +274,6 @@ internal fun MyTaskCard(
                     if (onDelete != null) add(RowLink("Delete", danger = true, onClick = onDelete))
                 }
             )
-            teamTask?.let { TeamReceiverButtons(it, myTaskId = t.id) }
         }
     }
 }

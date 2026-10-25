@@ -50,7 +50,8 @@ service cloud.firestore {
         allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
         allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
           && request.resource.data.fromUid == resource.data.fromUid
-          && request.resource.data.toUid == resource.data.toUid;
+          // Only the giver may give it to someone else (Edit › person).
+          && (request.resource.data.toUid == resource.data.toUid || resource.data.fromUid == me());
 
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
@@ -58,8 +59,23 @@ service cloud.firestore {
           allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
           allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
           allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text']);
+            && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text'])
+              // The giver hands the Timeline on with the task.
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewers'])
+                && get(/databases/$(database)/documents/teams/$(t)/tasks/$(task)).data.fromUid == me()));
         }
+      }
+
+      // Each member's Dossier: only the Owner sets it; he and the people above him read it.
+      match /dossier/{uid} {
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || me() in resource.data.viewers);
+        allow write: if signedIn() && isActive(t) && isOwner(t);
+      }
+
+      // 📷 Dossier photo proofs and "why not done" voice notes: written by him, read by the people above him.
+      match /proofs/{p} {
+        allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
+        allow create, update: if signedIn() && isActive(t) && request.resource.data.uid == me() && me() in request.resource.data.viewers;
       }
 
       // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.

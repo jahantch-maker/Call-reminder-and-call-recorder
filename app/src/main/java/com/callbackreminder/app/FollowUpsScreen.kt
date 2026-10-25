@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -211,53 +213,42 @@ fun FollowUpsBar(
         FollowUpsUi.TEXTS -> "💬 Texts only"
         else -> "Everything"
     }
-    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-        BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) })
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                FilterChip(
-                    selected = show != FollowUpsUi.ALL,
-                    onClick = { menu = true },
-                    label = { Text(filterLabel, maxLines = 1) },
-                    trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    MenuHeading("SHOW")
-                    listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                            onClick = { menu = false; onShow(v) }
-                        )
-                    }
-                    MenuHeading("SORT")
-                    listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                            onClick = { menu = false; onSort(v) }
-                        )
-                    }
+    // One row: Open | Done, ☆, and ⋮ with Show and Sort.
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) }, Modifier.weight(1f))
+        StarToggle(starredOnly, onStarred)
+        Box {
+            IconButton(onClick = { menu = true }) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Show and sort",
+                    tint = if (show != FollowUpsUi.ALL) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                MenuHeading("SHOW")
+                listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                        onClick = { menu = false; onShow(v) }
+                    )
+                }
+                MenuHeading("SORT")
+                listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                        onClick = { menu = false; onSort(v) }
+                    )
                 }
             }
-            StarredFilterChip(starredOnly, onStarred)
         }
     }
+    // A filter that is on shows as one chip you can clear.
+    if (show != FollowUpsUi.ALL) SmallChip(RowChip("$filterLabel  ✕", ChipTone.BLUE, onClick = { onShow(FollowUpsUi.ALL) }))
 }
 
 @Composable
-private fun MenuHeading(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-    )
-}
+private fun MenuHeading(text: String) =
+    ChipHeading(text.uppercase(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
 
 
 /** One follow-up in the list: a call, its texts, or both. */
@@ -413,7 +404,8 @@ private fun FollowUpsAll(
             ),
         ) {
             item(key = "header") {
-                FollowUpsHeader(
+                PageTitleRow(
+                    "Follow-ups",
                     when {
                         overdue.isNotEmpty() && review.isNotEmpty() -> "${overdue.size} overdue · ${review.size} to review"
                         overdue.isNotEmpty() -> "${overdue.size} overdue"
@@ -422,6 +414,8 @@ private fun FollowUpsAll(
                         else -> "${open.size} open"
                     },
                     red = overdue.isNotEmpty() || review.isNotEmpty(),
+                    noTime = waiting,
+                    onNoTime = onOpenToSchedule,
                 )
             }
             item(key = "switch") {
@@ -437,9 +431,6 @@ private fun FollowUpsAll(
                     onSort = onSort,
                     onStarred = onStarred,
                 )
-            }
-            if (!showDone && waiting > 0) {
-                item(key = "to-schedule") { Box(Modifier.animateItem()) { WaitingLink(waiting, onOpenToSchedule) } }
             }
 
             fun block(key: String, title: String, count: String, color: Color, list: List<FuEntry>) {
@@ -573,6 +564,23 @@ internal fun FollowUpCard(
     val teamV by TeamSync.version.collectAsState()
     val teamLink = call?.linkId?.takeIf { it != 0L } ?: text?.linkId ?: 0L
     val teamTask = remember(teamLink, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, teamLink, teamTasks) else null }
+    // Deleting a task you gave takes it off his phone too, after one line to confirm.
+    var askDelete by remember { mutableStateOf(false) }
+    val delete: () -> Unit = {
+        if (teamTask != null && teamTask.fromUid == TeamRepo.uid && teamTask.open) askDelete = true else onDelete()
+    }
+    if (askDelete && teamTask != null) {
+        AlertDialog(
+            onDismissRequest = { askDelete = false },
+            title = { Text("Delete for you and ${teamTask.toFirst}?") },
+            confirmButton = {
+                TextButton(onClick = { askDelete = false; TeamRepo.cancel(teamTask); onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Keep") } },
+        )
+    }
 
     val chips = buildList {
         if (finished) {
@@ -588,7 +596,10 @@ internal fun FollowUpCard(
                 text.review != null && !text.done -> add(RowChip(if (text.tracked) "No reply" else "Texts sent", if (text.tracked) ChipTone.ORANGE else ChipTone.MUTED))
             }
         }
-        teamTask?.let { addAll(TeamUi.giverChips(it)) }
+        teamTask?.let {
+            addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it))
+            if (TeamSync.unread(ctx, it, TeamRepo.uid)) add(RowChip("💬 new", ChipTone.BLUE))
+        }
         if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
         if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
         // Pushed on again and again in review.
@@ -652,41 +663,31 @@ internal fun FollowUpCard(
         onClick = onToggle,
         pos = pos,
         highlighted = highlighted,
+        corner = teamTask?.takeIf { it.fromUid == TeamRepo.uid && !finished }?.let { tt -> { TeamTicks(tt) } },
     ) {
+        teamTask?.let { TeamBriefStrip(it) }
+        // A team task's Timeline is its conversation; one passed down to you can't be deleted (it is the giver's).
+        val timeline: () -> Unit = teamTask?.let { tt -> { TeamUi.openTimeline(tt.id) } } ?: onTimeline
+        val canDelete = teamTask == null || teamTask.toUid != TeamRepo.uid
         CardPanel(
             details = details,
             onNewTime = if (finished) null else onNewTime,
             links = buildList {
                 if (finished) {
-                    add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = onDelete))
+                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
+                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
                 } else {
                     if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
                     add(RowLink("Edit", onClick = onEdit))
-                    if (!e.inReview) add(RowLink("Remove time", onClick = onRemoveTime))
-                    add(RowLink("Move to My tasks", onClick = onMove))
+                    if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
+                    if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
                     if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
-                    add(RowLink(timelineLabel, onClick = onTimeline))
-                    add(RowLink("Delete", danger = true, onClick = onDelete))
+                    add(RowLink(if (teamTask != null) "Timeline" else timelineLabel, onClick = timeline))
+                    if (canDelete) add(RowLink("Delete", danger = true, onClick = delete))
                 }
             }
         )
-        teamTask?.let { tt ->
-            if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt)
-            else if (tt.asking && tt.fromUid == TeamRepo.uid) TextButton(onClick = { TeamUi.request.value = TeamUi.INBOX }) {
-                Text("${tt.toFirst} asks for more time · answer ›")
-            }
-            TextButton(onClick = { TeamUi.openTimeline(tt.id) }) {
-                Text(
-                    when {
-                        tt.stuck -> "⚠ ${tt.toFirst} is stuck · answer ›"
-                        tt.asks -> "❓ ${tt.toFirst} asks · answer ›"
-                        TeamSync.unread(ctx, tt, TeamRepo.uid) -> "💬 New message · open ›"
-                        else -> "💬 Conversation"
-                    }
-                )
-            }
-        }
+        teamTask?.let { tt -> if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt) }
     }
 }
 
@@ -749,33 +750,25 @@ internal fun TextsSheet(
             SheetLine(replied?.let { "Replied “${t.doneReply}” · ${Fmt.dueLabel(it.at)}" } ?: "No reply yet")
 
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { onSendNow(t) },
                     enabled = t.active,
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = cs.secondary, contentColor = cs.onSecondary)
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Send next now", maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Send now", maxLines = 1)
                 }
-                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Change times", maxLines = 1)
+                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("🕘 New time", maxLines = 1)
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onChange(t) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Edit message", maxLines = 1)
-                }
-                OutlinedButton(onClick = { onStop(t) }, enabled = !t.done, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { onStop(t) }, enabled = !t.done, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Stop texts", maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Stop", maxLines = 1)
                 }
             }
         }
@@ -783,14 +776,7 @@ internal fun TextsSheet(
 }
 
 @Composable
-private fun SheetHeading(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 10.dp)
-    )
-}
+private fun SheetHeading(text: String) = ChipHeading(text.uppercase(), modifier = Modifier.padding(top = 10.dp))
 
 @Composable
 private fun SheetLine(text: String) {

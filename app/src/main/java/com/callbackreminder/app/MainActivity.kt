@@ -219,6 +219,9 @@ class MainActivity : ComponentActivity() {
             OPEN_FOLLOW_UPS -> {
                 intent?.removeExtra(EXTRA_OPEN)
                 FollowUpsUi.view.value = FollowUpsUi.ALL
+                val call = intent?.getLongExtra(EXTRA_TASK, -1L) ?: -1L
+                intent?.removeExtra(EXTRA_TASK)
+                if (call >= 0) CallsUi.showRequest.value = call
                 showTab(Tab.FOLLOW_UPS)
                 return
             }
@@ -238,8 +241,8 @@ class MainActivity : ComponentActivity() {
                 intent?.removeExtra(EXTRA_TEAM_TASK)
                 if (task != null) {
                     TeamUi.timelineOf.value = task
-                    openStack(listOf(Screen.TEAM_INBOX, Screen.TEAM_TIMELINE))
-                } else showTab(Tab.HOME, Screen.TEAM_INBOX)
+                    openStack(listOf(Screen.TEAM_TIMELINE))
+                } else showTab(Tab.FOLLOW_UPS)
                 return
             }
             OPEN_MY_DAY -> {
@@ -343,7 +346,6 @@ private object Screen {
     const val TO_SCHEDULE_FU = 34
     const val TO_SCHEDULE_MINE = 35
     const val TEAM_SETTINGS = 36
-    const val TEAM_INBOX = 37
     const val TEAM_DAY = 38
     const val TEAM_TIMELINE = 39
 }
@@ -455,12 +457,15 @@ private fun AppRoot(
     LaunchedEffect(teamRequest) {
         when (teamRequest) {
             TeamUi.SETTINGS -> open(Screen.TEAM_SETTINGS)
-            TeamUi.INBOX -> open(Screen.TEAM_INBOX)
+            TeamUi.FOLLOW_UPS -> showTab(Tab.FOLLOW_UPS)
+            TeamUi.MY_TASKS -> showTab(Tab.MY_TASKS)
             TeamUi.DAY -> open(Screen.TEAM_DAY)
             TeamUi.TIMELINE -> open(Screen.TEAM_TIMELINE)
         }
         if (teamRequest != null) TeamUi.request.value = null
     }
+    // 📷 a team Dossier block ticked anywhere asks for its photo here.
+    TeamDossierProofHost()
 
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {
@@ -545,7 +550,6 @@ private fun AppRoot(
                 Screen.CALENDAR_SETTINGS -> CalendarSettingsScreen(onBack = { back() })
                 Screen.APPEARANCE -> AppearanceSettingsScreen(onBack = { back() })
                 Screen.TEAM_SETTINGS -> TeamSettingsScreen(onBack = { back() })
-                Screen.TEAM_INBOX -> TeamInboxScreen(onBack = { back() })
                 Screen.TEAM_DAY -> TeamDayScreen(onBack = { back() })
                 Screen.TEAM_TIMELINE -> TeamTimelineScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })

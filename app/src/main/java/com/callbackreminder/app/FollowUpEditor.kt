@@ -609,6 +609,22 @@ fun FollowUpDialog(
     var urgent by remember { mutableStateOf(false) }
     var photoProof by remember { mutableStateOf(false) }
     var attach by remember { mutableStateOf<List<TeamAttach>>(emptyList()) }
+    // A task your manager gave you, moved here (or passed on already): its title is locked, your photos / voice go
+    // on its Timeline, and FOR <HIM> · PROMISE is your date for him.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val passTask = remember(teamTasks) {
+        if (!TeamRepo.activeNow) null
+        else fromMyTask?.let { TeamUi.taskOfMyTask(ctx, it.id, teamTasks) }
+            ?: TeamUi.taskOfLink(ctx, linkId, teamTasks)?.takeIf { it.toUid == TeamRepo.uid }
+    }
+    var promise by remember { mutableLongStateOf(passTask?.due ?: 0L) }
+    // A task you gave: picking another team member here gives it to him instead.
+    val givenTask = remember(teamTasks) {
+        if (editing && TeamRepo.activeNow) TeamUi.taskOfLink(ctx, linkId, teamTasks)?.takeIf { it.fromUid == TeamRepo.uid && it.open } else null
+    }
+    val reassignTo = remember(number, givenTask, teamUsers) {
+        givenTask?.let { g -> TeamRepo.memberByNumber(number)?.takeIf { it.uid != g.toUid } }
+    }
     val callEff = callOn && hasPerson
     val textEff = textOn && hasPerson && teamMember == null
 
@@ -656,6 +672,14 @@ fun FollowUpDialog(
 
     /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
     fun save(same: FollowUps.Same?) {
+        passTask?.let { pt ->
+            attach.forEach { a -> TeamRepo.send(pt, a.kind, "", data = a.data, durMs = a.durMs) }
+            if (pt.hisDate && promise > 0L && promise != pt.due) TeamRepo.setHisDate(pt, promise)
+        }
+        if (givenTask != null && reassignTo != null) {
+            TeamRepo.reassign(givenTask, reassignTo)
+            Toast.makeText(ctx, "Given to ${reassignTo.first} instead of ${givenTask.toFirst}", Toast.LENGTH_SHORT).show()
+        }
         if (teamMember != null) {
             val link = TeamSync.giveFromDialog(ctx, teamMember, task, deadline, urgent, if (myTime) due else null, callOn = callEff,
                 photoProof = photoProof, brief = attach)
@@ -703,7 +727,8 @@ fun FollowUpDialog(
         bottomStart = extras?.let { x -> { TaskExtraButtons(x) } },
         titleAction = {
             extras?.onShowInList?.let { go -> ShowInListLink(extras.listName) { onDismiss(); go() } }
-            IconButton(onClick = { starred = !starred }) {
+            // A team member: 🔴 Urgent is the only switch (it is the ⭐ on both phones).
+            if (teamMember == null) IconButton(onClick = { starred = !starred }) {
                 Icon(
                     if (starred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                     contentDescription = if (starred) "Important" else "Mark important",
@@ -744,6 +769,10 @@ fun FollowUpDialog(
             }
         } else {
             ContactCard(name = name, number = number, onClear = { name = ""; number = "" }, compact = true)
+            if (reassignTo != null && givenTask != null) {
+                Text("👥 Save gives it to ${reassignTo.first}: it leaves ${givenTask.toFirst}'s app", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
             if (teamMember != null) {
                 Text("👥 ${teamMember.first} is on the app: the task goes to his phone", fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -752,14 +781,20 @@ fun FollowUpDialog(
         // B. Task
         OutlinedTextField(
             value = task,
-            onValueChange = { task = it },
-            trailingIcon = voiceMic(task) { task = it },
+            onValueChange = { if (passTask == null) task = it },
+            readOnly = passTask != null,
+            trailingIcon = if (passTask == null) voiceMic(task) { task = it } else null,
             modifier = Modifier.fillMaxWidth(),
             label = { Text(if (taskRequired && !editing && item == null) "Task *" else "Task (optional)") },
             placeholder = { Text("e.g. Send the March invoice") },
             maxLines = 4,
             shape = RoundedCornerShape(14.dp)
         )
+
+        if (passTask != null) {
+            TeamAttachRow(attach) { attach = it }
+            TeamPromiseBox(passTask, promise) { promise = it }
+        }
 
         // C. Remind me to call (blue): its time lives inside the card.
         FeatureCard(
@@ -822,7 +857,7 @@ fun FollowUpDialog(
                 deadline = deadline,
                 onDeadline = { deadline = it },
                 urgent = urgent,
-                onUrgent = { on -> urgent = on; if (on) starred = true },
+                onUrgent = { on -> urgent = on; starred = on },
                 photoProof = photoProof,
                 onPhotoProof = { photoProof = it },
                 attach = attach,
