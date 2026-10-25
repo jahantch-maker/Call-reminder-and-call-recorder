@@ -344,37 +344,28 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
         }
         msg?.let { Text(it, color = if (it.startsWith("Moved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
         if (user != null) {
-            SectionCard(title = "Signed in", subtitle = user?.email.orEmpty()) {
-                TextButton(onClick = { TeamRepo.signOut() }) { Text("Sign out on this phone") }
-            }
+            TextButton(onClick = { TeamRepo.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this phone") }
         }
     }
 }
 
-/** Not in a team yet: make one (you become its Owner), or join with the code. */
+/** Not in a team yet: one "Ask to join Rafiq Builders" (no code); join with a code only if it can't be found. */
 @Composable
 private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
     val ctx = LocalContext.current
-    var name by remember { mutableStateOf("") }
     var myPhone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var joinName by remember { mutableStateOf(TeamRepo.user.value?.displayName.orEmpty()) }
-    SectionCard(title = "Make your team", subtitle = "You become its Owner. Share the code; nobody joins until you approve.") {
+    var home by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var looked by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { home = TeamRepo.findHomeTeam(); looked = true }
+    val h = home
+    SectionCard(
+        title = if (h != null) "Join ${h.second}" else "Join a team",
+        subtitle = if (h != null) "Your manager approves you, then tasks come to your phone." else if (looked) "Ask your manager for the 6-letter code." else "Looking for your team…",
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, label = { Text("Team name") }, placeholder = { Text("e.g. Rafiq Builders") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
-            OutlinedTextField(myPhone, { myPhone = it }, label = { Text("Your mobile number") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone))
-            Button(onClick = { go { TeamRepo.createTeam(name, myPhone) } }, enabled = !busy && name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text("Make team")
-            }
-        }
-    }
-    SectionCard(title = "Join a team", subtitle = "Ask your manager for the 6-letter code.") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(6) }, label = { Text("Team code") },
+            if (h == null && looked) OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(6) }, label = { Text("Team code") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
             OutlinedTextField(joinName, { joinName = it }, label = { Text("Your name") }, singleLine = true,
@@ -385,18 +376,27 @@ private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Text(
                     "Before you join: your manager will see your work tasks and follow-ups. Tap 🔒 Private on any task to keep it " +
-                        "private (he sees only how many). Call recordings and call logs never leave your phone.",
+                        "private (he sees only how many).",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp)
                 )
             }
             Button(onClick = {
-                if (myPhone.isBlank()) Toast.makeText(ctx, "Add your mobile number", Toast.LENGTH_SHORT).show()
-                else go { TeamRepo.join(code, joinName, myPhone) }
-            }, enabled = !busy && code.length == 6, modifier = Modifier.fillMaxWidth()) { Text("Ask to join") }
+                when {
+                    myPhone.isBlank() -> Toast.makeText(ctx, "Add your mobile number", Toast.LENGTH_SHORT).show()
+                    h != null -> go { TeamRepo.joinTeam(h.first, joinName, myPhone) }
+                    else -> go { TeamRepo.join(code, joinName, myPhone) }
+                }
+            }, enabled = !busy && looked && (h != null || code.length == 6), modifier = Modifier.fillMaxWidth()) {
+                Text(if (h != null) "Ask to join ${h.second}" else "Ask to join")
+            }
         }
     }
 }
 
+/**
+ * In the team. The Owner (and Admins) see Waiting for you, the chart with Edit and the date rules; a Member sees
+ * only his place in the team and Leave. Date rules show to anyone with people under him.
+ */
 @Composable
 private fun TeamActive(
     t: TeamInfo, me: TeamMember, members: List<TeamMember>, tasks: List<TeamTask>, busy: Boolean,
@@ -407,25 +407,22 @@ private fun TeamActive(
     val admin = me.role == Team.OWNER || me.role == Team.ADMIN
     val active = members.filter { it.active }
     val waiting = members.filter { it.pending }
+    val hasReports = active.any { me.uid in it.managers && it.uid != me.uid }
     var approving by remember { mutableStateOf<TeamMember?>(null) }
     var editing by remember { mutableStateOf<TeamMember?>(null) }
+    LaunchedEffect(me.role, members.size) { if (me.role == Team.OWNER) runCatching { TeamRepo.adminsToMembers() } }
 
     TeamCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TeamTag("You · ${me.roleLabel}")
         }
-        Text("${active.size} member${if (active.size == 1) "" else "s"} · share the code with your staff. Nobody joins until ${if (admin) "you approve" else "the owner approves"}.",
-            style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(t.code.toCharArray().joinToString(" "), fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-            Button(onClick = { TeamUi.shareCode(ctx, t) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366), contentColor = Color(0xFF053D1E)),
-                contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Share on WA", fontWeight = FontWeight.Bold) }
-            FilledTonalButton(onClick = {
-                ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Team code", t.code))
-                Toast.makeText(ctx, "Code copied", Toast.LENGTH_SHORT).show()
-            }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Copy") }
-        }
+        val boss = active.firstOrNull { it.uid == me.reportsTo }
+        Text(
+            if (admin) "${active.size} member${if (active.size == 1) "" else "s"}. Nobody joins until ${if (me.role == Team.OWNER) "you approve" else "the owner approves"}."
+            else "Tasks from your manager come to My tasks." + (boss?.let { " Your Dossier is set by ${active.firstOrNull { m -> m.role == Team.OWNER }?.first ?: it.first}." } ?: ""),
+            style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
+        )
     }
 
     if (admin && waiting.isNotEmpty()) {
@@ -437,76 +434,104 @@ private fun TeamActive(
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(w.name.ifBlank { "New member" }, fontWeight = FontWeight.Bold)
-                        Text("${w.email} · ${w.phone} · ${Fmt.dueLabel(w.joinedAt)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                        Text("${w.phone} · ${Fmt.dueLabel(w.joinedAt)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
                     }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = { go { TeamRepo.decline(w) } }, enabled = !busy) { Text("Decline", color = cs.error) }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = { approving = w }, enabled = !busy) { Text("Approve") }
+                    OutlinedButton(onClick = { go { TeamRepo.decline(w) } }, enabled = !busy, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                        Text("Decline", color = cs.error)
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Button(onClick = { approving = w }, enabled = !busy, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Approve") }
                 }
             }
         }
     }
 
-    TeamHeading("Team chart")
-    TeamCard {
-        val byBoss = active.groupBy { it.reportsTo }
-        val ids = active.map { it.uid }.toSet()
-        val roots = active.filter { it.reportsTo.isEmpty() || it.reportsTo !in ids }
-        @Composable
-        fun Node(m: TeamMember, depth: Int) {
-            val canSee = me.uid in m.managers
-            val openFromMe = tasks.count { it.toUid == m.uid && it.fromUid == me.uid && it.open }
-            Row(
-                Modifier.fillMaxWidth().padding(start = (depth * 18).dp)
-                    .clickable(enabled = canSee) { TeamUi.openDay(m.uid) }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Avatar(m.name, size = 34.dp)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(m.first, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(6.dp))
-                        OnlineDot(m.onlineNow())
-                    }
-                    Text(m.roleLabel + (if (openFromMe > 0) " · $openFromMe open from you" else ""), fontSize = 12.sp, color = cs.onSurfaceVariant)
+    @Composable
+    fun Node(m: TeamMember, depth: Int, byBoss: Map<String, List<TeamMember>>, only: Set<String>?) {
+        val canSee = me.uid in m.managers
+        val openFromMe = tasks.count { it.toUid == m.uid && it.fromUid == me.uid && it.open }
+        Row(
+            Modifier.fillMaxWidth().padding(start = (depth * 18).dp)
+                .clickable(enabled = canSee) { TeamUi.openDay(m.uid) }
+                .padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Avatar(m.name, size = 34.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.first, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    OnlineDot(m.onlineNow())
                 }
-                if (admin && m.uid != me.uid && m.role != Team.OWNER) TextButton(onClick = { editing = m }) { Text("Edit") }
-                if (canSee) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "His day", tint = cs.onSurfaceVariant)
+                val who = when {
+                    m.uid == me.uid -> "you"
+                    m.uid == me.reportsTo -> "your manager"
+                    else -> TeamUi.lastSeenLabel(m).replaceFirstChar { it.lowercase() }.removePrefix("🟢 ")
+                }
+                Text(m.roleLabel + " · " + who + (if (openFromMe > 0) " · $openFromMe open from you" else ""), fontSize = 12.sp, color = cs.onSurfaceVariant)
             }
-            byBoss[m.uid].orEmpty().forEach { Node(it, depth + 1) }
+            if (admin && m.uid != me.uid && m.role != Team.OWNER) TextButton(onClick = { editing = m }) { Text("Edit") }
+            if (canSee) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "His day", tint = cs.onSurfaceVariant)
         }
-        roots.forEach { Node(it, 0) }
-        Text(
-            "Who sees whom comes from this chart: each person sees everyone below him, never sideways or up. " +
-                "Roles: Owner, Admin (can edit the chart and approve), Member.",
-            style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
-        )
+        byBoss[m.uid].orEmpty().filter { only == null || it.uid in only }.forEach { Node(it, depth + 1, byBoss, only) }
     }
 
-    TeamHeading("Date rules")
-    var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
-    var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
-    var sms by remember { mutableIntStateOf(TeamRules.smsMin(ctx)) }
-    var working by remember { mutableStateOf(TeamRules.workingOnly(ctx)) }
-    SectionCard(title = "No date picked · remind me after", subtitle = "Shows in Needs you on Home") {
-        MinuteChips(TeamRules.NO_DATE_CHOICES, noDate) { noDate = it; TeamRules.setNoDateMin(ctx, it) }
+    val byBoss = active.groupBy { it.reportsTo }
+    val ids = active.map { it.uid }.toSet()
+    if (admin) {
+        TeamHeading("Team chart")
+        TeamCard {
+            active.filter { it.reportsTo.isEmpty() || it.reportsTo !in ids }.forEach { Node(it, 0, byBoss, null) }
+        }
+    } else {
+        // His place: the people above him, him, and anyone under him.
+        TeamHeading("Your place in the team")
+        val only = (me.managers + me.uid + active.filter { me.uid in it.managers }.map { it.uid }).toSet()
+        TeamCard {
+            active.filter { it.uid in only && (it.reportsTo.isEmpty() || it.reportsTo !in only) }.forEach { Node(it, 0, byBoss, only) }
+        }
     }
-    SectionCard(title = "Urgent, no date · notify me after", subtitle = "Then you can set the date yourself") {
-        MinuteChips(TeamRules.URGENT_CHOICES, urgent) { urgent = it; TeamRules.setUrgentMin(ctx, it) }
-    }
-    SectionCard(title = "Not seen · text him after", subtitle = "One SMS from your SIM: “New task from you… Please open the app.”") {
-        MinuteChips(TeamRules.SMS_CHOICES, sms) { sms = it; TeamRules.setSmsMin(ctx, it) }
-    }
-    SectionCard(title = "Count only working hours", subtitle = WorkHours.label(ctx).let { if (WorkHours.isSet(ctx)) "$it, weekly off day skipped" else "11 AM - 9 PM, weekly off day skipped" }) {
-        SwitchRow(label = if (working) "On" else "Off", checked = working) { working = it; TeamRules.setWorkingOnly(ctx, it) }
+
+    if (admin || hasReports) {
+        TeamHeading("Date rules")
+        var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
+        var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
+        var sms by remember { mutableIntStateOf(TeamRules.smsMin(ctx)) }
+        var working by remember { mutableStateOf(TeamRules.workingOnly(ctx)) }
+        var rule by remember { mutableIntStateOf(-1) }
+        TeamCard {
+            RuleRow("No date picked · remind me", TeamRules.label(noDate)) { rule = 0 }
+            RuleRow("Urgent, no date · notify me", TeamRules.label(urgent)) { rule = 1 }
+            RuleRow("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms)) { rule = 2 }
+            RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
+        }
+        if (rule >= 0) {
+            val (title, choices, sel) = when (rule) {
+                0 -> Triple("No date picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
+                1 -> Triple("Urgent, no date · notify me after", TeamRules.URGENT_CHOICES, urgent)
+                else -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
+            }
+            AlertDialog(
+                onDismissRequest = { rule = -1 },
+                title = { Text(title, fontSize = 17.sp) },
+                text = {
+                    MinuteChips(choices, sel) { m ->
+                        when (rule) {
+                            0 -> { noDate = m; TeamRules.setNoDateMin(ctx, m) }
+                            1 -> { urgent = m; TeamRules.setUrgentMin(ctx, m) }
+                            else -> { sms = m; TeamRules.setSmsMin(ctx, m) }
+                        }
+                        rule = -1
+                    }
+                },
+                confirmButton = { TextButton(onClick = { rule = -1 }) { Text("Close") } },
+            )
+        }
     }
 
     if (me.role != Team.OWNER) {
-        TextButton(onClick = { go { TeamRepo.leave() } }) { Text("Leave the team", color = cs.error) }
+        TextButton(onClick = { go { TeamRepo.leave() } }, modifier = Modifier.fillMaxWidth()) { Text("Leave the team", color = cs.error) }
     }
 
     approving?.let { w ->
@@ -519,6 +544,18 @@ private fun TeamActive(
         TeamChartDialog(m, active, onDismiss = { editing = null },
             onSave = { boss, role, phone -> editing = null; go { TeamRepo.setChart(m, boss, role, phone) } },
             onRemove = { editing = null; go { TeamRepo.remove(ctx, m) } })
+    }
+}
+
+/** A slim date-rule row: name, value on the right. */
+@Composable
+private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 

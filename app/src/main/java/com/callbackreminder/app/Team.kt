@@ -121,6 +121,8 @@ object Team {
     const val ACTIVE = "active"
     const val REMOVED = "removed"
 
+    /** The pilot company: staff only see "Ask to join" this team. */
+    const val HOME_TEAM = "Rafiq Builders"
     const val OWNER = "owner"
     const val ADMIN = "admin"
     const val MEMBER = "member"
@@ -479,6 +481,41 @@ object TeamRepo {
     }
 
     /** Asks to join with the 6-letter code; the Owner approves with one tap. */
+    /** The company's team ("Rafiq Builders" for the pilot): its id and name, or null when it can't be found. */
+    suspend fun findHomeTeam(): Pair<String, String>? = runCatching {
+        db().collection("codes").whereEqualTo("teamName", Team.HOME_TEAM).limit(1).get().await().documents.firstOrNull()
+            ?.let { d -> d.getString("teamId")?.let { it to (d.getString("teamName") ?: Team.HOME_TEAM) } }
+    }.getOrNull()
+
+    /** Ask to join the company's team (no code): the Owner approves. */
+    suspend fun joinTeam(teamId: String, myName: String, myPhone: String): String? = try {
+        val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
+        joinNow(u, teamId, myName, myPhone)
+    } catch (e: Exception) {
+        "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
+    }
+
+    private suspend fun joinNow(u: FirebaseUser, t: String, myName: String, myPhone: String): String? {
+        db().collection("teams").document(t).collection("members").document(u.uid).set(
+            memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, System.currentTimeMillis(), myName)
+        ).await()
+        db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
+        setTeamId(t)
+        start(appCtx)
+        return null
+    }
+
+    /**
+     * Pilot: the people who were Admins become Members (only the Owner approves and edits the chart). Once, on the
+     * Owner's phone.
+     */
+    suspend fun adminsToMembers() {
+        val me = _me.value ?: return
+        if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, it.phone) }
+        p().edit().putBoolean("admins_to_members", true).apply()
+    }
+
     suspend fun join(code: String, myName: String, myPhone: String): String? = try {
         val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
         val c = code.trim().uppercase()
