@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -105,6 +106,13 @@ object TeamUi {
         request.value = TIMELINE
     }
 
+    /** Home's "❓ n questions waiting ›": Follow-ups, scrolled to this card. */
+    fun showGiven(c: Context, t: TeamTask) {
+        val link = TeamLinks.map(c, "given")[t.id]?.toLongOrNull()
+        if (link != null) FollowUpsUi.showEntry.value = "link-$link"
+        request.value = FOLLOW_UPS
+    }
+
     /** Whose day the day page shows. */
     val dayOf = MutableStateFlow<String?>(null)
 
@@ -135,44 +143,74 @@ object TeamUi {
         return tasks.firstOrNull { it.id == id }
     }
 
-    /** Your side: one status chip (his date → Done, check it), plus Urgent / asks / passed on. Sent / Seen are the ticks. */
+    /** "You → Basharat → Ilyas" on your side, "Jahanzaib → You → Ilyas" on his: who has it now. */
+    fun chain(t: TeamTask, me: String?): String? {
+        if (t.passedTo.isBlank()) return null
+        val from = if (t.fromUid == me) "You" else t.fromFirst
+        val to = if (t.toUid == me) "You" else t.toFirst
+        return "$from → $to → ${t.passedTo}"
+    }
+
+    /** Your side: the deadline (or Deadline pending) and where it stands. Sent / Seen are the ticks, waiting talk the banner. */
     fun giverChips(t: TeamTask): List<RowChip> = buildList {
-        if (t.urgent && t.open) add(RowChip("🔴 Urgent", ChipTone.RED))
-        if (t.open && t.stuck) add(RowChip("⚠ Stuck", ChipTone.RED))
-        if (t.open && t.asks) add(RowChip("❓ Needs your answer", ChipTone.ORANGE))
-        if (t.passedTo.isNotBlank()) add(RowChip("👤 ${t.toFirst} → ${t.passedTo}", ChipTone.BLUE))
+        chain(t, TeamRepo.uid)?.let { add(RowChip("👤 $it", ChipTone.BLUE)) }
         when {
-            t.status == Team.REOPENED -> add(RowChip("Not done yet", ChipTone.RED))
-            t.open && !t.hisDate && t.due > 0L -> add(RowChip("📌 Date ${shortWhen(t.due)}", ChipTone.MUTED))
-            t.open && t.due > 0L -> add(RowChip("📅 Promise ${shortWhen(t.due)}", ChipTone.ORANGE))
-            t.open -> add(RowChip("📅 Promise pending", ChipTone.ORANGE))
+            t.status == Team.REOPENED -> {
+                add(RowChip("↩ Not done yet", ChipTone.RED))
+                add(if (t.due > 0L) RowChip("📅 Deadline ${shortWhen(t.due)}", ChipTone.ORANGE) else RowChip("📅 Deadline pending", ChipTone.ORANGE))
+            }
+            t.open && t.due > 0L -> add(RowChip("📅 Deadline ${shortWhen(t.due)}", ChipTone.ORANGE))
+            t.open -> add(RowChip("📅 Deadline pending", ChipTone.ORANGE))
             t.status == Team.DONE -> add(RowChip("✅ Done, check it", ChipTone.GREEN))
             t.status == Team.CHECKED -> add(RowChip("Received ✓", ChipTone.GREEN))
             t.status == Team.CANCELLED -> add(RowChip("Cancelled", ChipTone.MUTED))
             t.status == Team.RETURNED -> add(RowChip("Returned", ChipTone.MUTED))
         }
+        if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
     }
 
-    /** His side: ↘ who gave it (and when), his promise, photo proof, the deadline. */
+    /** His side: ↘ who gave it (and when), his deadline (or Pick your deadline · Latest Thu), photo proof. */
     fun receiverChips(t: TeamTask): List<RowChip> = buildList {
-        if (t.urgent && t.open) add(RowChip("🔴 Urgent", ChipTone.RED))
-        add(RowChip("↘ ${t.fromFirst} · ${Fmt.timeOnly(t.createdAt)}", ChipTone.BLUE))
-        if (t.status == Team.REOPENED) add(RowChip("Not done yet", ChipTone.RED))
-        if (t.open) when {
-            !t.hisDate && t.due > 0L -> add(RowChip("📌 Date ${shortWhen(t.due)}", ChipTone.MUTED))
-            t.due > 0L -> add(RowChip("📅 Promise ${shortWhen(t.due)}", ChipTone.ORANGE))
-            else -> add(RowChip("📅 Promise pending", ChipTone.ORANGE))
-        }
-        if (t.open && t.stuck) add(RowChip("⚠ Stuck, waiting", ChipTone.RED))
-        else if (t.open && t.asks) add(RowChip("❓ Asked, waiting", ChipTone.ORANGE))
+        add(RowChip(chain(t, TeamRepo.uid)?.let { "↘ $it" } ?: "↘ ${t.fromFirst} · ${Fmt.timeOnly(t.createdAt)}", ChipTone.BLUE))
+        if (t.open) add(
+            if (t.due > 0L) RowChip("📅 Deadline ${shortWhen(t.due)}" + if (t.deadlineLocked) " 🔒" else "", ChipTone.ORANGE)
+            else RowChip("📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
+        )
+        if (t.open && t.stuck) add(RowChip("⚠ Stuck, waiting", ChipTone.MUTED))
+        else if (t.open && t.asks) add(RowChip("❓ Asked, waiting", ChipTone.MUTED))
+        if (t.asking) add(RowChip("📅 Asked for ${shortWhen(t.moreDue)}", ChipTone.MUTED))
+        if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
-        if (t.open && t.deadline > 0L) add(RowChip("Deadline ${shortDate(t.deadline)}", ChipTone.MUTED))
         if (t.status == Team.DONE) add(RowChip("Waiting for ${t.fromFirst}'s check", ChipTone.MUTED))
     }
 
-    /** One line in Needs you: what it says and how many. */
-    data class Need(val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false)
+    /**
+     * The thin line on top of the card: ⚠ stuck (red), 📅 a deadline request (purple), ❓ a question (orange) stay
+     * until answered; 💬 new messages and 📥 New from (blue) go once opened. Tap opens the Timeline.
+     */
+    fun banner(c: Context, t: TeamTask, me: String?): CardBanner? {
+        val open = { openTimeline(t.id) }
+        val giver = t.fromUid == me
+        val n = TeamSync.unreadCount(c, t, me)
+        return when {
+            giver && t.stuck -> CardBanner("⚠ ${t.toFirst} is stuck" + t.stuckText.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), ChipTone.RED, open)
+            giver && t.asking -> CardBanner("📅 ${t.toFirst} asks to extend to ${shortWhen(t.moreDue)}", ChipTone.PURPLE, open)
+            giver && t.asks -> CardBanner("❓ ${t.toFirst} asked a question", ChipTone.ORANGE, open)
+            !giver && t.status == Team.REOPENED -> CardBanner("↩ Not done yet" + (if (t.reason.isNotBlank()) " · ${t.reason}" else "") +
+                if (t.due == 0L) " · pick a new deadline" else "", ChipTone.RED, open)
+            !giver && t.toUid == me && t.open && TeamSync.isNew(c, t.id) -> CardBanner("📥 New from ${t.fromFirst}", ChipTone.BLUE, open)
+            n > 0 -> CardBanner("💬 $n new on Timeline", ChipTone.BLUE, open)
+            else -> null
+        }
+    }
+
+    /** "Timeline · 📷 2 · 🎤 1": the link with what it holds. */
+    fun timelineLabel(t: TeamTask): String =
+        "Timeline" + (if (t.nPhoto > 0) " · 📷 ${t.nPhoto}" else "") + if (t.nVoice > 0) " · 🎤 ${t.nVoice}" else ""
+
+    /** One line in Needs you: what it says and how many; [first] is the card it opens to. */
+    data class Need(val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false, val first: TeamTask? = null)
 
     fun needs(c: Context, tasks: List<TeamTask>, me: String?): List<Need> {
         if (me == null) return emptyList()
@@ -180,19 +218,24 @@ object TeamUi {
         val given = tasks.filter { it.fromUid == me }
         val noDateMin = TeamRules.noDateMin(c)
         return buildList {
-            given.filter { it.open && it.stuck }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED))
+            given.filter { it.open && it.stuck }.sortedBy { it.stuckAt }.takeIf { it.isNotEmpty() }?.let {
+                add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED, first = it.first()))
             }
-            given.filter { it.open && it.asks && !it.stuck }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("❓ ${it.size} need your answer · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.ORANGE))
+            given.filter { it.open && it.asks && !it.stuck }.sortedBy { it.askAt }.takeIf { it.isNotEmpty() }?.let {
+                add(Need("❓ ${it.size} question${if (it.size == 1) "" else "s"} waiting · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
+                    it.size, ChipTone.ORANGE, first = it.first()))
+            }
+            given.filter { it.asking }.sortedBy { it.moreAt }.takeIf { it.isNotEmpty() }?.let {
+                add(Need("📅 ${it.size} deadline request${if (it.size == 1) "" else "s"} · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
+                    it.size, ChipTone.PURPLE, first = it.first()))
             }
             given.filter { it.open && it.due == 0L && !it.asks && !it.stuck && TeamRules.minutesSince(c, it.createdAt, now) >= noDateMin }.takeIf { it.isNotEmpty() }?.let {
                 val oldest = it.minOf { t -> t.createdAt }
                 val h = TeamRules.minutesSince(c, oldest, now) / 60
-                add(Need("📅 ${it.size} waiting for his date · " + it.map { t -> t.toFirst }.distinct().joinToString(", ") + " · ${h} h", it.size, ChipTone.ORANGE))
+                add(Need("📅 ${it.size} deadline pending · " + it.map { t -> t.toFirst }.distinct().joinToString(", ") + " · ${h} h", it.size, ChipTone.ORANGE))
             }
             tasks.filter { it.toUid == me && it.open && it.hisDate && it.due == 0L }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("📅 ${it.size} task${if (it.size == 1) "" else "s"} need your date", it.size, ChipTone.ORANGE, mine = true))
+                add(Need("📅 ${it.size} task${if (it.size == 1) "" else "s"} need your deadline", it.size, ChipTone.ORANGE, mine = true))
             }
             tasks.filter { it.toUid == me && it.status == Team.REOPENED }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("↩ ${it.size} sent back: not done yet", it.size, ChipTone.RED, mine = true))
@@ -212,8 +255,12 @@ object TeamUi {
     }
 
     fun lastSeenLabel(m: TeamMember): String = when {
-        m.lastSeen <= 0L -> "Not opened yet"
         m.onlineNow() -> "🟢 Online now"
+        m.lastSeen <= 0L -> "Not opened yet"
+        TeamPresence.lastAt(m.uid) > 0L -> TeamPresence.lastAt(m.uid).let { at ->
+            if (Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate() == java.time.LocalDate.now()) "Last seen today ${Fmt.timeOnly(at)}"
+            else "Last seen ${Fmt.dueLabel(at)}"
+        }
         m.onlineToday() -> "Last seen today ${Fmt.timeOnly(m.lastSeen)}"
         else -> "Last seen ${Fmt.dueLabel(m.lastSeen)}"
     }
@@ -266,10 +313,10 @@ private fun OnlineDot(on: Boolean) {
 /** The minutes chips of Date rules (1h 2h 4h 8h 1 day). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MinuteChips(choices: List<Int>, selected: Int, onPick: (Int) -> Unit) {
+private fun MinuteChips(choices: List<Int>, selected: Int, label: (Int) -> String = TeamRules::label, onPick: (Int) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         choices.forEach { m ->
-            FilterChip(selected = m == selected, onClick = { onPick(m) }, label = { Text(TeamRules.label(m)) })
+            FilterChip(selected = m == selected, onClick = { onPick(m) }, label = { Text(label(m)) })
         }
     }
 }
@@ -482,28 +529,36 @@ private fun TeamActive(
         var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
         var sms by remember { mutableIntStateOf(TeamRules.smsMin(ctx)) }
         var working by remember { mutableStateOf(TeamRules.workingOnly(ctx)) }
+        var locked by remember { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
+        var freeExt by remember { mutableIntStateOf(TeamRules.freeExt(ctx)) }
         var rule by remember { mutableIntStateOf(-1) }
         TeamCard {
-            RuleRow("No date picked · remind me", TeamRules.label(noDate)) { rule = 0 }
-            RuleRow("Urgent, no date · notify me", TeamRules.label(urgent)) { rule = 1 }
+            RuleRow("No deadline picked · remind me", TeamRules.label(noDate)) { rule = 0 }
+            RuleRow("Urgent, no deadline · notify me", TeamRules.label(urgent)) { rule = 1 }
             RuleRow("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms)) { rule = 2 }
             RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
+            RuleRow("Deadline locked", if (locked) "On" else "Off") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
+            RuleRow("Extend without asking", TeamRules.extLabel(freeExt)) { rule = 3 }
+            Text("New tasks follow these. Locked: once he sets his deadline, he can only ask to extend it.",
+                fontSize = 12.sp, color = cs.onSurfaceVariant)
         }
         if (rule >= 0) {
             val (title, choices, sel) = when (rule) {
-                0 -> Triple("No date picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
-                1 -> Triple("Urgent, no date · notify me after", TeamRules.URGENT_CHOICES, urgent)
-                else -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
+                0 -> Triple("No deadline picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
+                1 -> Triple("Urgent, no deadline · notify me after", TeamRules.URGENT_CHOICES, urgent)
+                2 -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
+                else -> Triple("Extend without asking", TeamRules.FREE_EXT_CHOICES, freeExt)
             }
             AlertDialog(
                 onDismissRequest = { rule = -1 },
                 title = { Text(title, fontSize = 17.sp) },
                 text = {
-                    MinuteChips(choices, sel) { m ->
+                    MinuteChips(choices, sel, label = if (rule == 3) TeamRules::extLabel else TeamRules::label) { m ->
                         when (rule) {
                             0 -> { noDate = m; TeamRules.setNoDateMin(ctx, m) }
                             1 -> { urgent = m; TeamRules.setUrgentMin(ctx, m) }
-                            else -> { sms = m; TeamRules.setSmsMin(ctx, m) }
+                            2 -> { sms = m; TeamRules.setSmsMin(ctx, m) }
+                            else -> { freeExt = m; TeamRules.setFreeExt(ctx, m) }
                         }
                         rule = -1
                     }
@@ -524,9 +579,9 @@ private fun TeamActive(
         }
     }
     editing?.let { m ->
-        TeamChartDialog(m, active, onDismiss = { editing = null },
+        TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
             onSave = { boss, role, phone -> editing = null; go { TeamRepo.setChart(m, boss, role, phone) } },
-            onRemove = { editing = null; go { TeamRepo.remove(ctx, m) } })
+            onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
     }
 }
 
@@ -602,7 +657,8 @@ private fun TeamApproveDialog(
 
 @Composable
 private fun TeamChartDialog(
-    m: TeamMember, active: List<TeamMember>, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit, onRemove: () -> Unit,
+    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit,
+    onRemove: (TeamMember?) -> Unit,
 ) {
     var phone by remember { mutableStateOf(m.phone) }
     var boss by remember { mutableStateOf(m.reportsTo) }
@@ -623,45 +679,131 @@ private fun TeamChartDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
     if (confirmRemove) {
+        // Who takes his open tasks from you: someone else (same task, Timeline and deadline), or back to you.
+        val open = tasks.count { it.toUid == m.uid && it.fromUid == TeamRepo.uid && it.open }
+        val others = remember(active) { TeamRepo.belowMe().filter { it.uid != m.uid } }
+        var to by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove ${m.first}?") },
-            text = { Text("His access ends now. Open tasks you gave him come back to your To schedule. His own tasks stay on his phone.") },
-            confirmButton = { Button(onClick = { confirmRemove = false; onRemove() }) { Text("Remove") } },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("His access ends now. His own tasks stay on his phone.")
+                    if (open > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Give his $open open task${if (open == 1) "" else "s"} to someone else, or back to you?", fontWeight = FontWeight.Bold)
+                        others.forEach { o ->
+                            Row(Modifier.fillMaxWidth().clickable { to = o.uid }, verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = to == o.uid, onClick = { to = o.uid })
+                                Text("👤 ${o.name}")
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().clickable { to = null }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = to == null, onClick = { to = null })
+                            Text("↩ Back to me (my To schedule)")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { confirmRemove = false; onRemove(others.firstOrNull { it.uid == to }) }, modifier = Modifier.height(48.dp)) { Text("Remove") }
+            },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
         )
     }
 }
 
-/** Received, thanks ✓ / Not done yet (with a reason): on a Done card. */
+/** ✓ Received, thanks / ↩ Not done yet, in the card's own bar style: on a Done card. */
 @Composable
 fun TeamCheckButtons(t: TeamTask) {
     var notYet by remember { mutableStateOf(false) }
-    val cs = MaterialTheme.colorScheme
-    if (t.doneAt > 0L) Text("${t.toFirst}: Done ${Fmt.dueLabel(t.doneAt)}" + if (t.passedTo.isNotBlank()) " · by ${t.passedTo}" else "", fontSize = 13.sp)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { TeamRepo.check(t) }, modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DD6B5), contentColor = Color(0xFF053D2E))) {
-            Text("✓ Received, thanks", fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-        OutlinedButton(onClick = { notYet = true }, modifier = Modifier.weight(1f)) {
-            Text("Not done yet", color = cs.error, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
+    if (t.doneAt > 0L) Text("${t.toFirst}: Done ${Fmt.dueLabel(t.doneAt)}" + if (t.passedTo.isNotBlank()) " · by ${t.passedTo}" else "",
+        fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        BarSlot(Icons.Rounded.Check, "Received, thanks", Tones.done.pair, { TeamRepo.check(t) }, true, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Schedule, "Not done yet", Tones.late.pair, { notYet = true }, true, Modifier.weight(1f))
     }
-    if (notYet) {
-        TeamReasonDialog(
-            title = "Not done yet",
-            body = "“${t.title}” goes back to ${t.toFirst}. His task reopens with the same date.",
-            quick = listOf("Photo missing", "Incomplete", "Wrong site"),
-            button = "Send back",
-            onDismiss = { notYet = false },
-        ) { reason -> notYet = false; TeamRepo.notDoneYet(t, reason) }
+    if (notYet) TeamNotDoneSheet(t) { notYet = false }
+}
+
+/**
+ * Not done yet: the New time sheet with WHY (a quick reason is needed; words or a voice note are extra) and NEW
+ * DEADLINE: 👤 He picks (his task goes back to his To schedule with a red line) or 🕒 I pick (WHEN / IN / RECENT).
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var why by remember { mutableStateOf<String?>(null) }
+    var more by remember { mutableStateOf("") }
+    var voice by remember { mutableStateOf<Pair<ByteArray, Long>?>(null) }
+    var recording by remember { mutableStateOf(false) }
+    var iPick by remember { mutableStateOf(false) }
+    var due by remember { mutableStateOf<Long?>(null) }
+    val quick = listOf("Photo missing", "Incomplete", "Wrong site", "Not as asked", "Quality")
+    val ready = why != null && (!iPick || due != null)
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp + navBarMissing()),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("↩ Not done yet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(t.title, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            ChipHeading("WHY *", warn = why == null)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                quick.forEach { q -> FilterChip(selected = why == q, onClick = { why = if (why == q) null else q }, label = { Text(q) }) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(more, { more = it }, placeholder = { Text("Add details (optional)") }, trailingIcon = voiceMic(more) { more = it },
+                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), maxLines = 3)
+                TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> voice = b to d }, size = 44.dp)
+            }
+            if (recording || voice != null) Text(
+                if (recording) "🔴 Recording… release to add" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
+                fontSize = 12.sp, color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant,
+                modifier = if (!recording) Modifier.clickable { voice = null } else Modifier,
+            )
+            ChipHeading("NEW DEADLINE", modifier = Modifier.padding(top = 4.dp))
+            TeamWhenBox(myTime = iPick, onChange = { iPick = it })
+            androidx.compose.animation.AnimatedVisibility(
+                visible = iPick,
+                enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(240)) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeOut(),
+            ) {
+                ShortTimeRow(
+                    selected = due,
+                    onClear = if (due != null) ({ due = null }) else null,
+                    dialogTitle = "New deadline",
+                    plusRow = true,
+                    compact = true,
+                    leading = {
+                        ChipHeading("WHEN", modifier = Modifier.align(Alignment.CenterVertically))
+                        if (due == null) Text("Pick a time", fontSize = 13.sp, color = cs.outline, modifier = Modifier.align(Alignment.CenterVertically))
+                    },
+                    onPick = { due = it },
+                )
+            }
+            if (!iPick) Text("${t.toFirst}'s task goes back to his To schedule; he picks a new deadline.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            Button(
+                onClick = {
+                    val reason = listOfNotNull(why, more.trim().takeIf { it.isNotEmpty() }).joinToString(" · ")
+                    TeamRepo.notDoneYet(t, reason, if (iPick) due ?: 0L else 0L)
+                    voice?.let { (b, d) -> TeamRepo.send(t, Team.VOICE, "", data = b, durMs = d) }
+                    TeamSync.giverNotDone(ctx, t, if (iPick) due ?: 0L else 0L)
+                    onDismiss()
+                },
+                enabled = ready,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("↩ Send back to ${t.toFirst}", fontWeight = FontWeight.Bold) }
+        }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TeamReasonDialog(
+internal fun TeamReasonDialog(
     title: String, body: String, quick: List<String>, button: String, onDismiss: () -> Unit,
     top: (@Composable () -> Unit)? = null, ready: Boolean = true, onSend: (String) -> Unit,
 ) {
@@ -686,9 +828,9 @@ private fun TeamReasonDialog(
 }
 
 /**
- * His opened card for a task given to him: the photos and voice notes that came with it, a "not done yet" reason,
- * then ✓ Done (📷 when a photo is asked for) · 📅 Promise date (to the giver, up to the deadline) · ⏰ My reminder
- * (his phone only), and the small Timeline / Move to Follow-ups links. No Edit or Delete: the task is the giver's.
+ * His opened card for a task given to him: the photos and voice notes that came with it, then ✓ Done (📷 when a
+ * photo is asked for) · 📅 Deadline (to the giver, up to Latest; greyed once set when locked) · ⏰ My reminder (his
+ * phone only), and the links Timeline · Move to Follow-ups. No Edit or Delete: the task is the giver's.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -696,22 +838,21 @@ fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onRemind
     val ctx = LocalContext.current
     var pick by remember { mutableStateOf(false) }
     var donePhoto by remember { mutableStateOf(false) }
+    LaunchedEffect(t.id) { TeamSync.markOpened(ctx, t.id) }
     TeamBriefStrip(t)
-    if (t.status == Team.REOPENED && t.reason.isNotBlank()) {
-        Text("Not done yet: “${t.reason}”", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.error)
-    }
     if (t.open) {
         Spacer(Modifier.height(6.dp))
         TeamHisBar(
             photo = t.photoProof,
             onDone = { if (t.photoProof) donePhoto = true else onDone() },
-            onPromise = if (t.hisDate) ({ pick = true }) else null,
+            onDeadline = if (t.hisDate && !t.deadlineLocked) ({ pick = true }) else null,
             onReminder = onReminder,
         )
     }
     androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        CardLinkText("Timeline") { TeamUi.openTimeline(t.id) }
+        CardLinkText(TeamUi.timelineLabel(t)) { TeamUi.openTimeline(t.id) }
         if (t.open && onMove != null) CardLinkText("Move to Follow-ups", onMove)
+        if (t.asking) CardLinkText("Cancel request") { TeamRepo.cancelMore(t) }
     }
     if (donePhoto) TeamDoneWithPhoto(t, myTaskId) { donePhoto = false }
     if (pick) {
@@ -721,11 +862,12 @@ fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onRemind
                 pick = false
                 val end = if (t.deadline > 0L) TeamUi.endOfDayOf(t.deadline) else Long.MAX_VALUE
                 if (ms > end) {
-                    Toast.makeText(ctx, "After ${t.fromFirst}'s deadline. Tell him in the Timeline.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, "After Latest (${TeamUi.shortWhen(t.deadline)}). Ask ${t.fromFirst} in the Timeline.", Toast.LENGTH_LONG).show()
                 } else {
                     TeamRepo.setHisDate(t, ms)
-                    // With no reminder of his own yet, his promise reminds him too.
-                    myTaskId?.let { id -> MyTaskStore.get(id)?.takeIf { !it.timed }?.let { MyTaskStore.setDue(id, ms) } }
+                    // With no reminder of his own yet, his deadline reminds him too.
+                    myTaskId?.let { id -> MyTaskStore.get(id)?.takeIf { !it.timed || it.dueAt == t.due }?.let { MyTaskStore.setDue(id, ms) } }
+                    if (t.locked) Toast.makeText(ctx, "Deadline set · from now on only 📅 Extend deadline on the Timeline", Toast.LENGTH_LONG).show()
                 }
             },
             onDismiss = { pick = false },
@@ -733,25 +875,22 @@ fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onRemind
     }
 }
 
-/** ✓ Done · 📅 Promise date · ⏰ My reminder, in the same big buttons as every card's bar. */
+/** ✓ Done · 📅 Deadline · ⏰ My reminder, the same BarSlot buttons as every card's bar. */
 @Composable
-fun TeamHisBar(photo: Boolean, onDone: (() -> Unit)?, onPromise: (() -> Unit)?, onReminder: (() -> Unit)?) {
-    val dark = LocalDarkTheme.current
-    val green = if (dark) Color(0xFF173D33) to Color(0xFF7FE0C2) else Color(0xFFDDF5EC) to Color(0xFF0B6B55)
-    val purple = if (dark) Color(0xFF33285E) to Color(0xFFD6CCFF) else Color(0xFFEDE7FF) to Color(0xFF4B2FA8)
-    val orange = chipColors(ChipTone.ORANGE)
+fun TeamHisBar(photo: Boolean, onDone: (() -> Unit)?, onDeadline: (() -> Unit)?, onReminder: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        BarSlot(if (photo) Icons.Rounded.PhotoCamera else Icons.Rounded.Check, "Done", green, onDone, true, Modifier.weight(1f))
-        BarSlot(Icons.Rounded.Event, "Promise date", purple, onPromise, true, Modifier.weight(1f))
-        BarSlot(Icons.Rounded.Alarm, "My reminder", orange, onReminder, true, Modifier.weight(1f))
+        BarSlot(if (photo) Icons.Rounded.PhotoCamera else Icons.Rounded.Check, "Done", Tones.done.pair, onDone, true, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Event, "Deadline", Tones.date.pair, onDeadline, true, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Alarm, "My reminder", chipColors(ChipTone.ORANGE), onReminder, true, Modifier.weight(1f))
     }
 }
 
+/** A small link under an opened card: the same as CardPanel's (13sp, blue). */
 @Composable
 private fun CardLinkText(label: String, onClick: () -> Unit) {
     Text(
-        label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(vertical = 6.dp)
+        label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+        modifier = Modifier.clickable(onClick = onClick).padding(vertical = 5.dp)
     )
 }
 
@@ -785,7 +924,7 @@ fun TeamBriefStrip(t: TeamTask) {
             }
             voice?.let { v ->
                 val on = playing == v.id
-                IconButton(onClick = { v.data?.let { TeamMedia.play(ctx, v.id, it) } },
+                IconButton(onClick = { v.data?.let { TeamMedia.play(ctx, v.id, it); TeamRepo.markPlayed(t.id, v) } },
                     modifier = Modifier.size(34.dp).clip(CircleShape).background(cs.primary)) {
                     Icon(if (on) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = if (on) "Stop" else "Play", tint = cs.onPrimary)
                 }
@@ -795,20 +934,7 @@ fun TeamBriefStrip(t: TeamTask) {
         }
     }
     if (gallery) {
-        AlertDialog(
-            onDismissRequest = { gallery = false },
-            text = {
-                val pager = androidx.compose.foundation.pager.rememberPagerState { photos.size }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    androidx.compose.foundation.pager.HorizontalPager(pager) { i ->
-                        val bmp = remember(photos[i].id) { photos[i].data?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
-                        if (bmp != null) Image(bmp, contentDescription = "Photo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
-                    }
-                    if (photos.size > 1) Text("${pager.currentPage + 1} of ${photos.size} · swipe", fontSize = 12.sp, color = cs.onSurfaceVariant)
-                }
-            },
-            confirmButton = { TextButton(onClick = { gallery = false }) { Text("Close") } },
-        )
+        PhotoViewer(photos.mapNotNull { it.data }, onDismiss = { gallery = false }) { i -> photos.getOrNull(i)?.let { TeamRepo.markPlayed(t.id, it) } }
     }
 }
 
@@ -1045,9 +1171,11 @@ private fun TeamBlockDayDialog(
                 if (b?.proof == true) Text("📷 Photo proof on tick", fontSize = 13.sp, color = cs.onSurfaceVariant)
                 if (r?.get("photo") == true) {
                     val bmp = remember(photo) { photo?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
+                    var big by remember { mutableStateOf(false) }
                     if (bmp != null) Image(bmp, contentDescription = "Photo proof", contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).clickable { big = true })
                     else Text("Loading photo…", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                    if (big) photo?.let { PhotoViewer(listOf(it), onDismiss = { big = false }) }
                     if (caption.isNotBlank()) Text("“$caption”", fontSize = 13.sp)
                 }
                 if (r?.get("voice") == true) {
@@ -1065,7 +1193,10 @@ private fun TeamBlockDayDialog(
 
 // ---------------------------------------------------------------- Home: Needs you lines
 
-/** The team lines inside Needs you on Home (only while something waits). */
+/**
+ * The team lines inside the Needs you card on Home (only while something waits), as slim lines like "🕘 2 waiting
+ * for a time ›": ⚠ stuck, ❓ questions waiting, 📅 deadline requests open Follow-ups at the first such card.
+ */
 @Composable
 fun TeamNeedsLines() {
     val ctx = LocalContext.current
@@ -1074,19 +1205,24 @@ fun TeamNeedsLines() {
     if (me?.active != true) return
     val needs = remember(tasks, me) { TeamUi.needs(ctx, tasks, me?.uid) }
     needs.forEach { n ->
-        val (bg, fg) = when (n.tone) {
-            ChipTone.GREEN -> Color(0xFF1E8E5A).copy(alpha = 0.22f) to Color(0xFF2FBF7F)
-            ChipTone.RED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-            else -> Color(0xFFF0AA5A).copy(alpha = 0.25f) to Color(0xFFE08A1E)
+        val fg = when (n.tone) {
+            ChipTone.RED -> MaterialTheme.colorScheme.error
+            ChipTone.PURPLE -> Tones.date.fg
+            else -> NoTimeFg
         }
-        Surface(
-            onClick = { TeamUi.request.value = if (n.mine) TeamUi.MY_TASKS else TeamUi.FOLLOW_UPS },
-            shape = RoundedCornerShape(14.dp), color = bg, modifier = Modifier.fillMaxWidth(),
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                val first = n.first
+                when {
+                    n.mine -> TeamUi.request.value = TeamUi.MY_TASKS
+                    first != null -> TeamUi.showGiven(ctx, first)
+                    else -> TeamUi.request.value = TeamUi.FOLLOW_UPS
+                }
+            }.padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(n.text, color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = fg)
-            }
+            Text(n.text, color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("›", color = fg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
     }
 }
@@ -1158,13 +1294,13 @@ fun TeamForBox(
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("FOR ${member.first.uppercase()}", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.4.sp, color = cs.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipHeading("DEADLINE", modifier = Modifier.align(Alignment.CenterVertically))
+                ChipHeading("LATEST", modifier = Modifier.align(Alignment.CenterVertically))
                 if (deadline > 0L) {
                     Surface(shape = RoundedCornerShape(10.dp), color = Color.Transparent, border = BorderStroke(1.dp, cs.outline)) {
                         Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("📅 ${Fmt.dueLabel(deadline)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             IconButton(onClick = { onDeadline(0L) }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear deadline", modifier = Modifier.size(14.dp))
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear latest", modifier = Modifier.size(14.dp))
                             }
                         }
                     }
@@ -1174,7 +1310,7 @@ fun TeamForBox(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("🔴 Urgent", fontWeight = FontWeight.Bold, color = if (urgent) cs.error else cs.onSurface)
-                    Text("Reminder ${TeamRules.label(TeamRules.urgentMin(LocalContext.current))} if no date · auto ⭐", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    Text("Red card · reminder ${TeamRules.label(TeamRules.urgentMin(LocalContext.current))} if no deadline · auto ⭐", fontSize = 12.sp, color = cs.onSurfaceVariant)
                 }
                 Switch(checked = urgent, onCheckedChange = onUrgent)
             }
@@ -1203,13 +1339,13 @@ internal fun TeamUi.endOfDayOf(ms: Long): Long {
     return d.plusDays(1).atStartOfDay(z).toInstant().toEpochMilli() - 1
 }
 
-/** 👤 His date | 🕒 My time: the WHEN choice for a team member (the Tasks | Dossier style box). */
+/** 👤 He picks | 🕒 I pick: who sets the deadline (the Tasks | Dossier style box), everywhere. */
 @Composable
 fun TeamWhenBox(myTime: Boolean, onChange: (Boolean) -> Unit) {
-    BoxTabs(labels = listOf("👤 His date", "🕒 My time"), selected = if (myTime) 1 else 0, onSelect = { onChange(it == 1) })
+    BoxTabs(labels = listOf("👤 He picks", "🕒 I pick"), selected = if (myTime) 1 else 0, onSelect = { onChange(it == 1) })
 }
 
-/** In his Move to Follow-ups window: FOR <GIVER> · PROMISE, his date for the giver (up to the deadline). */
+/** In his Move to Follow-ups window: FOR <GIVER> · DEADLINE, his deadline for the giver (up to Latest; locked once set). */
 @Composable
 fun TeamPromiseBox(t: TeamTask, promise: Long, onPromise: (Long) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -1218,9 +1354,9 @@ fun TeamPromiseBox(t: TeamTask, promise: Long, onPromise: (Long) -> Unit) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ChipHeading("FOR ${t.fromFirst.uppercase()}")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipHeading("PROMISE", modifier = Modifier.align(Alignment.CenterVertically))
-                if (!t.hisDate && t.due > 0L) {
-                    Text("📌 ${Fmt.dueLabel(t.due)} · set by ${t.fromFirst}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                ChipHeading("DEADLINE", modifier = Modifier.align(Alignment.CenterVertically))
+                if ((!t.hisDate || t.deadlineLocked) && t.due > 0L) {
+                    Text("📅 ${Fmt.dueLabel(t.due)}" + if (!t.hisDate) " · set by ${t.fromFirst}" else " 🔒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 } else {
                     if (promise > 0L) Text(
                         "📅 ${Fmt.dueLabel(promise)}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
@@ -1234,7 +1370,7 @@ fun TeamPromiseBox(t: TeamTask, promise: Long, onPromise: (Long) -> Unit) {
                     )
                 }
             }
-            if (t.deadline > 0L) Text("Deadline ${Fmt.dueLabel(t.deadline)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            if (t.deadline > 0L) Text("Latest ${Fmt.dueLabel(t.deadline)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
         }
     }
     if (open) {
@@ -1244,10 +1380,54 @@ fun TeamPromiseBox(t: TeamTask, promise: Long, onPromise: (Long) -> Unit) {
             onPicked = { ms ->
                 open = false
                 val end = if (t.deadline > 0L) TeamUi.endOfDayOf(t.deadline) else Long.MAX_VALUE
-                if (ms > end) Toast.makeText(ctx, "After ${t.fromFirst}'s deadline. Tell him in the Timeline.", Toast.LENGTH_LONG).show()
+                if (ms > end) Toast.makeText(ctx, "After Latest (${TeamUi.shortWhen(t.deadline)}). Ask ${t.fromFirst} in the Timeline.", Toast.LENGTH_LONG).show()
                 else onPromise(ms)
             },
             onDismiss = { open = false },
         )
     }
+}
+
+// ---------------------------------------------------------------- deleting a task you gave
+
+/**
+ * Every delete of a follow-up that is a task you gave goes through here: one line to confirm, "Delete for you
+ * and Basharat?", then it goes from his phone too. Your other follow-ups delete at once.
+ */
+object TeamDelete {
+    val ask = MutableStateFlow<Pair<TeamTask, () -> Unit>?>(null)
+
+    /** The open task you gave behind a follow-up link, if any. */
+    fun givenOpen(c: Context, link: Long): TeamTask? {
+        if (link == 0L || !TeamRepo.activeNow) return null
+        val id = TeamLinks.givenOfLink(c, link) ?: return null
+        return TeamRepo.tasks.value.firstOrNull { it.id == id && it.open && it.fromUid == TeamRepo.uid }
+    }
+
+    /** Runs [delete] now, or after "Delete for you and X?" when [link] is a task you gave. */
+    fun guard(c: Context, link: Long, delete: () -> Unit) {
+        val t = givenOpen(c, link)
+        if (t == null) delete() else ask.value = t to delete
+    }
+
+    /** You ticked it done yourself (To schedule, review): it closes for him too, as received. */
+    fun closeGiven(c: Context, link: Long) {
+        givenOpen(c, link)?.let { TeamRepo.check(it) }
+    }
+}
+
+@Composable
+fun TeamDeleteHost() {
+    val ask by TeamDelete.ask.collectAsState()
+    val (t, delete) = ask ?: return
+    val close = { TeamDelete.ask.value = null }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text("Delete for you and ${t.toFirst}?") },
+        text = { Text("“${t.title}” goes from ${t.toFirst}'s phone too.") },
+        confirmButton = {
+            TextButton(onClick = { close(); TeamRepo.cancel(t); delete() }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = close) { Text("Keep") } },
+    )
 }

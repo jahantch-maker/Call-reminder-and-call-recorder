@@ -37,6 +37,12 @@ object Ticks {
 
     fun seen(t: TeamTask): Boolean = t.seenAt > 0L || t.status != Team.SENT
     fun count(t: TeamTask): Int = if (seen(t) || t.deliveredAt > 0L) 2 else 1
+    /** The time of the last tick: seen, else delivered, else sent. */
+    fun lastAt(t: TeamTask): Long = when {
+        t.seenAt > 0L -> t.seenAt
+        t.deliveredAt > 0L -> t.deliveredAt
+        else -> t.createdAt
+    }
 }
 
 /** The tick marks alone, drawn like WhatsApp's (the second one overlaps the first). */
@@ -62,7 +68,7 @@ fun TickMarks(two: Boolean, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** The card corner on a team task you gave: sent time + ticks; tap for Sent · Delivered · Seen times. */
+/** Pinned top-right on a team task you gave: the last tick's time + ticks ("6:07 ✓✓"); tap for Sent · Delivered · Seen. */
 @Composable
 fun TeamTicks(t: TeamTask) {
     var info by remember { mutableStateOf(false) }
@@ -74,7 +80,7 @@ fun TeamTicks(t: TeamTask) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Text(Fmt.timeOnly(t.createdAt), fontSize = 11.sp, color = cs.onSurfaceVariant)
+        Text(Fmt.timeOnly(Ticks.lastAt(t)), fontSize = 11.sp, color = cs.onSurfaceVariant)
         TickMarks(two, if (seen) Ticks.BLUE else Ticks.GREY)
     }
     if (info) {

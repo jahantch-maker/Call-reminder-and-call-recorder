@@ -547,18 +547,6 @@ fun ShortTimeRow(
                         }
                     }
                 }
-                Text(
-                    pickLabel,
-                    color = cs.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .clip(RoundedCornerShape(9.dp))
-                        .border(1.5.dp, cs.primary.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
-                        .clickable { open = true }
-                        .padding(horizontal = 9.dp, vertical = 4.dp)
-                )
             }
             if (plusRow) {
                 ChipHeading("IN")
@@ -566,7 +554,8 @@ fun ShortTimeRow(
             }
             ChipHeading("RECENT")
             CompositionLocalProvider(LocalSameBase provides (sameBase ?: LocalSameBase.current)) {
-                RecentChips(recent, now, if (showSelected) selected else null, latest, compact = true) { pick(it) }
+                // 📅 Pick only once, at the end of RECENT, the same in every window.
+                RecentChips(recent, now, if (showSelected) selected else null, latest, compact = true, onMore = { open = true }) { pick(it) }
             }
         }
     } else
@@ -881,7 +870,8 @@ fun FreeSlotsRow(
     excludeTaskId: Long,
     selected: Long?,
     onPick: (Long) -> Unit,
-    onPickTime: () -> Unit,
+    /** Left out where RECENT under it already ends with 📅 Pick. */
+    onPickTime: (() -> Unit)? = null,
     compact: Boolean = false,
 ) {
     val ctx = LocalContext.current
@@ -931,7 +921,7 @@ fun FreeSlotsRow(
                         .padding(horizontal = 8.dp, vertical = if (compact) 4.dp else 7.dp)
                 )
             }
-            PickChip(Modifier.weight(1f), compact, onPickTime)
+            if (onPickTime != null) PickChip(Modifier.weight(1f), compact, onPickTime)
         }
     }
 }

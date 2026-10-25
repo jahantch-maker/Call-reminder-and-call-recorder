@@ -11,6 +11,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,10 +87,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val AskBg = Color(0xFF6B4A12)
-private val AskFg = Color(0xFFFFC93C)
-private val StuckBg = Color(0xFF5C1A22)
-private val StuckFg = Color(0xFFFF8A8A)
+/** ❓ Ask, ⚠ Stuck and 📷 proof bubbles: the shared amber / red / green tones, right by day and by night. */
+private val AskBg: Color @Composable get() = Tones.amber.bg
+private val AskFg: Color @Composable get() = Tones.amber.fg
+private val StuckBg: Color @Composable get() = Tones.red.bg
+private val StuckFg: Color @Composable get() = Tones.red.fg
+private val ProofBg: Color @Composable get() = Tones.green.bg
+private val ProofFg: Color @Composable get() = Tones.green.fg
 
 /** One line of the Timeline: an automatic history line or a message, in time order. */
 private sealed class TimelineItem(val at: Long) {
@@ -93,8 +102,9 @@ private sealed class TimelineItem(val at: Long) {
 }
 
 /**
- * A team task's Timeline as a conversation: grey history lines, typed messages, voice notes and photos, with ❓ Ask
- * and ⚠ Stuck for the person doing it. Everyone on the task sees it; managers above read it.
+ * A team task's Timeline as a conversation: grey history lines, typed messages, voice notes and photos (yours on
+ * the right with WhatsApp ticks, theirs on the left), with ❓ Ask, ⚠ Stuck and 📅 Extend deadline for the person
+ * doing it. Everyone on the task sees it; managers above read it.
  */
 @Composable
 fun TeamTimelineScreen(onBack: () -> Unit) {
@@ -105,38 +115,52 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     val me = TeamRepo.uid
     val t = tasks.firstOrNull { it.id == taskId }
     var msgs by remember(taskId) { mutableStateOf<List<TeamMsg>?>(null) }
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     DisposableEffect(taskId) {
         val reg = taskId?.let { id -> TeamRepo.watchMsgs(id) { msgs = it } }
         onDispose { reg?.remove(); TeamMedia.stopPlaying() }
     }
-    LaunchedEffect(t?.lastMsgAt) { t?.let { TeamSync.markRead(ctx, it.id, maxOf(it.lastMsgAt, 1L)) } }
+    LaunchedEffect(t?.lastMsgAt, t?.nBy) {
+        t?.let {
+            TeamSync.markRead(ctx, it.id, maxOf(it.lastMsgAt, 1L))
+            if (it.toUid == me) TeamSync.markOpened(ctx, it.id)
+        }
+    }
+    // What you now see goes blue for the sender.
+    LaunchedEffect(msgs) { val id = taskId; val list = msgs; if (id != null && list != null && TeamRepo.foreground) TeamRepo.markMsgsSeen(id, list) }
 
-    Column(Modifier.fillMaxSize().background(cs.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Box(Modifier.fillMaxSize().background(cs.background)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+        // ← Timeline, the task under it: the same title style as every page.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-            Text(if (t != null && t.toUid == me) "My task" else "Follow-up", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
         }
         if (t == null) {
             Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp))
             return@Column
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(t.title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text(t.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
             TeamChipsRow(
                 buildList {
-                    add(RowChip(if (t.toUid == me) "↘ ${t.fromFirst}" else "👤 ${t.toFirst}" + if (t.passedTo.isNotBlank()) " → ${t.passedTo}" else "", ChipTone.BLUE))
-                    if (t.stuck) add(RowChip("⚠ Stuck ${Fmt.timeOnly(t.stuckAt)}", ChipTone.RED))
-                    if (t.asks) add(RowChip(if (t.fromUid == me) "❓ Needs your answer" else "❓ Asked ${Fmt.timeOnly(t.askAt)}", ChipTone.ORANGE))
-                    if (t.deadline > 0L && t.open) add(RowChip("Deadline ${TeamUi.shortDate(t.deadline)}", ChipTone.MUTED))
+                    add(RowChip(TeamUi.chain(t, me)?.let { (if (t.toUid == me) "↘ " else "👤 ") + it }
+                        ?: if (t.toUid == me) "↘ ${t.fromFirst} → You" else "👤 You → ${t.toFirst}", ChipTone.BLUE))
+                    if (t.open) add(
+                        if (t.due > 0L) RowChip("📅 Deadline ${TeamUi.shortWhen(t.due)}" + if (t.deadlineLocked) " 🔒" else "", ChipTone.ORANGE)
+                        else RowChip("📅 Deadline pending" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
+                    )
+                    if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
                     if (t.photoProof && t.open) add(RowChip("📷 Photo proof on Done", ChipTone.MUTED))
                 }
             )
-            Text("TIMELINE · CONVERSATION", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.4.sp, color = cs.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp))
         }
         val items = remember(t.events, msgs) {
             (t.events.map { TimelineItem.Line(it.at, it.text) } + msgs.orEmpty().map { TimelineItem.Msg(it) }).sortedBy { it.at }
         }
+        val photos = remember(msgs) { msgs.orEmpty().filter { it.kind == Team.PHOTO && it.data != null } }
+        var viewing by remember { mutableStateOf<Int?>(null) }
         val list = rememberLazyListState()
         LaunchedEffect(items.size) { if (items.isNotEmpty()) list.animateScrollToItem(items.size - 1) }
         LazyColumn(
@@ -151,7 +175,8 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                         item.text + " · " + Fmt.timeOnly(item.at), fontSize = 12.5.sp, color = cs.onSurfaceVariant,
                         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                     )
-                    is TimelineItem.Msg -> TeamBubble(item.m, mine = item.m.fromUid == me)
+                    is TimelineItem.Msg -> TeamBubble(t, item.m, mine = item.m.fromUid == me,
+                        onPhoto = { viewing = photos.indexOfFirst { p -> p.id == item.m.id }.coerceAtLeast(0) })
                 }
             }
             if (msgs == null) item { Text("Loading…", color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
@@ -160,10 +185,21 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     fontSize = 11.sp, color = cs.outline, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
             }
         }
+        // 📅 A deadline request waits: the giver approves or keeps the date; he can take it back.
+        if (t.asking) TeamExtendRequest(t, me, onAnswered = { msg, before ->
+            scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
+        })
         val canTalk = me == t.fromUid || me == t.toUid
-        if (canTalk) TeamComposer(t, isDoer = me == t.toUid)
+        if (canTalk) TeamComposer(t, isDoer = me == t.toUid, onExtended = { msg, before ->
+            scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
+        })
         else Text("Only ${t.fromFirst} and ${t.toFirst} write here. You can read it.", fontSize = 12.sp, color = cs.onSurfaceVariant,
             modifier = Modifier.padding(16.dp))
+        viewing?.let { start ->
+            PhotoViewer(photos.mapNotNull { it.data }, start, onDismiss = { viewing = null }) { i -> photos.getOrNull(i)?.let { TeamRepo.markPlayed(t.id, it) } }
+        }
+    }
+    SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 120.dp))
     }
 }
 
@@ -182,77 +218,166 @@ internal fun TeamChipsRow(chips: List<RowChip>) = TeamChipsFlow(chips)
 @Composable
 internal fun TeamSmallChip(c: RowChip) = SmallChip(c)
 
-/** One message: yours on the right, theirs on the left; ❓ Ask amber, ⚠ Stuck red; voice with ▶, photos tap to enlarge. */
+/** The people a message goes to: the giver and the person doing it, but not its sender. */
+private fun recipients(t: TeamTask, m: TeamMsg): List<String> = listOf(t.fromUid, t.toUid).filter { it.isNotEmpty() && it != m.fromUid }.distinct()
+
+/** WhatsApp's ticks on one of your messages: 🕓 not sent yet, ✓ sent, ✓✓ on their phone, blue ✓✓ seen (played / opened). */
+private fun tickState(t: TeamTask, m: TeamMsg): Pair<Int, Boolean> {
+    if (m.pending) return 0 to false
+    val to = recipients(t, m)
+    if (to.isEmpty()) return 2 to true
+    val seen = when (m.kind) {
+        Team.VOICE, Team.PHOTO -> to.all { it in m.playedBy }
+        else -> to.all { it in m.seenBy }
+    }
+    val delivered = to.all { (t.msgDel[it] ?: 0L) >= m.at || it in m.seenBy }
+    return (if (delivered || seen) 2 else 1) to seen
+}
+
+/**
+ * One message: yours on the right with time and ticks, theirs on the left; ❓ Ask amber, ⚠ Stuck red, 📷 proof
+ * green; voice with ▶ (🎙 goes blue once played), photos open full screen. Long-press yours for Info per person.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun TeamBubble(m: TeamMsg, mine: Boolean) {
+private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val playing by TeamMedia.playing.collectAsState()
-    var big by remember { mutableStateOf(false) }
+    var info by remember { mutableStateOf(false) }
     val (bg, label) = when (m.tag) {
         Team.ASK -> AskBg to "❓ ${m.fromFirst} asks"
         Team.STUCK -> StuckBg to "⚠ ${m.fromFirst} is stuck"
-        Team.PROOF -> Color(0xFF1E5A3A) to "📷 ${m.fromFirst} · photo proof"
+        Team.PROOF -> ProofBg to "📷 ${m.fromFirst} · photo proof"
         Team.BRIEF -> (if (mine) cs.primaryContainer else cs.surface) to "${m.fromFirst} · with the task"
         else -> (if (mine) cs.primaryContainer else cs.surface) to (if (mine) null else m.fromFirst)
     }
-    val fg = when (m.tag) { Team.ASK -> Color(0xFFFFF1C8); Team.STUCK -> Color(0xFFFFE1E1); Team.PROOF -> Color(0xFFDDFBEA); else -> if (mine) cs.onPrimaryContainer else cs.onSurface }
+    val fg = when (m.tag) { Team.ASK -> AskFg; Team.STUCK -> StuckFg; Team.PROOF -> ProofFg; else -> if (mine) cs.onPrimaryContainer else cs.onSurface }
+    val (ticks, blue) = if (mine) tickState(t, m) else 0 to false
     Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
-        Surface(shape = RoundedCornerShape(16.dp), color = bg, modifier = Modifier.widthIn(max = 300.dp)) {
+        Surface(
+            shape = RoundedCornerShape(16.dp), color = bg,
+            modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp))
+                .combinedClickable(onClick = {}, onLongClick = if (mine) ({ info = true }) else null),
+        ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 label?.let {
                     Text(it, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = when (m.tag) {
-                        Team.ASK -> AskFg; Team.STUCK -> StuckFg; else -> cs.primary
+                        Team.ASK, Team.STUCK, Team.PROOF -> fg; else -> cs.primary
                     })
                 }
                 when {
                     m.kind == Team.VOICE && m.data != null -> Row(verticalAlignment = Alignment.CenterVertically) {
                         val on = playing == m.id
-                        IconButton(onClick = { TeamMedia.play(ctx, m.id, m.data) }, modifier = Modifier.size(36.dp).clip(CircleShape).background(cs.primary)) {
+                        IconButton(onClick = { TeamMedia.play(ctx, m.id, m.data); TeamRepo.markPlayed(t.id, m) },
+                            modifier = Modifier.size(36.dp).clip(CircleShape).background(cs.primary)) {
                             Icon(if (on) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = if (on) "Stop" else "Play", tint = cs.onPrimary)
                         }
                         Spacer(Modifier.width(8.dp))
                         Text("▍▌▍▎▌▍▌▎▍▌▍▎", color = fg.copy(alpha = 0.7f), fontSize = 14.sp)
                         Spacer(Modifier.width(8.dp))
                         Text(TeamMedia.duration(m.durMs), color = fg, fontSize = 13.sp)
+                        if (mine) Icon(Icons.Rounded.Mic, contentDescription = if (blue) "Played" else "Not played yet",
+                            tint = if (blue) Ticks.BLUE else Ticks.GREY, modifier = Modifier.padding(start = 4.dp).size(16.dp))
                     }
                     m.kind == Team.PHOTO && m.data != null -> {
                         val bmp = remember(m.id) { TeamMedia.bitmap(m.data)?.asImageBitmap() }
                         if (bmp != null) Image(
                             bmp, contentDescription = "Photo", contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(10.dp)).clickable { big = true }
+                            modifier = Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPhoto)
                         )
                     }
                     m.kind != Team.TEXT -> Text("(removed after ${Team.MEDIA_DAYS} days)", fontSize = 12.sp, color = fg.copy(alpha = 0.7f))
                 }
                 if (m.text.isNotBlank()) Text(m.text, color = fg, fontSize = 15.sp)
-                Text(Fmt.timeOnly(m.at) + when (m.kind) { Team.VOICE -> " · voice"; Team.PHOTO -> " · photo"; else -> "" },
-                    fontSize = 11.sp, color = fg.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.End))
+                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
+                    if (mine) {
+                        if (ticks == 0) Text("🕓", fontSize = 10.sp)
+                        else TickMarks(ticks == 2, if (blue) Ticks.BLUE else Ticks.GREY)
+                    }
+                }
             }
         }
     }
-    if (big && m.data != null) {
-        val bmp = remember(m.id) { TeamMedia.bitmap(m.data)?.asImageBitmap() }
+    if (info) {
         AlertDialog(
-            onDismissRequest = { big = false },
-            text = { if (bmp != null) Image(bmp, contentDescription = "Photo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { TextButton(onClick = { big = false }) { Text("Close") } },
+            onDismissRequest = { info = false },
+            title = { Text("Message info", fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Sent · ${Fmt.dueLabel(m.at)}", fontSize = 14.sp)
+                    recipients(t, m).forEach { uid ->
+                        val name = TeamRepo.member(uid)?.first ?: if (uid == t.fromUid) t.fromFirst else t.toFirst
+                        val seenAt = m.seenBy[uid] ?: 0L
+                        val playedAt = m.playedBy[uid] ?: 0L
+                        val got = (t.msgDel[uid] ?: 0L) >= m.at || seenAt > 0L
+                        Column {
+                            Text("👤 $name", fontWeight = FontWeight.Bold)
+                            Text(
+                                listOfNotNull(
+                                    if (got) "✓✓ Delivered" else "✓ Not on his phone yet",
+                                    seenAt.takeIf { it > 0L }?.let { "Seen ${Fmt.dueLabel(it)}" },
+                                    playedAt.takeIf { it > 0L }?.let { (if (m.kind == Team.VOICE) "Played " else "Opened ") + Fmt.dueLabel(it) },
+                                ).joinToString(" · "),
+                                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { info = false }) { Text("OK") } },
         )
     }
 }
 
 /**
- * The message box: type and ➤, or hold 🎤 for a voice note (up to 2 min), 📷 for a photo with a caption.
- * The person doing the task also gets ❓ Ask and ⚠ Stuck: tap one, then type or hold 🎤.
+ * 📅 The open deadline request, above the message box: the giver gets ✓ Approve · Keep date (Undo for 10 s); he
+ * sees it waiting with Cancel request.
  */
 @Composable
-private fun TeamComposer(t: TeamTask, isDoer: Boolean) {
+private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, TeamTask) -> Unit) {
+    val purple = Tones.purple
+    Surface(color = purple.bg, contentColor = purple.fg, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                (if (t.fromUid == me) "📅 ${t.toFirst} asks to extend · " else "📅 You asked · ") +
+                    "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isNotBlank()) " · “${t.moreReason}”" else "",
+                fontWeight = FontWeight.Bold, fontSize = 13.sp, color = purple.fg,
+            )
+            if (t.fromUid == me) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                BarSlot(Icons.Rounded.Check, "Approve", Tones.done.pair, {
+                    val before = t
+                    TeamRepo.answerMoreTime(t, true)
+                    onAnswered("Approved · ${TeamUi.shortWhen(t.moreDue)}", before)
+                }, true, Modifier.weight(1f))
+                BarSlot(Icons.Rounded.Close, "Keep date", chipColors(ChipTone.ORANGE), {
+                    val before = t
+                    TeamRepo.answerMoreTime(t, false)
+                    onAnswered("Kept ${TeamUi.shortWhen(t.due)}", before)
+                }, true, Modifier.weight(1f))
+            } else Text(
+                "Cancel request", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable { TeamRepo.cancelMore(t) }.padding(vertical = 4.dp)
+            )
+        }
+    }
+}
+
+/**
+ * The message bar, two rows. Top: ❓ Ask · ⚠ Stuck · 📅 Extend deadline · 📷 for the person doing it (📷 only for
+ * the giver). Bottom: type and ➤, or hold 🎤 for a voice note (up to 2 min). Tap ❓ or ⚠, then type or hold 🎤.
+ */
+@Composable
+private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, TeamTask) -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var text by remember(t.id) { mutableStateOf("") }
     var tag by remember(t.id) { mutableStateOf("") }
     var recording by remember { mutableStateOf(false) }
     var photo by remember { mutableStateOf<ByteArray?>(null) }
+    var extendPick by remember { mutableStateOf(false) }
+    var extendTo by remember { mutableStateOf<Long?>(null) }
     val pickPhoto = rememberTeamPhotoPicker { photo = it }
     val other = if (isDoer) t.fromFirst else t.toFirst
 
@@ -283,6 +408,19 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean) {
                 if (!recording) TextButton(onClick = { tag = "" }) { Text("✕ cancel", color = cs.onSurface) }
             }
         }
+        // Top row: what you can do with it.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isDoer && t.open) {
+                TeamTagButton("❓ Ask", AskFg, tag == Team.ASK) { tag = if (tag == Team.ASK) "" else Team.ASK }
+                TeamTagButton("⚠ Stuck", StuckFg, tag == Team.STUCK) { tag = if (tag == Team.STUCK) "" else Team.STUCK }
+                TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
                 value = text, onValueChange = { text = it },
@@ -295,13 +433,7 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean) {
                     focusedContainerColor = cs.surfaceVariant, unfocusedContainerColor = cs.surfaceVariant,
                 ),
             )
-            IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
-            if (isDoer && t.open) {
-                TeamTagButton("❓ Ask", AskFg, tag == Team.ASK) { tag = if (tag == Team.ASK) "" else Team.ASK }
-                Spacer(Modifier.width(4.dp))
-                TeamTagButton("⚠ Stuck", StuckFg, tag == Team.STUCK) { tag = if (tag == Team.STUCK) "" else Team.STUCK }
-                Spacer(Modifier.width(4.dp))
-            }
+            Spacer(Modifier.width(6.dp))
             if (text.isNotBlank()) {
                 IconButton(onClick = { sendText() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF3DD6B5))) {
                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = Color(0xFF053D2E))
@@ -324,17 +456,48 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean) {
             photo = null
         }
     }
+    // 📅 Extend deadline: the same time grid (no IN row), then why.
+    if (extendPick) {
+        TimePickerDialog(
+            title = "Extend deadline",
+            selected = null,
+            onPick = { ms -> extendPick = false; extendTo = ms },
+            onDismiss = { extendPick = false },
+        )
+    }
+    extendTo?.let { ms ->
+        val free = t.extCount < t.freeExt
+        TeamReasonDialog(
+            title = "📅 Extend deadline",
+            body = "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(ms)}" + if (free) "\nMoves at once (${t.freeExt - t.extCount} free left)." else "\n${t.fromFirst} approves or keeps the date.",
+            quick = listOf("Waiting for material", "Vendor late", "More work than planned", "Site not ready"),
+            button = if (free) "Extend" else "Ask ${t.fromFirst}",
+            onDismiss = { extendTo = null },
+        ) { reason ->
+            extendTo = null
+            if (ms <= t.due) {
+                Toast.makeText(ctx, "Pick a time after ${TeamUi.shortWhen(t.due)}", Toast.LENGTH_SHORT).show()
+                return@TeamReasonDialog
+            }
+            val before = t
+            val moved = TeamRepo.extend(t, ms, reason)
+            onExtended(if (moved) "Deadline · ${TeamUi.shortWhen(ms)}" else "Asked ${t.fromFirst} · ${TeamUi.shortWhen(ms)}", before)
+        }
+    }
 }
 
 @Composable
-private fun TeamTagButton(label: String, color: Color, on: Boolean, onClick: () -> Unit) {
+private fun TeamTagButton(label: String, color: Color, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val c = if (enabled) color else MaterialTheme.colorScheme.outline
     Surface(
-        onClick = onClick, shape = RoundedCornerShape(20.dp),
-        color = if (on) color.copy(alpha = 0.25f) else Color.Transparent, border = BorderStroke(1.dp, color),
+        onClick = onClick, enabled = enabled, shape = RoundedCornerShape(20.dp),
+        color = if (on) c.copy(alpha = 0.25f) else Color.Transparent, border = BorderStroke(1.dp, c),
     ) {
-        Text(label, color = color, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+        Text(label, color = c, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
     }
 }
+
 
 /** 🎤 hold to record, release to send (like WhatsApp). Asks for the microphone the first time. */
 @Composable

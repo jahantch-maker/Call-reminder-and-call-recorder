@@ -88,7 +88,7 @@ import java.util.Locale
  * round button on the right. Tapping a row opens it in place with every action.
  */
 
-enum class ChipTone { BLUE, MUTED, RED, GREEN, ORANGE }
+enum class ChipTone { BLUE, MUTED, RED, GREEN, ORANGE, PURPLE }
 
 data class RowChip(
     val text: String,
@@ -136,6 +136,7 @@ fun chipColors(tone: ChipTone): Pair<Color, Color> {
         ChipTone.RED -> cs.errorContainer to cs.onErrorContainer
         ChipTone.GREEN -> cs.secondaryContainer to cs.onSecondaryContainer
         ChipTone.ORANGE -> if (isDark()) OrangeDark else OrangeLight
+        ChipTone.PURPLE -> Tones.purple.pair
     }
 }
 
@@ -679,11 +680,14 @@ fun AddTaskDialog(r: Reminder, onDismiss: () -> Unit) {
 }
 
 /** A black bar with UNDO for 5 seconds after Done, Snooze, Delete and the like. */
-fun CoroutineScope.offerUndo(host: SnackbarHostState, message: String, undo: () -> Unit) {
+fun CoroutineScope.offerUndo(host: SnackbarHostState, message: String, undo: () -> Unit) = offerUndoFor(host, message, 5L, undo)
+
+/** The Undo bar for [seconds] (10 for a deadline request or answer). */
+fun CoroutineScope.offerUndoFor(host: SnackbarHostState, message: String, seconds: Long, undo: () -> Unit) {
     launch {
         host.currentSnackbarData?.dismiss()
         val closer = launch {
-            kotlinx.coroutines.delay(5_000L)
+            kotlinx.coroutines.delay(seconds * 1_000L)
             host.currentSnackbarData?.dismiss()
         }
         val res = host.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Indefinite)

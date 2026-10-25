@@ -99,8 +99,19 @@ internal class FuController(
     }
 
     fun delete(e: FuEntry) {
-        val undo = undoFor(e)
         val link = e.call?.linkId?.takeIf { it != 0L } ?: e.text?.linkId?.takeIf { it != 0L }
+        val given = link?.let { TeamDelete.givenOpen(ctx, it) }
+        // A task you gave asks "Delete for you and Basharat?" first; it goes from his phone too, so no Undo.
+        if (given != null) {
+            TeamDelete.guard(ctx, link!!) {
+                ReminderStore.items.value.filter { it.linkId == link }.forEach { ReminderStore.delete(it.id) }
+                SmsStore.items.value.filter { it.linkId == link }.forEach { SmsStore.delete(it.id) }
+                openKey = null
+                Toast.makeText(ctx, "Deleted for you and ${given.toFirst}", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        val undo = undoFor(e)
         if (link != null) {
             ReminderStore.items.value.filter { it.linkId == link }.forEach { ReminderStore.delete(it.id) }
             SmsStore.items.value.filter { it.linkId == link }.forEach { SmsStore.delete(it.id) }
