@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1330,13 +1331,23 @@ fun ReviewHomeCard(
 @Composable
 private fun NeedTile(n: Int, label: String, colors: Pair<Color, Color>, modifier: Modifier, onClick: () -> Unit) {
     val (bg, fg) = colors
-    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = bg, contentColor = fg, modifier = modifier.height(48.dp)) {
-        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.animation.AnimatedContent(n, label = "needCount") { v ->
-                Text("$v", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = bg, contentColor = fg, modifier = modifier.heightIn(min = 48.dp)) {
+        // A narrow tile (small phone, Large display size) puts the number above the words, so no word is broken.
+        androidx.compose.foundation.layout.BoxWithConstraints(contentAlignment = Alignment.Center) {
+            val count: @Composable () -> Unit = {
+                androidx.compose.animation.AnimatedContent(n, label = "needCount") { v ->
+                    Text("$v", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp)
+                }
             }
-            Spacer(Modifier.width(6.dp))
-            Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+            if (maxWidth >= 104.dp) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                count()
+                Spacer(Modifier.width(6.dp))
+                FitText(label, 12.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp, maxLines = 2)
+            } else Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                count()
+                FitText(label.replace("\n", " "), 12.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp, maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
         }
     }
 }

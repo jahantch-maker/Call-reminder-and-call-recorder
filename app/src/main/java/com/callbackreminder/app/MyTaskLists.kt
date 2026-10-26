@@ -179,7 +179,8 @@ internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? =
     ) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             icon?.invoke()
-            Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            // On a narrow screen a long time goes on two lines ("Yesterday,\n7:22 PM") rather than being cut.
+            FitText(text, 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 15.sp)
         }
     }
 }

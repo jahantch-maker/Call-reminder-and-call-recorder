@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
@@ -373,9 +374,48 @@ internal fun BarSlot(
         Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 17.dp else 20.dp))
             else Text("WA", color = fg, fontWeight = FontWeight.Black, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 17.sp)
-            Text(label, color = fg, fontWeight = FontWeight.Bold, fontSize = if (compact) 10.5.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+/**
+ * Text that never hides part of itself: on a narrow screen or a big display size it first shrinks a little (down to
+ * [minScale]) so it fits in [maxLines] without "…" and without breaking a word in half; only then would it cut.
+ */
+@Composable
+fun FitText(
+    text: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = 1,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    textAlign: androidx.compose.ui.text.style.TextAlign? = null,
+    minScale: Float = 0.72f,
+) {
+    var scale by remember(text, fontSize, maxLines) { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    var ready by remember(text, fontSize, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
+    Text(
+        text,
+        modifier.drawWithContent { if (ready) drawContent() },
+        color = color,
+        fontSize = fontSize * scale,
+        fontWeight = fontWeight,
+        lineHeight = if (lineHeight == androidx.compose.ui.unit.TextUnit.Unspecified) lineHeight else lineHeight * scale,
+        textAlign = textAlign,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { r ->
+            val brokenWord = (0 until r.lineCount - 1).any { i ->
+                val end = r.getLineEnd(i)
+                end in 1 until text.length && text[end - 1].isLetterOrDigit() && text[end].isLetterOrDigit()
+            }
+            val cut = r.hasVisualOverflow || (0 until r.lineCount).any { r.isLineEllipsized(it) }
+            if ((cut || brokenWord) && scale > minScale) scale = maxOf(minScale, scale - 0.06f) else ready = true
+        },
+    )
 }
 
 /** The box with two or three options (Tasks | Dossier, Open | Done, Follow-ups | My tasks…), used for every top choice. */

@@ -441,10 +441,7 @@ private fun RingItem(done: Int, total: Int, color: Color, label: String, modifie
         frac(done, total), androidx.compose.animation.core.tween(700), label = "ring"
     )
     val track = cs.outlineVariant.copy(alpha = 0.5f)
-    Row(
-        modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val ringBox: @Composable () -> Unit = {
         Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Canvas(Modifier.size(38.dp)) {
                 val w = 4.5.dp.toPx()
@@ -460,17 +457,26 @@ private fun RingItem(done: Int, total: Int, color: Color, label: String, modifie
                 else Text("$done/$total", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
-        Spacer(Modifier.width(6.dp))
-        Column {
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(
-                when {
-                    total == 0 -> "nothing due"
-                    full -> "all done"
-                    else -> "${total - done} left"
-                },
-                fontSize = 11.sp, color = cs.onSurfaceVariant, maxLines = 1
-            )
+    }
+    val sub = when {
+        total == 0 -> "nothing due"
+        full -> "all done"
+        else -> "${total - done} left"
+    }
+    // Narrow (small phone, Large display size): the words go under the ring instead of beside it, never cut.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)) {
+        if (maxWidth >= 116.dp) Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            ringBox()
+            Spacer(Modifier.width(6.dp))
+            Column {
+                FitText(label, 13.sp, fontWeight = FontWeight.Bold)
+                FitText(sub, 11.sp, color = cs.onSurfaceVariant)
+            }
+        } else Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            ringBox()
+            Spacer(Modifier.height(3.dp))
+            FitText(label, 13.sp, fontWeight = FontWeight.Bold)
+            FitText(sub, 11.sp, color = cs.onSurfaceVariant)
         }
     }
 }
