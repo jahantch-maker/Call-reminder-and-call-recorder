@@ -374,7 +374,7 @@ internal fun BarSlot(
         Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 17.dp else 20.dp))
             else Text("WA", color = fg, fontWeight = FontWeight.Black, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 17.sp)
-            FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold)
+            FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold, minScale = 0.62f)
         }
     }
 }
@@ -410,7 +410,7 @@ fun FitText(
         onTextLayout = { r ->
             val brokenWord = (0 until r.lineCount - 1).any { i ->
                 val end = r.getLineEnd(i)
-                end in 1 until text.length && text[end - 1].isLetterOrDigit() && text[end].isLetterOrDigit()
+                end in 1 until text.length && (text[end].isLetterOrDigit() && text[end - 1].isLetterOrDigit() || text[end] in ",.:;!?")
             }
             val cut = r.hasVisualOverflow || (0 until r.lineCount).any { r.isLineEllipsized(it) }
             if ((cut || brokenWord) && scale > minScale) scale = maxOf(minScale, scale - 0.06f) else ready = true

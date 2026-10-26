@@ -152,7 +152,7 @@ private fun ThemeChoice(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = if (selected) cs.primary else cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (selected) cs.primary else cs.onSurfaceVariant)
+            FitText(label, 13.sp, fontWeight = FontWeight.Bold, color = if (selected) cs.primary else cs.onSurfaceVariant)
         }
     }
 }
@@ -179,9 +179,9 @@ private fun AccentDot(index: Int, selected: Boolean, modifier: Modifier, onClick
             if (selected) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
             else if (wall) Icon(Icons.Rounded.Wallpaper, null, tint = Color.White, modifier = Modifier.size(18.dp))
         }
-        Text(
+        FitText(
             if (wall) "Wallpaper" else a!!.name,
-            fontSize = 11.5.sp,
+            11.5.sp,
             fontWeight = FontWeight.SemiBold,
             color = cs.onSurfaceVariant,
             textAlign = TextAlign.Center

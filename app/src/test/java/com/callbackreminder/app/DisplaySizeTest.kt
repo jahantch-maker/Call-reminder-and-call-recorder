@@ -111,7 +111,7 @@ class DisplaySizeTest(private val size: Int, private val phone: String) {
                 if (r != null) {
                     val t = r.layoutInput.text.text
                     val broken = (0 until r.lineCount - 1).any { i ->
-                        val e = r.getLineEnd(i); e in 1 until t.length && t[e - 1].isLetterOrDigit() && t[e].isLetterOrDigit()
+                        val e = r.getLineEnd(i); e in 1 until t.length && (t[e - 1].isLetterOrDigit() && t[e].isLetterOrDigit() || t[e] in ",.:;!?")
                     }
                     if (broken || (0 until r.lineCount).any { r.isLineEllipsized(it) }) cut += t.replace("\n", " ")
                 }
