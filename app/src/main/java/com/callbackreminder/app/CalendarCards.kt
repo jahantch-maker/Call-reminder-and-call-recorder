@@ -1,5 +1,6 @@
 package com.callbackreminder.app
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -18,17 +19,23 @@ import androidx.compose.ui.unit.dp
 /** Tap a follow-up in the Calendar: THE Follow-ups card, already open, with everything it can do. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalFollowUpSheet(f: CalFollowUp, now: Long, onDismiss: () -> Unit) {
+internal fun CalFollowUpSheet(f: CalFollowUp, now: Long, onDismiss: () -> Unit) = FollowUpCardSheet(f.isCall, f.id, now, onDismiss)
+
+/** A follow-up tapped anywhere outside its tab (Calendar, Home, Search, People): THE card, already open. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FollowUpCardSheet(isCall: Boolean, id: Long, now: Long, onDismiss: () -> Unit, onShowInList: (() -> Unit)? = null) {
     val snack = remember { SnackbarHostState() }
     val fu = rememberFuController(snack)
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val e = remember(calls, texts) {
-        entries(calls, texts).firstOrNull { if (f.isCall) it.call?.id == f.id else it.text?.id == f.id }
+        entries(calls, texts).firstOrNull { if (isCall) it.call?.id == id else it.text?.id == id }
     }
     LaunchedEffect(e?.key) { if (e != null && fu.openKey == null) fu.openKey = e.key }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 24.dp + navBarMissing())) {
+            onShowInList?.let { Box(Modifier.padding(bottom = 8.dp)) { ShowInListLink("Follow-ups", it) } }
             if (e == null) LaunchedEffect(Unit) { onDismiss() } else fu.Card(e, RowPos.SINGLE, now, e.call?.starred ?: false)
             SnackbarHost(snack)
         }
@@ -39,7 +46,7 @@ internal fun CalFollowUpSheet(f: CalFollowUp, now: Long, onDismiss: () -> Unit) 
 /** Tap a My task in the Calendar: THE My tasks card, already open. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalMyTaskSheet(taskId: Long, now: Long, onDismiss: () -> Unit) {
+internal fun CalMyTaskSheet(taskId: Long, now: Long, onDismiss: () -> Unit, onShowInList: (() -> Unit)? = null) {
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val my = remember(snack) { MyCardActions(scope, snack) }
@@ -48,6 +55,7 @@ internal fun CalMyTaskSheet(taskId: Long, now: Long, onDismiss: () -> Unit) {
     LaunchedEffect(taskId) { my.openId = taskId }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 24.dp + navBarMissing())) {
+            onShowInList?.let { Box(Modifier.padding(bottom = 8.dp)) { ShowInListLink("My tasks", it) } }
             if (t == null) LaunchedEffect(Unit) { onDismiss() } else MyTaskCard(
                 t = t,
                 now = now,

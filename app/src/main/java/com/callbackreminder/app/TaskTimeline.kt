@@ -265,3 +265,23 @@ fun MyTaskTimeline(t: MyTask, onDismiss: () -> Unit) {
     )
     TaskTimelineWindow("m:${t.id}", t.title, chips, lines, onDismiss)
 }
+
+/** A follow-up waiting in To schedule: its history so far (kept from its call and texts), or the team Timeline. */
+@Composable
+fun ScheduledTimeline(s: ToScheduleItem, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val tasks by TeamRepo.tasks.collectAsState()
+    val team = remember(s.linkId, tasks) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, s.linkId, tasks) else null }
+    if (team != null) {
+        LaunchedEffect(team.id) { TeamUi.openTimeline(team.id); onDismiss() }
+        return
+    }
+    val lines = (listOf(TimelineLine(s.createdAt, "Saved, no time yet")) +
+        s.callEvents.map { TimelineLine(it.at, it.label, it.note) } +
+        s.textLog.map { TimelineLine(it.at, "💬 " + it.status.label, it.detail) })
+    val chips = listOfNotNull(
+        RowChip("⏱ No time yet", ChipTone.MUTED),
+        s.title.takeIf { s.number.isNotBlank() || s.name.isNotBlank() }?.let { RowChip("👤 " + (Names.first(it) ?: it), ChipTone.BLUE) },
+    )
+    TaskTimelineWindow(if (s.linkId != 0L) "l:${s.linkId}" else "s:${s.id}", s.headline, chips, lines, onDismiss)
+}

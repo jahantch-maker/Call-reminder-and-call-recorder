@@ -441,15 +441,26 @@ private fun AppRoot(
 
     // A task tapped on Home, People or a person page opens right there; "Show in … ›" goes to its tab.
     val openTask by TaskOpenUi.request.collectAsState()
+    // The same card as in the lists, already open (like the Calendar); a To schedule one opens its editor.
     openTask?.let { t ->
-        TaskEditorDialog(
-            task = t,
-            onDismiss = { TaskOpenUi.request.value = null },
-            onShowInList = { mine ->
-                TaskOpenUi.request.value = null
-                showTab(if (mine) Tab.MY_TASKS else Tab.FOLLOW_UPS)
-            },
-        )
+        val close = { TaskOpenUi.request.value = null }
+        val now = System.currentTimeMillis()
+        when (t) {
+            is OpenTask.Call -> FollowUpCardSheet(true, t.id, now, close) {
+                close(); CallsUi.showRequest.value = t.id; showTab(Tab.FOLLOW_UPS)
+            }
+            is OpenTask.Text -> FollowUpCardSheet(false, t.id, now, close) {
+                close(); SmsUi.showRequest.value = t.id; showTab(Tab.FOLLOW_UPS)
+            }
+            is OpenTask.Mine -> CalMyTaskSheet(t.id, now, close) {
+                close(); MyTasksUi.showTask.value = t.id; showTab(Tab.MY_TASKS)
+            }
+            is OpenTask.Sched -> TaskEditorDialog(
+                task = t,
+                onDismiss = close,
+                onShowInList = { mine -> close(); showTab(if (mine) Tab.MY_TASKS else Tab.FOLLOW_UPS) },
+            )
+        }
     }
 
     // A team page asked for from anywhere (Needs you, the Team picker, a chart row).

@@ -365,6 +365,8 @@ private fun ReviewRow(
 ) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(false) }
+    var timeline by remember { mutableStateOf(false) }
+    if (timeline) ReviewItemTimeline(item) { timeline = false }
     val late = item.at in 1..now
     val sched = item.kind == ReviewItem.Kind.SCHED_FU || item.kind == ReviewItem.Kind.SCHED_MY
     val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && item.number.isBlank()
@@ -406,7 +408,8 @@ private fun ReviewRow(
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
             links = buildList {
-                tt?.let { t -> add(RowLink(TeamUi.timelineLabel(t), onClick = { TeamUi.openTimeline(t.id) })) }
+                if (tt != null) add(RowLink(TeamUi.timelineLabel(tt), onClick = { TeamUi.openTimeline(tt.id) }))
+                else add(RowLink("Timeline", onClick = { timeline = true }))
                 if (item.kind == ReviewItem.Kind.SCHED_FU) add(RowLink(if (needsPerson) "👤 Set person" else "Edit", onClick = onDetails))
             },
             onNewTime = if (needsPerson) null else onNewTime,
@@ -612,10 +615,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onPickTime = { newTimeFor = item },
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
                         onEdit = { editFor = item },
-                        onHistory = when (item.kind) {
-                            ReviewItem.Kind.SCHED_FU -> null
-                            else -> ({ historyFor = item })
-                        },
+                        onHistory = { historyFor = item },
                         onSkip = {
                             if (item.isReplied) {
                                 handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
@@ -650,14 +650,17 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     }
     // ✏️ Edit: the task's own editor; the session carries on from the same card after it closes.
     editFor?.let { e -> TaskEditorDialog(task = OpenTask.of(e), onDismiss = { editFor = null; tick++ }) }
-    historyFor?.let { h ->
-        val close = { historyFor = null }
-        when (h.kind) {
-            ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(h.id)?.let { CallHistoryDialog(it, close) }
-            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(h.id)?.let { HistoryDialog(it, close) }
-            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(h.id)?.let { MyTaskHistoryDialog(it, close) }
-            ReviewItem.Kind.SCHED_FU -> {}
-        }
+    historyFor?.let { h -> ReviewItemTimeline(h) { historyFor = null } }
+}
+
+/** The full-window Timeline of a Needs you / review item, whatever kind it is. */
+@Composable
+internal fun ReviewItemTimeline(h: ReviewItem, close: () -> Unit) {
+    when (h.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(h.id)?.let { CallHistoryDialog(it, close) }
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(h.id)?.let { HistoryDialog(it, close) }
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(h.id)?.let { MyTaskHistoryDialog(it, close) }
+        ReviewItem.Kind.SCHED_FU -> ToScheduleStore.get(h.id)?.let { ScheduledTimeline(it, close) }
     }
 }
 
