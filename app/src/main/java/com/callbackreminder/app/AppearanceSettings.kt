@@ -98,6 +98,15 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                 Switch(checked = black, onCheckedChange = { Appearance.setPureBlack(ctx, it) })
             }
         }
+        val size = v.let { Appearance.displaySize(ctx) }
+        SectionCard(title = "Display size", subtitle = "This app only. Smaller fits more tasks on each screen.") {
+            BoxTabs(Appearance.SIZES.map { it.first.replace(" ", "\n") }, size, { Appearance.setDisplaySize(ctx, it) }, compact = true)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SizePreview("Home", Modifier.weight(1f)) { PreviewHome() }
+                SizePreview("Follow-ups", Modifier.weight(1f)) { PreviewFollowUps() }
+            }
+        }
     }
 }
 
@@ -143,7 +152,7 @@ private fun ThemeChoice(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = if (selected) cs.primary else cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (selected) cs.primary else cs.onSurfaceVariant)
+            FitText(label, 13.sp, fontWeight = FontWeight.Bold, color = if (selected) cs.primary else cs.onSurfaceVariant)
         }
     }
 }
@@ -170,12 +179,65 @@ private fun AccentDot(index: Int, selected: Boolean, modifier: Modifier, onClick
             if (selected) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
             else if (wall) Icon(Icons.Rounded.Wallpaper, null, tint = Color.White, modifier = Modifier.size(18.dp))
         }
-        Text(
+        FitText(
             if (wall) "Wallpaper" else a!!.name,
-            fontSize = 11.5.sp,
+            11.5.sp,
             fontWeight = FontWeight.SemiBold,
             color = cs.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
     }
 }
+
+/**
+ * A live mini phone at the chosen display size: the real cards, drawn at half size inside the frame, so a bigger
+ * size shows fewer of them (just like the app).
+ */
+@Composable
+private fun SizePreview(label: String, modifier: Modifier, content: @Composable () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(16.dp)).background(cs.background)
+                .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp))
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density * 0.5f, d.fontScale)
+            ) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+            }
+        }
+        Text(label, fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun PreviewHome() {
+    Text("Good morning", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("3" to Tones.done, "6" to Tones.late, "4" to Tones.amber).forEach { (n, t) ->
+            Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(t.bg), contentAlignment = Alignment.Center) {
+                Text(n, color = t.fg, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+            }
+        }
+    }
+    Text("NEXT UP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    PreviewCard("Tile order confirm", "Today 2:00 PM", "Ali", TimeIcons.CALL)
+    PreviewCard("Send delivery photos", "Today 4:10 PM", "Bilal", TimeIcons.TEXT)
+    PreviewCard("Cement stock count", "Tomorrow 11 AM", "Basharat", TimeIcons.CALL)
+}
+
+@Composable
+private fun PreviewFollowUps() {
+    Text("Follow-ups", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    BoxTabs(listOf("Open · 12", "Done · 40"), 0, {})
+    PreviewCard("Steel bar cutting list", "Mon 5 PM", "Hasnain", TimeIcons.CALL)
+    PreviewCard("Plaster 2nd floor", "Today 6 PM", "Basharat", TimeIcons.CALL)
+    PreviewCard("Send rate list", "Today 9 AM", "Ilyas", TimeIcons.TEXT)
+    PreviewCard("Door frames advance", "Sun 11 AM", "Bilal", TimeIcons.CALL)
+}
+
+@Composable
+private fun PreviewCard(title: String, time: String, person: String, icons: TimeIcons) =
+    TaskCard(title = title, done = false, onTick = {}, time = time, onClick = {}, timeIcons = icons, person = person, pos = RowPos.SINGLE)

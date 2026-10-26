@@ -243,9 +243,12 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
                                 else -> TimeIcons.NONE
                             },
                             person = if (hasNumber || t.name.isNotBlank()) Names.first(t.title) ?: t.title else null,
-                            chips = (if (t.needsDetails) listOf(RowChip("Needs details", ChipTone.ORANGE, Icons.Rounded.Warning) { editFor = t }) else emptyList()) +
+                            chips = listOfNotNull(
+                                    RowChip("👤 No person", ChipTone.ORANGE) { editFor = t }.takeIf { !hasNumber },
+                                    RowChip("🔕 No alert", ChipTone.ORANGE) { editFor = t }.takeIf { !t.callOn && !t.textOn },
+                                ) +
                                 (tt?.let { TeamUi.giverChips(it) } ?: emptyList()),
-                            noTimeChip = tt == null,
+                            noTimeChip = tt == null && !t.needsDetails,
                             corner = tt?.takeIf { it.fromUid == TeamRepo.uid }?.let { x -> { TeamTicks(x) } },
                             banner = tt?.let { TeamUi.banner(ctx, it, TeamRepo.uid) },
                             urgent = tt?.let { it.urgent && it.open } == true,

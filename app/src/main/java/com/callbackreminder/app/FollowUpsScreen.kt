@@ -3,6 +3,8 @@ package com.callbackreminder.app
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.IconButton
@@ -102,33 +104,41 @@ object FollowUpsUi {
     /** Another screen asked for a view (e.g. Home's Calls tile). */
     val view = MutableStateFlow<Int?>(null)
 
+    /** Home's Needs you line: only the WAITING ON YOU cards of this kind ([STUCK], [EXTEND], [ASK]), with ✕ Show all. */
+    val needKind = MutableStateFlow<Int?>(null)
+    const val STUCK = 0
+    const val EXTEND = 1
+    const val ASK = 2
+
     /** "Show in Follow-ups ›": this follow-up (its row key) is scrolled to and outlined for a moment. */
     val showEntry = MutableStateFlow<String?>(null)
 }
 
 /**
  * The Follow-ups tab: every follow-up once, a call and its texts together, as the same card as My tasks. Open | Done
- * in the box at the top, then "Everything ▾" (Calls only, Texts only, and the sort) and "★ Starred".
+ * in the box at the top with ★, then "↕ Due time ▾" and "👤 Everyone ▾".
  */
 @Composable
 fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSchedule: () -> Unit) {
     val ctx = LocalContext.current
-    var view by rememberSaveable { mutableIntStateOf(FollowUpsUi.ALL) }
     var done by rememberSaveable { mutableStateOf(false) }
+    var personName by rememberSaveable { mutableStateOf<String?>(null) }
+    var personNumbers by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var sort by rememberSaveable { mutableIntStateOf(FollowUpsUi.SORT_DUE) }
     var starredOnly by rememberSaveable { mutableStateOf(false) }
     var reveal by remember { mutableStateOf<String?>(null) }
     var editLink by remember { mutableStateOf<Long?>(null) }
     val asked by FollowUpsUi.view.collectAsState()
+    // Show (Calls only / Texts only) is gone: a request for one just opens the list.
     LaunchedEffect(asked) {
-        val v = asked ?: return@LaunchedEffect
+        asked ?: return@LaunchedEffect
         FollowUpsUi.view.value = null
-        view = v
     }
     /** Shows this follow-up: the filters that could hide it are cleared, Open or Done as it is, then scrolled to. */
     fun show(e: FuEntry?) {
         e ?: return
-        view = FollowUpsUi.ALL
+        personName = null
+        personNumbers = emptyList()
         starredOnly = false
         done = !e.open
         reveal = e.key
@@ -177,11 +187,12 @@ fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSche
     FollowUpsAll(
         resumeKey = resumeKey,
         showDone = done,
-        show = view,
         sort = sort,
         starredOnly = starredOnly,
+        personName = personName,
+        personNumbers = personNumbers,
+        onPerson = { p -> personName = p?.name; personNumbers = p?.let { x -> listOf(x.number).filter { it.isNotBlank() } + TeamRepo.numbersOf(x.number) }?.distinct() ?: emptyList() },
         onDoneTab = { done = it },
-        onShow = { view = it },
         onSort = { sort = it },
         onStarred = { starredOnly = it },
         onOpenToSchedule = onOpenToSchedule,
@@ -192,47 +203,37 @@ fun FollowUpsScreen(resumeKey: Int, onOpenTextSettings: () -> Unit, onOpenToSche
     )
 }
 
-/** Open | Done in the box, then "Everything ▾" and "★ Starred" under it. */
+/** Whose follow-ups the list shows: a team member or anyone you follow up with (by number, else by name). */
+internal data class PersonPick(val name: String, val number: String)
+
+/** Open | Done in the box with ★, then one slim row: "↕ Due time ▾" and "👤 Everyone ▾". */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FollowUpsBar(
     done: Boolean,
     openCount: Int,
     doneCount: Int,
-    show: Int,
     sort: Int,
     starredOnly: Boolean,
+    person: String?,
     onDoneTab: (Boolean) -> Unit,
-    onShow: (Int) -> Unit,
     onSort: (Int) -> Unit,
     onStarred: (Boolean) -> Unit,
+    onPickPerson: () -> Unit,
+    onClearPerson: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    val filterLabel = when (show) {
-        FollowUpsUi.CALLS -> "📞 Calls only"
-        FollowUpsUi.TEXTS -> "💬 Texts only"
-        else -> "Everything"
-    }
-    // One row: Open | Done, ☆, and ⋮ with Show and Sort.
+    val sorts = listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person")
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         BoxTabs(listOf("Open · $openCount", "Done · $doneCount"), if (done) 1 else 0, { onDoneTab(it == 1) }, Modifier.weight(1f))
         StarToggle(starredOnly, onStarred)
+    }
+    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
-            IconButton(onClick = { menu = true }) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "Show and sort",
-                    tint = if (show != FollowUpsUi.ALL) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            SmallChip(RowChip("↕ ${sorts.firstOrNull { it.first == sort }?.second ?: "Due time"} ▾", ChipTone.MUTED, onClick = { menu = true }))
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                MenuHeading("SHOW")
-                listOf(FollowUpsUi.ALL to "Everything", FollowUpsUi.CALLS to "📞  Calls only", FollowUpsUi.TEXTS to "💬  Texts only").forEach { (v, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        leadingIcon = if (show == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                        onClick = { menu = false; onShow(v) }
-                    )
-                }
                 MenuHeading("SORT")
-                listOf(FollowUpsUi.SORT_DUE to "Due time", FollowUpsUi.SORT_CREATED to "Created", FollowUpsUi.SORT_PERSON to "Person").forEach { (v, label) ->
+                sorts.forEach { (v, label) ->
                     DropdownMenuItem(
                         text = { Text(label) },
                         leadingIcon = if (sort == v) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
@@ -241,10 +242,65 @@ fun FollowUpsBar(
                 }
             }
         }
+        if (person == null) SmallChip(RowChip("👤 Everyone ▾", ChipTone.MUTED, onClick = onPickPerson))
+        else SmallChip(RowChip("👤 ${Names.first(person) ?: person}  ✕", ChipTone.BLUE, onClick = onClearPerson))
     }
-    // A filter that is on shows as one chip you can clear.
-    if (show != FollowUpsUi.ALL) SmallChip(RowChip("$filterLabel  ✕", ChipTone.BLUE, onClick = { onShow(FollowUpsUi.ALL) }))
 }
+
+/** "Show tasks for": search, TEAM first, then OTHERS, each with their open follow-ups. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PersonFilterSheet(entries: List<FuEntry>, onPick: (PersonPick) -> Unit, onDismiss: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val members by TeamRepo.members.collectAsState()
+    var q by remember { mutableStateOf("") }
+    val open = entries.filter { it.open && !it.hidden }
+    val team = remember(members) { if (TeamRepo.activeNow) members.filter { it.uid != TeamRepo.uid && it.phone.isNotBlank() } else emptyList() }
+    val teamPicks = team.map { PersonPick(it.name, it.phone) to it.numbers }
+    val others = entries.map { PersonPick(it.person, it.number) }
+        .distinctBy { it.number.filter(Char::isDigit).takeLast(9).ifBlank { "n:" + it.name.lowercase() } }
+        .filter { p -> teamPicks.none { (_, nums) -> p.number.isNotBlank() && nums.any { SmsStore.sameNumber(it, p.number) } } }
+        .sortedBy { it.name.lowercase() }
+    fun count(nums: List<String>, name: String) = open.count { e -> matches(e, nums, name) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp + navBarMissing()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("Show tasks for", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            OutlinedTextField(q, { q = it }, placeholder = { Text("Search people") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+            @Composable
+            fun Line(p: PersonPick, n: Int) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onPick(p) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(p.name.ifBlank { p.number }, size = 34.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(p.name.ifBlank { p.number }, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (n > 0) Text("$n open", fontSize = 12.sp, color = cs.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+            fun hit(p: PersonPick) = q.isBlank() || p.name.contains(q, ignoreCase = true) || p.number.contains(q.trim())
+            val t = teamPicks.filter { hit(it.first) }
+            if (t.isNotEmpty()) {
+                ChipHeading("TEAM", modifier = Modifier.padding(top = 6.dp))
+                t.forEach { (p, nums) -> Line(p, count(nums, p.name)) }
+            }
+            val o = others.filter { hit(it) }
+            if (o.isNotEmpty()) {
+                ChipHeading("OTHERS", modifier = Modifier.padding(top = 6.dp))
+                o.forEach { p -> Line(p, count(listOf(p.number).filter { it.isNotBlank() }, p.name)) }
+            }
+            if (t.isEmpty() && o.isEmpty()) Text("Nobody found", color = cs.onSurfaceVariant)
+        }
+    }
+}
+
+/** This follow-up is with this person: any of their numbers, else the same name when there is no number. */
+internal fun matches(e: FuEntry, numbers: List<String>, name: String): Boolean =
+    if (numbers.isNotEmpty()) e.number.isNotBlank() && numbers.any { SmsStore.sameNumber(it, e.number) }
+    else e.number.isBlank() && e.person.equals(name, ignoreCase = true)
 
 @Composable
 private fun MenuHeading(text: String) =
@@ -311,11 +367,12 @@ internal fun entries(calls: List<Reminder>, texts: List<SmsReminder>): List<FuEn
 private fun FollowUpsAll(
     resumeKey: Int,
     showDone: Boolean,
-    show: Int,
     sort: Int,
     starredOnly: Boolean,
+    personName: String?,
+    personNumbers: List<String>,
+    onPerson: (PersonPick?) -> Unit,
     onDoneTab: (Boolean) -> Unit,
-    onShow: (Int) -> Unit,
     onSort: (Int) -> Unit,
     onStarred: (Boolean) -> Unit,
     onOpenToSchedule: () -> Unit,
@@ -332,6 +389,7 @@ private fun FollowUpsAll(
     val stars by FuStars.keys.collectAsState()
     LaunchedEffect(Unit) { FuStars.load(ctx) }
     var showNew by remember { mutableStateOf(false) }
+    var pickPerson by remember { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
     val fu = rememberFuController(snack)
     // A text notification's "Not done, text again" opens its follow-up in the editor.
@@ -353,15 +411,29 @@ private fun FollowUpsAll(
     fun starred(e: FuEntry): Boolean = e.call?.starred ?: (e.key in stars)
     val every = entries(calls, texts)
     val shown = every.filter {
-        when (show) {
-            FollowUpsUi.CALLS -> it.call != null
-            FollowUpsUi.TEXTS -> it.text != null
-            else -> true
-        } && (!starredOnly || starred(it))
+        (!starredOnly || starred(it)) && (personName == null || matches(it, personNumbers, personName))
     }
     val all = shown.filter { it.open && !it.hidden }
-    val review = all.filter { it.inReview }.sortedByDescending { it.at }
-    val open = all.filter { !it.inReview }.sortedBy { it.at }
+    // WAITING ON YOU: tasks you gave where he is stuck, asks to extend or asked a question, pinned on top until answered.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val needKind by FollowUpsUi.needKind.collectAsState()
+    val kinds = remember(teamTasks, calls, texts) {
+        if (!TeamRepo.activeNow) emptyMap() else every.mapNotNull { e ->
+            val t = TeamUi.taskOfLink(ctx, e.call?.linkId?.takeIf { it != 0L } ?: e.text?.linkId ?: 0L, teamTasks)
+                ?.takeIf { it.fromUid == TeamRepo.uid } ?: return@mapNotNull null
+            when {
+                t.open && t.stuck -> FollowUpsUi.STUCK
+                t.asking -> FollowUpsUi.EXTEND
+                t.open && t.asks -> FollowUpsUi.ASK
+                else -> null
+            }?.let { e.key to it }
+        }.toMap()
+    }
+    val pinned = all.filter { it.key in kinds && (needKind == null || kinds[it.key] == needKind) }
+        .sortedWith(compareBy({ kinds[it.key] }, { it.at }))
+    val rest = if (needKind != null) emptyList() else all.filter { it.key !in kinds }
+    val review = rest.filter { it.inReview }.sortedByDescending { it.at }
+    val open = rest.filter { !it.inReview }.sortedBy { it.at }
     val overdue = open.filter { it.callPending && it.at <= now }
     val ahead = open.filter { !(it.callPending && it.at <= now) }
     val finished = shown.filter { !it.open }.sortedByDescending { it.finishedAt }
@@ -423,13 +495,14 @@ private fun FollowUpsAll(
                     done = showDone,
                     openCount = all.size,
                     doneCount = finished.size,
-                    show = show,
                     sort = sort,
                     starredOnly = starredOnly,
+                    person = personName,
                     onDoneTab = onDoneTab,
-                    onShow = onShow,
                     onSort = onSort,
                     onStarred = onStarred,
+                    onPickPerson = { pickPerson = true },
+                    onClearPerson = { onPerson(null) },
                 )
             }
 
@@ -451,11 +524,19 @@ private fun FollowUpsAll(
                     block("done-$day", RowFmt.dayTitle(day), "${list.size} done", cs.onSurfaceVariant, list)
                 }
             } else {
+                if (needKind != null) {
+                    item(key = "need-kind") {
+                        Box(Modifier.padding(bottom = 6.dp)) {
+                            SmallChip(RowChip("✕ Show all", ChipTone.BLUE, onClick = { FollowUpsUi.needKind.value = null }))
+                        }
+                    }
+                }
+                block("waiting", "WAITING ON YOU", "${pinned.size}", cs.error, pinned)
                 if (all.isEmpty()) {
                     item(key = "empty") {
                         EmptyPicture(
                             Icons.Rounded.PhoneCallback,
-                            if (starredOnly || show != FollowUpsUi.ALL) "Nothing here" else "Nothing to follow up",
+                            if (starredOnly || personName != null) "Nothing here" else "Nothing to follow up",
                             "Remind yourself to call someone, text them, or both.",
                             button = "＋ Follow-up",
                             onButton = { showNew = true }
@@ -489,6 +570,7 @@ private fun FollowUpsAll(
     }
 
     if (showNew) FollowUpDialog(onDismiss = { showNew = false })
+    if (pickPerson) PersonFilterSheet(every, onPick = { pickPerson = false; onPerson(it) }, onDismiss = { pickPerson = false })
     fu.Sheets()
 }
 
@@ -586,10 +668,15 @@ internal fun FollowUpCard(
             }
         }
         teamTask?.let { addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it)) }
-        if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
-        if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
-        // Pushed on again and again in review.
-        if (!finished) Held.label(call?.let { Held.countCall(ctx, it.id) } ?: text?.let { Held.countText(ctx, it.id) } ?: 0)?.let { add(RowChip(it, ChipTone.ORANGE)) }
+        // One chip per meaning: a team task already says "✅ Done, check it".
+        if (e.callReview && teamTask == null) add(RowChip(if (call!!.note.isBlank()) "No task written" else "✅ Done, check it", ChipTone.GREEN))
+        // Snoozed: moved on by hand plus held on in review, one count.
+        if (!finished) {
+            val delays = call?.delays?.size ?: 0
+            val held = call?.let { Held.countCall(ctx, it.id) } ?: text?.let { Held.countText(ctx, it.id) } ?: 0
+            val snoozed = delays + held
+            if (delays > 0 || held >= Held.SHOW_FROM) add(RowChip("💤 Snoozed ${snoozed}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
+        }
     }
 
     val time = when {

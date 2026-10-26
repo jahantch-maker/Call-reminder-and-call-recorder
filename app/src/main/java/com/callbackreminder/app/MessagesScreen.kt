@@ -82,42 +82,4 @@ import java.time.ZoneId
 
 /** Every time this message was due: sent, delivered, failed, skipped. Newest first. */
 @Composable
-internal fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
-                Text(r.title + if (r.code.isEmpty()) "" else " · ${r.code}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            }
-        },
-        text = {
-            if (r.log.isEmpty()) {
-                Text("Nothing sent yet.")
-            } else {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(r.log.reversed()) { e ->
-                        val bad = e.status == SmsLogEntry.Status.FAILED || e.status == SmsLogEntry.Status.RETRYING
-                        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                            Text(
-                                if (e.status == SmsLogEntry.Status.CALL_EVENT) e.detail else e.status.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                listOf(Fmt.dueLabel(e.at), e.detail.takeIf { e.status != SmsLogEntry.Status.CALL_EVENT })
-                                    .filter { !it.isNullOrBlank() }.joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        HorizontalDivider()
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
+internal fun HistoryDialog(r: SmsReminder, onDismiss: () -> Unit) = FollowUpTimeline(null, r, onDismiss)

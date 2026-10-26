@@ -87,63 +87,7 @@ fun Reminder.personDetail(): String? = number.takeIf { name.isNotBlank() && it.i
 
 /** Everything that happened to a task, newest first: created, rang, snoozed, called, moved and why, done. */
 @Composable
-internal fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) {
-    val lines = r.historyLines()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
-                Text(r.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            }
-        },
-        text = {
-            if (lines.isEmpty()) {
-                Text("Nothing yet. From now on, every ring, snooze, call and move is listed here.")
-            } else {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    if (r.note.isNotBlank()) {
-                        item {
-                            Text(
-                                r.note,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                        }
-                    }
-                    items(lines) { e ->
-                        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                            Text(
-                                e.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (e.what.contains("didn't pick up")) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                Fmt.dueLabel(e.at),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (e.note.isNotBlank()) {
-                                Text(
-                                    "“${e.note}”",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontStyle = FontStyle.Italic,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
-                        }
-                        HorizontalDivider()
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
+internal fun CallHistoryDialog(r: Reminder, onDismiss: () -> Unit) = FollowUpTimeline(r, null, onDismiss)
 
 @Composable
 private fun NoMatches() {

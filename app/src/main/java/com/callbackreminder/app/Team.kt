@@ -46,7 +46,14 @@ data class TeamMember(
     val status: String,
     val joinedAt: Long,
     val lastSeen: Long,
+    /** His other numbers (a 2nd SIM, a site phone), picked at approval. [phone] is the ⭐ Main one (calls and SMS). */
+    val more: List<String> = emptyList(),
+    /** 🟢 His WhatsApp number, blank = the main one. */
+    val wa: String = "",
 ) {
+    /** Every number of his, Main first: any of them is him. */
+    val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
+    val waNumber: String get() = wa.ifBlank { phone }
     val active: Boolean get() = status == Team.ACTIVE
     val pending: Boolean get() = status == Team.PENDING
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
@@ -228,6 +235,9 @@ object TeamRules {
     }
 
     /** Minutes from [from] to [to], counting only working hours (weekly off day skipped) when that's on. */
+    /** One working day in minutes: your working hours, else the office's 11 AM - 9 PM. */
+    fun dayMin(c: Context): Long = if (WorkHours.isSet(c)) (WorkHours.end(c) - WorkHours.start(c)).coerceAtLeast(60).toLong() else 600L
+
     fun minutesSince(c: Context, from: Long, to: Long = System.currentTimeMillis()): Long {
         if (to <= from) return 0L
         if (!workingOnly(c)) return (to - from) / 60_000L
@@ -400,7 +410,7 @@ object TeamRepo {
     private var aliveJob: kotlinx.coroutines.Job? = null
 
     /**
-     * The app came to the front (or left it): tasks sent to you count as Seen while it's open, "last seen" is
+     * The app came to the front (or left it): tasks sent to you count as delivered (Seen only once opened), "last seen" is
      * written at once and every 10 minutes while it stays open, and the tasks are read fresh from the server
      * (a listener can miss changes after a long time in the background).
      */
@@ -422,7 +432,7 @@ object TeamRepo {
             }
             if (!activeNow) return@guard
             val u = uid ?: return@guard
-            _tasks.value.filter { it.toUid == u && it.status == Team.SENT }.forEach { markSeen(it) }
+            _tasks.value.filter { it.toUid == u && it.open && it.deliveredAt == 0L }.forEach { markDelivered(it) }
             TeamSync.pushLocal(appCtx)
             scope.launch { runCatching { fetchOnce(appCtx) }.onFailure { CrashLog.record(appCtx, it, "Team refresh") } }
         }
@@ -546,7 +556,7 @@ object TeamRepo {
     suspend fun adminsToMembers() {
         val me = _me.value ?: return
         if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
-        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, it.phone) }
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it)) }
         p().edit().putBoolean("admins_to_members", true).apply()
     }
 
@@ -608,16 +618,19 @@ object TeamRepo {
         return out
     }
 
-    /** The Owner lets someone in: their saved number, who they report to and their role. */
-    suspend fun approve(c: Context, m: TeamMember, phone: String, reportsTo: String, role: String): String? = try {
+    /** The Owner lets someone in: his numbers (⭐ Main, others, 🟢 WhatsApp), who he reports to and his role. */
+    suspend fun approve(c: Context, m: TeamMember, nums: MemberNumbers, reportsTo: String, role: String): String? = try {
+        val phone = nums.main.trim()
+        val more = nums.ticked.map { it.trim() }.filter { it != phone }
         members().document(m.uid).update(
             mapOf(
-                "status" to Team.ACTIVE, "phone" to phone.trim(), "reportsTo" to reportsTo, "role" to role,
-                "managers" to chainFrom(reportsTo),
+                "status" to Team.ACTIVE, "phone" to phone, "more" to more, "wa" to nums.wa.trim(),
+                "reportsTo" to reportsTo, "role" to role, "managers" to chainFrom(reportsTo),
             )
         ).await()
-        TeamDossier.stopDailyList(c, phone.trim())
-        val moved = TeamSync.moveOpenFollowUps(c, m.copy(phone = phone.trim(), reportsTo = reportsTo, managers = chainFrom(reportsTo), status = Team.ACTIVE))
+        (listOf(phone) + more).forEach { TeamDossier.stopDailyList(c, it) }
+        val moved = TeamSync.moveOpenFollowUps(c, m.copy(phone = phone, more = more, wa = nums.wa.trim(), reportsTo = reportsTo,
+            managers = chainFrom(reportsTo), status = Team.ACTIVE))
         if (moved > 0) "Moved $moved open follow-up${if (moved == 1) "" else "s"} to ${m.first}'s app" else null
     } catch (e: Exception) {
         "Couldn't approve: ${e.message ?: e.javaClass.simpleName}"
@@ -631,17 +644,22 @@ object TeamRepo {
     }
 
     /** Chart and role changes; everyone under [m] gets their manager list redone too. */
-    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, phone: String): String? {
+    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? {
         if (reportsTo == m.uid || m.uid in chainFrom(reportsTo)) return "${m.first} can't report to someone under them."
-        return setChartNow(m, reportsTo, role, phone)
+        return setChartNow(m, reportsTo, role, nums)
     }
 
-    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, phone: String): String? = try {
+    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? = try {
+        val phone = nums.main.trim()
+        val more = nums.ticked.map { it.trim() }.filter { it != phone }
+        val wa = nums.wa.trim()
         members().document(m.uid).update(
-            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone.trim(), "managers" to chainFrom(reportsTo))
+            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo))
         ).await()
         // Local copy first, so the people under them get the new chain.
-        _members.value = _members.value.map { if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone.trim(), managers = chainFrom(reportsTo)) else it }
+        _members.value = _members.value.map {
+            if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo)) else it
+        }
         _members.value.filter { m.uid in it.managers }.forEach { under ->
             members().document(under.uid).update("managers", chainFrom(under.reportsTo)).await()
         }
@@ -679,7 +697,13 @@ object TeamRepo {
     /** The team member with this phone number (below you), if any. */
     fun memberByNumber(number: String): TeamMember? {
         if (number.isBlank() || !activeNow) return null
-        return belowMe().firstOrNull { it.phone.isNotBlank() && SmsStore.sameNumber(it.phone, number) }
+        return belowMe().firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }
+    }
+
+    /** All numbers of the team member with this number (empty when it is nobody in the team). */
+    fun numbersOf(number: String): List<String> {
+        if (number.isBlank() || !activeNow) return emptyList()
+        return _members.value.firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }?.numbers ?: emptyList()
     }
 
     fun member(uid: String): TeamMember? = _members.value.firstOrNull { it.uid == uid }
@@ -793,9 +817,11 @@ object TeamRepo {
     }
 
     fun markSeen(t: TeamTask) {
-        if (t.status != Team.SENT) return
+        if (t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)) return
         val now = System.currentTimeMillis()
-        val f = mutableMapOf<String, Any>("status" to Team.SEEN, "seenAt" to now)
+        // A fixed date (Dated) stays Dated: only the time he saw it is added.
+        val f = mutableMapOf<String, Any>("seenAt" to now)
+        if (t.status == Team.SENT) f["status"] = Team.SEEN
         if (t.deliveredAt == 0L) f["deliveredAt"] = now
         update(t, f, "Seen by ${t.toFirst}")
     }
@@ -1119,6 +1145,8 @@ object TeamRepo {
         status = s.getString("status") ?: Team.PENDING,
         joinedAt = s.getLong("joinedAt") ?: 0L,
         lastSeen = s.getLong("lastSeen") ?: 0L,
+        more = strings(s.get("more")),
+        wa = s.getString("wa").orEmpty(),
     )
 
     private fun taskOf(s: DocumentSnapshot) = TeamTask(

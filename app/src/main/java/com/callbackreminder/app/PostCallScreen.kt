@@ -262,6 +262,32 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         onNext()
     }
 
+    // One window per job: the same New follow-up / New My task windows as in the app, filled in from the call.
+    // Saved closes the popup; Cancel comes back here.
+    var openWindow by remember { mutableStateOf<PostCallStep?>(null) }
+    fun stamp() = listOf(ReminderStore.items.value.size, ToScheduleStore.items.value.size, SmsStore.items.value.size,
+        MyTaskStore.items.value.size, ReminderStore.items.value.maxOfOrNull { it.id } ?: 0L, MyTaskStore.items.value.maxOfOrNull { it.id } ?: 0L)
+    val before = remember(openWindow) { stamp() }
+    fun closed() { val saved = stamp() != before; openWindow = null; if (saved) onNext() }
+    when (openWindow) {
+        PostCallStep.FOLLOW_UP -> FollowUpDialog(
+            onDismiss = { closed() },
+            initialName = callerName ?: typedName,
+            initialNumber = callerNumber ?: "",
+            initialTask = note.trim(),
+            taskRequired = false,
+        )
+        PostCallStep.MY_TASK -> MyTaskDialog(
+            existing = null,
+            onDismiss = { closed() },
+            onSwitchKind = null,
+            personName = callerName ?: typedName,
+            personNumber = callerNumber ?: "",
+            initialTitle = taskText(),
+        )
+        else -> {}
+    }
+
     sameAsk?.let { (same, due) ->
         SameTaskDialog(
             same,
@@ -341,7 +367,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                     container = MaterialTheme.colorScheme.secondary,
                     content = MaterialTheme.colorScheme.onSecondary,
                     modifier = Modifier.weight(1f),
-                    onClick = { step = PostCallStep.MY_TASK }
+                    onClick = { openWindow = PostCallStep.MY_TASK }
                 )
                 BigChoice(
                     icon = Icons.Rounded.Notifications,
@@ -349,7 +375,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                     container = MaterialTheme.colorScheme.primary,
                     content = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
-                    onClick = { step = PostCallStep.FOLLOW_UP }
+                    onClick = { openWindow = PostCallStep.FOLLOW_UP }
                 )
             }
             if (callerNumber != null) {
@@ -535,7 +561,7 @@ private fun BigChoice(
 internal fun CallAgainButton(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(60.dp),
+        modifier = Modifier.fillMaxWidth().height(48.dp),
         shape = RoundedCornerShape(30.dp),
         color = Color(0xFF0FA68E),
         contentColor = Color.White,
@@ -557,7 +583,7 @@ internal fun OptionTile(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {

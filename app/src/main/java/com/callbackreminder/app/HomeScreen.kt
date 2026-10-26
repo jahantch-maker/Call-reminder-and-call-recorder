@@ -324,7 +324,9 @@ private fun LazyListScope.setupBanners(
             )
         }
     }
-    if (status.requiredOk && (!status.callPhone || !status.notificationAccess)) {
+    // ✕ on a setup card: it never comes back (read here so the list redraws at once).
+    SetupBannerUi.tick.intValue
+    if (status.requiredOk && (!status.callPhone || !status.notificationAccess) && AppSettings.get(ctx, SetupBannerUi.SHOW_CALL_DIRECT)) {
         item(key = "setup_new") {
             Banner(
                 title = "New: call directly + WhatsApp calls",
@@ -335,7 +337,8 @@ private fun LazyListScope.setupBanners(
                         .takeIf { !status.notificationAccess },
                 ).joinToString(" "),
                 button = "Open setup",
-                onClick = onOpenSetup
+                onClick = onOpenSetup,
+                onClose = { AppSettings.set(ctx, SetupBannerUi.SHOW_CALL_DIRECT, false); SetupBannerUi.tick.intValue++ },
             )
         }
     }
@@ -346,25 +349,45 @@ private fun LazyListScope.setupBanners(
                 body = "Allow the Microphone and switch on the call-recording Accessibility service " +
                     "to record your calls.",
                 button = "Set up recording",
-                onClick = onOpenRecordingSettings
+                onClick = onOpenRecordingSettings,
+                // ✕ = no recording: phone recording goes off (Settings › Call recording switches it on again).
+                onClose = { AppSettings.set(ctx, AppSettings.REC_PHONE, false); SetupBannerUi.tick.intValue++ },
             )
         }
     }
 }
 
+/** Redraws the setup cards after a ✕. */
+internal object SetupBannerUi {
+    const val SHOW_CALL_DIRECT = "setup_banner_call_direct"
+    val tick = androidx.compose.runtime.mutableIntStateOf(0)
+}
+
 @Composable
-private fun Banner(title: String, body: String, button: String, onClick: () -> Unit) {
+private fun Banner(title: String, body: String, button: String, onClick: () -> Unit, onClose: (() -> Unit)? = null) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.weight(1f).padding(top = 2.dp)
+                )
+                if (onClose != null) {
+                    Text(
+                        "✕",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClose).padding(horizontal = 10.dp, vertical = 2.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(12.dp))
@@ -418,10 +441,7 @@ private fun RingItem(done: Int, total: Int, color: Color, label: String, modifie
         frac(done, total), androidx.compose.animation.core.tween(700), label = "ring"
     )
     val track = cs.outlineVariant.copy(alpha = 0.5f)
-    Row(
-        modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val ringBox: @Composable () -> Unit = {
         Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Canvas(Modifier.size(38.dp)) {
                 val w = 4.5.dp.toPx()
@@ -437,17 +457,26 @@ private fun RingItem(done: Int, total: Int, color: Color, label: String, modifie
                 else Text("$done/$total", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
-        Spacer(Modifier.width(6.dp))
-        Column {
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(
-                when {
-                    total == 0 -> "nothing due"
-                    full -> "all done"
-                    else -> "${total - done} left"
-                },
-                fontSize = 11.sp, color = cs.onSurfaceVariant, maxLines = 1
-            )
+    }
+    val sub = when {
+        total == 0 -> "nothing due"
+        full -> "all done"
+        else -> "${total - done} left"
+    }
+    // Narrow (small phone, Large display size): the words go under the ring instead of beside it, never cut.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)) {
+        if (maxWidth >= 116.dp) Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            ringBox()
+            Spacer(Modifier.width(6.dp))
+            Column {
+                FitText(label, 13.sp, fontWeight = FontWeight.Bold)
+                FitText(sub, 11.sp, color = cs.onSurfaceVariant)
+            }
+        } else Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            ringBox()
+            Spacer(Modifier.height(3.dp))
+            FitText(label, 13.sp, fontWeight = FontWeight.Bold)
+            FitText(sub, 11.sp, color = cs.onSurfaceVariant)
         }
     }
 }

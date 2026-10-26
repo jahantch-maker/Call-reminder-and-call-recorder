@@ -712,7 +712,7 @@ fun FollowUpDialog(
         }
         if (!timed) {
             val needs = !hasPerson || (!callEff && !textEff)
-            Toast.makeText(ctx, if (needs) "Saved · Needs details, in To schedule" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, if (needs) "Saved to To schedule · add a person or alert" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
         } else if (fromMyTask != null) {
             Toast.makeText(ctx, "Moved to Follow-ups", Toast.LENGTH_SHORT).show()
         }

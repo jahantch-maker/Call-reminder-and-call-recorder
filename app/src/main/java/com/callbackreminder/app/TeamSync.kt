@@ -131,6 +131,8 @@ object TeamSync {
     fun isNew(c: Context, taskId: String): Boolean = taskId !in TeamLinks.set(c, "opened")
 
     fun markOpened(c: Context, taskId: String) {
+        // Seen only when he opens the card in place, its Timeline, or taps its notification (that opens the Timeline).
+        TeamRepo.tasks.value.firstOrNull { it.id == taskId && it.toUid == TeamRepo.uid && it.seenAt == 0L }?.let { TeamRepo.markSeen(it) }
         val s = TeamLinks.set(c, "opened")
         if (taskId in s) return
         s += taskId
@@ -224,7 +226,8 @@ object TeamSync {
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
                     if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
                     // His reminder rings at the deadline until he sets his own: then only he moves it.
-                    if (local.dueAt != t.due && ((before == null && local.dueAt == 0L) || (remoteMoved && (local.dueAt == 0L || local.dueAt == dueOf(before)))))
+                    // A date he picks himself never sets his reminder: he taps ⏰ My reminder.
+                    if (local.dueAt != t.due && !(t.hisDate && local.dueAt == 0L) && ((before == null && local.dueAt == 0L) || (remoteMoved && (local.dueAt == 0L || local.dueAt == dueOf(before)))))
                         MyTaskStore.setDue(local.id, t.due)
                 }
             }
@@ -234,8 +237,7 @@ object TeamSync {
             }
             t.status == Team.DONE || t.status == Team.CHECKED -> local?.let { if (!it.done) MyTaskStore.setDone(it.id, true) }
         }
-        if (t.status == Team.SENT && foreground) TeamRepo.markSeen(t)
-        else if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
+        if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
 
         // What he hears about: all in the task's one notification.
         val was = statusOf(before)
@@ -275,9 +277,13 @@ object TeamSync {
                 return
             }
             when {
-                // He has to pick a new deadline (Not done yet · He picks): your call-back waits in To schedule.
-                t.open && t.due == 0L && pending != null && (dueOf(before) ?: 0L) > 0L ->
-                    FollowUps.removeTime(c, pending, FollowUps.text(link))
+                // He has to pick a new deadline (Not done yet · He picks): your call-back waits at your Latest.
+                t.open && t.due == 0L && pending != null && (dueOf(before) ?: 0L) > 0L && t.deadline > 0L && pending.dueAt != t.deadline ->
+                    ReminderStore.reschedule(pending.id, t.deadline, "Waiting for ${t.toFirst}'s deadline:")
+                // Older versions parked it in To schedule: it moves to Follow-ups.
+                t.open && t.due == 0L && calls.isEmpty() ->
+                    ToScheduleStore.items.value.firstOrNull { it.linkId == link && it.callOn && it.number.isNotBlank() }
+                        ?.let { FollowUps.setTime(c, it, waitAt(c, t.deadline)) }
                 t.open && t.due > 0L -> {
                     if (pending == null && calls.isEmpty()) {
                         ToScheduleStore.items.value.firstOrNull { it.linkId == link }?.let { FollowUps.setTime(c, it, t.due) }
@@ -426,6 +432,10 @@ object TeamSync {
         return link
     }
 
+    /** Where your follow-up waits until he picks his deadline: your Latest, else the start of the next working day. */
+    private fun waitAt(c: Context, latest: Long): Long =
+        latest.takeIf { it > System.currentTimeMillis() } ?: ReviewData.nextWorkStart(c)
+
     /**
      * New follow-up for a team member: the task goes online to his app and your own follow-up (call-back) follows
      * his date. With [myTime] it's his fixed date. Returns your follow-up's link, or null when it couldn't be sent.
@@ -439,7 +449,8 @@ object TeamSync {
         val item = ToScheduleStore.put(
             ToScheduleItem(id = 0L, name = to.name, number = to.phone, note = title.trim(), createdAt = 0L, callOn = callOn, starred = urgent, linkId = link)
         )
-        if (myTime != null && myTime > 0L) FollowUps.setTime(c, item, myTime)
+        // A given task always lives in Follow-ups: his date not picked yet, it waits at your Latest.
+        FollowUps.setTime(c, item, myTime?.takeIf { it > 0L } ?: waitAt(c, deadline))
         synchronized(lock) {
             val given = TeamLinks.map(c, "given")
             given[id] = link.toString()
@@ -470,7 +481,7 @@ object TeamSync {
 
     /**
      * Your Not done yet on his Done: your call-back leaves Replied. With [newDue] it rings then; with 0 (he picks)
-     * it waits in To schedule as Deadline pending until he sets one.
+     * it waits in Follow-ups at your Latest ("⏳ His deadline?") until he sets one.
      */
     fun giverNotDone(c: Context, t: TeamTask, newDue: Long) {
         initStores(c)
@@ -479,7 +490,7 @@ object TeamSync {
         if (newDue > 0L) ReminderStore.reschedule(call.id, newDue, "Not done yet · new deadline")
         else {
             if (call.done) ReminderStore.reopen(call.id)
-            ReminderStore.get(call.id)?.let { FollowUps.removeTime(c, it, FollowUps.text(link)) }
+            ReminderStore.reschedule(call.id, waitAt(c, t.deadline), "Not done yet · waiting for ${t.toFirst}'s deadline")
         }
     }
 
@@ -498,14 +509,16 @@ object TeamSync {
      * dates; ones waiting in To schedule wait for his date). Their texts stop, the app tells him instead.
      */
     fun moveOpenFollowUps(c: Context, m: TeamMember): Int {
-        if (m.phone.isBlank()) return 0
+        val nums = m.numbers
+        if (nums.isEmpty()) return 0
+        fun his(n: String) = n.isNotBlank() && nums.any { SmsStore.sameNumber(it, n) }
         initStores(c)
         var n = 0
         synchronized(lock) {
             val given = TeamLinks.map(c, "given")
             val taken = given.values.toSet()
             ReminderStore.items.value
-                .filter { !it.done && !it.review && it.repeat == null && it.number.isNotBlank() && SmsStore.sameNumber(it.number, m.phone) }
+                .filter { !it.done && !it.review && it.repeat == null && his(it.number) }
                 .forEach { r ->
                     val link = FollowUps.ensureLink(c, r, FollowUps.text(r.linkId))
                     if (link.toString() in taken) return@forEach
@@ -515,7 +528,7 @@ object TeamSync {
                     n++
                 }
             ToScheduleStore.items.value
-                .filter { it.number.isNotBlank() && SmsStore.sameNumber(it.number, m.phone) }
+                .filter { his(it.number) }
                 .forEach { item ->
                     val link = item.linkId.takeIf { it != 0L } ?: FollowUps.newLink(c).also { ToScheduleStore.put(item.copy(linkId = it, textOn = false)) }
                     if (link.toString() in taken) return@forEach

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -301,6 +302,24 @@ private fun AlertCard(
                 fontSize = 14.sp,
             )
         }
+        // Timeline: what happened so far, and your notes (a team task opens its team Timeline in the app).
+        var timeline by remember { mutableStateOf(false) }
+        Text(
+            "Timeline",
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).clickable {
+                val team = if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, r.linkId, TeamRepo.tasks.value) else null
+                if (team != null) ctx.startActivity(
+                    android.content.Intent(ctx, MainActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM)
+                        .putExtra(MainActivity.EXTRA_TEAM_TASK, team.id)
+                ) else timeline = true
+            }.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
+        if (timeline) FollowUpTimeline(ReminderStore.get(r.id) ?: r, null) { timeline = false }
 
         Spacer(Modifier.height(24.dp))
         Button(

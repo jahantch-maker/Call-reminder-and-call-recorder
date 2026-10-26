@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
@@ -209,7 +210,8 @@ fun TaskCard(
 }
 
 /** The thin line across a card's top: what waits on it, in its colour; tap opens it (the Timeline). */
-data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null)
+/** The thin line on top of a card; [action] (like "Answer" or "Call") shows on the right before ›. */
+data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null, val action: String? = null)
 
 @Composable
 private fun CardBannerLine(banner: CardBanner?) {
@@ -233,6 +235,7 @@ private fun CardBannerLine(banner: CardBanner?) {
         ) {
             Text(b.text, color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
+            if (b.action != null) Text(b.action + " ", color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             if (b.onClick != null) Text("›", color = bfg, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
@@ -371,14 +374,57 @@ internal fun BarSlot(
         Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 17.dp else 20.dp))
             else Text("WA", color = fg, fontWeight = FontWeight.Black, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 17.sp)
-            Text(label, color = fg, fontWeight = FontWeight.Bold, fontSize = if (compact) 10.5.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold, minScale = 0.62f)
         }
     }
 }
 
+/**
+ * Text that never hides part of itself: on a narrow screen or a big display size it first shrinks a little (down to
+ * [minScale]) so it fits in [maxLines] without "…" and without breaking a word in half; only then would it cut.
+ */
+@Composable
+fun FitText(
+    text: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = 1,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    textAlign: androidx.compose.ui.text.style.TextAlign? = null,
+    minScale: Float = 0.72f,
+) {
+    var scale by remember(text, fontSize, maxLines) { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    var ready by remember(text, fontSize, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
+    Text(
+        text,
+        modifier.drawWithContent { if (ready) drawContent() },
+        color = color,
+        fontSize = fontSize * scale,
+        fontWeight = fontWeight,
+        lineHeight = if (lineHeight == androidx.compose.ui.unit.TextUnit.Unspecified) lineHeight else lineHeight * scale,
+        textAlign = textAlign,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { r ->
+            val brokenWord = (0 until r.lineCount - 1).any { i ->
+                val end = r.getLineEnd(i)
+                end in 1 until text.length && (text[end].isLetterOrDigit() && text[end - 1].isLetterOrDigit() || text[end] in ",.:;!?")
+            }
+            val cut = r.hasVisualOverflow || (0 until r.lineCount).any { r.isLineEllipsized(it) }
+            if ((cut || brokenWord) && scale > minScale) scale = maxOf(minScale, scale - 0.06f) else ready = true
+        },
+    )
+}
+
 /** The box with two or three options (Tasks | Dossier, Open | Done, Follow-ups | My tasks…), used for every top choice. */
 @Composable
-fun BoxTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier.fillMaxWidth()) {
+fun BoxTabs(
+    labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier.fillMaxWidth(),
+    /** Many tabs (Needs you): smaller text on two lines ("Overdue\n6"), so none is cut at any display size. */
+    compact: Boolean = false,
+) {
     val cs = MaterialTheme.colorScheme
     Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = modifier) {
         Row(Modifier.padding(4.dp)) {
@@ -391,10 +437,13 @@ fun BoxTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifi
                     shape = RoundedCornerShape(11.dp),
                     color = fill,
                     shadowElevation = if (on) 1.dp else 0.dp,
-                    modifier = Modifier.weight(1f).height(40.dp)
+                    modifier = Modifier.weight(1f).height(if (compact) 44.dp else 40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 1)
+                        if (compact) Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 2,
+                            fontSize = 12.sp, lineHeight = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+                        else Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 1)
                     }
                 }
             }

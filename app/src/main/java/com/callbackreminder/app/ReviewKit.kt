@@ -30,7 +30,8 @@ enum class ReviewSection(
     SCHED_FU("sched_fu", "🕘", "To schedule · Follow-ups", "No time or no person yet", true, true),
     SCHED_MY("sched_my", "🕘", "To schedule · My tasks", "My tasks with no time", true, true),
     MY_LATE("my_late", "☑", "Overdue My tasks", "Past their time", true, true),
-    DUE_TODAY("due_today", "🔔", "Still due today", "Calls later today", true, false);
+    DUE_TODAY("due_today", "🔔", "Still due today", "Calls later today", true, false),
+    TEAM("team", "👥", "Team", "Your staff is waiting on you: stuck, asks, extend, not seen", true, true);
 
     /** Calls are made in the call session; the rest get a card each. */
     val isCalls: Boolean get() = this == OVERDUE || this == DUE_TODAY
@@ -55,7 +56,7 @@ object ReviewPrefs {
         ReviewSection.REPLIED -> Group.REPLIED
         ReviewSection.OVERDUE, ReviewSection.MY_LATE -> Group.OVERDUE
         ReviewSection.SCHED_FU, ReviewSection.SCHED_MY -> Group.SCHEDULE
-        ReviewSection.DUE_TODAY -> null
+        ReviewSection.DUE_TODAY, ReviewSection.TEAM -> null
     }
 
     private val ORDER = listOf(
@@ -186,10 +187,10 @@ object ReviewData {
 
         val replied = calls.filter { it.done && it.review && it.reviewLaterUntil <= now }.map {
             ReviewItem("cr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id,
-                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("To check"), code = it.code)
+                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("✅ Done, check it"), code = it.code)
         } + texts.filter { !it.done && it.review == SmsReminder.Review.REPLIED && it.reviewLaterUntil <= now }.map {
             ReviewItem("tr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id,
-                it.message, it.title, it.number, it.reviewAt, listOf("✅ Replied Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
+                it.message, it.title, it.number, it.reviewAt, listOf("✅ Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
         }
 
         // Replies with more than a "done" in them: read first, the task stays open.
@@ -199,31 +200,39 @@ object ReviewData {
         val overdueCalls = calls.filter { !it.done && it.dueAt <= now && "c:${it.id}" !in noteKeys }.map {
             ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
                 it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt,
-                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "Delayed ${n}×" }), code = it.code)
+                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "💤 Snoozed ${n + Held.countCall(ctx, it.id)}×" }), code = it.code)
         }
         // A text follow-up with no call of its own: overdue once its texts went with no reply, or its due passed.
         val overdueTexts = texts.filter { t ->
             !t.done && t.review != SmsReminder.Review.REPLIED && (t.linkId == 0L || t.linkId !in openLinks) &&
-                (t.review == SmsReminder.Review.NO_REPLY || (t.taskDue in 1..now))
+                (t.review == SmsReminder.Review.NO_REPLY || t.review == SmsReminder.Review.NOT_SENT || (t.taskDue in 1..now))
         }.filter { "t:${it.id}" !in noteKeys }.map { t ->
             val at = t.taskDue.takeIf { it > 0L } ?: t.reviewAt
             ReviewItem("t:${t.id}", ReviewSection.OVERDUE, ReviewItem.Kind.TEXT, t.id, t.message, t.title, t.number, at,
-                listOf(lateLabel(at, now), "💬 No reply"), code = t.code)
+                listOf(lateLabel(at, now), if (t.review == SmsReminder.Review.NOT_SENT) "Text not sent" else "💬 No reply"), code = t.code)
+        }
+        // Ones you keep snoozing (3× and more) need a decision too, even before they are late.
+        val snoozedCalls = calls.filter { !it.done && it.dueAt > now && "c:${it.id}" !in noteKeys }.mapNotNull {
+            val n = it.delays.size + Held.countCall(ctx, it.id)
+            if (n < 3) return@mapNotNull null
+            ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
+                it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt, listOf("💤 Snoozed ${n}×"), code = it.code)
         }
 
         val schedFu = ToScheduleStore.items.value.sortedBy { it.createdAt }.map {
             ReviewItem("s:${it.id}", ReviewSection.SCHED_FU, ReviewItem.Kind.SCHED_FU, it.id,
                 it.headline, if (it.number.isNotBlank() || it.name.isNotBlank()) it.title else "", it.number, 0L,
-                listOf(if (it.number.isBlank()) "No person" else if (it.needsDetails) "Needs details" else "No time"))
+                buildList { if (it.number.isBlank()) add("👤 No person"); if (!it.callOn && !it.textOn) add("🔕 No alert"); if (isEmpty()) add("No time") })
         }
         val my = MyTaskStore.items.value.filter { !it.done }
         val schedMy = my.filter { !it.timed }.sortedBy { it.createdAt }.map {
             ReviewItem("ms:${it.id}", ReviewSection.SCHED_MY, ReviewItem.Kind.SCHED_MY, it.id,
                 it.title, if (it.hasPerson) it.personTitle else "", it.number, 0L, listOf("☑ My task"), lengthMin = it.durationMin)
         }
-        val myLate = my.filter { it.timed && it.dueAt <= now }.sortedBy { it.dueAt }.map {
+        val myLate = my.filter { it.timed && (it.dueAt <= now || Held.countMine(ctx, it.id) >= 3) }.sortedBy { it.dueAt }.map {
             ReviewItem("ml:${it.id}", ReviewSection.MY_LATE, ReviewItem.Kind.MY_TASK, it.id,
-                it.title, if (it.hasPerson) it.personTitle else "", it.number, it.dueAt, listOf(lateLabel(it.dueAt, now), "☑ My task"),
+                it.title, if (it.hasPerson) it.personTitle else "", it.number, it.dueAt,
+                listOf(if (it.dueAt <= now) lateLabel(it.dueAt, now) else "💤 Snoozed ${Held.countMine(ctx, it.id)}×", "☑ My task"),
                 lengthMin = it.durationMin)
         }
         val dueToday = calls.filter { !it.done && it.dueAt in (now + 1)..endOfDay }.sortedBy { it.dueAt }.map {
@@ -233,13 +242,49 @@ object ReviewData {
 
         return mapOf(
             ReviewSection.REPLIED to (replied + notes).sortedBy { it.at },
-            ReviewSection.OVERDUE to (overdueCalls + overdueTexts).sortedBy { it.at },
+            ReviewSection.OVERDUE to (overdueCalls + overdueTexts).sortedBy { it.at } + snoozedCalls.sortedBy { it.at },
             ReviewSection.SCHED_FU to schedFu,
             ReviewSection.SCHED_MY to schedMy,
             ReviewSection.MY_LATE to myLate,
             ReviewSection.DUE_TODAY to dueToday,
+            ReviewSection.TEAM to teamItems(ctx, calls, now),
         )
     }
+
+    /**
+     * Needs you › Team: your follow-ups for tasks you gave where he is stuck (red), asks to extend (purple) or asked
+     * (orange), then the grey early warnings (not seen, extended again and again). Same "c:" key as the call.
+     */
+    private fun teamItems(ctx: Context, calls: List<Reminder>, now: Long): List<ReviewItem> {
+        if (!TeamRepo.activeNow) return emptyList()
+        val me = TeamRepo.uid ?: return emptyList()
+        val tasks = TeamRepo.tasks.value
+        return calls.filter { !it.done && it.linkId != 0L }.mapNotNull { r ->
+            val t = TeamUi.taskOfLink(ctx, r.linkId, tasks)?.takeIf { it.fromUid == me && it.open } ?: return@mapNotNull null
+            val rank = when {
+                t.stuck -> 0
+                t.asking -> 1
+                t.asks -> 2
+                TeamUi.earlyWarning(ctx, t, now) != null -> 3
+                else -> return@mapNotNull null
+            }
+            rank to ReviewItem("c:${r.id}", ReviewSection.TEAM, ReviewItem.Kind.CALL, r.id,
+                r.note.ifBlank { "Call back" }, r.title, r.number, r.dueAt, code = r.code)
+        }.sortedWith(compareBy({ it.first }, { it.second.at })).map { it.second }
+    }
+
+    /** Needs you tabs: All, Replied, Overdue (follow-ups + My tasks), To schedule (both), Team. */
+    val TABS: List<Pair<String, List<ReviewSection>>> = listOf(
+        "All" to emptyList(),
+        "Replied" to listOf(ReviewSection.REPLIED),
+        "Overdue" to listOf(ReviewSection.OVERDUE, ReviewSection.MY_LATE),
+        "To sched." to listOf(ReviewSection.SCHED_FU, ReviewSection.SCHED_MY),
+        "Team" to listOf(ReviewSection.TEAM),
+    )
+
+    /** The sections of a tab ([TABS] index); All = every section of the other tabs. */
+    fun tabSections(tab: Int): List<ReviewSection> =
+        if (tab == 0) TABS.drop(1).flatMap { it.second } else TABS.getOrNull(tab)?.second.orEmpty()
 
     /** Count of everything in the shown sections (for Home and the 1 PM / 6 PM popup). */
     fun shownCounts(ctx: Context, now: Long = System.currentTimeMillis()): List<Pair<ReviewSection, Int>> {
@@ -254,7 +299,8 @@ object ReviewData {
             ReviewSession.MODE_ALL -> ReviewPrefs.order(ctx).filter { ReviewPrefs.session(ctx, it) }
             ReviewSession.MODE_CALLS -> ReviewPrefs.order(ctx).filter { it.isCalls && ReviewPrefs.session(ctx, it) }
                 .ifEmpty { listOf(ReviewSection.OVERDUE) }
-            else -> listOfNotNull(ReviewSection.values().firstOrNull { it.key == mode })
+            else -> if (mode.startsWith("tab:")) tabSections(mode.removePrefix("tab:").toIntOrNull() ?: 0)
+                else listOfNotNull(ReviewSection.values().firstOrNull { it.key == mode })
         }
         return sections.flatMap { all[it].orEmpty() }.distinctBy { it.key }
     }
@@ -265,11 +311,11 @@ object ReviewData {
         return when {
             key.startsWith("cr:") -> ReminderStore.get(id)?.takeIf { it.done && it.review }?.let {
                 ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id, it.note.ifBlank { "Call back" }, it.title,
-                    it.number, it.reviewLaterUntil, listOf("To check"), code = it.code)
+                    it.number, it.reviewLaterUntil, listOf("✅ Done, check it"), code = it.code)
             }
             key.startsWith("tr:") -> SmsStore.get(id)?.takeIf { !it.done && it.review == SmsReminder.Review.REPLIED }?.let {
                 ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id, it.message, it.title, it.number,
-                    it.reviewLaterUntil, listOf("Replied Done ${it.code}"), code = it.code)
+                    it.reviewLaterUntil, listOf("✅ Done ${it.code}"), code = it.code)
             }
             else -> null
         }
@@ -424,7 +470,7 @@ object ReviewSession {
 
     fun partOf(section: ReviewSection): Int = when (section) {
         ReviewSection.REPLIED -> 0
-        ReviewSection.OVERDUE, ReviewSection.DUE_TODAY -> 1
+        ReviewSection.OVERDUE, ReviewSection.DUE_TODAY, ReviewSection.TEAM -> 1
         ReviewSection.MY_LATE -> 2
         ReviewSection.SCHED_FU, ReviewSection.SCHED_MY -> 3
     }
@@ -671,7 +717,7 @@ object ReviewSession {
 
 /**
  * How often a task was pushed on in review (a new time on a late one, Tomorrow same time or Leave for now at the
- * end). From 3 the task shows an orange "Held N×" tag, so the ones you keep avoiding stand out.
+ * end). From 3 the task shows an orange "💤 Snoozed N×" tag, so the ones you keep avoiding stand out.
  */
 object Held {
     const val SHOW_FROM = 3
@@ -691,7 +737,7 @@ object Held {
     fun countMine(c: Context, id: Long): Int = p(c).getInt("m:$id", 0)
 
     /** The tag text, or null below [SHOW_FROM]. */
-    fun label(n: Int): String? = if (n >= SHOW_FROM) "Held ${n}×" else null
+    fun label(n: Int): String? = if (n >= SHOW_FROM) "💤 Snoozed ${n}×" else null
 
     /** One more push; the returned Undo takes it back. */
     fun push(c: Context, item: ReviewItem): () -> Unit {

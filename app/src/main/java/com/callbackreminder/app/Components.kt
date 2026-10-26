@@ -237,20 +237,22 @@ fun DayClearedOverlay() {
  * The compact top of every tab: big title, its status (red when something is late) and "⏱ n no time ›" on one
  * line, then 🎤 ⚙.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PageTitleRow(title: String, status: String, red: Boolean, noTime: Int = 0, onNoTime: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-            Spacer(Modifier.width(8.dp))
+        // What doesn't fit beside the title moves to the line under it, never cut.
+        androidx.compose.foundation.layout.FlowRow(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                modifier = Modifier.align(Alignment.Bottom).padding(end = 8.dp))
             Text(
                 status, fontSize = 13.sp, color = if (red) cs.error else cs.onSurfaceVariant, maxLines = 1,
-                modifier = Modifier.padding(bottom = 3.dp)
+                modifier = Modifier.align(Alignment.Bottom).padding(bottom = 3.dp)
             )
             if (noTime > 0 && onNoTime != null) Text(
                 " · ⏱ $noTime no time ›", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeedOrange, maxLines = 1,
-                modifier = Modifier.padding(bottom = 3.dp).clickable(onClick = onNoTime)
+                modifier = Modifier.align(Alignment.Bottom).padding(bottom = 3.dp).clickable(onClick = onNoTime)
             )
         }
         TopActions()

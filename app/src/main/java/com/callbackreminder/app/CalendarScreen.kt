@@ -1722,7 +1722,7 @@ fun WorkHoursSetup(first: Boolean, onSaved: () -> Unit) {
         Button(
             onClick = { WorkHours.set(ctx, start, end); onSaved() },
             enabled = end > start,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(14.dp)
         ) { Text(if (first) "Save and open Calendar" else "Save", fontWeight = FontWeight.Bold) }
         if (end <= start) {

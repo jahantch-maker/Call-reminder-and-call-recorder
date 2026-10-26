@@ -35,7 +35,7 @@ object Ticks {
     val GREY = Color(0xFF9EA2B8)
     val BLUE = Color(0xFF53BDEB)
 
-    fun seen(t: TeamTask): Boolean = t.seenAt > 0L || t.status != Team.SENT
+    fun seen(t: TeamTask): Boolean = t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)
     fun count(t: TeamTask): Int = if (seen(t) || t.deliveredAt > 0L) 2 else 1
     /** The time of the last tick: seen, else delivered, else sent. */
     fun lastAt(t: TeamTask): Long = when {

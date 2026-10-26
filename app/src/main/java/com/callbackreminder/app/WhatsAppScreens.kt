@@ -177,7 +177,7 @@ fun DailyWhatsAppScreen(resumeKey: Int, onBack: () -> Unit) {
         if (next != null) {
             Button(
                 onClick = { send(next) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen, contentColor = WhatsAppInk)
             ) { Text("Send next: ${names[next].orEmpty()} ›", fontWeight = FontWeight.Bold, fontSize = 16.sp) }

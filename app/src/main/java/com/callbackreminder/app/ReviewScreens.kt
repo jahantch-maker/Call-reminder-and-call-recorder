@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +59,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -177,6 +180,9 @@ object ReviewActions {
 object ReviewUi {
     /** The page was opened from the 1 PM / 6 PM popup or its notification: Back leaves the app again. */
     val fromOutside = mutableStateOf(false)
+
+    /** Which Needs you tab to open on ([ReviewData.TABS] index), asked by a Home tile. */
+    val tab = MutableStateFlow<Int?>(null)
 }
 
 private fun whenLabel(at: Long, now: Long): String {
@@ -204,14 +210,18 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     val session by ReviewSession.state.collectAsState()
+    val teamTasks by TeamRepo.tasks.collectAsState()
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(resumeKey) { now = System.currentTimeMillis(); ReviewSession.init(ctx) }
-    val data = remember(calls, texts, sched, mine, now) { ReviewData.build(ctx, now) }
-    val shown = remember(resumeKey) { ReviewPrefs.shown(ctx) }
-    val sessionSections = remember(resumeKey) { ReviewPrefs.order(ctx).filter { ReviewPrefs.session(ctx, it) } }
-    val allCount = sessionSections.flatMap { data[it].orEmpty() }.distinctBy { it.key }.size
-    val callCount = sessionSections.filter { it.isCalls }.ifEmpty { listOf(ReviewSection.OVERDUE) }
-        .flatMap { data[it].orEmpty() }.distinctBy { it.key }.size
+    val data = remember(calls, texts, sched, mine, teamTasks, now) { ReviewData.build(ctx, now) }
+    // ✋ Needs you: All · Replied · Overdue · To sched. · Team; every Home tile opens its own tab.
+    val asked by ReviewUi.tab.collectAsState()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(asked) { asked?.let { tab = it; ReviewUi.tab.value = null } }
+    val tabs = ReviewData.TABS.indices.filter { it != 4 || TeamRepo.activeNow }
+    fun countOf(i: Int) = ReviewData.tabSections(i).flatMap { data[it].orEmpty() }.distinctBy { it.key }.size
+    val shown = ReviewData.tabSections(tab)
+    val allCount = countOf(tab)
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
 
@@ -234,7 +244,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
             item(key = "head") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-                    Text("Review", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                    Text("✋ Needs you", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                     IconButton(onClick = onOpenSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Review settings") }
                 }
             }
@@ -243,22 +253,23 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     SessionBanner(session, onResume = { ReviewSession.resume(ctx); onOpenSession() }, onEnd = { ReviewSession.clear(ctx) })
                 }
             }
-            item(key = "start") {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { start(ReviewSession.MODE_ALL) },
-                        enabled = allCount > 0,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape = RoundedCornerShape(18.dp),
-                    ) { Text("▶ Start review ($allCount)", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("All sections in order · ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { start(ReviewSession.MODE_CALLS) }, enabled = callCount > 0) { Text("📞 Calls only ($callCount)") }
-                    }
-                }
+            item(key = "tabs") {
+                BoxTabs(tabs.map { "${ReviewData.TABS[it].first}\n${countOf(it)}" }, tabs.indexOf(tab).coerceAtLeast(0),
+                    { tab = tabs[it] }, compact = true)
             }
+            item(key = "start") {
+                // ▶ Start review runs only the tab you are on.
+                Button(
+                    onClick = { start("tab:$tab") },
+                    enabled = allCount > 0,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(18.dp),
+                ) { Text(if (allCount > 0) "▶ Start review · $allCount" else "Nothing here", fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+            }
+            val seen = mutableSetOf<String>()
             shown.forEach { sec ->
-                val list = data[sec].orEmpty()
+                // In All a task shows once, in the first part it belongs to.
+                val list = data[sec].orEmpty().filter { seen.add(it.key) }
                 item(key = "h-${sec.key}") {
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -268,7 +279,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                             color = if (sec == ReviewSection.OVERDUE) LateRed else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
                         )
-                        if (list.isNotEmpty() && ReviewPrefs.session(ctx, sec)) {
+                        if (list.isNotEmpty() && tab == 0) {
                             FilledTonalButton(
                                 onClick = { start(sec.key) },
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
@@ -353,6 +364,8 @@ private fun ReviewRow(
 ) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(false) }
+    var timeline by remember { mutableStateOf(false) }
+    if (timeline) ReviewItemTimeline(item) { timeline = false }
     val late = item.at in 1..now
     val sched = item.kind == ReviewItem.Kind.SCHED_FU || item.kind == ReviewItem.Kind.SCHED_MY
     val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && item.number.isBlank()
@@ -361,7 +374,14 @@ private fun ReviewRow(
     val teamV by TeamSync.version.collectAsState()
     val tt = remember(item.key, teamTasks, teamV) { if (TeamRepo.activeNow) reviewTeamTask(ctx, item, teamTasks) else null }
     val giver = tt != null && tt.fromUid == TeamRepo.uid
-    val banner = remember(tt, teamV) { tt?.let { TeamUi.banner(ctx, it, TeamRepo.uid) } }
+    val banner = remember(tt, teamV) {
+        tt?.let { t ->
+            TeamUi.banner(ctx, t, TeamRepo.uid)
+                // Needs you › Team: the grey early warning, with Call ›.
+                ?: TeamUi.earlyWarning(ctx, t)?.takeIf { item.section == ReviewSection.TEAM }
+                    ?.let { CardBanner(it, ChipTone.MUTED, { ReviewActions.call(ctx, item) }, "Call") }
+        }
+    }
     TaskCard(
         title = item.title,
         done = false,
@@ -370,8 +390,11 @@ private fun ReviewRow(
         time = if (item.at > 0L) Fmt.dueLabel(item.at) else null,
         late = late,
         person = item.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
-        chips = item.chips.filterNot { it.endsWith("late") }.map { RowChip(it, ChipTone.MUTED) } +
-            (tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()),
+        chips = run {
+            val team = tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()
+            // One chip per meaning: skip ours when the team chips already say it.
+            item.chips.filterNot { c -> c.endsWith("late") || team.any { it.text == c } }.map { RowChip(it, ChipTone.MUTED) } + team
+        },
         onCall = if (ReviewActions.canCall(item)) onCall else null,
         onWhatsApp = if (item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
         expanded = open,
@@ -384,7 +407,8 @@ private fun ReviewRow(
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
             links = buildList {
-                tt?.let { t -> add(RowLink(TeamUi.timelineLabel(t), onClick = { TeamUi.openTimeline(t.id) })) }
+                if (tt != null) add(RowLink(TeamUi.timelineLabel(tt), onClick = { TeamUi.openTimeline(tt.id) }))
+                else add(RowLink("Timeline", onClick = { timeline = true }))
                 if (item.kind == ReviewItem.Kind.SCHED_FU) add(RowLink(if (needsPerson) "👤 Set person" else "Edit", onClick = onDetails))
             },
             onNewTime = if (needsPerson) null else onNewTime,
@@ -590,10 +614,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onPickTime = { newTimeFor = item },
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
                         onEdit = { editFor = item },
-                        onHistory = when (item.kind) {
-                            ReviewItem.Kind.SCHED_FU -> null
-                            else -> ({ historyFor = item })
-                        },
+                        onHistory = { historyFor = item },
                         onSkip = {
                             if (item.isReplied) {
                                 handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
@@ -628,14 +649,17 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     }
     // ✏️ Edit: the task's own editor; the session carries on from the same card after it closes.
     editFor?.let { e -> TaskEditorDialog(task = OpenTask.of(e), onDismiss = { editFor = null; tick++ }) }
-    historyFor?.let { h ->
-        val close = { historyFor = null }
-        when (h.kind) {
-            ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(h.id)?.let { CallHistoryDialog(it, close) }
-            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(h.id)?.let { HistoryDialog(it, close) }
-            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(h.id)?.let { MyTaskHistoryDialog(it, close) }
-            ReviewItem.Kind.SCHED_FU -> {}
-        }
+    historyFor?.let { h -> ReviewItemTimeline(h) { historyFor = null } }
+}
+
+/** The full-window Timeline of a Needs you / review item, whatever kind it is. */
+@Composable
+internal fun ReviewItemTimeline(h: ReviewItem, close: () -> Unit) {
+    when (h.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(h.id)?.let { CallHistoryDialog(it, close) }
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(h.id)?.let { HistoryDialog(it, close) }
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(h.id)?.let { MyTaskHistoryDialog(it, close) }
+        ReviewItem.Kind.SCHED_FU -> ToScheduleStore.get(h.id)?.let { ScheduledTimeline(it, close) }
     }
 }
 
@@ -711,7 +735,8 @@ private fun timeIconsOf(n: ReviewItem) = when (n.kind) {
 /** The small chips after the time and person: #number, Held N×. */
 private fun taskChips(ctx: android.content.Context, n: ReviewItem): List<RowChip> = listOfNotNull(
     n.code.takeIf { it.isNotBlank() }?.let { RowChip("#$it", ChipTone.BLUE) },
-    Held.label(Held.count(ctx, n))?.let { RowChip(it, ChipTone.ORANGE) },
+    // One Snoozed chip: an overdue call already counts its holds in its own.
+    Held.label(Held.count(ctx, n))?.takeIf { n.chips.none { c -> c.startsWith("💤") } }?.let { RowChip(it, ChipTone.ORANGE) },
 )
 
 /**
@@ -778,14 +803,14 @@ private fun SessionCard(
             if (awaiting) {
                 Button(
                     onClick = onBackFromCall,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                 ) { Text("Next ›", fontWeight = FontWeight.Bold) }
             } else {
                 val back = remember(item.key) { if (item.isReplied) ReviewData.nextReviewAt(ctx) else 0L }
                 OutlinedButton(
                     onClick = onSkip,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Text(
@@ -1141,7 +1166,7 @@ private fun SessionSummary(
                 ) { Text("⏸ Leave for now", fontWeight = FontWeight.SemiBold, maxLines = 1) }
             }
         }
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
     }
     pickFor?.let { items ->
         val single = items.singleOrNull()
@@ -1214,7 +1239,10 @@ fun ReviewHomeCard(
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     LaunchedEffect(resumeKey) { ReviewSession.init(ctx) }
-    val counts = remember(calls, texts, sched, mine, resumeKey) { ReviewData.shownCounts(ctx) }
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val counts = remember(calls, texts, sched, mine, teamTasks, resumeKey) { ReviewData.shownCounts(ctx) }
+    val team = remember(calls, teamTasks, resumeKey) { ReviewData.build(ctx)[ReviewSection.TEAM].orEmpty().size }
+    fun openTab(i: Int) { ReviewUi.tab.value = i; onOpen() }
     fun count(g: ReviewPrefs.Group) = counts.filter { ReviewPrefs.groupOf(it.first) == g }.sumOf { it.second }
     val replied = count(ReviewPrefs.Group.REPLIED)
     val overdue = count(ReviewPrefs.Group.OVERDUE)
@@ -1242,17 +1270,30 @@ fun ReviewHomeCard(
                     )
                 }
                 Spacer(Modifier.weight(1f))
+                Text("See all ›", color = cs.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { openTab(0) }.padding(horizontal = 6.dp, vertical = 4.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val green = Tones.done.pair
                 val red = Tones.late.pair
                 val amber = Tones.amber.pair
-                NeedTile(replied, "Replied,\ncheck it", green, Modifier.weight(1f), onOpen)
-                NeedTile(overdue, "Overdue", red, Modifier.weight(1f), onOpenOverdue)
-                NeedTile(schedule, "To\nschedule", amber, Modifier.weight(1f), onOpenToSchedule)
+                NeedTile(replied, "Replied,\ncheck it", green, Modifier.weight(1f)) { openTab(1) }
+                NeedTile(overdue, "Overdue", red, Modifier.weight(1f)) { openTab(2) }
+                NeedTile(schedule, "To\nschedule", amber, Modifier.weight(1f)) { openTab(3) }
             }
-            // 👥 ❓ questions waiting / ⚠ stuck / 📅 deadline requests: slim lines under the tiles.
-            Column { TeamNeedsLines() }
+            // Your staff waiting on you: one line, opens the Team tab. His own (need your deadline, sent back) stay lines.
+            if (team > 0 && TeamRepo.activeNow) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Tones.date.bg).clickable { openTab(4) }
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("👥 Team · $team waiting on you", color = Tones.date.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text("›", color = Tones.date.fg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            }
+            Column { TeamNeedsLines(mineOnly = true) }
             val paused = s.active && s.status == ReviewSession.Status.PAUSED
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
@@ -1290,13 +1331,23 @@ fun ReviewHomeCard(
 @Composable
 private fun NeedTile(n: Int, label: String, colors: Pair<Color, Color>, modifier: Modifier, onClick: () -> Unit) {
     val (bg, fg) = colors
-    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = bg, contentColor = fg, modifier = modifier.height(48.dp)) {
-        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.animation.AnimatedContent(n, label = "needCount") { v ->
-                Text("$v", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = bg, contentColor = fg, modifier = modifier.heightIn(min = 48.dp)) {
+        // A narrow tile (small phone, Large display size) puts the number above the words, so no word is broken.
+        androidx.compose.foundation.layout.BoxWithConstraints(contentAlignment = Alignment.Center) {
+            val count: @Composable () -> Unit = {
+                androidx.compose.animation.AnimatedContent(n, label = "needCount") { v ->
+                    Text("$v", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp)
+                }
             }
-            Spacer(Modifier.width(6.dp))
-            Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+            if (maxWidth >= 104.dp) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                count()
+                Spacer(Modifier.width(6.dp))
+                FitText(label, 12.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp, maxLines = 2)
+            } else Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                count()
+                FitText(label.replace("\n", " "), 12.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp, maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
         }
     }
 }

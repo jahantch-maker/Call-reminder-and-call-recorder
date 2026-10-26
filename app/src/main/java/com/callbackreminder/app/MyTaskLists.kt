@@ -179,7 +179,8 @@ internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? =
     ) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             icon?.invoke()
-            Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            // On a narrow screen a long time goes on two lines ("Yesterday,\n7:22 PM") rather than being cut.
+            FitText(text, 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 15.sp)
         }
     }
 }
@@ -249,6 +250,9 @@ internal fun MyTaskCard(
             person = if (t.hasPerson) Names.first(t.personTitle) ?: t.personTitle else null,
             chips = listOfNotNull(Held.label(Held.countMine(ctx, t.id))?.takeIf { !t.done }?.let { RowChip(it, ChipTone.ORANGE) }) +
                 (teamTask?.let { TeamUi.receiverChips(it) } ?: emptyList()) +
+                // His deadline is set but not his own reminder: it waits in To schedule until he sets one.
+                listOfNotNull(RowChip("⏰ Set reminder", ChipTone.ORANGE, onClick = onNewTime)
+                    .takeIf { teamTask != null && teamTask.open && teamTask.due > 0L && !t.timed && !t.done }) +
                 listOfNotNull(RowChip("🔒", ChipTone.MUTED).takeIf { isPriv && !t.done }),
             note = t.note.takeIf { !t.done },
             sub = listName,

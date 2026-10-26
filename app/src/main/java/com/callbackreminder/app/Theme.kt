@@ -59,6 +59,14 @@ object Appearance {
 
     fun wallpaperSupported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
+    /** Display size, this app only: Extra small · Small · Default · Large (Large kept modest so nothing is cut). */
+    val SIZES = listOf("Extra small" to 0.80f, "Small" to 0.90f, "Default" to 1.0f, "Large" to 1.10f)
+    const val SIZE_DEFAULT = 2
+    private const val KEY_SIZE = "app_display_size"
+    fun displaySize(c: Context): Int = AppSettings.getString(c, KEY_SIZE).toIntOrNull()?.takeIf { it in SIZES.indices } ?: SIZE_DEFAULT
+    fun setDisplaySize(c: Context, i: Int) { AppSettings.setString(c, KEY_SIZE, i.toString()); _version.value++ }
+    fun scale(c: Context): Float = SIZES[displaySize(c)].second
+
     /** Whether the app is dark right now, for code outside Compose (widgets, notifications). */
     fun isDark(c: Context): Boolean = when (mode(c)) {
         LIGHT -> false
@@ -235,7 +243,13 @@ fun CallbackTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
             }
         }
     }
-    CompositionLocalProvider(LocalDarkTheme provides isDark, LocalAccent2 provides second) {
+    // Display size: everything (dp and text) grows or shrinks together, like the phone's own display size.
+    val base = androidx.compose.ui.platform.LocalDensity.current
+    val k = version.let { Appearance.scale(ctx) }
+    CompositionLocalProvider(
+        LocalDarkTheme provides isDark, LocalAccent2 provides second,
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(base.density * k, base.fontScale),
+    ) {
         MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
     }
 }
