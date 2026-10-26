@@ -197,32 +197,7 @@ fun TaskEditorDialog(task: OpenTask, onDismiss: () -> Unit, onShowInList: ((mine
 
 /** A My task's History: created, time set / moved / removed, done and not done, newest first. */
 @Composable
-fun MyTaskHistoryDialog(t: MyTask, onDismiss: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    // Tasks from before v0.31 have no lines yet: at least when they were made.
-    val lines = t.events.ifEmpty { listOf(TaskEvent(t.createdAt, "Created")) }.sortedByDescending { it.at }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                Text(t.title, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        },
-        text = {
-            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                lines.forEachIndexed { i, e ->
-                    if (i > 0) HorizontalDivider(color = cs.surfaceVariant)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text(Fmt.dueLabel(e.at), fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.width(96.dp))
-                        Text(e.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}
+fun MyTaskHistoryDialog(t: MyTask, onDismiss: () -> Unit) = MyTaskTimeline(t, onDismiss)
 
 /**
  * Scrolls a list down until [found] says the asked row is on screen (a row inside a group item can't be found

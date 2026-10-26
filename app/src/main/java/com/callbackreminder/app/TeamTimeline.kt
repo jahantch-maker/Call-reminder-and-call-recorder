@@ -132,17 +132,17 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(cs.background)) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // ← Timeline, the task under it: the same title style as every page.
+        // ← a small TIMELINE label; the task itself is the big heading.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-            Text("Timeline", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            Text("TIMELINE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
         }
         if (t == null) {
             Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp))
             return@Column
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(t.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
             TeamChipsRow(
                 buildList {
                     add(RowChip(TeamUi.chain(t, me)?.let { (if (t.toUid == me) "↘ " else "👤 ") + it }
