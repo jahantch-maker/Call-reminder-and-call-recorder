@@ -179,6 +179,9 @@ object ReviewActions {
 object ReviewUi {
     /** The page was opened from the 1 PM / 6 PM popup or its notification: Back leaves the app again. */
     val fromOutside = mutableStateOf(false)
+
+    /** Which Needs you tab to open on ([ReviewData.TABS] index), asked by a Home tile. */
+    val tab = MutableStateFlow<Int?>(null)
 }
 
 private fun whenLabel(at: Long, now: Long): String {
@@ -194,11 +197,6 @@ private fun whenLabel(at: Long, now: Long): String {
 }
 
 // ---------------------------------------------------------------- Review page
-
-/** Which Needs you tab to open on ([ReviewData.TABS] index), asked by a Home tile. */
-object ReviewUi {
-    val tab = MutableStateFlow<Int?>(null)
-}
 
 /** The Review page: every section that is switched on, with Start review, Calls only and a ▶ Start per section. */
 @OptIn(ExperimentalLayoutApi::class)
