@@ -888,8 +888,8 @@ fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onRemind
                     Toast.makeText(ctx, "After Latest (${TeamUi.shortWhen(t.deadline)}). Ask ${t.fromFirst} in the Timeline.", Toast.LENGTH_LONG).show()
                 } else {
                     TeamRepo.setHisDate(t, ms)
-                    // With no reminder of his own yet, his deadline reminds him too.
-                    myTaskId?.let { id -> MyTaskStore.get(id)?.takeIf { !it.timed || it.dueAt == t.due }?.let { MyTaskStore.setDue(id, ms) } }
+                    // The card stays open: he sets ⏰ My reminder himself (it leaves To schedule only with both).
+                    myTaskId?.let { id -> MyTaskStore.get(id)?.takeIf { it.timed && it.dueAt == t.due }?.let { MyTaskStore.setDue(id, ms) } }
                     if (t.locked) Toast.makeText(ctx, "Deadline set · from now on only 📅 Extend deadline on the Timeline", Toast.LENGTH_LONG).show()
                 }
             },

@@ -407,7 +407,7 @@ object TeamRepo {
     private var aliveJob: kotlinx.coroutines.Job? = null
 
     /**
-     * The app came to the front (or left it): tasks sent to you count as Seen while it's open, "last seen" is
+     * The app came to the front (or left it): tasks sent to you count as delivered (Seen only once opened), "last seen" is
      * written at once and every 10 minutes while it stays open, and the tasks are read fresh from the server
      * (a listener can miss changes after a long time in the background).
      */
@@ -429,7 +429,7 @@ object TeamRepo {
             }
             if (!activeNow) return@guard
             val u = uid ?: return@guard
-            _tasks.value.filter { it.toUid == u && it.status == Team.SENT }.forEach { markSeen(it) }
+            _tasks.value.filter { it.toUid == u && it.open && it.deliveredAt == 0L }.forEach { markDelivered(it) }
             TeamSync.pushLocal(appCtx)
             scope.launch { runCatching { fetchOnce(appCtx) }.onFailure { CrashLog.record(appCtx, it, "Team refresh") } }
         }

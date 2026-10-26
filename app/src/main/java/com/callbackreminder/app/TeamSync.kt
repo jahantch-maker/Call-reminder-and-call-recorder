@@ -131,6 +131,8 @@ object TeamSync {
     fun isNew(c: Context, taskId: String): Boolean = taskId !in TeamLinks.set(c, "opened")
 
     fun markOpened(c: Context, taskId: String) {
+        // Seen only when he opens the card in place, its Timeline, or taps its notification (that opens the Timeline).
+        TeamRepo.tasks.value.firstOrNull { it.id == taskId && it.toUid == TeamRepo.uid && it.status == Team.SENT }?.let { TeamRepo.markSeen(it) }
         val s = TeamLinks.set(c, "opened")
         if (taskId in s) return
         s += taskId
@@ -224,7 +226,8 @@ object TeamSync {
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
                     if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
                     // His reminder rings at the deadline until he sets his own: then only he moves it.
-                    if (local.dueAt != t.due && ((before == null && local.dueAt == 0L) || (remoteMoved && (local.dueAt == 0L || local.dueAt == dueOf(before)))))
+                    // A date he picks himself never sets his reminder: he taps ⏰ My reminder.
+                    if (local.dueAt != t.due && !(t.hisDate && local.dueAt == 0L) && ((before == null && local.dueAt == 0L) || (remoteMoved && (local.dueAt == 0L || local.dueAt == dueOf(before)))))
                         MyTaskStore.setDue(local.id, t.due)
                 }
             }
@@ -234,8 +237,7 @@ object TeamSync {
             }
             t.status == Team.DONE || t.status == Team.CHECKED -> local?.let { if (!it.done) MyTaskStore.setDone(it.id, true) }
         }
-        if (t.status == Team.SENT && foreground) TeamRepo.markSeen(t)
-        else if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
+        if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
 
         // What he hears about: all in the task's one notification.
         val was = statusOf(before)

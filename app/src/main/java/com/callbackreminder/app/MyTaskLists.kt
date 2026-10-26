@@ -249,6 +249,9 @@ internal fun MyTaskCard(
             person = if (t.hasPerson) Names.first(t.personTitle) ?: t.personTitle else null,
             chips = listOfNotNull(Held.label(Held.countMine(ctx, t.id))?.takeIf { !t.done }?.let { RowChip(it, ChipTone.ORANGE) }) +
                 (teamTask?.let { TeamUi.receiverChips(it) } ?: emptyList()) +
+                // His deadline is set but not his own reminder: it waits in To schedule until he sets one.
+                listOfNotNull(RowChip("⏰ Set reminder", ChipTone.ORANGE, onClick = onNewTime)
+                    .takeIf { teamTask != null && teamTask.open && teamTask.due > 0L && !t.timed && !t.done }) +
                 listOfNotNull(RowChip("🔒", ChipTone.MUTED).takeIf { isPriv && !t.done }),
             note = t.note.takeIf { !t.done },
             sub = listName,
