@@ -2,13 +2,13 @@ package com.callbackreminder.app
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -45,7 +45,7 @@ class DisplaySizeTest(private val size: Int, private val phone: String) {
     }
 
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val ctx: Application get() = ApplicationProvider.getApplicationContext()
 
@@ -88,7 +88,10 @@ class DisplaySizeTest(private val size: Int, private val phone: String) {
         }
         val label = "$name-${Appearance.SIZES[size].first.replace(" ", "")}-$phone"
         val shot = runCatching {
-            val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
+            // Draw the window straight onto a picture (the test clock never lets a screen capture finish).
+            val v = rule.activity.window.decorView
+            val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+            rule.runOnUiThread { v.draw(Canvas(bmp)) }
             File(out, "$label.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }.exceptionOrNull()?.let { " · no picture: $it" } ?: ""
         val root = rule.onRoot(useUnmergedTree = true).fetchSemanticsNode()
