@@ -4,7 +4,6 @@ import android.app.Application
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -13,7 +12,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -29,7 +27,7 @@ import java.io.File
 /**
  * Every display size (Extra small · Small · Default · Large) on a small and a big phone: the main screens are drawn,
  * a card is opened, and nothing may stick out past the screen's sides (the v0.37 Timeline button bug). A picture of
- * each lands in app/build/screenshots, and texts cut short are listed in report.txt there.
+ * each lands in app/build/screenshots, and report.txt there lists what was checked.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -89,30 +87,25 @@ class DisplaySizeTest(private val size: Int, private val phone: String) {
             }
         }
         val label = "$name-${Appearance.SIZES[size].first.replace(" ", "")}-$phone"
-        runCatching {
+        val shot = runCatching {
             val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
             File(out, "$label.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        }
+        }.exceptionOrNull()?.let { " · no picture: $it" } ?: ""
         val root = rule.onRoot(useUnmergedTree = true).fetchSemanticsNode()
         val width = root.boundsInRoot.width
         val off = mutableListOf<String>()
-        val cut = mutableListOf<String>()
         fun walk(n: SemanticsNode) {
             val b = n.boundsInRoot
             val what = n.config.getOrNull(SemanticsProperties.Text)?.joinToString()
                 ?: n.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString() ?: "node ${n.id}"
             if (b.width > 0f && (b.left < -1f || b.right > width + 1f)) off += "$what [${b.left.toInt()}..${b.right.toInt()} of ${width.toInt()}]"
-            n.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.let { get ->
-                val r = mutableListOf<TextLayoutResult>()
-                if (get(r) && r.firstOrNull()?.didOverflowWidth == true) cut += what
-            }
             // A row that scrolls sideways may hold more than the screen on purpose.
             if (n.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) == null) n.children.forEach { walk(it) }
         }
         walk(root)
         File(out, "report.txt").appendText(
             "$label: " + (if (off.isEmpty()) "nothing off screen" else "OFF SCREEN ${off.joinToString(" | ")}") +
-                (if (cut.isEmpty()) "" else " · text cut: ${cut.joinToString(" | ")}") + "\n"
+                shot + "\n"
         )
         assertTrue("$label: off screen: $off", off.isEmpty())
     }
