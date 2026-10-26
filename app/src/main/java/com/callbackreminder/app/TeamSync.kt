@@ -509,14 +509,16 @@ object TeamSync {
      * dates; ones waiting in To schedule wait for his date). Their texts stop, the app tells him instead.
      */
     fun moveOpenFollowUps(c: Context, m: TeamMember): Int {
-        if (m.phone.isBlank()) return 0
+        val nums = m.numbers
+        if (nums.isEmpty()) return 0
+        fun his(n: String) = n.isNotBlank() && nums.any { SmsStore.sameNumber(it, n) }
         initStores(c)
         var n = 0
         synchronized(lock) {
             val given = TeamLinks.map(c, "given")
             val taken = given.values.toSet()
             ReminderStore.items.value
-                .filter { !it.done && !it.review && it.repeat == null && it.number.isNotBlank() && SmsStore.sameNumber(it.number, m.phone) }
+                .filter { !it.done && !it.review && it.repeat == null && his(it.number) }
                 .forEach { r ->
                     val link = FollowUps.ensureLink(c, r, FollowUps.text(r.linkId))
                     if (link.toString() in taken) return@forEach
@@ -526,7 +528,7 @@ object TeamSync {
                     n++
                 }
             ToScheduleStore.items.value
-                .filter { it.number.isNotBlank() && SmsStore.sameNumber(it.number, m.phone) }
+                .filter { his(it.number) }
                 .forEach { item ->
                     val link = item.linkId.takeIf { it != 0L } ?: FollowUps.newLink(c).also { ToScheduleStore.put(item.copy(linkId = it, textOn = false)) }
                     if (link.toString() in taken) return@forEach

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -420,7 +421,6 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
 @Composable
 private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
     val ctx = LocalContext.current
-    var myPhone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var joinName by remember { mutableStateOf(TeamRepo.user.value?.displayName.orEmpty()) }
     var home by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -437,9 +437,10 @@ private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
             OutlinedTextField(joinName, { joinName = it }, label = { Text("Your name") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-            OutlinedTextField(myPhone, { myPhone = it }, label = { Text("Your mobile number") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone))
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text("No phone number to type: your manager links your numbers when he approves you.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
+            }
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Text(
                     "Before you join: your manager will see your work tasks and follow-ups. Tap 🔒 Private on any task to keep it " +
@@ -449,9 +450,9 @@ private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
             }
             Button(onClick = {
                 when {
-                    myPhone.isBlank() -> Toast.makeText(ctx, "Add your mobile number", Toast.LENGTH_SHORT).show()
-                    h != null -> go { TeamRepo.joinTeam(h.first, joinName, myPhone) }
-                    else -> go { TeamRepo.join(code, joinName, myPhone) }
+                    joinName.isBlank() -> Toast.makeText(ctx, "Add your name", Toast.LENGTH_SHORT).show()
+                    h != null -> go { TeamRepo.joinTeam(h.first, joinName, "") }
+                    else -> go { TeamRepo.join(code, joinName, "") }
                 }
             }, enabled = !busy && looked && (h != null || code.length == 6), modifier = Modifier.fillMaxWidth()) {
                 Text(if (h != null) "Ask to join ${h.second}" else "Ask to join")
@@ -610,14 +611,14 @@ private fun TeamActive(
     }
 
     approving?.let { w ->
-        TeamApproveDialog(w, me, active, onDismiss = { approving = null }) { phone, boss, role ->
+        TeamApproveDialog(w, me, active, onDismiss = { approving = null }) { nums, boss, role ->
             approving = null
-            go { TeamRepo.approve(ctx, w, phone, boss, role) }
+            go { TeamRepo.approve(ctx, w, nums, boss, role) }
         }
     }
     editing?.let { m ->
         TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
-            onSave = { boss, role, phone -> editing = null; go { TeamRepo.setChart(m, boss, role, phone) } },
+            onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(m, boss, role, nums) } },
             onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
     }
 }
@@ -654,50 +655,140 @@ private fun TeamChartFields(
     }
 }
 
-/** Approve: his saved number (so his open follow-ups move), who he reports to, his role. */
+/** Approve: who he reports to, his role, then his NUMBERS from your contacts (his open follow-ups under all of them move). */
 @Composable
 private fun TeamApproveDialog(
-    w: TeamMember, me: TeamMember, active: List<TeamMember>, onDismiss: () -> Unit, onApprove: (String, String, String) -> Unit,
+    w: TeamMember, me: TeamMember, active: List<TeamMember>, onDismiss: () -> Unit, onApprove: (MemberNumbers, String, String) -> Unit,
 ) {
-    var phone by remember { mutableStateOf(w.phone) }
-    var picked by remember { mutableStateOf("") }
+    var nums by remember { mutableStateOf(MemberNumbers.of(w)) }
     var boss by remember { mutableStateOf(me.uid) }
     var role by remember { mutableStateOf(Team.MEMBER) }
-    val count = remember(phone) {
-        if (phone.isBlank()) 0 else ReminderStore.items.value.count { !it.done && !it.review && it.repeat == null && SmsStore.sameNumber(it.number, phone) } +
-            ToScheduleStore.items.value.count { SmsStore.sameNumber(it.number, phone) }
-    }
+    val first = Names.first(w.name) ?: w.name.ifBlank { "him" }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Approve ${w.name.ifBlank { w.email }}") },
+        title = { Text("${w.name.ifBlank { w.email }} wants to join") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Which saved contact is ${Names.first(w.name) ?: "he"}? Links him to your contact, so his history continues.",
-                    style = MaterialTheme.typography.bodySmall)
-                if (picked.isNotBlank()) Text("✓ $picked", fontWeight = FontWeight.Bold)
-                PersonPicker(prompt = null) { n, num -> picked = n.ifBlank { num }; phone = num }
-                OutlinedTextField(phone, { phone = it }, label = { Text("His mobile number") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                if (w.email.isNotBlank()) Text(w.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TeamChartFields(w, active, boss, { boss = it }, role, { role = it })
-                if (count > 0) Text("His $count open follow-up${if (count == 1) "" else "s"} move to his app. The task and its time go to him; your old history stays on your phone.",
-                    style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                TeamNumbersEditor(w.name, nums) { nums = it }
             }
         },
         confirmButton = {
-            Button(onClick = { onApprove(phone, boss, role) }, enabled = phone.isNotBlank()) {
-                Text(if (count > 0) "Approve and move $count" else "Approve")
+            Button(onClick = { onApprove(nums, boss, role) }, enabled = nums.main.isNotBlank(), modifier = Modifier.height(48.dp)) {
+                Text(if (nums.main.isBlank()) "Pick a number first" else "Approve $first", maxLines = 1)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
+/** His numbers as picked: the ticked ones, ⭐ [main] (calls and SMS) and 🟢 [wa] (WhatsApp). */
+data class MemberNumbers(val rows: List<Row>, val main: String, val wa: String) {
+    data class Row(val number: String, val from: String, val ticked: Boolean = true, val onWa: Boolean = false)
+
+    val ticked: List<String> get() = rows.filter { it.ticked }.map { it.number }
+
+    companion object {
+        fun of(m: TeamMember) = MemberNumbers(
+            m.numbers.map { Row(it, "") }, m.phone, m.wa.takeIf { it.isNotBlank() && it != m.phone }.orEmpty(),
+        )
+    }
+
+    /** Adds numbers (a contact's, or typed); the first one ticked becomes ⭐ Main, a WhatsApp one 🟢 WA. */
+    fun plus(new: List<Row>): MemberNumbers {
+        val add = new.filter { n -> rows.none { SmsStore.sameNumber(it.number, n.number) } }
+        val all = rows + add
+        val m = main.ifBlank { all.firstOrNull { it.ticked }?.number.orEmpty() }
+        val w = wa.ifBlank { all.firstOrNull { it.ticked && it.onWa && it.number != m }?.number.orEmpty() }
+        return MemberNumbers(all, m, w)
+    }
+
+    fun tick(n: String, on: Boolean): MemberNumbers {
+        val r = rows.map { if (it.number == n) it.copy(ticked = on) else it }
+        val left = r.filter { it.ticked }.map { it.number }
+        return MemberNumbers(r, if (main in left) main else left.firstOrNull().orEmpty(), if (wa in left) wa else "")
+    }
+}
+
+/**
+ * NUMBERS: contacts named like him are suggested; 📇 Pick from contacts, ＋ Type number. Each number has a tick,
+ * ⭐ Main (calls and SMS) and 🟢 WA (WhatsApp, found by itself when the contact shows it). A green line says what moves.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TeamNumbersEditor(name: String, nums: MemberNumbers, onChange: (MemberNumbers) -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var typing by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
+    val suggested = remember(name) { WaNumbers.contactsNamed(ctx, Names.first(name) ?: name) }
+    fun addContact(contact: String, number: String) {
+        val found = WaNumbers.lookup(ctx, number).options
+        val rows = found.ifEmpty { listOf(WaOption(number, "", false)) }.map { MemberNumbers.Row(it.number, contact.ifBlank { it.label }, onWa = it.onWhatsApp) }
+        onChange(nums.plus(rows))
+    }
+    val pick = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+        runCatching {
+            ctx.contentResolver.query(uri, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
+                if (c.moveToFirst()) addContact(c.getString(0).orEmpty(), c.getString(1).orEmpty())
+            }
+        }
+    }
+    ChipHeading(if (nums.rows.isEmpty()) "NUMBERS · FROM YOUR CONTACTS" else "NUMBERS · TAP ⭐ / 🟢 TO CHOOSE", warn = nums.main.isBlank())
+    val unused = suggested.filter { (_, n) -> nums.rows.none { SmsStore.sameNumber(it.number, n) } }
+    if (unused.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        unused.forEach { (c, n) -> SmallChip(RowChip("📇 $c", ChipTone.BLUE, onClick = { addContact(c, n) })) }
+    }
+    nums.rows.forEach { r ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Checkbox(checked = r.ticked, onCheckedChange = { onChange(nums.tick(r.number, it)) })
+            Column(Modifier.weight(1f)) {
+                Text(r.number, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (r.from.isNotBlank()) Text("📇 ${r.from}", fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            val isMain = r.number == nums.main
+            val isWa = r.number == (nums.wa.ifBlank { nums.main })
+            SmallChip(RowChip("⭐ Main", if (isMain) ChipTone.ORANGE else ChipTone.MUTED,
+                onClick = { if (r.ticked) onChange(nums.copy(main = r.number, wa = if (nums.wa == r.number) "" else nums.wa)) }))
+            Spacer(Modifier.width(4.dp))
+            SmallChip(RowChip("🟢 WA", if (isWa) ChipTone.GREEN else ChipTone.MUTED,
+                onClick = { if (r.ticked) onChange(nums.copy(wa = if (r.number == nums.main) "" else r.number)) }))
+        }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        CardLinkText(if (nums.rows.isEmpty()) "📇 Pick from contacts" else "＋ Add another contact") {
+            pick.launch(android.content.Intent(android.content.Intent.ACTION_PICK, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI))
+        }
+        CardLinkText("＋ Type number") { typing = true }
+    }
+    if (typing) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(typed, { typed = it }, label = { Text("Number") }, singleLine = true, modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone))
+        TextButton(onClick = {
+            if (typed.isNotBlank()) addContact(ContactLookup.nameFor(ctx, typed.trim()), typed.trim())
+            typed = ""; typing = false
+        }) { Text("Add") }
+    }
+    val ticked = nums.ticked
+    val count = remember(ticked) {
+        if (ticked.isEmpty()) 0 else ReminderStore.items.value.count { r -> !r.done && !r.review && r.repeat == null && ticked.any { SmsStore.sameNumber(it, r.number) } } +
+            ToScheduleStore.items.value.count { s -> ticked.any { SmsStore.sameNumber(it, s.number) } }
+    }
+    if (count > 0) Surface(shape = RoundedCornerShape(12.dp), color = Tones.green.bg, modifier = Modifier.fillMaxWidth()) {
+        Text("Moves $count open follow-up${if (count == 1) "" else "s"}${if (ticked.size > 1) " (${if (ticked.size == 2) "both" else "all ${ticked.size}"} numbers)" else ""} to ${Names.first(name) ?: "his"}'s app",
+            color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp))
+    }
+}
+
 @Composable
 private fun TeamChartDialog(
-    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit,
+    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit, onSave: (String, String, MemberNumbers) -> Unit,
     onRemove: (TeamMember?) -> Unit,
 ) {
-    var phone by remember { mutableStateOf(m.phone) }
+    var nums by remember { mutableStateOf(MemberNumbers.of(m)) }
     var boss by remember { mutableStateOf(m.reportsTo) }
     var role by remember { mutableStateOf(m.role) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -706,13 +797,12 @@ private fun TeamChartDialog(
         title = { Text(m.name) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 TeamChartFields(m, active, boss, { boss = it }, role, { role = it })
+                TeamNumbersEditor(m.name, nums) { nums = it }
                 TextButton(onClick = { confirmRemove = true }) { Text("Remove member", color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { Button(onClick = { onSave(boss, role, phone) }) { Text("Save") } },
+        confirmButton = { Button(onClick = { onSave(boss, role, nums) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
     if (confirmRemove) {
@@ -1006,7 +1096,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
             }
             if (m.phone.isNotBlank()) {
                 IconButton(onClick = { dial(ctx, m.phone) }) { Icon(Icons.Rounded.Call, contentDescription = "Call", tint = cs.primary) }
-                TextButton(onClick = { WhatsApp.open(ctx, m.phone, "") }) { Text("WA", color = Color(0xFF25D366), fontWeight = FontWeight.ExtraBold) }
+                TextButton(onClick = { WhatsApp.open(ctx, m.waNumber, "") }) { Text("WA", color = Color(0xFF25D366), fontWeight = FontWeight.ExtraBold) }
             }
         }
         @Suppress("UNCHECKED_CAST")

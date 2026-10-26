@@ -556,7 +556,7 @@ object TeamRepo {
     suspend fun adminsToMembers() {
         val me = _me.value ?: return
         if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
-        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, it.phone) }
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it)) }
         p().edit().putBoolean("admins_to_members", true).apply()
     }
 
@@ -618,16 +618,19 @@ object TeamRepo {
         return out
     }
 
-    /** The Owner lets someone in: their saved number, who they report to and their role. */
-    suspend fun approve(c: Context, m: TeamMember, phone: String, reportsTo: String, role: String): String? = try {
+    /** The Owner lets someone in: his numbers (⭐ Main, others, 🟢 WhatsApp), who he reports to and his role. */
+    suspend fun approve(c: Context, m: TeamMember, nums: MemberNumbers, reportsTo: String, role: String): String? = try {
+        val phone = nums.main.trim()
+        val more = nums.ticked.map { it.trim() }.filter { it != phone }
         members().document(m.uid).update(
             mapOf(
-                "status" to Team.ACTIVE, "phone" to phone.trim(), "reportsTo" to reportsTo, "role" to role,
-                "managers" to chainFrom(reportsTo),
+                "status" to Team.ACTIVE, "phone" to phone, "more" to more, "wa" to nums.wa.trim(),
+                "reportsTo" to reportsTo, "role" to role, "managers" to chainFrom(reportsTo),
             )
         ).await()
-        TeamDossier.stopDailyList(c, phone.trim())
-        val moved = TeamSync.moveOpenFollowUps(c, m.copy(phone = phone.trim(), reportsTo = reportsTo, managers = chainFrom(reportsTo), status = Team.ACTIVE))
+        (listOf(phone) + more).forEach { TeamDossier.stopDailyList(c, it) }
+        val moved = TeamSync.moveOpenFollowUps(c, m.copy(phone = phone, more = more, wa = nums.wa.trim(), reportsTo = reportsTo,
+            managers = chainFrom(reportsTo), status = Team.ACTIVE))
         if (moved > 0) "Moved $moved open follow-up${if (moved == 1) "" else "s"} to ${m.first}'s app" else null
     } catch (e: Exception) {
         "Couldn't approve: ${e.message ?: e.javaClass.simpleName}"
@@ -641,17 +644,22 @@ object TeamRepo {
     }
 
     /** Chart and role changes; everyone under [m] gets their manager list redone too. */
-    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, phone: String): String? {
+    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? {
         if (reportsTo == m.uid || m.uid in chainFrom(reportsTo)) return "${m.first} can't report to someone under them."
-        return setChartNow(m, reportsTo, role, phone)
+        return setChartNow(m, reportsTo, role, nums)
     }
 
-    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, phone: String): String? = try {
+    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? = try {
+        val phone = nums.main.trim()
+        val more = nums.ticked.map { it.trim() }.filter { it != phone }
+        val wa = nums.wa.trim()
         members().document(m.uid).update(
-            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone.trim(), "managers" to chainFrom(reportsTo))
+            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo))
         ).await()
         // Local copy first, so the people under them get the new chain.
-        _members.value = _members.value.map { if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone.trim(), managers = chainFrom(reportsTo)) else it }
+        _members.value = _members.value.map {
+            if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo)) else it
+        }
         _members.value.filter { m.uid in it.managers }.forEach { under ->
             members().document(under.uid).update("managers", chainFrom(under.reportsTo)).await()
         }

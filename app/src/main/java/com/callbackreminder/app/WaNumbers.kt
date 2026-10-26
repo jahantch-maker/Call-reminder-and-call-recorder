@@ -82,6 +82,30 @@ object WaNumbers {
     fun sameNumber(c: Context, a: String, b: String): Boolean =
         WhatsApp.international(c, a) == WhatsApp.international(c, b)
 
+    /** Contacts whose name has [name] in it ("Basharat Site", "Basharat 2"), one number each: suggestions at approval. */
+    fun contactsNamed(c: Context, name: String): List<Pair<String, String>> {
+        val q = name.trim()
+        if (q.length < 2 || !ContactLookup.hasPermission(c)) return emptyList()
+        return try {
+            val out = linkedMapOf<String, String>()
+            c.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$q%"),
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            )?.use { cur ->
+                while (cur.moveToNext() && out.size < 8) {
+                    val n = cur.getString(0).orEmpty()
+                    val num = cur.getString(1)?.trim().orEmpty()
+                    if (n.isNotBlank() && num.isNotBlank() && n !in out) out[n] = num
+                }
+            }
+            out.toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /** The contact's name and numbers. Nothing without contacts permission or when [number] isn't saved. */
     fun lookup(c: Context, number: String): WaLookup {
         if (number.isBlank() || !ContactLookup.hasPermission(c)) return WaLookup("", emptyList())

@@ -215,5 +215,5 @@ object TeamDossier {
 
     /** Daily-list people who are on the team now (skipped even if still switched on). */
     fun isMemberKey(key: String): Boolean =
-        TeamRepo.activeNow && TeamRepo.members.value.any { it.active && it.phone.isNotBlank() && (RecentPeople.key(it.phone) == key || SmsStore.sameNumber(it.phone, key)) }
+        TeamRepo.activeNow && TeamRepo.members.value.any { it.active && it.numbers.any { n -> RecentPeople.key(n) == key || SmsStore.sameNumber(n, key) } }
 }
