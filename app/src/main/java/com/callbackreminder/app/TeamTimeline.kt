@@ -152,7 +152,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                         else RowChip("📅 Deadline pending" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
                     )
                     if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
-                    if (t.photoProof && t.open) add(RowChip("📷 Photo proof on Done", ChipTone.MUTED))
+                    if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
                 }
             )
         }

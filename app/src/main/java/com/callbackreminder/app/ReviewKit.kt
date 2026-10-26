@@ -186,10 +186,10 @@ object ReviewData {
 
         val replied = calls.filter { it.done && it.review && it.reviewLaterUntil <= now }.map {
             ReviewItem("cr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id,
-                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("To check"), code = it.code)
+                it.note.ifBlank { "Call back" }, it.title, it.number, it.doneAt, listOf("✅ Done, check it"), code = it.code)
         } + texts.filter { !it.done && it.review == SmsReminder.Review.REPLIED && it.reviewLaterUntil <= now }.map {
             ReviewItem("tr:${it.id}", ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id,
-                it.message, it.title, it.number, it.reviewAt, listOf("✅ Replied Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
+                it.message, it.title, it.number, it.reviewAt, listOf("✅ Done ${it.code} · ${Fmt.timeOnly(it.reviewAt)}"), code = it.code)
         }
 
         // Replies with more than a "done" in them: read first, the task stays open.
@@ -199,7 +199,7 @@ object ReviewData {
         val overdueCalls = calls.filter { !it.done && it.dueAt <= now && "c:${it.id}" !in noteKeys }.map {
             ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
                 it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt,
-                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "Delayed ${n}×" }), code = it.code)
+                listOfNotNull(lateLabel(it.dueAt, now), it.delays.size.takeIf { n -> n > 0 }?.let { n -> "💤 Snoozed ${n + Held.countCall(ctx, it.id)}×" }), code = it.code)
         }
         // A text follow-up with no call of its own: overdue once its texts went with no reply, or its due passed.
         val overdueTexts = texts.filter { t ->
@@ -214,7 +214,7 @@ object ReviewData {
         val schedFu = ToScheduleStore.items.value.sortedBy { it.createdAt }.map {
             ReviewItem("s:${it.id}", ReviewSection.SCHED_FU, ReviewItem.Kind.SCHED_FU, it.id,
                 it.headline, if (it.number.isNotBlank() || it.name.isNotBlank()) it.title else "", it.number, 0L,
-                listOf(if (it.number.isBlank()) "No person" else if (it.needsDetails) "Needs details" else "No time"))
+                buildList { if (it.number.isBlank()) add("👤 No person"); if (!it.callOn && !it.textOn) add("🔕 No alert"); if (isEmpty()) add("No time") })
         }
         val my = MyTaskStore.items.value.filter { !it.done }
         val schedMy = my.filter { !it.timed }.sortedBy { it.createdAt }.map {
@@ -265,11 +265,11 @@ object ReviewData {
         return when {
             key.startsWith("cr:") -> ReminderStore.get(id)?.takeIf { it.done && it.review }?.let {
                 ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, it.id, it.note.ifBlank { "Call back" }, it.title,
-                    it.number, it.reviewLaterUntil, listOf("To check"), code = it.code)
+                    it.number, it.reviewLaterUntil, listOf("✅ Done, check it"), code = it.code)
             }
             key.startsWith("tr:") -> SmsStore.get(id)?.takeIf { !it.done && it.review == SmsReminder.Review.REPLIED }?.let {
                 ReviewItem(key, ReviewSection.REPLIED, ReviewItem.Kind.TEXT_REVIEW, it.id, it.message, it.title, it.number,
-                    it.reviewLaterUntil, listOf("Replied Done ${it.code}"), code = it.code)
+                    it.reviewLaterUntil, listOf("✅ Done ${it.code}"), code = it.code)
             }
             else -> null
         }
@@ -671,7 +671,7 @@ object ReviewSession {
 
 /**
  * How often a task was pushed on in review (a new time on a late one, Tomorrow same time or Leave for now at the
- * end). From 3 the task shows an orange "Held N×" tag, so the ones you keep avoiding stand out.
+ * end). From 3 the task shows an orange "💤 Snoozed N×" tag, so the ones you keep avoiding stand out.
  */
 object Held {
     const val SHOW_FROM = 3
@@ -691,7 +691,7 @@ object Held {
     fun countMine(c: Context, id: Long): Int = p(c).getInt("m:$id", 0)
 
     /** The tag text, or null below [SHOW_FROM]. */
-    fun label(n: Int): String? = if (n >= SHOW_FROM) "Held ${n}×" else null
+    fun label(n: Int): String? = if (n >= SHOW_FROM) "💤 Snoozed ${n}×" else null
 
     /** One more push; the returned Undo takes it back. */
     fun push(c: Context, item: ReviewItem): () -> Unit {

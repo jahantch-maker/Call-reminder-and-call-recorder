@@ -586,10 +586,15 @@ internal fun FollowUpCard(
             }
         }
         teamTask?.let { addAll(if (it.toUid == TeamRepo.uid) TeamUi.receiverChips(it) else TeamUi.giverChips(it)) }
-        if (e.callReview) add(RowChip(if (call!!.note.isBlank()) "No task written" else "Done, review it", ChipTone.GREEN))
-        if (!finished && call != null && call.delays.isNotEmpty()) add(RowChip("Delayed ${call.delays.size}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
-        // Pushed on again and again in review.
-        if (!finished) Held.label(call?.let { Held.countCall(ctx, it.id) } ?: text?.let { Held.countText(ctx, it.id) } ?: 0)?.let { add(RowChip(it, ChipTone.ORANGE)) }
+        // One chip per meaning: a team task already says "✅ Done, check it".
+        if (e.callReview && teamTask == null) add(RowChip(if (call!!.note.isBlank()) "No task written" else "✅ Done, check it", ChipTone.GREEN))
+        // Snoozed: moved on by hand plus held on in review, one count.
+        if (!finished) {
+            val delays = call?.delays?.size ?: 0
+            val held = call?.let { Held.countCall(ctx, it.id) } ?: text?.let { Held.countText(ctx, it.id) } ?: 0
+            val snoozed = delays + held
+            if (delays > 0 || held >= Held.SHOW_FROM) add(RowChip("💤 Snoozed ${snoozed}×", ChipTone.ORANGE, Icons.Rounded.History, onTimeline))
+        }
     }
 
     val time = when {

@@ -370,8 +370,11 @@ private fun ReviewRow(
         time = if (item.at > 0L) Fmt.dueLabel(item.at) else null,
         late = late,
         person = item.person.takeIf { it.isNotBlank() }?.let { Names.first(it) ?: it },
-        chips = item.chips.filterNot { it.endsWith("late") }.map { RowChip(it, ChipTone.MUTED) } +
-            (tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()),
+        chips = run {
+            val team = tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()
+            // One chip per meaning: skip ours when the team chips already say it.
+            item.chips.filterNot { c -> c.endsWith("late") || team.any { it.text == c } }.map { RowChip(it, ChipTone.MUTED) } + team
+        },
         onCall = if (ReviewActions.canCall(item)) onCall else null,
         onWhatsApp = if (item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
         expanded = open,
@@ -711,7 +714,8 @@ private fun timeIconsOf(n: ReviewItem) = when (n.kind) {
 /** The small chips after the time and person: #number, Held N×. */
 private fun taskChips(ctx: android.content.Context, n: ReviewItem): List<RowChip> = listOfNotNull(
     n.code.takeIf { it.isNotBlank() }?.let { RowChip("#$it", ChipTone.BLUE) },
-    Held.label(Held.count(ctx, n))?.let { RowChip(it, ChipTone.ORANGE) },
+    // One Snoozed chip: an overdue call already counts its holds in its own.
+    Held.label(Held.count(ctx, n))?.takeIf { n.chips.none { c -> c.startsWith("💤") } }?.let { RowChip(it, ChipTone.ORANGE) },
 )
 
 /**
