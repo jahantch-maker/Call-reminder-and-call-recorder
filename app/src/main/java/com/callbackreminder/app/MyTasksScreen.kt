@@ -819,7 +819,7 @@ private fun TaskWindow(
                     Button(
                         onClick = onSave,
                         enabled = canSave,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(16.dp)
                     ) { Text(saveLabel, fontWeight = FontWeight.Bold) }
                 }

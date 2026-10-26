@@ -248,7 +248,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     Button(
                         onClick = { start(ReviewSession.MODE_ALL) },
                         enabled = allCount > 0,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(18.dp),
                     ) { Text("▶ Start review ($allCount)", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -778,14 +778,14 @@ private fun SessionCard(
             if (awaiting) {
                 Button(
                     onClick = onBackFromCall,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                 ) { Text("Next ›", fontWeight = FontWeight.Bold) }
             } else {
                 val back = remember(item.key) { if (item.isReplied) ReviewData.nextReviewAt(ctx) else 0L }
                 OutlinedButton(
                     onClick = onSkip,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Text(
@@ -1141,7 +1141,7 @@ private fun SessionSummary(
                 ) { Text("⏸ Leave for now", fontWeight = FontWeight.SemiBold, maxLines = 1) }
             }
         }
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Back to Review", fontWeight = FontWeight.Bold) }
     }
     pickFor?.let { items ->
         val single = items.singleOrNull()

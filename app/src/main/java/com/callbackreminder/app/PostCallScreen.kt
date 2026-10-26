@@ -535,7 +535,7 @@ private fun BigChoice(
 internal fun CallAgainButton(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(60.dp),
+        modifier = Modifier.fillMaxWidth().height(48.dp),
         shape = RoundedCornerShape(30.dp),
         color = Color(0xFF0FA68E),
         contentColor = Color.White,
@@ -557,7 +557,7 @@ internal fun OptionTile(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
