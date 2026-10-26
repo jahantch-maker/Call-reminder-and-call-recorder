@@ -198,15 +198,29 @@ object TeamUi {
         val giver = t.fromUid == me
         val n = TeamSync.unreadCount(c, t, me)
         return when {
-            giver && t.stuck -> CardBanner("⚠ ${t.toFirst} is stuck" + t.stuckText.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), ChipTone.RED, open)
-            giver && t.asking -> CardBanner("📅 ${t.toFirst} asks to extend to ${shortWhen(t.moreDue)}", ChipTone.PURPLE, open)
-            giver && t.asks -> CardBanner("❓ ${t.toFirst} asked a question", ChipTone.ORANGE, open)
+            giver && t.stuck -> CardBanner("⚠ ${t.toFirst} is stuck" + t.stuckText.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), ChipTone.RED, open, "Answer")
+            giver && t.asking -> CardBanner("📅 ${t.toFirst} asks to extend to ${shortWhen(t.moreDue)}", ChipTone.PURPLE, open, "Answer")
+            giver && t.asks -> CardBanner("❓ ${t.toFirst} asked a question", ChipTone.ORANGE, open, "Answer")
             !giver && t.status == Team.REOPENED -> CardBanner("↩ Not done yet" + (if (t.reason.isNotBlank()) " · ${t.reason}" else "") +
                 if (t.due == 0L) " · pick a new deadline" else "", ChipTone.RED, open)
             !giver && t.toUid == me && t.open && TeamSync.isNew(c, t.id) -> CardBanner("📥 New from ${t.fromFirst}", ChipTone.BLUE, open)
             n > 0 -> CardBanner("💬 $n new on Timeline", ChipTone.BLUE, open)
             else -> null
         }
+    }
+
+    /**
+     * Grey early warnings on a task you gave (Needs you › Team): not opened yet after 2 working hours (urgent) or one
+     * working day, or extended 2× (urgent) / 3× and more.
+     */
+    fun earlyWarning(c: Context, t: TeamTask, now: Long = System.currentTimeMillis()): String? {
+        if (!t.open || t.fromUid != TeamRepo.uid) return null
+        if (!Ticks.seen(t)) {
+            val m = TeamRules.minutesSince(c, t.createdAt, now)
+            if (m >= if (t.urgent) 120L else TeamRules.dayMin(c)) return "👁 Not seen by ${t.toFirst} · ${m / 60} h"
+        }
+        if (t.extCount >= if (t.urgent) 2 else 3) return "📅 Extended ${t.extCount}× by ${t.toFirst}"
+        return null
     }
 
     /** "Timeline · 📷 2 · 🎤 1": the link with what it holds. */
@@ -1221,12 +1235,12 @@ private fun TeamBlockDayDialog(
  * for a time ›": ⚠ stuck, ❓ questions waiting, 📅 deadline requests open Follow-ups at the first such card.
  */
 @Composable
-fun TeamNeedsLines() {
+fun TeamNeedsLines(mineOnly: Boolean = false) {
     val ctx = LocalContext.current
     val tasks by TeamRepo.tasks.collectAsState()
     val me by TeamRepo.me.collectAsState()
     if (me?.active != true) return
-    val needs = remember(tasks, me) { TeamUi.needs(ctx, tasks, me?.uid) }
+    val needs = remember(tasks, me) { TeamUi.needs(ctx, tasks, me?.uid).filter { !mineOnly || it.mine } }
     needs.forEach { n ->
         val fg = when (n.tone) {
             ChipTone.RED -> MaterialTheme.colorScheme.error

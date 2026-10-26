@@ -209,7 +209,8 @@ fun TaskCard(
 }
 
 /** The thin line across a card's top: what waits on it, in its colour; tap opens it (the Timeline). */
-data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null)
+/** The thin line on top of a card; [action] (like "Answer" or "Call") shows on the right before ›. */
+data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null, val action: String? = null)
 
 @Composable
 private fun CardBannerLine(banner: CardBanner?) {
@@ -233,6 +234,7 @@ private fun CardBannerLine(banner: CardBanner?) {
         ) {
             Text(b.text, color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
+            if (b.action != null) Text(b.action + " ", color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             if (b.onClick != null) Text("›", color = bfg, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
@@ -378,7 +380,11 @@ internal fun BarSlot(
 
 /** The box with two or three options (Tasks | Dossier, Open | Done, Follow-ups | My tasks…), used for every top choice. */
 @Composable
-fun BoxTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier.fillMaxWidth()) {
+fun BoxTabs(
+    labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier.fillMaxWidth(),
+    /** Many tabs (Needs you): smaller text on two lines ("Overdue\n6"), so none is cut at any display size. */
+    compact: Boolean = false,
+) {
     val cs = MaterialTheme.colorScheme
     Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = modifier) {
         Row(Modifier.padding(4.dp)) {
@@ -391,10 +397,13 @@ fun BoxTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifi
                     shape = RoundedCornerShape(11.dp),
                     color = fill,
                     shadowElevation = if (on) 1.dp else 0.dp,
-                    modifier = Modifier.weight(1f).height(40.dp)
+                    modifier = Modifier.weight(1f).height(if (compact) 44.dp else 40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 1)
+                        if (compact) Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 2,
+                            fontSize = 12.sp, lineHeight = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+                        else Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = ink, maxLines = 1)
                     }
                 }
             }

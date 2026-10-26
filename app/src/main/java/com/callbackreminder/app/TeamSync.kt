@@ -132,7 +132,7 @@ object TeamSync {
 
     fun markOpened(c: Context, taskId: String) {
         // Seen only when he opens the card in place, its Timeline, or taps its notification (that opens the Timeline).
-        TeamRepo.tasks.value.firstOrNull { it.id == taskId && it.toUid == TeamRepo.uid && it.status == Team.SENT }?.let { TeamRepo.markSeen(it) }
+        TeamRepo.tasks.value.firstOrNull { it.id == taskId && it.toUid == TeamRepo.uid && it.seenAt == 0L }?.let { TeamRepo.markSeen(it) }
         val s = TeamLinks.set(c, "opened")
         if (taskId in s) return
         s += taskId

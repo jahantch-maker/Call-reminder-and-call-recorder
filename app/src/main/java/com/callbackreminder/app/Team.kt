@@ -235,6 +235,9 @@ object TeamRules {
     }
 
     /** Minutes from [from] to [to], counting only working hours (weekly off day skipped) when that's on. */
+    /** One working day in minutes: your working hours, else the office's 11 AM - 9 PM. */
+    fun dayMin(c: Context): Long = if (WorkHours.isSet(c)) (WorkHours.end(c) - WorkHours.start(c)).coerceAtLeast(60).toLong() else 600L
+
     fun minutesSince(c: Context, from: Long, to: Long = System.currentTimeMillis()): Long {
         if (to <= from) return 0L
         if (!workingOnly(c)) return (to - from) / 60_000L
@@ -806,9 +809,11 @@ object TeamRepo {
     }
 
     fun markSeen(t: TeamTask) {
-        if (t.status != Team.SENT) return
+        if (t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)) return
         val now = System.currentTimeMillis()
-        val f = mutableMapOf<String, Any>("status" to Team.SEEN, "seenAt" to now)
+        // A fixed date (Dated) stays Dated: only the time he saw it is added.
+        val f = mutableMapOf<String, Any>("seenAt" to now)
+        if (t.status == Team.SENT) f["status"] = Team.SEEN
         if (t.deliveredAt == 0L) f["deliveredAt"] = now
         update(t, f, "Seen by ${t.toFirst}")
     }
