@@ -274,7 +274,7 @@ object ReviewData {
     }
 
     /** Needs you tabs: All, Replied, Overdue (follow-ups + My tasks), To schedule (both), Team. */
-    val TABS = listOf(
+    val TABS: List<Pair<String, List<ReviewSection>>> = listOf(
         "All" to emptyList(),
         "Replied" to listOf(ReviewSection.REPLIED),
         "Overdue" to listOf(ReviewSection.OVERDUE, ReviewSection.MY_LATE),
