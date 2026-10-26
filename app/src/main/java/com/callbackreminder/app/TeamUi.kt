@@ -157,10 +157,10 @@ object TeamUi {
         when {
             t.status == Team.REOPENED -> {
                 add(RowChip("↩ Not done yet", ChipTone.RED))
-                add(if (t.due > 0L) RowChip("📅 Deadline ${shortWhen(t.due)}", ChipTone.ORANGE) else RowChip("📅 Deadline pending", ChipTone.ORANGE))
+                add(if (t.due > 0L) RowChip("📅 Deadline ${shortWhen(t.due)}", ChipTone.ORANGE) else hisDeadlineChip(t))
             }
             t.open && t.due > 0L -> add(RowChip("📅 Deadline ${shortWhen(t.due)}", ChipTone.ORANGE))
-            t.open -> add(RowChip("📅 Deadline pending", ChipTone.ORANGE))
+            t.open -> add(hisDeadlineChip(t))
             t.status == Team.DONE -> add(RowChip("✅ Done, check it", ChipTone.GREEN))
             t.status == Team.CHECKED -> add(RowChip("Received ✓", ChipTone.GREEN))
             t.status == Team.CANCELLED -> add(RowChip("Cancelled", ChipTone.MUTED))
@@ -169,6 +169,10 @@ object TeamUi {
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
     }
+
+    /** Your side, his date not picked yet: "⏳ His deadline? · Latest Thu". */
+    private fun hisDeadlineChip(t: TeamTask) =
+        RowChip("⏳ His deadline?" + if (t.deadline > 0L) " · Latest ${shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
 
     /** His side: ↘ who gave it (and when), his deadline (or Pick your deadline · Latest Thu), photo proof. */
     fun receiverChips(t: TeamTask): List<RowChip> = buildList {
@@ -210,7 +214,26 @@ object TeamUi {
         "Timeline" + (if (t.nPhoto > 0) " · 📷 ${t.nPhoto}" else "") + if (t.nVoice > 0) " · 🎤 ${t.nVoice}" else ""
 
     /** One line in Needs you: what it says and how many; [first] is the card it opens to. */
-    data class Need(val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false, val first: TeamTask? = null)
+    data class Need(
+        val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false, val first: TeamTask? = null,
+        /** [FollowUpsUi.STUCK], [FollowUpsUi.EXTEND] or [FollowUpsUi.ASK]: opens WAITING ON YOU with only these. */
+        val kind: Int? = null,
+    )
+
+    /** A Needs you line: only one waiting opens its Timeline, more open Follow-ups with only that kind. */
+    fun openNeed(c: Context, n: Need) {
+        val first = n.first
+        when {
+            n.mine -> request.value = MY_TASKS
+            n.kind != null && n.count == 1 && first != null -> openTimeline(first.id)
+            n.kind != null -> {
+                FollowUpsUi.needKind.value = n.kind
+                request.value = FOLLOW_UPS
+            }
+            first != null -> showGiven(c, first)
+            else -> request.value = FOLLOW_UPS
+        }
+    }
 
     fun needs(c: Context, tasks: List<TeamTask>, me: String?): List<Need> {
         if (me == null) return emptyList()
@@ -219,15 +242,15 @@ object TeamUi {
         val noDateMin = TeamRules.noDateMin(c)
         return buildList {
             given.filter { it.open && it.stuck }.sortedBy { it.stuckAt }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED, first = it.first()))
+                add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED, first = it.first(), kind = FollowUpsUi.STUCK))
             }
-            given.filter { it.open && it.asks && !it.stuck }.sortedBy { it.askAt }.takeIf { it.isNotEmpty() }?.let {
+            given.filter { it.open && it.asks && !it.stuck && !it.asking }.sortedBy { it.askAt }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("❓ ${it.size} question${if (it.size == 1) "" else "s"} waiting · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
-                    it.size, ChipTone.ORANGE, first = it.first()))
+                    it.size, ChipTone.ORANGE, first = it.first(), kind = FollowUpsUi.ASK))
             }
             given.filter { it.asking }.sortedBy { it.moreAt }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("📅 ${it.size} deadline request${if (it.size == 1) "" else "s"} · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
-                    it.size, ChipTone.PURPLE, first = it.first()))
+                    it.size, ChipTone.PURPLE, first = it.first(), kind = FollowUpsUi.EXTEND))
             }
             given.filter { it.open && it.due == 0L && !it.asks && !it.stuck && TeamRules.minutesSince(c, it.createdAt, now) >= noDateMin }.takeIf { it.isNotEmpty() }?.let {
                 val oldest = it.minOf { t -> t.createdAt }
@@ -1211,14 +1234,7 @@ fun TeamNeedsLines() {
             else -> NoTimeFg
         }
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
-                val first = n.first
-                when {
-                    n.mine -> TeamUi.request.value = TeamUi.MY_TASKS
-                    first != null -> TeamUi.showGiven(ctx, first)
-                    else -> TeamUi.request.value = TeamUi.FOLLOW_UPS
-                }
-            }.padding(horizontal = 4.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { TeamUi.openNeed(ctx, n) }.padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(n.text, color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

@@ -46,7 +46,14 @@ data class TeamMember(
     val status: String,
     val joinedAt: Long,
     val lastSeen: Long,
+    /** His other numbers (a 2nd SIM, a site phone), picked at approval. [phone] is the ⭐ Main one (calls and SMS). */
+    val more: List<String> = emptyList(),
+    /** 🟢 His WhatsApp number, blank = the main one. */
+    val wa: String = "",
 ) {
+    /** Every number of his, Main first: any of them is him. */
+    val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
+    val waNumber: String get() = wa.ifBlank { phone }
     val active: Boolean get() = status == Team.ACTIVE
     val pending: Boolean get() = status == Team.PENDING
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
@@ -679,7 +686,13 @@ object TeamRepo {
     /** The team member with this phone number (below you), if any. */
     fun memberByNumber(number: String): TeamMember? {
         if (number.isBlank() || !activeNow) return null
-        return belowMe().firstOrNull { it.phone.isNotBlank() && SmsStore.sameNumber(it.phone, number) }
+        return belowMe().firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }
+    }
+
+    /** All numbers of the team member with this number (empty when it is nobody in the team). */
+    fun numbersOf(number: String): List<String> {
+        if (number.isBlank() || !activeNow) return emptyList()
+        return _members.value.firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }?.numbers ?: emptyList()
     }
 
     fun member(uid: String): TeamMember? = _members.value.firstOrNull { it.uid == uid }
@@ -1119,6 +1132,8 @@ object TeamRepo {
         status = s.getString("status") ?: Team.PENDING,
         joinedAt = s.getLong("joinedAt") ?: 0L,
         lastSeen = s.getLong("lastSeen") ?: 0L,
+        more = strings(s.get("more")),
+        wa = s.getString("wa").orEmpty(),
     )
 
     private fun taskOf(s: DocumentSnapshot) = TeamTask(

@@ -149,7 +149,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                         ?: if (t.toUid == me) "↘ ${t.fromFirst} → You" else "👤 You → ${t.toFirst}", ChipTone.BLUE))
                     if (t.open) add(
                         if (t.due > 0L) RowChip("📅 Deadline ${TeamUi.shortWhen(t.due)}" + if (t.deadlineLocked) " 🔒" else "", ChipTone.ORANGE)
-                        else RowChip("📅 Deadline pending" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
+                        else RowChip((if (t.toUid == me) "📅 Pick your deadline" else "⏳ His deadline?") + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
                     )
                     if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
                     if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
