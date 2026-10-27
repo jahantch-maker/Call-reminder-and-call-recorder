@@ -80,6 +80,8 @@ data class DossierTask(
     val everyWeeks: Int = 1,
     /** Also comes up on the weekly off day (when that day is one of its repeat days). */
     val onOffDay: Boolean = false,
+    /** 📋 Ticked at the end of the evening review: today's numbers are saved with the tick ([DayClose]). */
+    val afterReview: Boolean = false,
 ) {
     val start: LocalDate get() = runCatching { LocalDate.parse(startDate) }.getOrElse { LocalDate.now() }
 
@@ -544,6 +546,7 @@ object DossierStore {
                         ?: minOf(o.optInt("minute", 9 * 60) + 30, 24 * 60),
                     everyWeeks = o.optInt("everyWeeks", 1).coerceAtLeast(1),
                     onOffDay = o.optBoolean("onOffDay"),
+                    afterReview = o.optBoolean("afterReview"),
                 )
             }
         } catch (e: Exception) {
@@ -576,6 +579,7 @@ object DossierStore {
                     .put("endMinute", t.endMinute)
                     .put("everyWeeks", t.everyWeeks)
                     .put("onOffDay", t.onOffDay)
+                    .put("afterReview", t.afterReview)
             )
         }
         prefs().edit().putString("tasks", arr.toString()).apply()
@@ -632,6 +636,7 @@ object DossierStore {
     fun add(
         title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int, starred: Boolean = false,
         endMinute: Int = minOf(minute + 30, 24 * 60), everyWeeks: Int = 1, onOffDay: Boolean = false,
+        afterReview: Boolean = false,
     ): DossierTask {
         val id = prefs().getLong("nextId", 1L)
         prefs().edit().putLong("nextId", id + 1).apply()
@@ -650,6 +655,7 @@ object DossierStore {
             endMinute = endMinute,
             everyWeeks = everyWeeks.coerceAtLeast(1),
             onOffDay = onOffDay,
+            afterReview = afterReview,
         )
         saveTasks(_tasks.value + t)
         TaskAlarms.scheduleDossier(appCtx, t)
@@ -660,6 +666,7 @@ object DossierStore {
     fun edit(
         id: Long, title: String, note: String, minute: Int, days: Int, monthDay: Int, remindBefore: Int,
         starred: Boolean? = null, endMinute: Int? = null, everyWeeks: Int? = null, onOffDay: Boolean? = null,
+        afterReview: Boolean? = null,
     ) {
         val old = get(id) ?: return
         val t = old.copy(
@@ -673,6 +680,7 @@ object DossierStore {
             endMinute = endMinute ?: old.endMinute,
             everyWeeks = (everyWeeks ?: old.everyWeeks).coerceAtLeast(1),
             onOffDay = onOffDay ?: old.onOffDay,
+            afterReview = afterReview ?: old.afterReview,
         )
         saveTasks(_tasks.value.map { if (it.id == id) t else it })
         TaskAlarms.scheduleDossier(appCtx, t)
@@ -695,6 +703,8 @@ object DossierStore {
         val r = DossierRecord(taskId, date.toString(), doneAt = now, reason = "")
         saveRecords(_records.value + (key(taskId, date) to r))
         TaskAlarms.cancelDossierNotification(appCtx, taskId)
+        // 📋 Ticked after the evening review (or by hand): today's report goes with it.
+        if (get(taskId)?.afterReview == true) DayClose.onTick(appCtx, date)
         return true
     }
 

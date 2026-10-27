@@ -62,6 +62,32 @@ enum class NotifType(
     ),
 }
 
+/**
+ * v0.42: what a notification is about, with its own fixed colour and emoji. Notifications of one kind sit together
+ * in the shade (an Android group: ⌄ opens it, each one keeps its buttons), the urgent kinds on top.
+ */
+enum class NotifKind(val emoji: String, val label: String, val color: Int, val urgent: Boolean = false) {
+    STUCK("⚠", "Stuck", 0xFFE5484D.toInt(), true),
+    ASKED("❓", "Questions", 0xFFF5B400.toInt(), true),
+    DONE_CHECK("✅", "Done, check it", 0xFF22B573.toInt(), true),
+    MY_TASKS("☑", "My tasks", 0xFF4C6FFF.toInt()),
+    DOSSIER("📋", "Dossier", 0xFF9B5DE5.toInt()),
+    FOLLOW_UPS("📞", "Follow-ups", 0xFFFF7A1A.toInt()),
+    MESSAGES("💬", "Messages", 0xFF1FB5A3.toInt());
+
+    val group get() = "kind_$name"
+    val summaryId get() = 38_000_000 + ordinal
+
+    companion object {
+        fun of(t: NotifType): NotifKind? = when (t) {
+            NotifType.CALLBACK, NotifType.MISSED -> FOLLOW_UPS
+            NotifType.MY_TASK -> MY_TASKS
+            NotifType.DOSSIER, NotifType.DOSSIER_BEFORE, NotifType.DOSSIER_NUDGE -> DOSSIER
+            else -> null
+        }
+    }
+}
+
 object Notify {
     /** For notifications set to Silent: shows in the shade, no sound or vibration. */
     const val CH_QUIET = "quiet_alerts"
@@ -106,7 +132,7 @@ object Notify {
      * channel when Silent, and given the sound channel when Sound (for kinds that are quiet by default).
      */
     @SuppressLint("MissingPermission")
-    fun post(ctx: Context, t: NotifType, id: Int, b: NotificationCompat.Builder) {
+    fun post(ctx: Context, t: NotifType, id: Int, b: NotificationCompat.Builder, kind: NotifKind? = NotifKind.of(t)) {
         if (!Notifier.canNotify(ctx)) return
         when (level(ctx, t)) {
             NotifLevel.OFF -> return
@@ -119,7 +145,57 @@ object Notify {
                     .setPriority(NotificationCompat.PRIORITY_HIGH).setDefaults(NotificationCompat.DEFAULT_ALL)
             }
         }
-        NotificationManagerCompat.from(ctx).notify(id, b.build())
+        if (kind == null) {
+            NotificationManagerCompat.from(ctx).notify(id, b.build())
+            return
+        }
+        b.setColor(kind.color).setGroup(kind.group).setSortKey(if (kind.urgent) "0" else "1")
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+        if (kind.urgent) b.setPriority(NotificationCompat.PRIORITY_MAX)
+        val n = b.build()
+        n.extras.getCharSequence(NotificationCompat.EXTRA_TITLE)?.toString()?.let { title ->
+            // "☑ Call bank manager": a title that starts with its own emoji (🔴, 📅…) keeps it.
+            if (title.firstOrNull()?.isLetterOrDigit() == true) {
+                b.setContentTitle("${kind.emoji} $title")
+            }
+        }
+        val nm = NotificationManagerCompat.from(ctx)
+        nm.notify(id, b.build())
+        summary(ctx, kind, id, n.channelId)
+    }
+
+    /** The group's header: only once two of a kind are showing (one alone shows as it is). Silent, its children ring. */
+    @SuppressLint("MissingPermission")
+    private fun summary(ctx: Context, kind: NotifKind, id: Int, channel: String?) {
+        val shown = runCatching {
+            ctx.getSystemService(NotificationManager::class.java).activeNotifications
+                .count { it.notification.group == kind.group && it.id != kind.summaryId && it.id != id }
+        }.getOrDefault(0) + 1
+        if (shown < 2) return
+        val b = NotificationCompat.Builder(ctx, channel ?: CH_QUIET)
+            .setSmallIcon(R.drawable.ic_stat_task)
+            .setColor(kind.color)
+            .setContentTitle("${kind.emoji} ${kind.label} · $shown")
+            .setSubText(kind.label)
+            .setGroup(kind.group)
+            .setGroupSummary(true)
+            .setSortKey(if (kind.urgent) "0" else "1")
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setSilent(true)
+            .setAutoCancel(true)
+        NotificationManagerCompat.from(ctx).notify(kind.summaryId, b.build())
+    }
+
+    /** A group header left with nothing under it goes (the app was opened, or its notifications were cleared). */
+    fun tidy(ctx: Context) {
+        runCatching {
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            val active = nm.activeNotifications
+            NotifKind.values().forEach { k ->
+                if (active.any { it.id == k.summaryId } && active.none { it.notification.group == k.group && it.id != k.summaryId })
+                    nm.cancel(k.summaryId)
+            }
+        }
     }
 }
 

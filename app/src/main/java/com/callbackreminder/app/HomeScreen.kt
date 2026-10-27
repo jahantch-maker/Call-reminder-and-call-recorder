@@ -141,7 +141,7 @@ fun HomeScreen(
     val nextUp = open.filter { !it.inReview && it.at < endOfToday }.sortedBy { it.at }
     val snack = remember { SnackbarHostState() }
 
-    Box(Modifier.fillMaxSize()) {
+    PullRefresh(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snack) },

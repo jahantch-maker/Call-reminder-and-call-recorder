@@ -170,9 +170,9 @@ object TeamSync {
                     val who = TeamRepo.member(t.lastMsgBy)?.first ?: if (t.lastMsgBy == t.fromUid) t.fromFirst else t.toFirst
                     when {
                         t.stuck && t.stuckAt == t.lastMsgAt ->
-                            notify(c, "stuck:${t.id}", "⚠ $who is stuck · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id)
+                            notify(c, "stuck:${t.id}", "⚠ $who is stuck · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id, kind = NotifKind.STUCK)
                         t.asks && t.askAt == t.lastMsgAt ->
-                            notify(c, "ask:${t.id}", "❓ $who asks · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id)
+                            notify(c, "ask:${t.id}", "❓ $who asks · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id, kind = NotifKind.ASKED)
                         else -> tell(c, t, who, "💬 ${t.lastMsgText}")
                     }
                 }
@@ -185,7 +185,7 @@ object TeamSync {
                 recv.remove(id)?.toLongOrNull()?.let { MyTaskStore.get(it) }?.takeIf { !it.done }?.let { local ->
                     MyTaskStore.delete(local.id)
                     clearTold(c, id)
-                    notify(c, "gone:$id", "Task given to someone else", local.title, mine = null)
+                    notify(c, "gone:$id", "Task given to someone else", local.title, mine = null, kind = NotifKind.MY_TASKS)
                 }
             }
             if (complete) recvFu.keys.filter { it !in ids }.forEach { id ->
@@ -252,7 +252,7 @@ object TeamSync {
             was != null && was != t.status && t.status == Team.CHECKED -> tell(c, t, from, "✓ Received, thanks")
             was != null && was != t.status && t.status == Team.CANCELLED -> {
                 clearTold(c, t.id)
-                notify(c, "x:${t.id}", "Task removed by $from", t.title, mine = null)
+                notify(c, "x:${t.id}", "Task removed by $from", t.title, mine = null, kind = NotifKind.MY_TASKS)
             }
             moreOf(before) > 0L && t.moreAt == 0L && t.due == t.moreDue -> tell(c, t, from, "📅 Approved · Deadline ${TeamUi.shortWhen(t.due)}")
             moreOf(before) > 0L && t.moreAt == 0L && dueOf(before) == t.due -> tell(c, t, from, "📅 Kept the deadline · ${TeamUi.shortWhen(t.due)}")
@@ -310,11 +310,15 @@ object TeamSync {
         val was = statusOf(before) ?: return
         val who = t.toFirst
         when {
+            // On its own, with ✓ Received: tapping it opens the card in Needs you › Replied.
             was != t.status && t.status == Team.DONE ->
-                tell(c, t, who, "✅ Done, check it" + if (t.passedTo.isNotBlank()) " (by ${t.passedTo})" else "")
+                notify(c, "done:${t.id}", "✅ $who: Done, check it" + if (t.passedTo.isNotBlank()) " (by ${t.passedTo})" else "",
+                    t.title, mine = null, taskId = t.id, kind = NotifKind.DONE_CHECK, open = Open.CHECK)
+            was == Team.DONE && t.status != Team.DONE ->
+                androidx.core.app.NotificationManagerCompat.from(c).cancel(NotifIds.team("done:${t.id}"))
             moreOf(before) == 0L && t.moreAt > 0L ->
                 notify(c, "more:${t.id}", "📅 $who asks to extend · ${t.title}".take(80),
-                    "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isBlank()) "" else " · “${t.moreReason}”", mine = null, taskId = t.id)
+                    "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isBlank()) "" else " · “${t.moreReason}”", mine = null, taskId = t.id, kind = NotifKind.ASKED)
             t.hisDate && (dueOf(before) ?: 0L) == 0L && t.due > 0L -> tell(c, t, who, "📅 Deadline set · ${TeamUi.shortWhen(t.due)}")
             (dueOf(before) ?: 0L) > 0L && t.due > 0L && dueOf(before) != t.due && moreOf(before) == 0L && t.dateBy == Team.HIS_DATE ->
                 tell(c, t, who, "📅 Deadline ${TeamUi.shortWhen(dueOf(before)!!)} → ${TeamUi.shortWhen(t.due)}")
@@ -325,28 +329,62 @@ object TeamSync {
     private fun rules(c: Context, tasks: List<TeamTask>, me: String) {
         val urgentDone = TeamLinks.set(c, "urgent")
         val smsDone = TeamLinks.set(c, "sms")
+        // Not opened: "sent texts|time of the last step" per task (1 = first SMS, 2 = second, 3 = you were told).
+        val stage = TeamLinks.map(c, "smsStage")
         val now = System.currentTimeMillis()
         for (t in tasks.filter { it.fromUid == me && it.open }) {
             val waited = TeamRules.minutesSince(c, t.createdAt, now)
             if (t.urgent && t.due == 0L && t.id !in urgentDone && waited >= TeamRules.urgentMin(c)) {
                 urgentDone += t.id
-                notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team", mine = null)
+                notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team", mine = null, taskId = t.id, open = Open.CARD)
             }
-            val smsMin = TeamRules.smsMin(c)
-            if (smsMin > 0 && t.status == Team.SENT && t.id !in smsDone && t.toPhone.isNotBlank() && waited >= smsMin) {
-                smsDone += t.id
-                if (SmsSender.hasPermission(c)) {
-                    val ok = runCatching {
-                        SmsSender.managerForDefaultSim(c).first.sendTextMessage(
-                            t.toPhone, null, "New task from ${t.fromFirst}: ${t.title.take(90)}. Please open Callback Reminder.", null, null
-                        )
-                    }.isSuccess
-                    if (ok) TeamRepo.note(t, "Not seen in ${TeamRules.label(smsMin)}: text sent to ${t.toFirst}")
-                }
-            }
+            smsRule(c, t, waited, now, smsDone, stage)
         }
         TeamLinks.putSet(c, "urgent", urgentDone)
         TeamLinks.putSet(c, "sms", smsDone)
+        TeamLinks.putMap(c, "smsStage", stage.filterKeys { k -> tasks.any { it.id == k && it.open } })
+    }
+
+    /**
+     * Not opened yet (whatever its state, also when you set the deadline): one SMS after N working hours, a second
+     * at the start of his next working day, then you are told to call him. No SMS permission: tried again on the
+     * next check, and you are told once why it didn't go.
+     */
+    private fun smsRule(c: Context, t: TeamTask, waited: Long, now: Long, smsDone: MutableSet<String>, stage: MutableMap<String, String>) {
+        val smsMin = TeamRules.smsMin(c)
+        if (smsMin <= 0 || t.seenAt > 0L || Ticks.seen(t) || t.toPhone.isBlank()) return
+        // Before v0.42 one text was the whole rule ([smsDone]).
+        val st = stage[t.id] ?: if (t.id in smsDone) "1|${t.createdAt}" else "0|0"
+        val n = st.substringBefore('|').toIntOrNull() ?: 0
+        val at = st.substringAfter('|').toLongOrNull() ?: 0L
+        fun text(second: Boolean): Boolean {
+            if (!SmsSender.hasPermission(c)) {
+                if ("perm:${t.id}" !in smsDone) {
+                    smsDone += "perm:${t.id}"
+                    notify(c, "smsperm:${t.id}", "✉ Couldn't text ${t.toFirst}", "${t.title}\nSMS permission is off: turn it on in Settings › Setup", mine = null, taskId = t.id, open = Open.CARD)
+                }
+                return false
+            }
+            val ok = runCatching {
+                SmsSender.managerForDefaultSim(c).first.sendTextMessage(
+                    t.toPhone, null,
+                    (if (second) "Reminder: new task from ${t.fromFirst}: " else "New task from ${t.fromFirst}: ") +
+                        "${t.title.take(90)}. Please open Callback Reminder.", null, null
+                )
+            }.isSuccess
+            if (ok) TeamRepo.note(t, if (second) "Still not seen: second text sent to ${t.toFirst}" else "Not seen in ${TeamRules.label(smsMin)}: text sent to ${t.toFirst}")
+            return ok
+        }
+        when {
+            n == 0 && waited >= smsMin -> if (text(false)) { stage[t.id] = "1|$now"; smsDone += t.id }
+            n == 1 && now >= ReviewData.nextWorkStart(c, at) && TeamRules.minutesSince(c, now - 60_000L, now) > 0L ->
+                if (text(true)) stage[t.id] = "2|$now"
+            n == 2 && TeamRules.minutesSince(c, at, now) >= smsMin -> {
+                stage[t.id] = "3|$now"
+                notify(c, "unseen:${t.id}", "👁 ${t.toFirst} still hasn't seen it · 📞 Call",
+                    "${t.title}\nTwo texts sent, not opened yet", mine = null, taskId = t.id, open = Open.CARD, call = t.toPhone)
+            }
+        }
     }
 
     /** Your own lists changed: send his Done / his date up, and your check of a Done follow-up. */
@@ -589,6 +627,7 @@ object TeamSync {
                 "reason" to (rec?.reason ?: ""), "due" to d.dueAt(open), "date" to open.toString(),
                 "blockId" to (TeamDossier.blockOf(c, d.id) ?: ""), "proof" to TeamDossier.needsProof(c, d.id),
                 "photo" to TeamDossier.sent(c, d.id, open, TeamDossier.PHOTO), "voice" to TeamDossier.sent(c, d.id, open, TeamDossier.VOICE),
+                "afterReview" to d.afterReview,
             )
         }
         return mapOf(
@@ -597,6 +636,8 @@ object TeamSync {
             "tasks" to tasks,
             "followUps" to fus,
             "dossier" to dossier,
+            // 📋 The last week's evening reviews, for "Review done 5 of 6 days this week" on his day.
+            "reports" to DayClose.recentMaps(c),
             "privateCount" to TeamLinks.privateCount(c),
         )
     }
@@ -617,7 +658,11 @@ object TeamSync {
         TeamLinks.putMap(c, "nc", counts)
         TeamLinks.putMap(c, "nl", lines)
         val title = if (n == 1 && head != null) head else "$who · $n new on Timeline"
-        notify(c, "tl:${t.id}", title, t.title + " · " + all.last() + "\n" + all.dropLast(1).reversed().joinToString("\n"), mine = null, taskId = t.id)
+        // A message opens the Timeline; a new task, a date or a Not done yet opens the card where it lives.
+        val talk = line.startsWith("💬")
+        notify(c, "tl:${t.id}", title, t.title + " · " + all.last() + "\n" + all.dropLast(1).reversed().joinToString("\n"), mine = null, taskId = t.id,
+            kind = if (talk) NotifKind.MESSAGES else if (t.fromUid == TeamRepo.uid) NotifKind.FOLLOW_UPS else NotifKind.MY_TASKS,
+            open = if (talk) Open.TIMELINE else Open.CARD)
     }
 
     /** The Timeline was opened (or the task went): its notifications go and the count starts again. */
@@ -627,16 +672,24 @@ object TeamSync {
         if (counts.remove(taskId) != null) TeamLinks.putMap(c, "nc", counts)
         if (lines.remove(taskId) != null) TeamLinks.putMap(c, "nl", lines)
         val nm = androidx.core.app.NotificationManagerCompat.from(c)
-        listOf("tl:", "ask:", "stuck:", "more:").forEach { nm.cancel(NotifIds.team(it + taskId)) }
+        listOf("tl:", "ask:", "stuck:", "more:", "done:").forEach { nm.cancel(NotifIds.team(it + taskId)) }
     }
 
-    internal fun notify(c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null) {
+    /** Where tapping a team notification goes: the Timeline (talk), the task's card where it lives, or Needs you › Replied. */
+    enum class Open { TIMELINE, CARD, CHECK }
+
+    internal fun notify(
+        c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null,
+        kind: NotifKind = if (mine != null) NotifKind.MY_TASKS else NotifKind.FOLLOW_UPS,
+        open: Open = Open.TIMELINE, call: String? = null,
+    ) {
         val intent = Intent(c, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (taskId != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM).putExtra(MainActivity.EXTRA_TEAM_TASK, taskId)
+            .putExtra(MainActivity.EXTRA_TEAM_WHERE, open.name)
         else if (mine != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, mine)
         else intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM)
-        val open = PendingIntent.getActivity(c, NotifIds.team(key), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val tap = PendingIntent.getActivity(c, NotifIds.team(key), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = NotificationCompat.Builder(c, Notifier.bannerChannel(c))
             .setSmallIcon(R.drawable.ic_stat_task)
             .setContentTitle(title)
@@ -645,9 +698,49 @@ object TeamSync {
             .setSubText("Team")
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(open)
+            .setContentIntent(tap)
             .setAutoCancel(true)
-        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b)
+        if (open == Open.CHECK && taskId != null) {
+            val rcv = Intent(c, TeamActionReceiver::class.java).setAction(TeamActionReceiver.ACTION_RECEIVED)
+                .putExtra(TeamActionReceiver.EXTRA_TASK, taskId).putExtra(TeamActionReceiver.EXTRA_KEY, key)
+            b.addAction(0, "✓ Received",
+                PendingIntent.getBroadcast(c, NotifIds.team("rcv:$key"), rcv, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        }
+        if (!call.isNullOrBlank()) {
+            val dial = Intent(Intent.ACTION_DIAL, android.net.Uri.fromParts("tel", call, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            b.addAction(0, "📞 Call",
+                PendingIntent.getActivity(c, NotifIds.team("call:$key"), dial, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        }
+        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
+    }
+}
+
+/** ✓ Received on a "Done, check it" notification: the same as Received, thanks on its card. */
+class TeamActionReceiver : android.content.BroadcastReceiver() {
+    companion object {
+        const val ACTION_RECEIVED = "com.callbackreminder.app.TEAM_RECEIVED"
+        const val EXTRA_TASK = "task"
+        const val EXTRA_KEY = "key"
+    }
+
+    override fun onReceive(c: Context, intent: Intent) {
+        if (intent.action != ACTION_RECEIVED) return
+        val id = intent.getStringExtra(EXTRA_TASK) ?: return
+        val key = intent.getStringExtra(EXTRA_KEY) ?: "done:$id"
+        androidx.core.app.NotificationManagerCompat.from(c).cancel(NotifIds.team(key))
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                TeamRepo.init(c)
+                if (TeamRepo.tasks.value.none { it.id == id }) TeamRepo.fetchOnce(c)
+                TeamRepo.tasks.value.firstOrNull { it.id == id && it.doneCheck }?.let { TeamRepo.check(it) }
+                Notify.tidy(c)
+            } catch (e: Throwable) {
+                CrashLog.record(c, e, "Team · Received from notification")
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }
 

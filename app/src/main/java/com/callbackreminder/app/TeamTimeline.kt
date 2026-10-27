@@ -134,15 +134,16 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         // ← a small TIMELINE label; the task itself is the big heading.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = cs.onBackground) }
             Text("TIMELINE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
         }
         if (t == null) {
-            Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp))
+            Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp), color = cs.onBackground)
             return@Column
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                color = cs.onBackground)
             TeamChipsRow(
                 buildList {
                     add(RowChip(TeamUi.chain(t, me)?.let { (if (t.toUid == me) "↘ " else "👤 ") + it }
@@ -221,18 +222,21 @@ internal fun TeamSmallChip(c: RowChip) = SmallChip(c)
 /** The people a message goes to: the giver and the person doing it, but not its sender. */
 private fun recipients(t: TeamTask, m: TeamMsg): List<String> = listOf(t.fromUid, t.toUid).filter { it.isNotEmpty() && it != m.fromUid }.distinct()
 
-/** WhatsApp's ticks on one of your messages: 🕓 not sent yet, ✓ sent, ✓✓ on their phone, blue ✓✓ seen (played / opened). */
+/**
+ * WhatsApp's ticks on one of your messages: 🕓 not sent yet, ✓ sent, ✓✓ on their phone, blue ✓✓ seen. A photo goes
+ * blue once opened full screen; a voice note's ticks go blue when seen and its 🎙 when played (see [playedByAll]).
+ */
 private fun tickState(t: TeamTask, m: TeamMsg): Pair<Int, Boolean> {
     if (m.pending) return 0 to false
     val to = recipients(t, m)
     if (to.isEmpty()) return 2 to true
-    val seen = when (m.kind) {
-        Team.VOICE, Team.PHOTO -> to.all { it in m.playedBy }
-        else -> to.all { it in m.seenBy }
-    }
-    val delivered = to.all { (t.msgDel[it] ?: 0L) >= m.at || it in m.seenBy }
+    val seen = if (m.kind == Team.PHOTO) to.all { t.playedBy(m, it) } else to.all { t.saw(m, it) || t.playedBy(m, it) }
+    val delivered = to.all { (t.msgDel[it] ?: 0L) >= m.at || t.saw(m, it) }
     return (if (delivered || seen) 2 else 1) to seen
 }
+
+/** Everyone it went to has played this voice note (its 🎙 goes blue). */
+private fun playedByAll(t: TeamTask, m: TeamMsg): Boolean = recipients(t, m).all { t.playedBy(m, it) }
 
 /**
  * One message: yours on the right with time and ticks, theirs on the left; ❓ Ask amber, ⚠ Stuck red, 📷 proof
@@ -267,18 +271,18 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                     })
                 }
                 when {
-                    m.kind == Team.VOICE && m.data != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        val on = playing == m.id
-                        IconButton(onClick = { TeamMedia.play(ctx, m.id, m.data); TeamRepo.markPlayed(t.id, m) },
-                            modifier = Modifier.size(36.dp).clip(CircleShape).background(cs.primary)) {
-                            Icon(if (on) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = if (on) "Stop" else "Play", tint = cs.onPrimary)
+                    m.kind == Team.VOICE && m.data != null -> VoicePlayer(
+                        m.id, m.data, m.durMs, m.wave, fg, modifier = Modifier.widthIn(min = 230.dp),
+                        onPlay = { TeamRepo.markPlayed(t.id, m) },
+                    ) {
+                        // The bubble's time and ticks share the voice note's time line.
+                        Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
+                        if (mine) {
+                            Icon(Icons.Rounded.Mic, contentDescription = if (playedByAll(t, m)) "Played" else "Not played yet",
+                                tint = if (playedByAll(t, m)) Ticks.BLUE else Ticks.GREY, modifier = Modifier.padding(start = 3.dp).size(14.dp))
+                            Spacer(Modifier.width(3.dp))
+                            if (ticks == 0) Text("🕓", fontSize = 10.sp) else TickMarks(ticks == 2, if (blue) Ticks.BLUE else Ticks.GREY)
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Text("▍▌▍▎▌▍▌▎▍▌▍▎", color = fg.copy(alpha = 0.7f), fontSize = 14.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(TeamMedia.duration(m.durMs), color = fg, fontSize = 13.sp)
-                        if (mine) Icon(Icons.Rounded.Mic, contentDescription = if (blue) "Played" else "Not played yet",
-                            tint = if (blue) Ticks.BLUE else Ticks.GREY, modifier = Modifier.padding(start = 4.dp).size(16.dp))
                     }
                     m.kind == Team.PHOTO && m.data != null -> {
                         val bmp = remember(m.id) { TeamMedia.bitmap(m.data)?.asImageBitmap() }
@@ -290,7 +294,7 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                     m.kind != Team.TEXT -> Text("(removed after ${Team.MEDIA_DAYS} days)", fontSize = 12.sp, color = fg.copy(alpha = 0.7f))
                 }
                 if (m.text.isNotBlank()) Text(m.text, color = fg, fontSize = 15.sp)
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                if (!(m.kind == Team.VOICE && m.data != null)) Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
                     if (mine) {
                         if (ticks == 0) Text("🕓", fontSize = 10.sp)
@@ -309,16 +313,16 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                     Text("Sent · ${Fmt.dueLabel(m.at)}", fontSize = 14.sp)
                     recipients(t, m).forEach { uid ->
                         val name = TeamRepo.member(uid)?.first ?: if (uid == t.fromUid) t.fromFirst else t.toFirst
-                        val seenAt = m.seenBy[uid] ?: 0L
-                        val playedAt = m.playedBy[uid] ?: 0L
-                        val got = (t.msgDel[uid] ?: 0L) >= m.at || seenAt > 0L
+                        val seenAt = m.seenBy[uid] ?: if (t.saw(m, uid)) -1L else 0L
+                        val playedAt = m.playedBy[uid] ?: if (t.playedBy(m, uid)) -1L else 0L
+                        val got = (t.msgDel[uid] ?: 0L) >= m.at || seenAt != 0L
                         Column {
                             Text("👤 $name", fontWeight = FontWeight.Bold)
                             Text(
                                 listOfNotNull(
                                     if (got) "✓✓ Delivered" else "✓ Not on his phone yet",
-                                    seenAt.takeIf { it > 0L }?.let { "Seen ${Fmt.dueLabel(it)}" },
-                                    playedAt.takeIf { it > 0L }?.let { (if (m.kind == Team.VOICE) "Played " else "Opened ") + Fmt.dueLabel(it) },
+                                    seenAt.takeIf { it != 0L }?.let { "Seen" + if (it > 0L) " " + Fmt.dueLabel(it) else "" },
+                                    playedAt.takeIf { it != 0L }?.let { (if (m.kind == Team.VOICE) "Played" else "Opened") + if (it > 0L) " " + Fmt.dueLabel(it) else "" },
                                 ).joinToString(" · "),
                                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -398,9 +402,9 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, Team
                 LaunchedEffect(recording) { while (recording) { secs = TeamMedia.elapsedMs() / 1000; delay(250) } }
                 Text(
                     when {
-                        recording -> "🔴 ${TeamMedia.duration(secs * 1000)} · release to send · max 2:00"
-                        tag == Team.STUCK -> "⚠ Stuck · type it or hold 🎤"
-                        else -> "❓ Ask · type it or hold 🎤"
+                        recording -> "🔴 ${TeamMedia.duration(secs * 1000)} · max 2:00"
+                        tag == Team.STUCK -> "⚠ Stuck · type it or tap 🎤"
+                        else -> "❓ Ask · type it or tap 🎤"
                     },
                     color = if (tag == Team.STUCK) StuckFg else if (tag == Team.ASK) AskFg else cs.onSurface,
                     fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f)
@@ -498,44 +502,6 @@ private fun TeamTagButton(label: String, color: Color, on: Boolean, enabled: Boo
     }
 }
 
-
-/** 🎤 hold to record, release to send (like WhatsApp). Asks for the microphone the first time. */
-@Composable
-internal fun TeamHoldToRecord(onState: (Boolean) -> Unit, onRecorded: (ByteArray, Long) -> Unit, size: androidx.compose.ui.unit.Dp = 48.dp) {
-    val ctx = LocalContext.current
-    var active by remember { mutableStateOf(false) }
-    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) Toast.makeText(ctx, "Now hold 🎤 to record", Toast.LENGTH_SHORT).show()
-    }
-    Box(
-        Modifier.size(if (active) size + 12.dp else size).clip(CircleShape)
-            .background(if (active) Color(0xFFFF5A5A) else Color(0xFF3DD6B5))
-            .pointerInput(Unit) {
-                detectTapGestures(onPress = {
-                    if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                        askMic.launch(Manifest.permission.RECORD_AUDIO)
-                        return@detectTapGestures
-                    }
-                    if (!TeamMedia.startRecording(ctx)) {
-                        Toast.makeText(ctx, "The microphone is busy", Toast.LENGTH_SHORT).show()
-                        return@detectTapGestures
-                    }
-                    active = true
-                    onState(true)
-                    val released = tryAwaitRelease()
-                    active = false
-                    onState(false)
-                    if (!released) { TeamMedia.cancelRecording(); return@detectTapGestures }
-                    val r = TeamMedia.stopRecording()
-                    if (r == null) Toast.makeText(ctx, "Hold 🎤 while you speak", Toast.LENGTH_SHORT).show()
-                    else onRecorded(r.first, r.second)
-                })
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(Icons.Rounded.Mic, contentDescription = "Hold to record", tint = if (active) Color.White else Color(0xFF053D2E))
-    }
-}
 
 /** Camera or gallery; the photo comes back shrunk to about 150 KB. Returns what opens the choice. */
 @Composable
@@ -665,7 +631,7 @@ internal fun TeamAttachRow(attach: List<TeamAttach>, onAttach: (List<TeamAttach>
         ChipHeading("ATTACH", modifier = Modifier.align(Alignment.CenterVertically))
         TextButton(onClick = pick, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("📷 Photo") }
         TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> onAttach(attach + TeamAttach(Team.VOICE, b, d)) }, size = 34.dp)
-        Text(if (recording) "Recording… release to add" else "hold 🎤", fontSize = 12.sp,
+        Text(if (recording) "Recording…" else "tap 🎤", fontSize = 12.sp,
             color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant)
     }
     if (attach.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

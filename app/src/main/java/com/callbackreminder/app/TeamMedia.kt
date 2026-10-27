@@ -43,24 +43,40 @@ object TeamMedia {
 
     // ------------------------------------------------------------ recording
 
+    // A note can be paused and continued, so it is recorded in parts. ADTS AAC parts simply join end to end.
     private var recorder: MediaRecorder? = null
     private var recFile: File? = null
     private var recStart = 0L
+    private val parts = mutableListOf<ByteArray>()
+    private var partsMs = 0L
+    /** Loudness every 100 ms while recording (0-9), for the note's wave. */
+    private val levels = mutableListOf<Int>()
+    /** The waves of the last few notes, by length, read when the note is sent ([waveFor]). */
+    private val waves = LinkedHashMap<Long, String>()
 
-    /** Starts a voice note. False when the microphone couldn't start (e.g. a call is being recorded). */
+    /** Starts a new voice note. False when the microphone couldn't start (e.g. a call is being recorded). */
     fun startRecording(c: Context): Boolean {
         cancelRecording()
+        return startPart(c)
+    }
+
+    /** 🎙 Record more on the end of a paused note. */
+    fun resumeRecording(c: Context): Boolean = if (recorder != null) true else startPart(c)
+
+    private fun startPart(c: Context): Boolean {
+        val left = MAX_VOICE_MS - partsMs
+        if (left < 1000L) return false
         return try {
-            val f = File(dir(c), "voice_${System.currentTimeMillis()}.m4a")
+            val f = File(dir(c), "voice_${System.currentTimeMillis()}.aac")
             @Suppress("DEPRECATION")
             val r = if (android.os.Build.VERSION.SDK_INT >= 31) MediaRecorder(c) else MediaRecorder()
             r.setAudioSource(MediaRecorder.AudioSource.MIC)
-            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS)
             r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             r.setAudioChannels(1)
             r.setAudioSamplingRate(16_000)
             r.setAudioEncodingBitRate(24_000)
-            r.setMaxDuration(MAX_VOICE_MS)
+            r.setMaxDuration(left.toInt())
             r.setOutputFile(f.absolutePath)
             r.prepare()
             r.start()
@@ -69,30 +85,60 @@ object TeamMedia {
             recStart = System.currentTimeMillis()
             true
         } catch (e: Exception) {
-            cancelRecording()
+            recorder?.let { runCatching { it.release() } }
+            recorder = null
+            recFile?.delete()
+            recFile = null
             false
         }
     }
 
     val recording: Boolean get() = recorder != null
-    fun elapsedMs(): Long = if (recorder != null) System.currentTimeMillis() - recStart else 0L
+    /** Recorded so far, all parts. */
+    fun elapsedMs(): Long = (partsMs + if (recorder != null) System.currentTimeMillis() - recStart else 0L).coerceAtMost(MAX_VOICE_MS.toLong())
+    fun hasRecorded(): Boolean = parts.isNotEmpty() || recorder != null
 
-    /** Stops and returns the note and its length, or null when it was too short (under a second) or failed. */
-    fun stopRecording(): Pair<ByteArray, Long>? {
-        val r = recorder ?: return null
+    /** Called every 100 ms while recording: one bar of the wave. */
+    fun sampleLevel() {
+        val a = runCatching { recorder?.maxAmplitude ?: return }.getOrNull() ?: return
+        // maxAmplitude is 0..32767; a square root makes quiet speech still visible.
+        levels += (kotlin.math.sqrt(a / 32767.0) * 9.0 + 0.5).toInt().coerceIn(0, 9)
+    }
+
+    /** The bars recorded so far, oldest first (for the live wave). */
+    fun liveLevels(): List<Int> = levels.toList()
+
+    /** ⏸ Pause: closes the current part (it can be played or continued). */
+    fun pauseRecording() {
+        val r = recorder ?: return
         val f = recFile
-        val dur = (System.currentTimeMillis() - recStart).coerceAtMost(MAX_VOICE_MS.toLong())
+        val ms = System.currentTimeMillis() - recStart
         recorder = null
         recFile = null
         val ok = runCatching { r.stop() }.isSuccess
         runCatching { r.release() }
-        if (!ok || f == null || dur < 1000L) {
-            f?.delete()
-            return null
+        val bytes = if (ok) f?.let { runCatching { it.readBytes() }.getOrNull() } else null
+        f?.delete()
+        if (bytes != null && bytes.isNotEmpty()) {
+            parts += bytes
+            partsMs = (partsMs + ms).coerceAtMost(MAX_VOICE_MS.toLong())
         }
-        val bytes = runCatching { f.readBytes() }.getOrNull()
-        f.delete()
-        return bytes?.let { it to dur }
+    }
+
+    /** What is recorded so far (paused), to ▶ listen before sending. */
+    fun recordedBytes(): ByteArray? = if (parts.isEmpty()) null else parts.fold(ByteArray(0)) { acc, b -> acc + b }
+
+    /** Stops and returns the note and its length, or null when it was too short (under a second) or failed. */
+    fun stopRecording(): Pair<ByteArray, Long>? {
+        pauseRecording()
+        val bytes = recordedBytes()
+        val dur = partsMs
+        val wave = wave(levels)
+        clear()
+        if (bytes == null || dur < 1000L) return null
+        waves[dur] = wave
+        while (waves.size > 10) waves.remove(waves.keys.first())
+        return bytes to dur
     }
 
     fun cancelRecording() {
@@ -100,36 +146,119 @@ object TeamMedia {
         recorder = null
         recFile?.delete()
         recFile = null
+        clear()
+    }
+
+    private fun clear() {
+        parts.clear()
+        partsMs = 0L
+        levels.clear()
+    }
+
+    /** The wave of a note just recorded with this length ("" when unknown). */
+    fun waveFor(durMs: Long): String = waves[durMs].orEmpty()
+
+    /** [WAVE_BARS] bars, each 1-9, scaled so the loudest bar is full height. */
+    private fun wave(l: List<Int>): String {
+        if (l.isEmpty()) return ""
+        val bars = (0 until WAVE_BARS).map { i ->
+            val from = i * l.size / WAVE_BARS
+            val to = maxOf(from + 1, (i + 1) * l.size / WAVE_BARS).coerceAtMost(l.size)
+            l.subList(from.coerceAtMost(l.size - 1), to).maxOrNull() ?: 0
+        }
+        val top = (bars.maxOrNull() ?: 0).coerceAtLeast(1)
+        return bars.joinToString("") { ((it * 9 + top - 1) / top).coerceIn(1, 9).toString() }
+    }
+
+    const val WAVE_BARS = 32
+
+    /** Bar heights (0.1-1) for drawing: the note's own wave, else an even, gentle one (older notes). */
+    fun bars(wave: String, id: String): List<Float> {
+        if (wave.length >= 4) return wave.map { ((it - '0').coerceIn(1, 9)) / 9f }
+        var x = id.hashCode()
+        return (0 until WAVE_BARS).map { x = x * 1103515245 + 12345; 0.35f + ((x ushr 16) % 30) / 100f }
     }
 
     // ------------------------------------------------------------ playing
 
-    /** The message whose voice note is playing now (null when none). */
+    /** The voice note loaded now, playing or paused (null when none). */
     val playing = MutableStateFlow<String?>(null)
+    val paused = MutableStateFlow(false)
     private var player: MediaPlayer? = null
 
+    /** 1× → 1.25× → 1.5×, remembered. */
+    val SPEEDS = listOf(1f, 1.25f, 1.5f)
+    val speed = MutableStateFlow(1f)
+    private fun prefs(c: Context) = c.getSharedPreferences("voice_notes", Context.MODE_PRIVATE)
+    fun loadSpeed(c: Context) { speed.value = prefs(c).getFloat("speed", 1f).takeIf { it in SPEEDS } ?: 1f }
+
+    fun cycleSpeed(c: Context) {
+        val next = SPEEDS[(SPEEDS.indexOf(speed.value) + 1) % SPEEDS.size]
+        speed.value = next
+        prefs(c).edit().putFloat("speed", next).apply()
+        player?.takeIf { !paused.value }?.let { applySpeed(it) }
+    }
+
+    private fun applySpeed(p: MediaPlayer) {
+        runCatching { p.playbackParams = p.playbackParams.setSpeed(speed.value) }
+    }
+
+    /** ▶ plays [id]; tapping again pauses, then goes on from there. */
     fun play(c: Context, id: String, bytes: ByteArray) {
-        val was = playing.value
+        val p = player
+        if (p != null && playing.value == id) {
+            if (paused.value) { runCatching { p.start(); applySpeed(p) }; paused.value = false }
+            else { runCatching { p.pause() }; paused.value = true }
+            return
+        }
+        start(c, id, bytes, 0f)
+    }
+
+    /** Jumps to [frac] (0-1) of [id], starting it if another note (or none) is loaded. */
+    fun seek(c: Context, id: String, bytes: ByteArray, frac: Float) {
+        val p = player
+        if (p != null && playing.value == id) {
+            runCatching { p.seekTo((p.duration * frac.coerceIn(0f, 1f)).toInt()) }
+            if (paused.value) { runCatching { p.start(); applySpeed(p) }; paused.value = false }
+            return
+        }
+        start(c, id, bytes, frac)
+    }
+
+    private fun start(c: Context, id: String, bytes: ByteArray, frac: Float) {
         stopPlaying()
-        if (was == id) return
+        loadSpeed(c)
         try {
-            val f = File(dir(c), "play.m4a")
+            // Notes from v0.42 on are ADTS AAC (they can be paused and continued), older ones MP4.
+            val adts = bytes.size > 1 && bytes[0] == 0xFF.toByte() && (bytes[1].toInt() and 0xF0) == 0xF0
+            val f = File(dir(c), if (adts) "play.aac" else "play.m4a")
             f.writeBytes(bytes)
             val p = MediaPlayer()
             p.setDataSource(f.absolutePath)
             p.setOnCompletionListener { stopPlaying() }
             p.prepare()
+            if (frac > 0f) p.seekTo((p.duration * frac.coerceIn(0f, 1f)).toInt())
             p.start()
+            applySpeed(p)
             player = p
+            paused.value = false
             playing.value = id
         } catch (e: Exception) {
             stopPlaying()
         }
     }
 
+    /** Where [id] is now, 0-1 (0 when it isn't loaded). */
+    fun progress(id: String): Float {
+        val p = player ?: return 0f
+        if (playing.value != id) return 0f
+        return runCatching { if (p.duration > 0) p.currentPosition.toFloat() / p.duration else 0f }.getOrDefault(0f)
+    }
+
     fun stopPlaying() {
         player?.let { p -> runCatching { p.stop() }; runCatching { p.release() } }
         player = null
+        paused.value = false
         playing.value = null
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -970,7 +971,7 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
                 TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> voice = b to d }, size = 44.dp)
             }
             if (recording || voice != null) Text(
-                if (recording) "🔴 Recording… release to add" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
+                if (recording) "🔴 Recording…" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
                 fontSize = 12.sp, color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant,
                 modifier = if (!recording) Modifier.clickable { voice = null } else Modifier,
             )
@@ -1134,13 +1135,8 @@ fun TeamBriefStrip(t: TeamTask) {
                 }
             }
             voice?.let { v ->
-                val on = playing == v.id
-                IconButton(onClick = { v.data?.let { TeamMedia.play(ctx, v.id, it); TeamRepo.markPlayed(t.id, v) } },
-                    modifier = Modifier.size(34.dp).clip(CircleShape).background(cs.primary)) {
-                    Icon(if (on) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = if (on) "Stop" else "Play", tint = cs.onPrimary)
-                }
-                Text("▍▌▍▎▌▍▌▎▍▌▍▎", color = cs.primary, fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
-                Text(TeamMedia.duration(v.durMs), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                VoicePlayer(v.id, v.data, v.durMs, v.wave, cs.onSurfaceVariant, modifier = Modifier.weight(1f), button = 34.dp,
+                    onPlay = { TeamRepo.markPlayed(t.id, v) })
             }
         }
     }
@@ -1165,6 +1161,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
         val reg = uid?.let { u -> TeamRepo.watchDay(u) { day = it } }
         onDispose { reg?.remove() }
     }
+    PullRefresh(Modifier.fillMaxSize()) {
     SettingsPage(title = "${m?.first ?: "Member"}'s day", onBack = onBack) {
         if (m == null) {
             Text("Not in your team any more.")
@@ -1197,7 +1194,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
         val myFirst = me?.first
         fun num(v: Any?) = (v as? Number)?.toLong() ?: 0L
         val rows: List<Map<String, Any?>> = when (tab) { 0 -> tasks; 1 -> fus; else -> dossier }
-        if (tab == 2) TeamDossierTab(m, if (day == null) null else dossier)
+        if (tab == 2) TeamDossierTab(m, if (day == null) null else dossier, list("reports").mapNotNull { DayReport.of(it) })
         else if (day == null) Text("${m.first}'s phone hasn't sent his day yet. It does when he opens the app.", color = cs.onSurfaceVariant)
         else if (rows.isEmpty()) Text("Nothing for today.", color = cs.onSurfaceVariant)
         else TaskGroup {
@@ -1241,6 +1238,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
         }
     }
 }
+}
 
 // ---------------------------------------------------------------- his Dossier (Phase 3)
 
@@ -1249,7 +1247,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
  * ticks in orange, 📷 photos, reasons and voice notes from his phone. [today] is null until his phone sent his day.
  */
 @Composable
-private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
+private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?, reports: List<DayReport> = emptyList()) {
     val cs = MaterialTheme.colorScheme
     val team by TeamRepo.team.collectAsState()
     val meNow by TeamRepo.me.collectAsState()
@@ -1339,7 +1337,7 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
     }
 
     open?.let { (b, r) ->
-        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
+        TeamBlockDayDialog(m, b, r, reports, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
     }
     val cur = blocks.orEmpty()
     if (adding) {
@@ -1367,7 +1365,7 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
 /** One block on his day: tick time, the 📷 photo, his reason and voice note; Edit for the Owner. */
 @Composable
 private fun TeamBlockDayDialog(
-    m: TeamMember, b: TeamBlock?, r: Map<String, Any?>?, canEdit: Boolean, onEdit: () -> Unit, onDismiss: () -> Unit,
+    m: TeamMember, b: TeamBlock?, r: Map<String, Any?>?, reports: List<DayReport>, canEdit: Boolean, onEdit: () -> Unit, onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1402,6 +1400,19 @@ private fun TeamBlockDayDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 if (b?.proof == true) Text("📷 Photo proof on tick", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                // 📋 Tick after evening review: this week's score, then each day's report (orange: no evening review).
+                if (b?.afterReview == true || r?.get("afterReview") == true) {
+                    val byDate = reports.associateBy { it.date }
+                    val (rev, days) = DayClose.weekScore(byDate, { d -> b?.toTask()?.copy(startDate = "2000-01-01")?.isOn(d) ?: true })
+                    WeekScore(rev, days)
+                    val todayDate = r?.get("date") as? String
+                    val lines = (reports.filter { it.date != todayDate } +
+                        listOfNotNull(todayDate?.takeIf { doneAt > 0L }?.let { byDate[it] ?: DayReport(it) })).sortedByDescending { it.date }
+                    lines.forEach { x ->
+                        Text("${TeamUi.shortDate(java.time.LocalDate.parse(x.date).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())} · ${x.line}",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (x.reviewed) cs.onSurface else ReviewOrange)
+                    }
+                }
                 if (r?.get("photo") == true) {
                     val bmp = remember(photo) { photo?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
                     var big by remember { mutableStateOf(false) }
@@ -1413,9 +1424,7 @@ private fun TeamBlockDayDialog(
                 }
                 if (r?.get("voice") == true) {
                     val v = voice
-                    OutlinedButton(onClick = { v?.let { TeamMedia.play(ctx, "dossier-$blockId-$date", it) } }, enabled = v != null) {
-                        Text(if (playing == "dossier-$blockId-$date") "■ Stop" else "▶ Voice note ${if (voiceMs > 0) TeamMedia.duration(voiceMs) else ""}")
-                    }
+                    VoicePlayer("dossier-$blockId-$date", v, voiceMs, "", cs.onSurface)
                 }
             }
         },

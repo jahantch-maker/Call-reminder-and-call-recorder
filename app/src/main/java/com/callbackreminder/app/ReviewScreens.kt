@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -185,6 +186,9 @@ object ReviewUi {
 
     /** Which Needs you tab to open on ([ReviewData.TABS] index), asked by a Home tile. */
     val tab = MutableStateFlow<Int?>(null)
+
+    /** A notification's task to show here ([ReviewItem.key]): scrolled to and outlined for a moment. */
+    val show = MutableStateFlow<String?>(null)
 }
 
 private fun whenLabel(at: Long, now: Long): String {
@@ -226,6 +230,21 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     val allCount = countOf(tab)
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
+    var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val showAsked by ReviewUi.show.collectAsState()
+    var outlined by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showAsked) {
+        val key = showAsked ?: return@LaunchedEffect
+        // The task's own row, not the people list.
+        if (byPerson) { byPerson = false; ReviewSession.setByPerson(ctx, false) }
+        outlined = key
+        kotlinx.coroutines.delay(150L)
+        listState.revealKey(*shown.map { "${it.key}-$key" }.toTypedArray())
+        kotlinx.coroutines.delay(3_000L)
+        if (outlined == key) outlined = null
+        ReviewUi.show.value = null
+    }
 
     androidx.activity.compose.BackHandler { onBack() }
 
@@ -235,7 +254,9 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        PullRefresh(Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = padding.calculateTopPadding() + 8.dp,
@@ -270,11 +291,32 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
             }
             item(key = "order") {
                 // Parts (today's order) or 👤 By person: picked once, remembered.
-                var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
                 Column {
                     ChipHeading("REVIEW ORDER", modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
                     BoxTabs(listOf("Parts", "👤 By person"), if (byPerson) 1 else 0, { byPerson = it == 1; ReviewSession.setByPerson(ctx, it == 1) })
                 }
+            }
+            if (byPerson) {
+                // 👤 By person: one row per person (most tasks first, no person last); ▶ reviews only that person.
+                val people = shown.flatMap { data[it].orEmpty() }.distinctBy { it.key }.groupBy { ReviewSession.personOf(it) }
+                val order = people.keys.sortedWith(compareBy<String>({ it.isEmpty() }, { -(people[it]?.size ?: 0) }))
+                item(key = "people-h") { ChipHeading("PEOPLE IN THIS REVIEW", modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
+                if (order.isEmpty()) item(key = "people-e") {
+                    Text("Nothing here", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp))
+                }
+                items(order, key = { "p-$it" }) { k ->
+                    val list = people[k].orEmpty()
+                    val name = if (k.isEmpty()) "No person" else TeamRepo.memberByKey(k)?.name
+                        ?: list.firstOrNull { it.person.isNotBlank() }?.person ?: list.first().number
+                    val replied = list.count { it.section == ReviewSection.REPLIED }
+                    PersonReviewRow(
+                        name = name, none = k.isEmpty(),
+                        count = "${list.size}" + (if (replied > 0) " · $replied replied" else "") + if (k.isEmpty()) " · last" else "",
+                        onStart = { start("person:$tab:$k") },
+                    )
+                }
+                return@LazyColumn
             }
             val seen = mutableSetOf<String>()
             shown.forEach { sec ->
@@ -316,10 +358,12 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                         },
                         onNewTime = { newTimeFor = item },
                         onDetails = { editFor = ToScheduleStore.items.value.firstOrNull { it.id == item.id } },
+                        highlighted = outlined == item.key,
                     )
                     }
                 }
             }
+        }
         }
     }
 
@@ -336,6 +380,27 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
         )
     }
     editFor?.let { t -> FollowUpDialog(onDismiss = { editFor = null }, item = t) }
+}
+
+/** One person on Needs you › 👤 By person: initial, name, how many (and replied), ▶ to review only them. */
+@Composable
+private fun PersonReviewRow(name: String, none: Boolean, count: String, onStart: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = Modifier.fillMaxWidth().clickable(onClick = onStart)) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(if (none) cs.outlineVariant else cs.primaryContainer), contentAlignment = Alignment.Center) {
+                Text(if (none) "–" else name.take(1).uppercase(), fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    color = if (none) cs.onSurfaceVariant else cs.onPrimaryContainer)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(name, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(count, fontSize = 12.sp, color = cs.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.size(width = 40.dp, height = 30.dp).clip(RoundedCornerShape(9.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = "Review only $name", tint = cs.onPrimaryContainer, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -373,6 +438,7 @@ private fun ReviewRow(
     onDetails: () -> Unit,
     startOpen: Boolean = false,
     onNotDoneSent: () -> Unit = {},
+    highlighted: Boolean = false,
 ) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(startOpen) }
@@ -419,6 +485,7 @@ private fun ReviewRow(
         corner = tt?.takeIf { giver }?.let { t -> { TeamTicks(t) } },
         banner = banner,
         urgent = tt?.let { it.urgent && it.open } == true,
+        highlighted = highlighted,
     ) {
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
@@ -431,6 +498,46 @@ private fun ReviewRow(
             buttonLabel = if (sched) "Set time" else "New time",
             onNotDone = check?.let { { notYet = true } },
         )
+    }
+}
+
+/**
+ * CLOSE YOUR DAY, under the evening review's summary: today's 📋 "Tick after evening review" block as THE card,
+ * the 4 numbers that go with its tick, and ✓ Done only.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CloseDayCard(blocks: List<DossierTask>, done: Int, newTime: Int, skipped: Int, tomorrow: Int, offerUndo: (String, () -> Unit) -> Unit) {
+    val ctx = LocalContext.current
+    val day = Dossier.openDay()
+    fun close() {
+        val ticked = blocks.filter { DossierStore.tick(it.id, day) }
+        if (ticked.isEmpty()) TeamDossier.lockedToast(ctx)
+        else offerUndo("Day closed · today's report saved") { ticked.forEach { DossierStore.untick(it.id, day) } }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+        ChipHeading("CLOSE YOUR DAY", modifier = Modifier.padding(start = 4.dp))
+        blocks.forEach { b ->
+            TaskCard(
+                title = b.title,
+                done = false,
+                onTick = { close() },
+                time = b.rangeLabel,
+                sub = b.frequency,
+                chips = listOf(
+                    RowChip("$done done", ChipTone.GREEN), RowChip("$newTime new time", ChipTone.ORANGE),
+                    RowChip("$skipped skipped", ChipTone.MUTED), RowChip("$tomorrow planned tmrw", ChipTone.BLUE),
+                ),
+                onClick = {},
+                pos = RowPos.SINGLE,
+                highlighted = true,
+            )
+        }
+        Button(
+            onClick = { close() },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = DoneGreen, contentColor = Color(0xFF00382A)),
+        ) { Text("✓ Done", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
     }
 }
 
@@ -1148,6 +1255,15 @@ private fun SessionSummary(
     var pickFor by remember { mutableStateOf<List<ReviewItem>?>(null) }
     var timeFor by remember { mutableStateOf<ReviewItem?>(null) }
     val handledAny = s.handled > 0 || left.isNotEmpty()
+    // 📋 Close your day: the numbers as they stand after moving or leaving what was left.
+    var moved by remember { mutableIntStateOf(0) }
+    val newTimeNow = s.newTime + moved
+    val skippedNow = open.size + leftAlone.size + later.size
+    val records by DossierStore.records.collectAsState()
+    val closing = remember(records) { if (s.mode in ReviewSession.WHOLE_DAY && DayClose.isEvening(ctx)) DayClose.openBlocks() else emptyList() }
+    LaunchedEffect(newTimeNow, skippedNow) {
+        if (s.mode in ReviewSession.WHOLE_DAY) DayClose.onReviewFinished(ctx, s.done, newTimeNow, skippedNow)
+    }
 
     /** On to the other tab while it has tasks, so you are walked through without looking for it. */
     fun after(acted: Set<String>) {
@@ -1164,7 +1280,8 @@ private fun SessionSummary(
     fun move(items: List<ReviewItem>, label: String, held: Boolean, whenFor: (ReviewItem) -> Long) {
         val undos = items.map { ReviewActions.snapshot(it) } + if (held) items.map { Held.push(ctx, it) } else emptyList()
         items.forEach { i -> ReviewActions.newTime(ctx, i, whenFor(i)) }
-        offerUndo("Moved ${items.size} $label") { undos.forEach { it() } }
+        moved += items.size
+        offerUndo("Moved ${items.size} $label") { undos.forEach { it() }; moved -= items.size }
         after(items.map { it.key }.toSet())
     }
 
@@ -1255,6 +1372,9 @@ private fun SessionSummary(
                         modifier = Modifier.padding(16.dp)
                     )
                 }
+            }
+            if (closing.isNotEmpty() && open.isEmpty()) {
+                CloseDayCard(closing, s.done, newTimeNow, skippedNow, DayClose.plannedTomorrow(ctx), offerUndo)
             }
             if (leftAlone.isNotEmpty()) {
                 Text(

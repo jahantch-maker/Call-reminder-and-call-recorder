@@ -129,6 +129,8 @@ object MyTasksUi {
 }
 
 private val Teal = Color(0xFF0FA68E)
+/** "Tasks review not done today": ticked without the evening review. */
+internal val ReviewOrange = Color(0xFFF08A24)
 private val Amber: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFFFFC266) else Color(0xFFB36B00)
 private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
 
@@ -280,7 +282,12 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             TeamDossier.lockedToast(ctx)
             return
         }
-        scope.offerUndo(snack, if (wasDone) "Not done · ${t.title}" else "Done · ${t.title}") {
+        val msg = when {
+            wasDone -> "Not done · ${t.title}"
+            t.afterReview -> "Ticked · today's report saved"
+            else -> "Done · ${t.title}"
+        }
+        scope.offerUndo(snack, msg) {
             if (wasDone) DossierStore.tick(t.id, day) else {
                 DossierStore.untick(t.id, day)
                 rec?.reason?.takeIf { it.isNotBlank() }?.let { DossierStore.setReason(t.id, day, it) }
@@ -346,7 +353,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             ) { Icon(Icons.Rounded.Add, contentDescription = "New task") }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        PullRefresh(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // An outlined task further down: scroll until its row shows, then it brings itself fully into view (asked
         // again after the scroll, which starts from the top and would undo an earlier one). Outlined 3 s after that.
@@ -1031,7 +1038,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
                         }
                     }, size = 40.dp)
                     Text(
-                        when { recording -> "Recording… release to send"; hasVoice -> "🎤 Voice note sent · hold to replace"; else -> "hold 🎤 to record" },
+                        when { recording -> "Recording…"; hasVoice -> "🎤 Voice note sent · tap 🎤 to replace"; else -> "tap 🎤 to record" },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1087,6 +1094,7 @@ internal fun DossierTaskDialog(
         return
     }
     var proof by remember { mutableStateOf(team?.block?.proof ?: false) }
+    var afterReview by remember { mutableStateOf(team?.block?.afterReview ?: existing?.afterReview ?: false) }
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
     var monthly by remember { mutableStateOf((existing?.monthDay ?: 0) > 0) }
@@ -1101,9 +1109,9 @@ internal fun DossierTaskDialog(
     var onOffDay by remember { mutableStateOf(existing?.onOffDay ?: false) }
     var showClock by remember { mutableStateOf(false) }
     var showEndClock by remember { mutableStateOf(false) }
-    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof) }
+    val start = remember { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof, afterReview) }
     val cancel = rememberDiscardGuard(
-        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof) != start },
+        changed = { listOf(title, note, monthly, days, monthDay, minute, remind, remindMin, starred, endMinute, everyWeeks, onOffDay, proof, afterReview) != start },
         onClose = onDismiss,
     )
 
@@ -1141,13 +1149,14 @@ internal fun DossierTaskDialog(
                         TeamBlock(
                             id = team.block?.id ?: TeamBlock.newId(), title = title.trim(), note = note.trim(), minute = m, endMinute = end,
                             days = d, monthDay = md, everyWeeks = weeks, onOffDay = onOffDay, remindBefore = rb, proof = proof,
+                            afterReview = afterReview,
                         )
                     )
                     onDismiss()
                     return@let
                 }
-                if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred, end, weeks, onOffDay)
-                else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred, end, weeks, onOffDay)
+                if (existing == null) DossierStore.add(title, note, m, d, md, rb, starred, end, weeks, onOffDay, afterReview)
+                else DossierStore.edit(existing.id, title, note, m, d, md, rb, starred, end, weeks, onOffDay, afterReview)
                 onDismiss()
             }
         }
@@ -1316,6 +1325,22 @@ internal fun DossierTaskDialog(
                 }
             }
         }
+        // 📋 The day's last block: ticked at the end of the evening review, with today's numbers.
+        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("📋", fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Tick after evening review", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Shows with today's numbers when the evening review ends",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = afterReview, onCheckedChange = { afterReview = it })
+            }
+        }
         if (team != null) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1389,6 +1414,20 @@ class TeamBlockEdit(
 
 private fun remindLabel(m: Int) = if (m >= 60) "${m / 60} hour" else "$m min"
 
+/** "Review done 5 of 6 days this week", the same in your History and on his day. */
+@Composable
+internal fun WeekScore(reviewed: Int, days: Int) {
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = RoundedCornerShape(14.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            if (days == 0) "No review days yet this week" else "Review done $reviewed of $days days this week",
+            fontWeight = FontWeight.Bold, fontSize = 15.sp,
+            color = if (days > 0 && reviewed == days) Teal else cs.onSurface,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        )
+    }
+}
+
 /** A dossier task's History: this month's score and calendar, then every day, ✓ Done or ✕ Missed with the reason. */
 @Composable
 private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: () -> Unit) {
@@ -1398,6 +1437,9 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
     val open = Dossier.openDay(now)
     val (done, total) = remember(records, t) { DossierStore.monthScore(t, now) }
     val missed = total - done
+    val ctx = LocalContext.current
+    // 📋 Tick after evening review: each day's report, and this week's score on top.
+    val reports = remember(records, t) { if (t.afterReview) DayClose.all(ctx) else emptyMap() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -1419,6 +1461,10 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
                         }
                         TextButton(onClick = onEdit) { Text("Edit") }
                     }
+                }
+                if (t.afterReview) item(key = "week") {
+                    val (rev, days) = DayClose.weekScore(reports, t::isOn, now)
+                    WeekScore(rev, days)
                 }
                 item(key = "month") {
                     Card(
@@ -1448,7 +1494,9 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
                 if (history.isEmpty()) {
                     item(key = "none") { HintText("Its first day is ${t.start.format(dayFmt)}.") }
                 }
-                items(history, key = { it.date.toString() }) { h -> HistoryLine(h, open) }
+                items(history, key = { it.date.toString() }) { h ->
+                    HistoryLine(h, open, if (t.afterReview && h.status == DossierDay.Status.DONE) reports[h.date.toString()] ?: DayReport(h.date.toString()) else null)
+                }
             }
         }
     }
@@ -1507,7 +1555,7 @@ private fun MonthGrid(t: DossierTask, open: LocalDate, now: Long) {
 }
 
 @Composable
-private fun HistoryLine(h: DossierDay, open: LocalDate) {
+private fun HistoryLine(h: DossierDay, open: LocalDate, report: DayReport? = null) {
     val (title, sub, color) = when (h.status) {
         DossierDay.Status.DONE -> Triple("✓ Done · ${h.date.format(dayFmt)}", "Ticked ${Fmt.timeOnly(h.doneAt)}", Teal)
         DossierDay.Status.MISSED -> Triple(
@@ -1529,6 +1577,11 @@ private fun HistoryLine(h: DossierDay, open: LocalDate) {
             Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (h.reason.isNotBlank()) {
                 Text("“${h.reason}”", style = MaterialTheme.typography.bodyMedium, color = Amber, modifier = Modifier.padding(top = 2.dp))
+            }
+            report?.let { r ->
+                // Orange: ticked without the evening review.
+                Text(r.line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+                    color = if (r.reviewed) Teal else ReviewOrange, modifier = Modifier.padding(top = 2.dp))
             }
             HorizontalDivider(Modifier.padding(top = 10.dp))
         }
