@@ -1031,7 +1031,7 @@ private fun WhyNotSheet(t: DossierTask, day: LocalDate, rec: DossierRecord?, onD
                         }
                     }, size = 40.dp)
                     Text(
-                        when { recording -> "Recording… release to send"; hasVoice -> "🎤 Voice note sent · hold to replace"; else -> "hold 🎤 to record" },
+                        when { recording -> "Recording…"; hasVoice -> "🎤 Voice note sent · tap 🎤 to replace"; else -> "tap 🎤 to record" },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )

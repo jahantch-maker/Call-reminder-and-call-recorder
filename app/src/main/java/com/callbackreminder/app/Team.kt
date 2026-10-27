@@ -214,6 +214,8 @@ data class TeamMsg(
     val playedBy: Map<String, Long> = emptyMap(),
     /** Not on the server yet (one grey tick shows a clock). */
     val pending: Boolean = false,
+    /** A voice note's wave, one digit (1-9) per bar ("" for notes from before v0.42). */
+    val wave: String = "",
 ) {
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
 }
@@ -830,6 +832,7 @@ object TeamRepo {
                     "at" to now + i, "fromUid" to u.uid, "fromName" to me.name, "kind" to a.kind, "tag" to Team.BRIEF,
                     "text" to "", "durMs" to a.durMs, "viewers" to viewers,
                     "data" to com.google.firebase.firestore.Blob.fromBytes(a.data),
+                    "wave" to if (a.kind == Team.VOICE) TeamMedia.waveFor(a.durMs) else "",
                 )
             )
         }
@@ -1049,6 +1052,7 @@ object TeamRepo {
             "text" to text.trim(), "durMs" to durMs, "viewers" to t.viewers,
         )
         if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
+        if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
         msgs(t.id).document().set(doc)
         val preview = when (kind) {
             Team.VOICE -> "🎤 Voice note"
@@ -1167,6 +1171,7 @@ object TeamRepo {
                     seenBy = longs(d.get("seenBy")),
                     playedBy = longs(d.get("playedBy")),
                     pending = d.metadata.hasPendingWrites(),
+                    wave = d.getString("wave").orEmpty(),
                 )
             }.sortedBy { it.at })
         }

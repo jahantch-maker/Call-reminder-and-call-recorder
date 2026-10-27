@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,7 +61,7 @@ import org.json.JSONObject
 import java.io.File
 
 /** One private note on your own task: typed text, a voice note or a photo. Kept on this phone only. */
-data class TaskNote(val at: Long, val kind: String, val text: String = "", val file: String = "", val durMs: Long = 0L)
+data class TaskNote(val at: Long, val kind: String, val text: String = "", val file: String = "", val durMs: Long = 0L, val wave: String = "")
 
 /** Private notes per task ("l:<link>" for a follow-up, "m:<id>" for a My task), with their voice and photo files. */
 object TaskNotes {
@@ -75,19 +76,19 @@ object TaskNotes {
         val a = JSONArray(p(c).getString(key, "[]"))
         (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
-            TaskNote(o.optLong("at"), o.optString("k"), o.optString("t"), o.optString("f"), o.optLong("d"))
+            TaskNote(o.optLong("at"), o.optString("k"), o.optString("t"), o.optString("f"), o.optLong("d"), o.optString("w"))
         }
     }.getOrDefault(emptyList())
 
     fun add(c: Context, key: String, n: TaskNote, bytes: ByteArray? = null) {
         val note = if (bytes != null) {
-            val f = File(dir(c), "${System.currentTimeMillis()}.${if (n.kind == PHOTO) "jpg" else "m4a"}")
+            val f = File(dir(c), "${System.currentTimeMillis()}.${if (n.kind == PHOTO) "jpg" else "aac"}")
             f.writeBytes(bytes)
             n.copy(file = f.name)
         } else n
         val a = JSONArray()
         (list(c, key) + note).forEach {
-            a.put(JSONObject().put("at", it.at).put("k", it.kind).put("t", it.text).put("f", it.file).put("d", it.durMs))
+            a.put(JSONObject().put("at", it.at).put("k", it.kind).put("t", it.text).put("f", it.file).put("d", it.durMs).put("w", it.wave))
         }
         p(c).edit().putString(key, a.toString()).apply()
     }
@@ -166,7 +167,7 @@ fun TaskTimelineWindow(
                         HorizontalDivider(color = cs.surfaceVariant)
                     }
                 }
-                Text(if (recording) "🔴 Recording… release to add" else "🔒 Notes stay on this phone only",
+                Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
                     fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -180,7 +181,7 @@ fun TaskTimelineWindow(
                     else {
                         IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.primary) }
                         TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
-                            TaskNotes.add(ctx, noteKey, TaskNote(System.currentTimeMillis(), TaskNotes.VOICE, durMs = d), b)
+                            TaskNotes.add(ctx, noteKey, TaskNote(System.currentTimeMillis(), TaskNotes.VOICE, durMs = d, wave = TeamMedia.waveFor(d)), b)
                             tick++
                         }, size = 44.dp)
                     }
@@ -198,11 +199,10 @@ private fun NoteBubble(n: TaskNote, playing: Boolean, onPlay: () -> Unit, onPhot
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant) {
             when (n.kind) {
-                TaskNotes.VOICE -> Row(Modifier.clickable(onClick = onPlay).padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (playing) "⏸" else "▶", fontSize = 18.sp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("🎤 Voice note · ${TeamMedia.duration(n.durMs)}", fontWeight = FontWeight.SemiBold)
+                TaskNotes.VOICE -> {
+                    val bytes = remember(n.file) { TaskNotes.bytes(ctx, n) }
+                    VoicePlayer("note-${n.at}", bytes, n.durMs, n.wave, cs.onSurfaceVariant,
+                        modifier = Modifier.widthIn(max = 300.dp).padding(horizontal = 10.dp, vertical = 6.dp))
                 }
                 TaskNotes.PHOTO -> {
                     val bmp = remember(n.file) { TaskNotes.bytes(ctx, n)?.let { TeamMedia.bitmap(it) }?.asImageBitmap() }

@@ -970,7 +970,7 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
                 TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> voice = b to d }, size = 44.dp)
             }
             if (recording || voice != null) Text(
-                if (recording) "🔴 Recording… release to add" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
+                if (recording) "🔴 Recording…" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
                 fontSize = 12.sp, color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant,
                 modifier = if (!recording) Modifier.clickable { voice = null } else Modifier,
             )
@@ -1134,13 +1134,8 @@ fun TeamBriefStrip(t: TeamTask) {
                 }
             }
             voice?.let { v ->
-                val on = playing == v.id
-                IconButton(onClick = { v.data?.let { TeamMedia.play(ctx, v.id, it); TeamRepo.markPlayed(t.id, v) } },
-                    modifier = Modifier.size(34.dp).clip(CircleShape).background(cs.primary)) {
-                    Icon(if (on) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, contentDescription = if (on) "Stop" else "Play", tint = cs.onPrimary)
-                }
-                Text("▍▌▍▎▌▍▌▎▍▌▍▎", color = cs.primary, fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
-                Text(TeamMedia.duration(v.durMs), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                VoicePlayer(v.id, v.data, v.durMs, v.wave, cs.onSurfaceVariant, modifier = Modifier.weight(1f), button = 34.dp,
+                    onPlay = { TeamRepo.markPlayed(t.id, v) })
             }
         }
     }
@@ -1413,9 +1408,7 @@ private fun TeamBlockDayDialog(
                 }
                 if (r?.get("voice") == true) {
                     val v = voice
-                    OutlinedButton(onClick = { v?.let { TeamMedia.play(ctx, "dossier-$blockId-$date", it) } }, enabled = v != null) {
-                        Text(if (playing == "dossier-$blockId-$date") "■ Stop" else "▶ Voice note ${if (voiceMs > 0) TeamMedia.duration(voiceMs) else ""}")
-                    }
+                    VoicePlayer("dossier-$blockId-$date", v, voiceMs, "", cs.onSurface)
                 }
             }
         },
