@@ -618,7 +618,7 @@ private fun TeamActive(
     }
     editing?.let { m ->
         TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
-            onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(m, boss, role, nums) } },
+            onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums) } },
             onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
     }
 }
@@ -717,7 +717,7 @@ data class MemberNumbers(val rows: List<Row>, val main: String, val wa: String) 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TeamNumbersEditor(name: String, nums: MemberNumbers, onChange: (MemberNumbers) -> Unit) {
+fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = false, onChange: (MemberNumbers) -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var typing by remember { mutableStateOf(false) }
@@ -773,13 +773,32 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, onChange: (MemberNumber
         }) { Text("Add") }
     }
     val ticked = nums.ticked
+    // Ones already in his app (moved before) don't count again.
     val count = remember(ticked) {
-        if (ticked.isEmpty()) 0 else ReminderStore.items.value.count { r -> !r.done && !r.review && r.repeat == null && ticked.any { SmsStore.sameNumber(it, r.number) } } +
-            ToScheduleStore.items.value.count { s -> ticked.any { SmsStore.sameNumber(it, s.number) } }
+        val taken = TeamLinks.map(ctx, "given").values.toSet()
+        if (ticked.isEmpty()) 0 else ReminderStore.items.value.count { r ->
+            !r.done && !r.review && r.repeat == null && r.linkId.toString() !in taken && ticked.any { SmsStore.sameNumber(it, r.number) }
+        } + ToScheduleStore.items.value.count { s -> s.linkId.toString() !in taken && ticked.any { SmsStore.sameNumber(it, s.number) } }
     }
-    if (count > 0) Surface(shape = RoundedCornerShape(12.dp), color = Tones.green.bg, modifier = Modifier.fillMaxWidth()) {
-        Text("Moves $count open follow-up${if (count == 1) "" else "s"}${if (ticked.size > 1) " (${if (ticked.size == 2) "both" else "all ${ticked.size}"} numbers)" else ""} to ${Names.first(name) ?: "his"}'s app",
-            color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp))
+    // Your phone book decides his name: your contact for his ⭐ Main number, else the name he typed.
+    val saved = remember(nums.main) { ContactLookup.nameFor(ctx, nums.main).trim() }
+    val shows = saved.ifBlank { name }
+    if (nums.main.isNotBlank() || count > 0) Surface(shape = RoundedCornerShape(12.dp), color = Tones.green.bg, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (nums.main.isNotBlank()) Text(
+                if (saved.isNotBlank()) "Shows as $shows on your phone (your contact for ⭐ Main)" else "Shows as $shows · not in your contacts",
+                color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (count > 0) Text(
+                "${if (editing) "Save moves" else "Moves"} $count open follow-up${if (count == 1) "" else "s"}${if (ticked.size > 1) " (${if (ticked.size == 2) "both" else "all ${ticked.size}"} numbers)" else ""} to ${Names.first(shows) ?: "his"}'s app",
+                color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (nums.main.isNotBlank() && saved.isBlank()) CardLinkText("＋ Save to contacts") {
+                runCatching {
+                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_INSERT, android.provider.ContactsContract.Contacts.CONTENT_URI)
+                        .putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name)
+                        .putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, nums.main))
+                }
+            }
+        }
     }
 }
 
@@ -794,11 +813,16 @@ private fun TeamChartDialog(
     var confirmRemove by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(m.name) },
+        title = {
+            Column {
+                Text(m.name)
+                if (m.typed.isNotBlank() && m.typed != m.name) Text("Typed when joining: ${m.typed}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TeamChartFields(m, active, boss, { boss = it }, role, { role = it })
-                TeamNumbersEditor(m.name, nums) { nums = it }
+                TeamNumbersEditor(m.typed.ifBlank { m.name }, nums, editing = true) { nums = it }
                 TextButton(onClick = { confirmRemove = true }) { Text("Remove member", color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -1349,14 +1373,14 @@ fun TeamNeedsLines(mineOnly: Boolean = false) {
 
 // ---------------------------------------------------------------- picking a team member
 
-/** 👥 Team in the person picker: only the people below you in the chart. */
+/** 👥 Team in the person picker: everyone in the team, the people below you first. */
 @Composable
 fun TeamPickDialog(onDismiss: () -> Unit, onPick: (TeamMember) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val members by TeamRepo.members.collectAsState()
     val tasks by TeamRepo.tasks.collectAsState()
     val team by TeamRepo.team.collectAsState()
-    val list = remember(members) { TeamRepo.belowMe() }
+    val list = remember(members) { TeamRepo.canGiveTo() }
     var q by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1370,7 +1394,7 @@ fun TeamPickDialog(onDismiss: () -> Unit, onPick: (TeamMember) -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (list.size > 6) OutlinedTextField(q, { q = it }, placeholder = { Text("Search team") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-                if (list.isEmpty()) Text("Nobody below you in the chart yet. The owner sets it in Settings › Team.")
+                if (list.isEmpty()) Text("Nobody else in the team yet.")
                 list.filter { q.isBlank() || it.name.contains(q, ignoreCase = true) }.forEach { m ->
                     val open = tasks.count { it.toUid == m.uid && it.fromUid == TeamRepo.uid && it.open }
                     Row(
