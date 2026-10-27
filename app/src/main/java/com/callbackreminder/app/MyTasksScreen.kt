@@ -346,7 +346,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             ) { Icon(Icons.Rounded.Add, contentDescription = "New task") }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        PullRefresh(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // An outlined task further down: scroll until its row shows, then it brings itself fully into view (asked
         // again after the scroll, which starts from the top and would undo an earlier one). Outlined 3 s after that.

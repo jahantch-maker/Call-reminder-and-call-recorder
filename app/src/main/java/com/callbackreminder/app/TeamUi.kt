@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -1160,6 +1161,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
         val reg = uid?.let { u -> TeamRepo.watchDay(u) { day = it } }
         onDispose { reg?.remove() }
     }
+    PullRefresh(Modifier.fillMaxSize()) {
     SettingsPage(title = "${m?.first ?: "Member"}'s day", onBack = onBack) {
         if (m == null) {
             Text("Not in your team any more.")
@@ -1235,6 +1237,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
             }
         }
     }
+}
 }
 
 // ---------------------------------------------------------------- his Dossier (Phase 3)

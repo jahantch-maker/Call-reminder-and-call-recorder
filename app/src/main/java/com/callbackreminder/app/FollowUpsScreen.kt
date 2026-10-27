@@ -454,7 +454,7 @@ private fun FollowUpsAll(
             )
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        PullRefresh(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         var outlined by remember { mutableStateOf<String?>(null) }
         // Cleared only at the end: clearing it first restarted this effect and cancelled the scroll.

@@ -254,6 +254,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        PullRefresh(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(
@@ -362,6 +363,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     }
                 }
             }
+        }
         }
     }
 
