@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -226,6 +227,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     val allCount = countOf(tab)
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
+    var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
 
     androidx.activity.compose.BackHandler { onBack() }
 
@@ -270,11 +272,32 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
             }
             item(key = "order") {
                 // Parts (today's order) or 👤 By person: picked once, remembered.
-                var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
                 Column {
                     ChipHeading("REVIEW ORDER", modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
                     BoxTabs(listOf("Parts", "👤 By person"), if (byPerson) 1 else 0, { byPerson = it == 1; ReviewSession.setByPerson(ctx, it == 1) })
                 }
+            }
+            if (byPerson) {
+                // 👤 By person: one row per person (most tasks first, no person last); ▶ reviews only that person.
+                val people = shown.flatMap { data[it].orEmpty() }.distinctBy { it.key }.groupBy { ReviewSession.personOf(it) }
+                val order = people.keys.sortedWith(compareBy<String>({ it.isEmpty() }, { -(people[it]?.size ?: 0) }))
+                item(key = "people-h") { ChipHeading("PEOPLE IN THIS REVIEW", modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
+                if (order.isEmpty()) item(key = "people-e") {
+                    Text("Nothing here", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp))
+                }
+                items(order, key = { "p-$it" }) { k ->
+                    val list = people[k].orEmpty()
+                    val name = if (k.isEmpty()) "No person" else TeamRepo.memberByKey(k)?.name
+                        ?: list.firstOrNull { it.person.isNotBlank() }?.person ?: list.first().number
+                    val replied = list.count { it.section == ReviewSection.REPLIED }
+                    PersonReviewRow(
+                        name = name, none = k.isEmpty(),
+                        count = "${list.size}" + (if (replied > 0) " · $replied replied" else "") + if (k.isEmpty()) " · last" else "",
+                        onStart = { start("person:$tab:$k") },
+                    )
+                }
+                return@LazyColumn
             }
             val seen = mutableSetOf<String>()
             shown.forEach { sec ->
@@ -336,6 +359,27 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
         )
     }
     editFor?.let { t -> FollowUpDialog(onDismiss = { editFor = null }, item = t) }
+}
+
+/** One person on Needs you › 👤 By person: initial, name, how many (and replied), ▶ to review only them. */
+@Composable
+private fun PersonReviewRow(name: String, none: Boolean, count: String, onStart: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = Modifier.fillMaxWidth().clickable(onClick = onStart)) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(if (none) cs.outlineVariant else cs.primaryContainer), contentAlignment = Alignment.Center) {
+                Text(if (none) "–" else name.take(1).uppercase(), fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    color = if (none) cs.onSurfaceVariant else cs.onPrimaryContainer)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(name, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(count, fontSize = 12.sp, color = cs.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.size(width = 40.dp, height = 30.dp).clip(RoundedCornerShape(9.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = "Review only $name", tint = cs.onPrimaryContainer, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
 }
 
 @Composable

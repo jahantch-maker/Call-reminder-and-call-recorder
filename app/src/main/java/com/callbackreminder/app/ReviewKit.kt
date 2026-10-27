@@ -295,6 +295,12 @@ object ReviewData {
     /** The items a session goes through: "all" sections with Session on, calls only, or one section. */
     fun queue(ctx: Context, mode: String, now: Long = System.currentTimeMillis()): List<ReviewItem> {
         val all = build(ctx, now)
+        // ▶ on a person's row: "person:<tab>:<person>", only that person's items of that tab.
+        if (mode.startsWith("person:")) {
+            val tab = mode.removePrefix("person:").substringBefore(':').toIntOrNull() ?: 0
+            val who = mode.substringAfter(':').substringAfter(':')
+            return tabSections(tab).flatMap { all[it].orEmpty() }.distinctBy { it.key }.filter { ReviewSession.personOf(it) == who }
+        }
         val sections = when (mode) {
             ReviewSession.MODE_ALL -> ReviewPrefs.order(ctx).filter { ReviewPrefs.session(ctx, it) }
             ReviewSession.MODE_CALLS -> ReviewPrefs.order(ctx).filter { it.isCalls && ReviewPrefs.session(ctx, it) }
@@ -454,20 +460,33 @@ object ReviewSession {
      * Starts a session. Items left over from a paused or unfinished session (today's, or carried from yesterday)
      * come first, oldest first, then everything else that is waiting now.
      */
+    /** 👤 By person: the person an item belongs to ("" = no person). */
+    fun personOf(it: ReviewItem): String = if (it.number.isBlank()) "" else Work.personKey(it.number)
+
+    /**
+     * 👤 By person: all of one person together (most tasks first), the ones with no person last. Returns each
+     * item's group and the groups ("name" with "number" after a tab).
+     */
+    fun arrangeByPerson(found: List<ReviewItem>): Pair<Map<String, Int>, List<String>> {
+        val byKey = found.groupBy { personOf(it) }
+        val order = byKey.keys.sortedWith(compareBy<String>({ it.isEmpty() }, { -(byKey[it]?.size ?: 0) }))
+        val groups = order.map { k ->
+            val l = byKey[k].orEmpty()
+            val name = if (k.isEmpty()) "No person" else TeamRepo.memberByKey(k)?.name ?: l.firstOrNull { it.person.isNotBlank() }?.person ?: l.first().number
+            name + "\t" + (if (k.isEmpty()) "" else TeamRepo.memberByKey(k)?.phone ?: l.first().number)
+        }
+        return found.associate { it.key to order.indexOf(personOf(it)) } to groups
+    }
+
     fun start(ctx: Context, mode: String): Boolean {
         val found = ReviewData.queue(ctx, mode)
         var parts = found.associate { it.key to partOf(it.section) }
         var groups = emptyList<String>()
-        // 👤 By person: all of one person together (most tasks first), the ones with no person last.
-        if (byPerson(ctx)) {
-            val byKey = found.groupBy { if (it.number.isBlank()) "" else Work.personKey(it.number) }
-            val order = byKey.keys.sortedWith(compareBy<String>({ it.isEmpty() }, { -(byKey[it]?.size ?: 0) }))
-            groups = order.map { k ->
-                val l = byKey[k].orEmpty()
-                val name = if (k.isEmpty()) "No person" else TeamRepo.memberByKey(k)?.name ?: l.firstOrNull { it.person.isNotBlank() }?.person ?: l.first().number
-                name + "\t" + (if (k.isEmpty()) "" else TeamRepo.memberByKey(k)?.phone ?: l.first().number)
-            }
-            parts = found.associate { it.key to order.indexOf(if (it.number.isBlank()) "" else Work.personKey(it.number)) }
+        // ▶ on one person's row reviews only that person, always person by person.
+        if (byPerson(ctx) || mode.startsWith("person:")) {
+            val (p, g) = arrangeByPerson(found)
+            parts = p
+            groups = g
         }
         val items = found.map { it.key }
         val fresh = items.toSet()
@@ -485,7 +504,21 @@ object ReviewSession {
 
     /** Review order: the 4 parts (false) or 👤 By person (true). Kept until changed. */
     fun byPerson(ctx: Context): Boolean = p(ctx).getBoolean("by_person", false)
-    fun setByPerson(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("by_person", on).apply()
+    fun setByPerson(ctx: Context, on: Boolean) {
+        p(ctx).edit().putBoolean("by_person", on).apply()
+        reorder(ctx, on)
+    }
+
+    /** The order changed while a session is paused: what is left is sorted the new way (nothing done is lost). */
+    private fun reorder(ctx: Context, byPerson: Boolean) {
+        val s = init(ctx)
+        if (!s.active || s.byPerson == byPerson || s.mode.startsWith("person:")) return
+        val left = s.queue.drop(s.pos).mapNotNull { ReviewData.find(ctx, it) }
+        if (left.isEmpty()) return
+        val (parts, groups) = if (byPerson) arrangeByPerson(left) else left.associate { it.key to partOf(it.section) } to emptyList()
+        val queue = left.map { it.key }.sortedBy { parts[it] ?: 0 }
+        set(ctx, s.copy(queue = queue, pos = 0, parts = parts, groups = groups))
+    }
 
     /** 👤 By person: this person's name and number. */
     fun groupName(s: State, i: Int): String = s.groups.getOrNull(i)?.substringBefore('\t').orEmpty()
