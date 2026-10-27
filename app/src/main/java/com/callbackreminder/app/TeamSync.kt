@@ -630,7 +630,7 @@ object TeamSync {
         listOf("tl:", "ask:", "stuck:", "more:").forEach { nm.cancel(NotifIds.team(it + taskId)) }
     }
 
-    private fun notify(c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null) {
+    internal fun notify(c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null) {
         val intent = Intent(c, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (taskId != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM).putExtra(MainActivity.EXTRA_TEAM_TASK, taskId)

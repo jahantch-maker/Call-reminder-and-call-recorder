@@ -50,6 +50,12 @@ data class TeamMember(
     val more: List<String> = emptyList(),
     /** 🟢 His WhatsApp number, blank = the main one. */
     val wa: String = "",
+    /** The name he typed when joining. [name] is your contact name for his ⭐ Main number when you have one. */
+    val typed: String = "",
+    /** ✏ Adds his own Dossier blocks (the Owner's switch). */
+    val ownDossier: Boolean = false,
+    /** ✏ Sets the Dossier of the people under him (the Owner's switch). */
+    val setDossier: Boolean = false,
 ) {
     /** Every number of his, Main first: any of them is him. */
     val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
@@ -137,8 +143,9 @@ data class TeamTask(
     /** He asked for more time and you haven't answered yet. */
     val asking: Boolean get() = open && moreAt > 0L
     val doneCheck: Boolean get() = status == Team.DONE
-    val toFirst: String get() = Names.first(toName) ?: toName
-    val fromFirst: String get() = Names.first(fromName) ?: fromName
+    // Your contact names win: the stored names are only for people not in the team list.
+    val toFirst: String get() = TeamRepo.member(toUid)?.first ?: Names.first(toName) ?: toName
+    val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
 }
 
 object Team {
@@ -199,7 +206,7 @@ data class TeamMsg(
     /** Not on the server yet (one grey tick shows a clock). */
     val pending: Boolean = false,
 ) {
-    val fromFirst: String get() = Names.first(fromName) ?: fromName
+    val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
 }
 
 /** Settings › Team › Date rules: when a missing date or an unseen task comes to you. Kept on this phone. */
@@ -226,6 +233,13 @@ object TeamRules {
     fun freeExt(c: Context) = p(c).getInt("free_ext", 0)
     fun setFreeExt(c: Context, n: Int) = p(c).edit().putInt("free_ext", n).apply()
     fun extLabel(n: Int): String = if (n <= 0) "Never" else "${n}×"
+
+    /** ↩ Not done yet · the quick WHY chips, yours to change in Settings › Team. */
+    val NOT_DONE_DEFAULT = listOf("Photo missing", "Incomplete", "Wrong site", "Not as asked", "Quality")
+    fun notDoneReasons(c: Context): List<String> =
+        p(c).getString("not_done", null)?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: NOT_DONE_DEFAULT
+    fun setNotDoneReasons(c: Context, list: List<String>) =
+        p(c).edit().putString("not_done", list.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n")).apply()
 
     fun label(m: Int): String = when {
         m <= 0 -> "Off"
@@ -319,6 +333,8 @@ object TeamRepo {
         init(c)
         CrashLog.guard(appCtx, "Team start") {
             _user.value = auth().currentUser
+            // Contact names may have changed since last time: look them up again.
+            if (_members.value.isNotEmpty()) refreshNames() else contactNames.clear()
             listen()
             TeamSync.start(appCtx)
         }
@@ -556,7 +572,7 @@ object TeamRepo {
     suspend fun adminsToMembers() {
         val me = _me.value ?: return
         if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
-        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it)) }
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it), it.ownDossier, it.setDossier) }
         p().edit().putBoolean("admins_to_members", true).apply()
     }
 
@@ -643,22 +659,36 @@ object TeamRepo {
         "Couldn't decline: ${e.message ?: e.javaClass.simpleName}"
     }
 
-    /** Chart and role changes; everyone under [m] gets their manager list redone too. */
-    suspend fun setChart(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? {
+    /**
+     * Chart, role and number changes; everyone under [m] gets their manager list redone too. Open follow-ups under
+     * a newly ticked number move to his app, the same as on Approve.
+     */
+    suspend fun setChart(
+        c: Context, m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers, ownDossier: Boolean, setDossier: Boolean,
+    ): String? {
         if (reportsTo == m.uid || m.uid in chainFrom(reportsTo)) return "${m.first} can't report to someone under them."
-        return setChartNow(m, reportsTo, role, nums)
+        setChartNow(m, reportsTo, role, nums, ownDossier, setDossier)?.let { return it }
+        val now = _members.value.firstOrNull { it.uid == m.uid } ?: return null
+        if (!now.active) return null
+        now.numbers.forEach { TeamDossier.stopDailyList(c, it) }
+        val moved = TeamSync.moveOpenFollowUps(c, now)
+        return if (moved > 0) "Moved $moved open follow-up${if (moved == 1) "" else "s"} to ${now.first}'s app" else null
     }
 
-    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? = try {
+    private suspend fun setChartNow(
+        m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers, ownDossier: Boolean, setDossier: Boolean,
+    ): String? = try {
         val phone = nums.main.trim()
         val more = nums.ticked.map { it.trim() }.filter { it != phone }
         val wa = nums.wa.trim()
         members().document(m.uid).update(
-            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo))
+            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo),
+                "ownDossier" to ownDossier, "setDossier" to setDossier)
         ).await()
         // Local copy first, so the people under them get the new chain.
         _members.value = _members.value.map {
-            if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo)) else it
+            if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo),
+                name = shownName(it.uid, it.typed, phone), ownDossier = ownDossier, setDossier = setDossier) else it
         }
         _members.value.filter { m.uid in it.managers }.forEach { under ->
             members().document(under.uid).update("managers", chainFrom(under.reportsTo)).await()
@@ -694,11 +724,36 @@ object TeamRepo {
         return _members.value.filter { it.active && it.uid != u && u in it.managers }
     }
 
-    /** The team member with this phone number (below you), if any. */
+    /** Everyone you can give a task to: the whole team but you, the people below you first. */
+    fun canGiveTo(): List<TeamMember> {
+        val u = uid ?: return emptyList()
+        return _members.value.filter { it.active && it.uid != u }.sortedBy { if (u in it.managers) 0 else 1 }
+    }
+
+    /** The team member with this phone number, if any. */
     fun memberByNumber(number: String): TeamMember? {
         if (number.isBlank() || !activeNow) return null
-        return belowMe().firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }
+        return canGiveTo().firstOrNull { m -> m.numbers.any { SmsStore.sameNumber(it, number) } }
     }
+
+    /** People tab: any of a member's numbers counts as his ⭐ Main one, so SIM 1 and SIM 2 are one person. */
+    fun mainKey(number: String): String? {
+        if (number.isBlank() || !activeNow) return null
+        val k = RecentPeople.key(number)
+        val list = _members.value
+        if (list !== keyedFor) {
+            keyed = list.filter { it.active && it.uid != uid && it.phone.isNotBlank() }
+                .flatMap { m -> m.numbers.map { RecentPeople.key(it) to m } }.toMap()
+            keyedFor = list
+        }
+        return keyed[k]?.let { RecentPeople.key(it.phone) }
+    }
+
+    /** The member whose ⭐ Main number has this People key. */
+    fun memberByKey(key: String): TeamMember? = keyed.values.firstOrNull { RecentPeople.key(it.phone) == key }
+
+    @Volatile private var keyed: Map<String, TeamMember> = emptyMap()
+    @Volatile private var keyedFor: List<TeamMember>? = null
 
     /** All numbers of the team member with this number (empty when it is nobody in the team). */
     fun numbersOf(number: String): List<String> {
@@ -1134,9 +1189,29 @@ object TeamRepo {
     private fun longs(v: Any?): Map<String, Long> =
         (v as? Map<*, *>)?.entries?.mapNotNull { (k, n) -> (k as? String)?.let { it to ((n as? Number)?.toLong() ?: 0L) } }?.toMap() ?: emptyMap()
 
+    /** Your contact name for this number ("" when not saved), looked up once per number. */
+    private val contactNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun contactName(number: String): String {
+        if (number.isBlank() || !::appCtx.isInitialized) return ""
+        val k = RecentPeople.key(number)
+        return contactNames.getOrPut(k) { ContactLookup.nameFor(appCtx, number).trim() }
+    }
+
+    /** Contacts changed (or permission given): names are looked up again. */
+    fun refreshNames() {
+        contactNames.clear()
+        _members.value = _members.value.map { m -> m.copy(name = shownName(m.uid, m.typed, m.phone)) }
+    }
+
+    /** Your phone book decides: your contact name for his ⭐ Main number, else the name he typed. Your own is yours. */
+    private fun shownName(id: String, typed: String, phone: String): String =
+        if (id == uid) typed else contactName(phone).ifBlank { typed }
+
     private fun memberOf(s: DocumentSnapshot) = TeamMember(
         uid = s.id,
-        name = s.getString("name").orEmpty(),
+        name = shownName(s.id, s.getString("name").orEmpty(), s.getString("phone").orEmpty()),
+        typed = s.getString("name").orEmpty(),
         email = s.getString("email").orEmpty(),
         phone = s.getString("phone").orEmpty(),
         role = s.getString("role") ?: Team.MEMBER,
@@ -1147,6 +1222,8 @@ object TeamRepo {
         lastSeen = s.getLong("lastSeen") ?: 0L,
         more = strings(s.get("more")),
         wa = s.getString("wa").orEmpty(),
+        ownDossier = s.getBoolean("ownDossier") == true,
+        setDossier = s.getBoolean("setDossier") == true,
     )
 
     private fun taskOf(s: DocumentSnapshot) = TeamTask(

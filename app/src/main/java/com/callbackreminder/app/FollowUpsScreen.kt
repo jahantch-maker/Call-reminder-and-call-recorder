@@ -744,9 +744,16 @@ internal fun FollowUpCard(
         // A team task's Timeline is its conversation.
         val timeline: () -> Unit = teamTask?.let { tt -> { TeamUi.openTimeline(tt.id) } } ?: onTimeline
         val tlLabel = teamTask?.let { TeamUi.timelineLabel(it) } ?: timelineLabel
+        // His Done waits for your check: ✓ Received, thanks · ↩ Not done yet, the same on every card.
+        val check = teamTask?.takeIf { giver && it.doneCheck && !finished }
+        var notYet by remember(check?.id) { mutableStateOf(false) }
+        if (notYet && check != null) TeamNotDoneSheet(check) { notYet = false }
         CardPanel(
-            details = details,
+            details = details + listOfNotNull(check?.takeIf { it.doneAt > 0L }?.let { t ->
+                "${t.toFirst}: Done ${Fmt.dueLabel(t.doneAt)}" + if (t.passedTo.isNotBlank()) " · by ${t.passedTo}" else ""
+            }),
             onNewTime = if (finished) null else onNewTime,
+            onNotDone = check?.let { { notYet = true } },
             // The same order on every card: Timeline · Edit · (Remove time · Move to … · Texts) · Delete.
             links = buildList {
                 add(RowLink(tlLabel, onClick = timeline))
@@ -763,7 +770,6 @@ internal fun FollowUpCard(
                 add(RowLink("Delete", danger = true, onClick = delete))
             }
         )
-        teamTask?.let { tt -> if (tt.status == Team.DONE && tt.fromUid == TeamRepo.uid) TeamCheckButtons(tt) }
     }
 }
 

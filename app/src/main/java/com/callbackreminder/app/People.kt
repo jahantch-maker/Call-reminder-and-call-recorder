@@ -51,7 +51,8 @@ object PeopleUi {
 object Work {
     private const val DAY = 86_400_000L
 
-    fun personKey(number: String) = RecentPeople.key(number)
+    /** One person per number, except team members: all their numbers are one person (their ⭐ Main one). */
+    fun personKey(number: String) = TeamRepo.mainKey(number) ?: RecentPeople.key(number)
 
     /** Everything still open: calls (waiting or in To review), texts (scheduled or in To review), My tasks, and today's unticked dossier. */
     fun open(
@@ -182,10 +183,11 @@ object Work {
             val latest = (pc.map { Triple(it.createdAt, it.name, it.number) } + pt.map { Triple(it.createdAt, it.name, it.number) } +
                 pm.map { Triple(it.createdAt, it.name, it.number) }).maxByOrNull { it.first }
             val name = (pc.map { it.name } + pt.map { it.name } + pm.map { it.name }).firstOrNull { it.isNotBlank() }.orEmpty()
+            val member = TeamRepo.memberByKey(k)
             PersonSummary(
                 key = k,
-                name = latest?.second?.takeIf { it.isNotBlank() } ?: name,
-                number = latest?.third.orEmpty(),
+                name = member?.name ?: latest?.second?.takeIf { it.isNotBlank() } ?: name,
+                number = member?.phone ?: latest?.third.orEmpty(),
                 pending = mine.size,
                 overdue = mine.count { it.overdue },
                 delayed = delays(pc, pt),

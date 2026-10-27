@@ -201,10 +201,10 @@ internal fun PersonPicker(prompt: String?, onPicked: (name: String, number: Stri
     var showRecent by remember { mutableStateOf(false) }
     var showUsed by remember { mutableStateOf(false) }
     var showTeam by remember { mutableStateOf(false) }
-    // 👥 Team comes first, only for people in a team (and only the people below them).
+    // 👥 Team comes first, only for people in a team (everyone in it can be given a task).
     val teamMe by TeamRepo.me.collectAsState()
     val teamMembers by TeamRepo.members.collectAsState()
-    val hasTeam = teamMe?.active == true && remember(teamMembers) { TeamRepo.belowMe().isNotEmpty() }
+    val hasTeam = teamMe?.active == true && remember(teamMembers) { TeamRepo.canGiveTo().isNotEmpty() }
 
     val contactLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()

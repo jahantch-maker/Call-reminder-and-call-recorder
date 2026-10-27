@@ -561,7 +561,8 @@ private fun TeamActive(
         }
     }
 
-    if (admin || hasReports) {
+    // Everyone can give tasks, so everyone has these rules for the tasks they give.
+    run {
         TeamHeading("Date rules")
         var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
         var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
@@ -570,6 +571,8 @@ private fun TeamActive(
         var locked by remember { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
         var freeExt by remember { mutableIntStateOf(TeamRules.freeExt(ctx)) }
         var rule by remember { mutableIntStateOf(-1) }
+        var reasons by remember { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
+        var editReasons by remember { mutableStateOf(false) }
         TeamCard {
             RuleRow("No deadline picked · remind me", TeamRules.label(noDate)) { rule = 0 }
             RuleRow("Urgent, no deadline · notify me", TeamRules.label(urgent)) { rule = 1 }
@@ -577,8 +580,14 @@ private fun TeamActive(
             RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
             RuleRow("Deadline locked", if (locked) "On" else "Off") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
             RuleRow("Extend without asking", TeamRules.extLabel(freeExt)) { rule = 3 }
+            RuleRow("Not done reasons", "${reasons.size}") { editReasons = true }
             Text("New tasks follow these. Locked: once he sets his deadline, he can only ask to extend it.",
                 fontSize = 12.sp, color = cs.onSurfaceVariant)
+        }
+        if (editReasons) NotDoneReasonsDialog(reasons, onDismiss = { editReasons = false }) { list ->
+            TeamRules.setNotDoneReasons(ctx, list)
+            reasons = TeamRules.notDoneReasons(ctx)
+            editReasons = false
         }
         if (rule >= 0) {
             val (title, choices, sel) = when (rule) {
@@ -618,8 +627,50 @@ private fun TeamActive(
     }
     editing?.let { m ->
         TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
-            onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(m, boss, role, nums) } },
+            onSave = { boss, role, nums, own, set -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums, own, set) } },
             onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
+    }
+}
+
+/** Settings › Team › Not done reasons: the WHY chips of ↩ Not done yet. Add, rename, move up, delete. */
+@Composable
+private fun NotDoneReasonsDialog(start: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    val list = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(start) } }
+    var adding by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Not done reasons") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("The quick WHY chips when you send a task back.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                list.forEachIndexed { i, r ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(r, { list[i] = it }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp))
+                        TextButton(onClick = { if (i > 0) { val x = list.removeAt(i); list.add(i - 1, x) } }, enabled = i > 0) { Text("↑") }
+                        TextButton(onClick = { list.removeAt(i) }, enabled = list.size > 1) { Text("✕", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(adding, { adding = it }, placeholder = { Text("New reason") }, singleLine = true,
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp))
+                    TextButton(onClick = { if (adding.isNotBlank()) { list.add(adding.trim()); adding = "" } }) { Text("Add") }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(list.toList() + listOfNotNull(adding.trim().takeIf { it.isNotEmpty() })) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** One ACCESS switch in Team › edit person. */
+@Composable
+private fun AccessSwitch(label: String, sub: String?, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!on) }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            if (sub != null) Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = onChange)
     }
 }
 
@@ -717,7 +768,7 @@ data class MemberNumbers(val rows: List<Row>, val main: String, val wa: String) 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TeamNumbersEditor(name: String, nums: MemberNumbers, onChange: (MemberNumbers) -> Unit) {
+fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = false, onChange: (MemberNumbers) -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var typing by remember { mutableStateOf(false) }
@@ -773,36 +824,68 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, onChange: (MemberNumber
         }) { Text("Add") }
     }
     val ticked = nums.ticked
+    // Ones already in his app (moved before) don't count again.
     val count = remember(ticked) {
-        if (ticked.isEmpty()) 0 else ReminderStore.items.value.count { r -> !r.done && !r.review && r.repeat == null && ticked.any { SmsStore.sameNumber(it, r.number) } } +
-            ToScheduleStore.items.value.count { s -> ticked.any { SmsStore.sameNumber(it, s.number) } }
+        val taken = TeamLinks.map(ctx, "given").values.toSet()
+        if (ticked.isEmpty()) 0 else ReminderStore.items.value.count { r ->
+            !r.done && !r.review && r.repeat == null && r.linkId.toString() !in taken && ticked.any { SmsStore.sameNumber(it, r.number) }
+        } + ToScheduleStore.items.value.count { s -> s.linkId.toString() !in taken && ticked.any { SmsStore.sameNumber(it, s.number) } }
     }
-    if (count > 0) Surface(shape = RoundedCornerShape(12.dp), color = Tones.green.bg, modifier = Modifier.fillMaxWidth()) {
-        Text("Moves $count open follow-up${if (count == 1) "" else "s"}${if (ticked.size > 1) " (${if (ticked.size == 2) "both" else "all ${ticked.size}"} numbers)" else ""} to ${Names.first(name) ?: "his"}'s app",
-            color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp))
+    // Your phone book decides his name: your contact for his ⭐ Main number, else the name he typed.
+    val saved = remember(nums.main) { ContactLookup.nameFor(ctx, nums.main).trim() }
+    val shows = saved.ifBlank { name }
+    if (nums.main.isNotBlank() || count > 0) Surface(shape = RoundedCornerShape(12.dp), color = Tones.green.bg, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (nums.main.isNotBlank()) Text(
+                if (saved.isNotBlank()) "Shows as $shows on your phone (your contact for ⭐ Main)" else "Shows as $shows · not in your contacts",
+                color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (count > 0) Text(
+                "${if (editing) "Save moves" else "Moves"} $count open follow-up${if (count == 1) "" else "s"}${if (ticked.size > 1) " (${if (ticked.size == 2) "both" else "all ${ticked.size}"} numbers)" else ""} to ${Names.first(shows) ?: "his"}'s app",
+                color = Tones.green.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (nums.main.isNotBlank() && saved.isBlank()) CardLinkText("＋ Save to contacts") {
+                runCatching {
+                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_INSERT, android.provider.ContactsContract.Contacts.CONTENT_URI)
+                        .putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name)
+                        .putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, nums.main))
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun TeamChartDialog(
-    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit, onSave: (String, String, MemberNumbers) -> Unit,
+    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit,
+    onSave: (String, String, MemberNumbers, Boolean, Boolean) -> Unit,
     onRemove: (TeamMember?) -> Unit,
 ) {
     var nums by remember { mutableStateOf(MemberNumbers.of(m)) }
+    var ownDossier by remember { mutableStateOf(m.ownDossier) }
+    var setDossier by remember { mutableStateOf(m.setDossier) }
     var boss by remember { mutableStateOf(m.reportsTo) }
     var role by remember { mutableStateOf(m.role) }
     var confirmRemove by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(m.name) },
+        title = {
+            Column {
+                Text(m.name)
+                if (m.typed.isNotBlank() && m.typed != m.name) Text("Typed when joining: ${m.typed}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TeamChartFields(m, active, boss, { boss = it }, role, { role = it })
-                TeamNumbersEditor(m.name, nums) { nums = it }
+                // What he may add to Dossiers; once added, blocks never change and only you delete them.
+                ChipHeading("ACCESS")
+                AccessSwitch("✏ Adds his own Dossier", null, ownDossier) { ownDossier = it }
+                val under = remember(active) { active.filter { m.uid in it.managers }.joinToString(", ") { it.first } }
+                AccessSwitch("✏ Sets Dossier of people under him", if (under.isBlank()) "Nobody under him yet" else "Now: $under", setDossier) { setDossier = it }
+                TeamNumbersEditor(m.typed.ifBlank { m.name }, nums, editing = true) { nums = it }
                 TextButton(onClick = { confirmRemove = true }) { Text("Remove member", color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { Button(onClick = { onSave(boss, role, nums) }) { Text("Save") } },
+        confirmButton = { Button(onClick = { onSave(boss, role, nums, ownDossier, setDossier) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
     if (confirmRemove) {
@@ -859,7 +942,7 @@ fun TeamCheckButtons(t: TeamTask) {
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
+fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var why by remember { mutableStateOf<String?>(null) }
@@ -868,7 +951,7 @@ fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
     var recording by remember { mutableStateOf(false) }
     var iPick by remember { mutableStateOf(false) }
     var due by remember { mutableStateOf<Long?>(null) }
-    val quick = listOf("Photo missing", "Incomplete", "Wrong site", "Not as asked", "Quality")
+    val quick = remember { TeamRules.notDoneReasons(ctx) }
     val ready = why != null && (!iPick || due != null)
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -918,6 +1001,7 @@ fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
                     TeamRepo.notDoneYet(t, reason, if (iPick) due ?: 0L else 0L)
                     voice?.let { (b, d) -> TeamRepo.send(t, Team.VOICE, "", data = b, durMs = d) }
                     TeamSync.giverNotDone(ctx, t, if (iPick) due ?: 0L else 0L)
+                    onSent()
                     onDismiss()
                 },
                 enabled = ready,
@@ -1168,10 +1252,14 @@ fun TeamDayScreen(onBack: () -> Unit) {
 private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
     val cs = MaterialTheme.colorScheme
     val team by TeamRepo.team.collectAsState()
+    val meNow by TeamRepo.me.collectAsState()
     val owner = team?.ownerUid == TeamRepo.uid && m.role != Team.OWNER
+    // Who may add: the Owner, a senior you switched on, or he himself when switched on. Only the Owner deletes.
+    val canAdd = remember(team, meNow, m) { TeamDossier.canAdd(m) }
     var blocks by remember(m.uid) { mutableStateOf<List<TeamBlock>?>(null) }
-    var edit by remember { mutableStateOf<TeamBlock?>(null) }
+    var deleting by remember { mutableStateOf<TeamBlock?>(null) }
     var adding by remember { mutableStateOf(false) }
+    val pending by TeamDossier.pending.collectAsState()
     var open by remember { mutableStateOf<Pair<TeamBlock?, Map<String, Any?>?>?>(null) }
     DisposableEffect(m.uid) {
         val reg = TeamDossier.watch(m.uid) { blocks = it }
@@ -1208,6 +1296,8 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
                     if (r?.get("voice") == true) add(RowChip("🎤 voice ›", ChipTone.BLUE))
                     if (r != null && !done && reason.isNullOrBlank() && due in 1 until now) add(RowChip("No reason yet", ChipTone.MUTED))
                     if (r == null) add(RowChip("Not today", ChipTone.MUTED))
+                    // Who added it: blocks never change, so this stays true.
+                    b?.byFirst?.takeIf { it.isNotBlank() }?.let { add(RowChip("✏ " + if (b.by == TeamRepo.uid) "You" else it, ChipTone.MUTED)) }
                 }
                 TaskCard(
                     title = b?.title ?: (r?.get("title") as? String ?: ""),
@@ -1229,31 +1319,47 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
             }
         }
     }
-    if (owner) {
-        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-            Text("＋ Add block for ${m.first}", fontWeight = FontWeight.Bold)
+    pending?.takeIf { it.member.uid == m.uid }?.let { p ->
+        Surface(shape = RoundedCornerShape(12.dp), color = cs.inverseSurface, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Block added · ${p.block.title}", color = cs.inverseOnSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { TeamDossier.undo() }) { Text("UNDO", color = cs.inversePrimary, fontWeight = FontWeight.Bold) }
+            }
         }
-        Text("Only you can change ${m.first}'s Dossier. He ticks it on his phone.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+    }
+    if (canAdd) {
+        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            Text("＋ Add block for ${if (m.uid == TeamRepo.uid) "you" else m.first}", fontWeight = FontWeight.Bold)
+        }
+        Text(
+            if (owner) "Blocks can't be moved or changed once added. Only you can delete one."
+            else "Blocks can't be moved, changed or deleted once added. Only ${TeamDossier.ownerFirst()} can delete one.",
+            fontSize = 12.sp, color = cs.onSurfaceVariant
+        )
     }
 
     open?.let { (b, r) ->
-        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; edit = b }) { open = null }
+        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
     }
     val cur = blocks.orEmpty()
     if (adding) {
         DossierTaskDialog(
             existing = null, onDismiss = { adding = false }, onSwitchKind = null,
-            team = TeamBlockEdit(m.first, null, onSave = { nb -> TeamDossier.save(m, cur + nb) }, onDelete = null),
+            team = TeamBlockEdit(if (m.uid == TeamRepo.uid) "you" else m.first, null, onSave = { nb -> TeamDossier.addLater(m, cur, nb) }, onDelete = null,
+                others = cur + listOfNotNull(pending?.takeIf { it.member.uid == m.uid }?.block)),
         )
     }
-    edit?.let { b ->
-        DossierTaskDialog(
-            existing = b.toTask(), onDismiss = { edit = null }, onSwitchKind = null,
-            team = TeamBlockEdit(
-                m.first, b,
-                onSave = { nb -> TeamDossier.save(m, cur.map { if (it.id == nb.id) nb else it }) },
-                onDelete = { TeamDossier.save(m, cur.filter { it.id != b.id }) },
-            ),
+    deleting?.let { b ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete for ${m.first}?") },
+            text = { Text("“${b.title}” leaves ${m.first}'s Dossier from now on. Its past ticks stay in History.") },
+            confirmButton = {
+                TextButton(onClick = { TeamDossier.save(m, cur.filter { it.id != b.id }); deleting = null }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
 }
@@ -1314,7 +1420,7 @@ private fun TeamBlockDayDialog(
             }
         },
         confirmButton = { TextButton(onClick = { TeamMedia.stopPlaying(); onDismiss() }) { Text("Close") } },
-        dismissButton = { if (canEdit) TextButton(onClick = onEdit) { Text("Edit block") } },
+        dismissButton = { if (canEdit) TextButton(onClick = onEdit) { Text("Delete block", color = MaterialTheme.colorScheme.error) } },
     )
 }
 
@@ -1349,14 +1455,14 @@ fun TeamNeedsLines(mineOnly: Boolean = false) {
 
 // ---------------------------------------------------------------- picking a team member
 
-/** 👥 Team in the person picker: only the people below you in the chart. */
+/** 👥 Team in the person picker: everyone in the team, the people below you first. */
 @Composable
 fun TeamPickDialog(onDismiss: () -> Unit, onPick: (TeamMember) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val members by TeamRepo.members.collectAsState()
     val tasks by TeamRepo.tasks.collectAsState()
     val team by TeamRepo.team.collectAsState()
-    val list = remember(members) { TeamRepo.belowMe() }
+    val list = remember(members) { TeamRepo.canGiveTo() }
     var q by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1370,7 +1476,7 @@ fun TeamPickDialog(onDismiss: () -> Unit, onPick: (TeamMember) -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (list.size > 6) OutlinedTextField(q, { q = it }, placeholder = { Text("Search team") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-                if (list.isEmpty()) Text("Nobody below you in the chart yet. The owner sets it in Settings › Team.")
+                if (list.isEmpty()) Text("Nobody else in the team yet.")
                 list.filter { q.isBlank() || it.name.contains(q, ignoreCase = true) }.forEach { m ->
                     val open = tasks.count { it.toUid == m.uid && it.fromUid == TeamRepo.uid && it.open }
                     Row(

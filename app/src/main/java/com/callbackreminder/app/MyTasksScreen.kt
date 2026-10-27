@@ -605,7 +605,27 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     }
 
     newKind?.let { kind ->
-        if (kind == MyTasksUi.DOSSIER) {
+        // In a team (not the Owner) your Dossier lives online: you add to it only when switched on, and blocks never change.
+        val teamMe = TeamRepo.me.value?.takeIf { TeamRepo.activeNow && !TeamDossier.ownerIsMe() }
+        if (kind == MyTasksUi.DOSSIER && teamMe != null && !teamMe.ownDossier) {
+            AlertDialog(
+                onDismissRequest = { newKind = null },
+                title = { Text("Your Dossier") },
+                text = { Text("${TeamDossier.ownerFirst()} and the people above you set your Dossier. Ask ${TeamDossier.ownerFirst()} to switch on \"Adds his own Dossier\" for you.") },
+                confirmButton = { TextButton(onClick = { newKind = MyTasksUi.ONE_TIME }) { Text("New one-time task") } },
+                dismissButton = { TextButton(onClick = { newKind = null }) { Text("OK") } },
+            )
+        } else if (kind == MyTasksUi.DOSSIER && teamMe != null) {
+            DossierTaskDialog(
+                existing = null,
+                onDismiss = { newKind = null },
+                onSwitchKind = { newKind = MyTasksUi.ONE_TIME },
+                team = TeamBlockEdit("you", null, onSave = { nb ->
+                    TeamDossier.addLater(teamMe, TeamDossier.mine, nb)
+                    scope.offerUndoFor(snack, "Block added · ${nb.title}", 10L) { TeamDossier.undo() }
+                }, onDelete = null, others = TeamDossier.mine),
+            )
+        } else if (kind == MyTasksUi.DOSSIER) {
             DossierTaskDialog(
                 existing = null,
                 onDismiss = { newKind = null },
@@ -1061,7 +1081,7 @@ internal fun DossierTaskDialog(
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(existing.title) },
-            text = { Text("🔒 Set by ${TeamDossier.ownerFirst()}. You can tick it or say why not, but only ${TeamDossier.ownerFirst()} can change it.") },
+            text = { Text("✏ Added by ${TeamDossier.byFirst(ctx, existing.id)}. You can tick it or say why not. Blocks never change; only ${TeamDossier.ownerFirst()} can delete one.") },
             confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
         )
         return
@@ -1087,11 +1107,28 @@ internal fun DossierTaskDialog(
         onClose = onDismiss,
     )
 
+    // A team block can't sit on top of another one: fixed blocks never move.
+    fun probe(m: Int, e: Int) = TeamBlock(id = "", title = "", minute = m, endMinute = e,
+        days = if (monthly) Dossier.ALL_DAYS else days, monthDay = if (monthly) monthDay else 0)
+    val clash = team?.let { tb ->
+        val m = minute ?: return@let null
+        val e = endMinute ?: return@let null
+        tb.others.firstOrNull { it.id != tb.block?.id && probe(m, e).clashes(it) }
+    }
+    // Free slots of the same length in working hours, for one tap.
+    val m0 = minute
+    val e0 = endMinute
+    val free: List<Pair<Int, Int>> = if (team == null || clash == null || m0 == null || e0 == null) emptyList() else {
+        val len = (e0 - m0).coerceAtLeast(15)
+        (11 * 60..(21 * 60 - len) step 30).filter { st -> team.others.none { it.id != team.block?.id && probe(st, st + len).clashes(it) } }
+            .take(3).map { it to it + len }
+    }
+
     TaskWindow(
         title = if (team != null) "Dossier block · ${team.name}" else if (existing == null) "New task" else "Edit dossier task",
         onDismiss = cancel,
         saveLabel = if (team != null) "Save" else "Save dossier task",
-        canSave = title.isNotBlank() && minute != null && endMinute != null && (monthly || days != 0),
+        canSave = title.isNotBlank() && minute != null && endMinute != null && (monthly || days != 0) && clash == null,
         onSave = {
             minute?.let { m ->
                 val d = if (monthly) Dossier.ALL_DAYS else days
@@ -1262,6 +1299,23 @@ internal fun DossierTaskDialog(
                 }
             }
         }
+        if (clash != null) {
+            Surface(shape = RoundedCornerShape(12.dp), color = Tones.late.bg, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "⚠ Clashes with ${clash.title} (${clash.rangeLabel}, ${clash.byFirst.ifBlank { TeamDossier.ownerFirst() }}). " +
+                        "Fixed blocks never move. Pick another time.",
+                    color = Tones.late.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp)
+                )
+            }
+            if (free.isNotEmpty()) {
+                ChipHeading("FREE TIMES")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    free.forEach { (a, b) ->
+                        SmallChip(RowChip(Dossier.timeLabel(a) + " - " + Dossier.timeLabel(b), ChipTone.BLUE, onClick = { minute = a; endMinute = b }))
+                    }
+                }
+            }
+        }
         if (team != null) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1279,7 +1333,7 @@ internal fun DossierTaskDialog(
                 }
             }
             Text(
-                "Only you can change ${team.name}'s Dossier.",
+                "Once saved it can't be moved or changed (Undo for 10 seconds).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1327,7 +1381,11 @@ internal fun DossierTaskDialog(
 }
 
 /** The Owner editing a member's Dossier block: whose it is, the block (null = new), and what Save / Delete do. */
-class TeamBlockEdit(val name: String, val block: TeamBlock?, val onSave: (TeamBlock) -> Unit, val onDelete: (() -> Unit)?)
+class TeamBlockEdit(
+    val name: String, val block: TeamBlock?, val onSave: (TeamBlock) -> Unit, val onDelete: (() -> Unit)?,
+    /** His blocks already there: a new one can't sit on top of them. */
+    val others: List<TeamBlock> = emptyList(),
+)
 
 private fun remindLabel(m: Int) = if (m >= 60) "${m / 60} hour" else "$m min"
 

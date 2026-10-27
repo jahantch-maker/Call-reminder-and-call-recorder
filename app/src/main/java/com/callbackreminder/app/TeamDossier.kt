@@ -7,7 +7,13 @@ import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
 
@@ -24,7 +30,19 @@ data class TeamBlock(
     val onOffDay: Boolean = false,
     val remindBefore: Int = 0,
     val proof: Boolean = false,
+    /** Who added it (uid) and his name then; blocks never change after that, only the Owner deletes them. */
+    val by: String = "",
+    val byName: String = "",
 ) {
+    /** "Jahanzaib": your name for whoever added it. */
+    val byFirst: String get() = TeamRepo.member(by)?.first ?: Names.first(byName) ?: byName
+
+    /** Same days and the times overlap: a block can't sit on top of another one. */
+    fun clashes(o: TeamBlock): Boolean {
+        val sameDays = monthDay > 0 || o.monthDay > 0 || (days and o.days) != 0
+        return sameDays && minute < o.endMinute && o.minute < endMinute
+    }
+
     /** The same block as a dossier task, to show and edit it with the usual Dossier window. */
     fun toTask(localId: Long = 0L) = DossierTask(
         id = localId, title = title, note = note, minute = minute, days = days, monthDay = monthDay,
@@ -35,6 +53,7 @@ data class TeamBlock(
     fun toMap(): Map<String, Any> = mapOf(
         "id" to id, "title" to title, "note" to note, "minute" to minute, "endMinute" to endMinute, "days" to days,
         "monthDay" to monthDay, "everyWeeks" to everyWeeks, "onOffDay" to onOffDay, "remindBefore" to remindBefore, "proof" to proof,
+        "by" to by, "byName" to byName,
     )
 
     val rangeLabel: String get() = Dossier.timeLabel(minute) + " - " + Dossier.timeLabel(endMinute % (24 * 60))
@@ -52,13 +71,16 @@ data class TeamBlock(
                 endMinute = int("endMinute", minOf(minute + 30, 24 * 60)), days = int("days", Dossier.ALL_DAYS),
                 monthDay = int("monthDay", 0), everyWeeks = int("everyWeeks", 1), onOffDay = m["onOffDay"] == true,
                 remindBefore = int("remindBefore", 0), proof = m["proof"] == true,
+                by = m["by"] as? String ?: "", byName = m["byName"] as? String ?: "",
             )
         }
     }
 }
 
 /**
- * Staff Dossier (team edition): only the Owner sets each member's Dossier blocks. They arrive in the member's
+ * Staff Dossier (team edition): the Owner, a senior with "✏ Sets Dossier of people under him" and (with "✏ Adds his
+ * own Dossier") the member himself add blocks. Once added a block never moves or changes (Undo for 10 s right after
+ * Save); only the Owner deletes one. They arrive in the member's
  * My tasks › Dossier, where he can tick (with the time recorded) but not edit. Blocks with 📷 Photo proof need a
  * photo before the tick; "Why not done?" can carry a voice note. His ticks, reasons and proofs show in his day.
  *
@@ -78,7 +100,50 @@ object TeamDossier {
     fun watch(uid: String, onChange: (List<TeamBlock>) -> Unit): ListenerRegistration? =
         team()?.collection("dossier")?.document(uid)?.addSnapshotListener { s, _ -> if (s != null) onChange(blocksOf(s)) }
 
-    /** Saves a member's whole Dossier. Only the Owner can (the server rules check it too). */
+    /** Who may add blocks to [m]'s Dossier: the Owner; a senior with ✏ Sets Dossier; himself with ✏ Adds his own Dossier. */
+    fun canAdd(m: TeamMember): Boolean {
+        val me = TeamRepo.me.value ?: return false
+        if (!me.active || m.role == Team.OWNER) return false
+        if (ownerIsMe()) return true
+        if (m.uid == me.uid) return me.ownDossier
+        return me.setDossier && me.uid in m.managers
+    }
+
+    fun ownerIsMe(): Boolean = TeamRepo.uid != null && TeamRepo.team.value?.ownerUid == TeamRepo.uid
+
+    /** A new block waits 10 s for Undo before it goes online; then it is there for good. */
+    class Pending(val member: TeamMember, val current: List<TeamBlock>, val block: TeamBlock)
+    val pending = MutableStateFlow<Pending?>(null)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var commitJob: Job? = null
+
+    fun addLater(m: TeamMember, current: List<TeamBlock>, b: TeamBlock) {
+        commitNow()
+        val me = TeamRepo.me.value
+        val myName = me?.let { it.typed.ifBlank { it.name } }.orEmpty()
+        pending.value = Pending(m, current, b.copy(by = me?.uid.orEmpty(), byName = myName))
+        commitJob = scope.launch { delay(UNDO_MS); commitNow() }
+    }
+
+    fun undo() {
+        commitJob?.cancel()
+        pending.value = null
+    }
+
+    fun commitNow() {
+        val p = pending.value ?: return
+        pending.value = null
+        commitJob?.cancel()
+        save(p.member, p.current.filter { it.id != p.block.id } + p.block)
+    }
+
+    const val UNDO_MS = 10_000L
+
+    /** Your own blocks as they came from online (to add one to them). */
+    @Volatile var mine: List<TeamBlock> = emptyList()
+        private set
+
+    /** Saves a member's whole Dossier (the server rules check who may, and that only the Owner removes blocks). */
     fun save(m: TeamMember, blocks: List<TeamBlock>) {
         val t = team() ?: return
         val owner = TeamRepo.team.value?.ownerUid.orEmpty()
@@ -110,9 +175,13 @@ object TeamDossier {
     fun apply(c: Context, blocks: List<TeamBlock>) {
         val me = TeamRepo.me.value ?: return
         if (me.role == Team.OWNER) return
+        mine = blocks
         DossierStore.init(c)
         synchronized(this) {
             val links = TeamLinks.map(c, "dossier")
+            // The first time nothing is announced (it is all new then).
+            val seen = TeamLinks.set(c, "dossierSeen")
+            val first = seen.isEmpty() && links.isEmpty()
             val proof = mutableSetOf<String>()
             blocks.forEach { b ->
                 val local = links[b.id]?.toLongOrNull()?.let { DossierStore.get(it) }
@@ -120,6 +189,11 @@ object TeamDossier {
                     val t = DossierStore.add(b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, false, b.endMinute, b.everyWeeks, b.onOffDay)
                     links[b.id] = t.id.toString()
                     if (b.proof) proof += t.id.toString()
+                    // "✏ Basharat added: Stock check · 12:00 - 12:30 pm · Mon-Sat"
+                    if (!first && b.id !in seen && b.by.isNotBlank() && b.by != me.uid) {
+                        TeamSync.notify(c, "dossier:${b.id}", "✏ ${b.byFirst} added to your Dossier",
+                            "${b.title} · ${b.rangeLabel} · ${b.frequency}", mine = null)
+                    }
                 } else {
                     val want = b.toTask(local.id)
                     if (local.title != want.title || local.note != want.note || local.minute != want.minute || local.endMinute != want.endMinute ||
@@ -138,6 +212,7 @@ object TeamDossier {
             }
             TeamLinks.putMap(c, "dossier", links)
             TeamLinks.putSet(c, "dossierProof", proof)
+            TeamLinks.putSet(c, "dossierSeen", keep.ifEmpty { setOf("-") })
         }
         TeamSync.version.value++
     }
@@ -154,6 +229,12 @@ object TeamDossier {
 
     /** The name shown as "Set by …". */
     fun ownerFirst(): String = TeamRepo.team.value?.ownerUid?.let { TeamRepo.member(it)?.first } ?: "the owner"
+
+    /** Who added this block of yours ("you" for your own). */
+    fun byFirst(c: Context, localId: Long): String {
+        val b = blockOf(c, localId)?.let { id -> mine.firstOrNull { it.id == id } } ?: return ownerFirst()
+        return if (b.by == TeamRepo.uid) "you" else b.byFirst.ifBlank { ownerFirst() }
+    }
 
     /** A tick waiting for its photo (the window shows on top of whatever is open). */
     val asking = MutableStateFlow<Pair<Long, LocalDate>?>(null)
