@@ -131,7 +131,16 @@ data class TeamTask(
     val nVoice: Int = 0,
     /** The newest message each person's phone has received (two grey ticks on a bubble). */
     val msgDel: Map<String, Long> = emptyMap(),
+    /** Read receipts kept on the task (small writes that always go through): the newest message each person has
+     *  seen on the Timeline, and the voice notes / photos each person has played or opened. */
+    val msgSeen: Map<String, Long> = emptyMap(),
+    val played: Map<String, List<String>> = emptyMap(),
 ) {
+    /** [uid] has seen [m] on the Timeline (blue ticks). */
+    fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
+    /** [uid] played the voice note / opened the photo [m]. */
+    fun playedBy(m: TeamMsg, uid: String): Boolean = uid in m.playedBy || m.id in played[uid].orEmpty()
+
     /** His deadline is set and can't be moved by him any more (only 📅 Extend deadline). */
     val deadlineLocked: Boolean get() = locked && due > 0L
     /** Messages from everyone but [uid]. */
@@ -1067,21 +1076,68 @@ object TeamRepo {
         return true
     }
 
-    /** Messages from others you now see on the Timeline: their ticks go blue for the sender. */
+    /**
+     * Messages from others you now see on the Timeline: their ticks go blue for the sender. Saved on the task itself
+     * ("seen up to"), a small write that goes through for every kind of message; the old per-message mark is kept
+     * for phones still on an older version. Failures go to the crash log.
+     */
     fun markMsgsSeen(taskId: String, list: List<TeamMsg>) {
         val u = uid ?: return
         if (teamId == null) return
+        val t = _tasks.value.firstOrNull { it.id == taskId }
         val now = System.currentTimeMillis()
-        list.filter { it.fromUid != u && u !in it.seenBy && !it.pending }.forEach { m ->
-            msgs(taskId).document(m.id).update("seenBy.$u", now)
+        val others = list.filter { it.fromUid != u && !it.pending }
+        val newest = others.maxOfOrNull { it.at } ?: 0L
+        if (newest > 0L && (t == null || newest > (t.msgSeen[u] ?: 0L))) {
+            tasksRef().document(taskId).update("msgSeen.$u", newest).addOnFailureListener { logFail(it, "Seen") }
+            if (t != null) _tasks.value = _tasks.value.map { if (it.id == taskId) it.copy(msgSeen = it.msgSeen + (u to newest)) else it }
         }
+        others.filter { u !in it.seenBy }.forEach { m ->
+            msgs(taskId).document(m.id).update("seenBy.$u", now).addOnFailureListener { logFail(it, "Seen (message)") }
+        }
+        flushPlayed(taskId)
     }
 
-    /** A voice note played, or a photo opened full screen (blue for the sender once everyone has). */
+    /**
+     * A voice note played, or a photo opened full screen (🎙 / ticks blue for the sender once everyone has). Kept on
+     * this phone until the server has it, and sent again on the next Timeline open if it failed.
+     */
     fun markPlayed(taskId: String, m: TeamMsg) {
         val u = uid ?: return
-        if (teamId == null || m.fromUid == u || u in m.playedBy || m.pending) return
-        msgs(taskId).document(m.id).update("playedBy.$u", System.currentTimeMillis())
+        if (teamId == null || m.fromUid == u || m.pending) return
+        val t = _tasks.value.firstOrNull { it.id == taskId }
+        if (t != null && t.playedBy(m, u)) return
+        pendingPlayed(taskId, add = m.id)
+        flushPlayed(taskId)
+        if (u !in m.playedBy) msgs(taskId).document(m.id).update("playedBy.$u", System.currentTimeMillis())
+            .addOnFailureListener { logFail(it, "Played (message)") }
+    }
+
+    private fun prefsPlayed() = appCtx.getSharedPreferences("team_played", Context.MODE_PRIVATE)
+
+    /** The played marks of [taskId] not yet on the server (optionally adding [add]). */
+    private fun pendingPlayed(taskId: String, add: String? = null): Set<String> {
+        if (!::appCtx.isInitialized) return emptySet()
+        val now = prefsPlayed().getStringSet(taskId, emptySet()).orEmpty() + listOfNotNull(add)
+        if (add != null) prefsPlayed().edit().putStringSet(taskId, now).apply()
+        return now
+    }
+
+    private fun flushPlayed(taskId: String) {
+        val u = uid ?: return
+        val ids = pendingPlayed(taskId)
+        if (ids.isEmpty() || teamId == null) return
+        tasksRef().document(taskId).update("played.$u", FieldValue.arrayUnion(*ids.toTypedArray()))
+            .addOnSuccessListener {
+                val left = prefsPlayed().getStringSet(taskId, emptySet()).orEmpty() - ids
+                prefsPlayed().edit().apply { if (left.isEmpty()) remove(taskId) else putStringSet(taskId, left) }.apply()
+            }
+            .addOnFailureListener { logFail(it, "Played") }
+        _tasks.value = _tasks.value.map { if (it.id == taskId) it.copy(played = it.played + (u to (it.played[u].orEmpty() + ids).distinct())) else it }
+    }
+
+    private fun logFail(e: Exception, what: String) {
+        if (::appCtx.isInitialized) CrashLog.record(appCtx, e, "Team ticks · $what")
     }
 
     /** This phone has the newest message (two grey ticks for the sender). Quiet: no Timeline line. */
@@ -1271,5 +1327,7 @@ object TeamRepo {
         nPhoto = (s.getLong("nPhoto") ?: 0L).toInt(),
         nVoice = (s.getLong("nVoice") ?: 0L).toInt(),
         msgDel = longs(s.get("msgDel")),
+        msgSeen = longs(s.get("msgSeen")),
+        played = (s.get("played") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to strings(v) } }?.toMap() ?: emptyMap(),
     )
 }

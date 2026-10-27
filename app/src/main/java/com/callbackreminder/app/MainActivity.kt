@@ -507,8 +507,10 @@ private fun AppRoot(
         },
         label = "screens"
     ) { s ->
-        // Each screen gets a solid background so the one underneath doesn't show through mid-slide.
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // Each screen gets a solid background so the one underneath doesn't show through mid-slide. A Surface, not a
+        // plain Box, so plain text and icons get the day / night colour (a Box left them black, e.g. a Timeline
+        // opened from a notification).
+        androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             screenStates.SaveableStateProvider(s.last()) {
             when (s.last()) {
                 Screen.QUICK_TIMES -> TimePickerSettingsScreen(onBack = { back() })
@@ -758,7 +760,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
             // Swiping sideways is for Done / Snooze on rows; pages change from the bottom bar only.
             userScrollEnabled = false,
         ) { page ->
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
               CompositionLocalProvider(LocalTopActions provides topActions) {
                 when (page) {
                     Tab.MY_TASKS -> MyTasksScreen(resumeKey = resumeKey, onOpenToSchedule = { open(Screen.TO_SCHEDULE_MINE) })

@@ -134,15 +134,16 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         // ← a small TIMELINE label; the task itself is the big heading.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = cs.onBackground) }
             Text("TIMELINE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
         }
         if (t == null) {
-            Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp))
+            Text("This task isn't in your team list any more.", modifier = Modifier.padding(16.dp), color = cs.onBackground)
             return@Column
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                color = cs.onBackground)
             TeamChipsRow(
                 buildList {
                     add(RowChip(TeamUi.chain(t, me)?.let { (if (t.toUid == me) "↘ " else "👤 ") + it }
@@ -221,18 +222,21 @@ internal fun TeamSmallChip(c: RowChip) = SmallChip(c)
 /** The people a message goes to: the giver and the person doing it, but not its sender. */
 private fun recipients(t: TeamTask, m: TeamMsg): List<String> = listOf(t.fromUid, t.toUid).filter { it.isNotEmpty() && it != m.fromUid }.distinct()
 
-/** WhatsApp's ticks on one of your messages: 🕓 not sent yet, ✓ sent, ✓✓ on their phone, blue ✓✓ seen (played / opened). */
+/**
+ * WhatsApp's ticks on one of your messages: 🕓 not sent yet, ✓ sent, ✓✓ on their phone, blue ✓✓ seen. A photo goes
+ * blue once opened full screen; a voice note's ticks go blue when seen and its 🎙 when played (see [playedByAll]).
+ */
 private fun tickState(t: TeamTask, m: TeamMsg): Pair<Int, Boolean> {
     if (m.pending) return 0 to false
     val to = recipients(t, m)
     if (to.isEmpty()) return 2 to true
-    val seen = when (m.kind) {
-        Team.VOICE, Team.PHOTO -> to.all { it in m.playedBy }
-        else -> to.all { it in m.seenBy }
-    }
-    val delivered = to.all { (t.msgDel[it] ?: 0L) >= m.at || it in m.seenBy }
+    val seen = if (m.kind == Team.PHOTO) to.all { t.playedBy(m, it) } else to.all { t.saw(m, it) || t.playedBy(m, it) }
+    val delivered = to.all { (t.msgDel[it] ?: 0L) >= m.at || t.saw(m, it) }
     return (if (delivered || seen) 2 else 1) to seen
 }
+
+/** Everyone it went to has played this voice note (its 🎙 goes blue). */
+private fun playedByAll(t: TeamTask, m: TeamMsg): Boolean = recipients(t, m).all { t.playedBy(m, it) }
 
 /**
  * One message: yours on the right with time and ticks, theirs on the left; ❓ Ask amber, ⚠ Stuck red, 📷 proof
@@ -278,7 +282,7 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                         Spacer(Modifier.width(8.dp))
                         Text(TeamMedia.duration(m.durMs), color = fg, fontSize = 13.sp)
                         if (mine) Icon(Icons.Rounded.Mic, contentDescription = if (blue) "Played" else "Not played yet",
-                            tint = if (blue) Ticks.BLUE else Ticks.GREY, modifier = Modifier.padding(start = 4.dp).size(16.dp))
+                            tint = if (playedByAll(t, m)) Ticks.BLUE else Ticks.GREY, modifier = Modifier.padding(start = 4.dp).size(16.dp))
                     }
                     m.kind == Team.PHOTO && m.data != null -> {
                         val bmp = remember(m.id) { TeamMedia.bitmap(m.data)?.asImageBitmap() }
@@ -309,16 +313,16 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                     Text("Sent · ${Fmt.dueLabel(m.at)}", fontSize = 14.sp)
                     recipients(t, m).forEach { uid ->
                         val name = TeamRepo.member(uid)?.first ?: if (uid == t.fromUid) t.fromFirst else t.toFirst
-                        val seenAt = m.seenBy[uid] ?: 0L
-                        val playedAt = m.playedBy[uid] ?: 0L
-                        val got = (t.msgDel[uid] ?: 0L) >= m.at || seenAt > 0L
+                        val seenAt = m.seenBy[uid] ?: if (t.saw(m, uid)) -1L else 0L
+                        val playedAt = m.playedBy[uid] ?: if (t.playedBy(m, uid)) -1L else 0L
+                        val got = (t.msgDel[uid] ?: 0L) >= m.at || seenAt != 0L
                         Column {
                             Text("👤 $name", fontWeight = FontWeight.Bold)
                             Text(
                                 listOfNotNull(
                                     if (got) "✓✓ Delivered" else "✓ Not on his phone yet",
-                                    seenAt.takeIf { it > 0L }?.let { "Seen ${Fmt.dueLabel(it)}" },
-                                    playedAt.takeIf { it > 0L }?.let { (if (m.kind == Team.VOICE) "Played " else "Opened ") + Fmt.dueLabel(it) },
+                                    seenAt.takeIf { it != 0L }?.let { "Seen" + if (it > 0L) " " + Fmt.dueLabel(it) else "" },
+                                    playedAt.takeIf { it != 0L }?.let { (if (m.kind == Team.VOICE) "Played" else "Opened") + if (it > 0L) " " + Fmt.dueLabel(it) else "" },
                                 ).joinToString(" · "),
                                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
