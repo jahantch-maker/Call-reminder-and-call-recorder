@@ -627,7 +627,7 @@ private fun TeamActive(
     }
     editing?.let { m ->
         TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
-            onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums) } },
+            onSave = { boss, role, nums, own, set -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums, own, set) } },
             onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
     }
 }
@@ -660,6 +660,18 @@ private fun NotDoneReasonsDialog(start: List<String>, onDismiss: () -> Unit, onS
         confirmButton = { Button(onClick = { onSave(list.toList() + listOfNotNull(adding.trim().takeIf { it.isNotEmpty() })) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** One ACCESS switch in Team › edit person. */
+@Composable
+private fun AccessSwitch(label: String, sub: String?, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!on) }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            if (sub != null) Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = onChange)
+    }
 }
 
 /** A slim date-rule row: name, value on the right. */
@@ -843,10 +855,13 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = fals
 
 @Composable
 private fun TeamChartDialog(
-    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit, onSave: (String, String, MemberNumbers) -> Unit,
+    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit,
+    onSave: (String, String, MemberNumbers, Boolean, Boolean) -> Unit,
     onRemove: (TeamMember?) -> Unit,
 ) {
     var nums by remember { mutableStateOf(MemberNumbers.of(m)) }
+    var ownDossier by remember { mutableStateOf(m.ownDossier) }
+    var setDossier by remember { mutableStateOf(m.setDossier) }
     var boss by remember { mutableStateOf(m.reportsTo) }
     var role by remember { mutableStateOf(m.role) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -861,11 +876,16 @@ private fun TeamChartDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TeamChartFields(m, active, boss, { boss = it }, role, { role = it })
+                // What he may add to Dossiers; once added, blocks never change and only you delete them.
+                ChipHeading("ACCESS")
+                AccessSwitch("✏ Adds his own Dossier", null, ownDossier) { ownDossier = it }
+                val under = remember(active) { active.filter { m.uid in it.managers }.joinToString(", ") { it.first } }
+                AccessSwitch("✏ Sets Dossier of people under him", if (under.isBlank()) "Nobody under him yet" else "Now: $under", setDossier) { setDossier = it }
                 TeamNumbersEditor(m.typed.ifBlank { m.name }, nums, editing = true) { nums = it }
                 TextButton(onClick = { confirmRemove = true }) { Text("Remove member", color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { Button(onClick = { onSave(boss, role, nums) }) { Text("Save") } },
+        confirmButton = { Button(onClick = { onSave(boss, role, nums, ownDossier, setDossier) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
     if (confirmRemove) {
@@ -1232,10 +1252,14 @@ fun TeamDayScreen(onBack: () -> Unit) {
 private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
     val cs = MaterialTheme.colorScheme
     val team by TeamRepo.team.collectAsState()
+    val meNow by TeamRepo.me.collectAsState()
     val owner = team?.ownerUid == TeamRepo.uid && m.role != Team.OWNER
+    // Who may add: the Owner, a senior you switched on, or he himself when switched on. Only the Owner deletes.
+    val canAdd = remember(team, meNow, m) { TeamDossier.canAdd(m) }
     var blocks by remember(m.uid) { mutableStateOf<List<TeamBlock>?>(null) }
-    var edit by remember { mutableStateOf<TeamBlock?>(null) }
+    var deleting by remember { mutableStateOf<TeamBlock?>(null) }
     var adding by remember { mutableStateOf(false) }
+    val pending by TeamDossier.pending.collectAsState()
     var open by remember { mutableStateOf<Pair<TeamBlock?, Map<String, Any?>?>?>(null) }
     DisposableEffect(m.uid) {
         val reg = TeamDossier.watch(m.uid) { blocks = it }
@@ -1272,6 +1296,8 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
                     if (r?.get("voice") == true) add(RowChip("🎤 voice ›", ChipTone.BLUE))
                     if (r != null && !done && reason.isNullOrBlank() && due in 1 until now) add(RowChip("No reason yet", ChipTone.MUTED))
                     if (r == null) add(RowChip("Not today", ChipTone.MUTED))
+                    // Who added it: blocks never change, so this stays true.
+                    b?.byFirst?.takeIf { it.isNotBlank() }?.let { add(RowChip("✏ " + if (b.by == TeamRepo.uid) "You" else it, ChipTone.MUTED)) }
                 }
                 TaskCard(
                     title = b?.title ?: (r?.get("title") as? String ?: ""),
@@ -1293,31 +1319,47 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
             }
         }
     }
-    if (owner) {
-        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-            Text("＋ Add block for ${m.first}", fontWeight = FontWeight.Bold)
+    pending?.takeIf { it.member.uid == m.uid }?.let { p ->
+        Surface(shape = RoundedCornerShape(12.dp), color = cs.inverseSurface, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Block added · ${p.block.title}", color = cs.inverseOnSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { TeamDossier.undo() }) { Text("UNDO", color = cs.inversePrimary, fontWeight = FontWeight.Bold) }
+            }
         }
-        Text("Only you can change ${m.first}'s Dossier. He ticks it on his phone.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+    }
+    if (canAdd) {
+        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            Text("＋ Add block for ${if (m.uid == TeamRepo.uid) "you" else m.first}", fontWeight = FontWeight.Bold)
+        }
+        Text(
+            if (owner) "Blocks can't be moved or changed once added. Only you can delete one."
+            else "Blocks can't be moved, changed or deleted once added. Only ${TeamDossier.ownerFirst()} can delete one.",
+            fontSize = 12.sp, color = cs.onSurfaceVariant
+        )
     }
 
     open?.let { (b, r) ->
-        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; edit = b }) { open = null }
+        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
     }
     val cur = blocks.orEmpty()
     if (adding) {
         DossierTaskDialog(
             existing = null, onDismiss = { adding = false }, onSwitchKind = null,
-            team = TeamBlockEdit(m.first, null, onSave = { nb -> TeamDossier.save(m, cur + nb) }, onDelete = null),
+            team = TeamBlockEdit(if (m.uid == TeamRepo.uid) "you" else m.first, null, onSave = { nb -> TeamDossier.addLater(m, cur, nb) }, onDelete = null,
+                others = cur + listOfNotNull(pending?.takeIf { it.member.uid == m.uid }?.block)),
         )
     }
-    edit?.let { b ->
-        DossierTaskDialog(
-            existing = b.toTask(), onDismiss = { edit = null }, onSwitchKind = null,
-            team = TeamBlockEdit(
-                m.first, b,
-                onSave = { nb -> TeamDossier.save(m, cur.map { if (it.id == nb.id) nb else it }) },
-                onDelete = { TeamDossier.save(m, cur.filter { it.id != b.id }) },
-            ),
+    deleting?.let { b ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete for ${m.first}?") },
+            text = { Text("“${b.title}” leaves ${m.first}'s Dossier from now on. Its past ticks stay in History.") },
+            confirmButton = {
+                TextButton(onClick = { TeamDossier.save(m, cur.filter { it.id != b.id }); deleting = null }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
 }
@@ -1378,7 +1420,7 @@ private fun TeamBlockDayDialog(
             }
         },
         confirmButton = { TextButton(onClick = { TeamMedia.stopPlaying(); onDismiss() }) { Text("Close") } },
-        dismissButton = { if (canEdit) TextButton(onClick = onEdit) { Text("Edit block") } },
+        dismissButton = { if (canEdit) TextButton(onClick = onEdit) { Text("Delete block", color = MaterialTheme.colorScheme.error) } },
     )
 }
 

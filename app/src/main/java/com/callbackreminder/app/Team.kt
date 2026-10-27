@@ -52,6 +52,10 @@ data class TeamMember(
     val wa: String = "",
     /** The name he typed when joining. [name] is your contact name for his ⭐ Main number when you have one. */
     val typed: String = "",
+    /** ✏ Adds his own Dossier blocks (the Owner's switch). */
+    val ownDossier: Boolean = false,
+    /** ✏ Sets the Dossier of the people under him (the Owner's switch). */
+    val setDossier: Boolean = false,
 ) {
     /** Every number of his, Main first: any of them is him. */
     val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
@@ -659,9 +663,11 @@ object TeamRepo {
      * Chart, role and number changes; everyone under [m] gets their manager list redone too. Open follow-ups under
      * a newly ticked number move to his app, the same as on Approve.
      */
-    suspend fun setChart(c: Context, m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? {
+    suspend fun setChart(
+        c: Context, m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers, ownDossier: Boolean, setDossier: Boolean,
+    ): String? {
         if (reportsTo == m.uid || m.uid in chainFrom(reportsTo)) return "${m.first} can't report to someone under them."
-        setChartNow(m, reportsTo, role, nums)?.let { return it }
+        setChartNow(m, reportsTo, role, nums, ownDossier, setDossier)?.let { return it }
         val now = _members.value.firstOrNull { it.uid == m.uid } ?: return null
         if (!now.active) return null
         now.numbers.forEach { TeamDossier.stopDailyList(c, it) }
@@ -669,17 +675,20 @@ object TeamRepo {
         return if (moved > 0) "Moved $moved open follow-up${if (moved == 1) "" else "s"} to ${now.first}'s app" else null
     }
 
-    private suspend fun setChartNow(m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers): String? = try {
+    private suspend fun setChartNow(
+        m: TeamMember, reportsTo: String, role: String, nums: MemberNumbers, ownDossier: Boolean, setDossier: Boolean,
+    ): String? = try {
         val phone = nums.main.trim()
         val more = nums.ticked.map { it.trim() }.filter { it != phone }
         val wa = nums.wa.trim()
         members().document(m.uid).update(
-            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo))
+            mapOf("reportsTo" to reportsTo, "role" to role, "phone" to phone, "more" to more, "wa" to wa, "managers" to chainFrom(reportsTo),
+                "ownDossier" to ownDossier, "setDossier" to setDossier)
         ).await()
         // Local copy first, so the people under them get the new chain.
         _members.value = _members.value.map {
             if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo),
-                name = shownName(it.uid, it.typed, phone)) else it
+                name = shownName(it.uid, it.typed, phone), ownDossier = ownDossier, setDossier = setDossier) else it
         }
         _members.value.filter { m.uid in it.managers }.forEach { under ->
             members().document(under.uid).update("managers", chainFrom(under.reportsTo)).await()
@@ -1213,6 +1222,8 @@ object TeamRepo {
         lastSeen = s.getLong("lastSeen") ?: 0L,
         more = strings(s.get("more")),
         wa = s.getString("wa").orEmpty(),
+        ownDossier = s.getBoolean("ownDossier") == true,
+        setDossier = s.getBoolean("setDossier") == true,
     )
 
     private fun taskOf(s: DocumentSnapshot) = TeamTask(

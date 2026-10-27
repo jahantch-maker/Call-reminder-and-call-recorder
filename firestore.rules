@@ -68,10 +68,17 @@ service cloud.firestore {
         }
       }
 
-      // Each member's Dossier: only the Owner sets it; he and the people above him read it.
+      // Each member's Dossier: he and the people above him read it. The Owner sets it; so do a senior with
+      // "Sets Dossier of people under him" and the member himself with "Adds his own Dossier", but they can only
+      // add blocks (never remove one): only the Owner deletes.
       match /dossier/{uid} {
         allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || me() in resource.data.viewers);
-        allow write: if signedIn() && isActive(t) && isOwner(t);
+        allow write: if signedIn() && isActive(t) && (isOwner(t) || (
+          ((uid == me() && member(t).get('ownDossier', false) == true) ||
+           (member(t).get('setDossier', false) == true &&
+            me() in get(/databases/$(database)/documents/teams/$(t)/members/$(uid)).data.get('managers', []))) &&
+          request.resource != null &&
+          (resource == null || request.resource.data.blocks.size() >= resource.data.blocks.size())));
       }
 
       // 📷 Dossier photo proofs and "why not done" voice notes: written by him, read by the people above him.
