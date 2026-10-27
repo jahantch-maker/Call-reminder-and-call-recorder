@@ -186,6 +186,9 @@ object ReviewUi {
 
     /** Which Needs you tab to open on ([ReviewData.TABS] index), asked by a Home tile. */
     val tab = MutableStateFlow<Int?>(null)
+
+    /** A notification's task to show here ([ReviewItem.key]): scrolled to and outlined for a moment. */
+    val show = MutableStateFlow<String?>(null)
 }
 
 private fun whenLabel(at: Long, now: Long): String {
@@ -228,6 +231,20 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
     var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val showAsked by ReviewUi.show.collectAsState()
+    var outlined by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showAsked) {
+        val key = showAsked ?: return@LaunchedEffect
+        // The task's own row, not the people list.
+        if (byPerson) { byPerson = false; ReviewSession.setByPerson(ctx, false) }
+        outlined = key
+        kotlinx.coroutines.delay(150L)
+        listState.revealKey(*shown.map { "${it.key}-$key" }.toTypedArray())
+        kotlinx.coroutines.delay(3_000L)
+        if (outlined == key) outlined = null
+        ReviewUi.show.value = null
+    }
 
     androidx.activity.compose.BackHandler { onBack() }
 
@@ -238,6 +255,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = padding.calculateTopPadding() + 8.dp,
@@ -339,6 +357,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                         },
                         onNewTime = { newTimeFor = item },
                         onDetails = { editFor = ToScheduleStore.items.value.firstOrNull { it.id == item.id } },
+                        highlighted = outlined == item.key,
                     )
                     }
                 }
@@ -417,6 +436,7 @@ private fun ReviewRow(
     onDetails: () -> Unit,
     startOpen: Boolean = false,
     onNotDoneSent: () -> Unit = {},
+    highlighted: Boolean = false,
 ) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(startOpen) }
@@ -463,6 +483,7 @@ private fun ReviewRow(
         corner = tt?.takeIf { giver }?.let { t -> { TeamTicks(t) } },
         banner = banner,
         urgent = tt?.let { it.urgent && it.open } == true,
+        highlighted = highlighted,
     ) {
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),

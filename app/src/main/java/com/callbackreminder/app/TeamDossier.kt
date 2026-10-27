@@ -192,7 +192,7 @@ object TeamDossier {
                     // "✏ Basharat added: Stock check · 12:00 - 12:30 pm · Mon-Sat"
                     if (!first && b.id !in seen && b.by.isNotBlank() && b.by != me.uid) {
                         TeamSync.notify(c, "dossier:${b.id}", "✏ ${b.byFirst} added to your Dossier",
-                            "${b.title} · ${b.rangeLabel} · ${b.frequency}", mine = null)
+                            "${b.title} · ${b.rangeLabel} · ${b.frequency}", mine = null, kind = NotifKind.DOSSIER)
                     }
                 } else {
                     val want = b.toTask(local.id)

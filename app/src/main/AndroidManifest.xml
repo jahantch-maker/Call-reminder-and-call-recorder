@@ -203,6 +203,11 @@
             android:name=".TaskReceiver"
             android:exported="false" />
 
+        <!-- ✓ Received on a team "Done, check it" notification -->
+        <receiver
+            android:name=".TeamActionReceiver"
+            android:exported="false" />
+
         <!-- The review session's resume reminder and End on its paused notification -->
         <receiver
             android:name=".ReviewSessionReceiver"

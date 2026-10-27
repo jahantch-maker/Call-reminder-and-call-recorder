@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
         const val OPEN_TEAM = "team"
         /** With [OPEN_TEAM]: the team task whose Timeline to open. */
         const val EXTRA_TEAM_TASK = "team_task"
+        /** With [EXTRA_TEAM_TASK]: [TeamSync.Open] (Timeline, the task's card, or Needs you › Replied). */
+        const val EXTRA_TEAM_WHERE = "team_where"
     }
 
     // Bumped each time a notification asks for the Messages screen.
@@ -185,6 +187,43 @@ class MainActivity : ComponentActivity() {
         openTabTick.intValue = openTabTick.intValue + 1
     }
 
+    /**
+     * A team notification was tapped: a Done to check opens its card in Needs you › Replied, a new task or a date
+     * opens the card where it lives (his My tasks, your Follow-ups), talk opens the Timeline.
+     */
+    private fun openTeamTask(task: String, where: String?) {
+        val links = TeamLinks.map(this, "given")
+        val link = links[task]?.toLongOrNull()
+        when (where) {
+            TeamSync.Open.CHECK.name -> {
+                val call = link?.let { l -> ReminderStore.items.value.firstOrNull { it.linkId == l && it.done && it.review } }
+                if (call != null) {
+                    ReviewUi.tab.value = 1
+                    ReviewUi.show.value = "cr:${call.id}"
+                    showTab(Tab.HOME, Screen.REVIEW)
+                    return
+                }
+            }
+            TeamSync.Open.CARD.name -> {
+                val mine = TeamLinks.map(this, "recv")[task]?.toLongOrNull()?.takeIf { MyTaskStore.get(it) != null }
+                if (mine != null) {
+                    MyTasksUi.tabRequest.value = MyTasksUi.ONE_TIME
+                    MyTasksUi.showTask.value = mine
+                    showTab(Tab.MY_TASKS)
+                    return
+                }
+                if (link != null) {
+                    FollowUpsUi.view.value = FollowUpsUi.ALL
+                    FollowUpsUi.showEntry.value = "link-$link"
+                    showTab(Tab.FOLLOW_UPS)
+                    return
+                }
+            }
+        }
+        TeamUi.timelineOf.value = task
+        openStack(listOf(Screen.TEAM_TIMELINE))
+    }
+
     private fun handleOpen(intent: Intent?) {
         val asked = intent?.getStringExtra(EXTRA_OPEN)
         when (asked) {
@@ -239,10 +278,9 @@ class MainActivity : ComponentActivity() {
                 val task = intent?.getStringExtra(EXTRA_TEAM_TASK)
                 intent?.removeExtra(EXTRA_OPEN)
                 intent?.removeExtra(EXTRA_TEAM_TASK)
-                if (task != null) {
-                    TeamUi.timelineOf.value = task
-                    openStack(listOf(Screen.TEAM_TIMELINE))
-                } else showTab(Tab.FOLLOW_UPS)
+                val where = intent?.getStringExtra(EXTRA_TEAM_WHERE)
+                intent?.removeExtra(EXTRA_TEAM_WHERE)
+                if (task != null) openTeamTask(task, where) else showTab(Tab.FOLLOW_UPS)
                 return
             }
             OPEN_MY_DAY -> {
@@ -290,6 +328,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         visible = true
+        Notify.tidy(this)
     }
 
     override fun onStop() {
