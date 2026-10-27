@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -267,6 +268,14 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
                     shape = RoundedCornerShape(18.dp),
                 ) { Text(if (allCount > 0) "▶ Start review · $allCount" else "Nothing here", fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
             }
+            item(key = "order") {
+                // Parts (today's order) or 👤 By person: picked once, remembered.
+                var byPerson by remember { mutableStateOf(ReviewSession.byPerson(ctx)) }
+                Column {
+                    ChipHeading("REVIEW ORDER", modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+                    BoxTabs(listOf("Parts", "👤 By person"), if (byPerson) 1 else 0, { byPerson = it == 1; ReviewSession.setByPerson(ctx, it == 1) })
+                }
+            }
             val seen = mutableSetOf<String>()
             shown.forEach { sec ->
                 // In All a task shows once, in the first part it belongs to.
@@ -362,9 +371,11 @@ private fun ReviewRow(
     onDone: () -> Unit,
     onNewTime: () -> Unit,
     onDetails: () -> Unit,
+    startOpen: Boolean = false,
+    onNotDoneSent: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
-    var open by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(startOpen) }
     var timeline by remember { mutableStateOf(false) }
     if (timeline) ReviewItemTimeline(item) { timeline = false }
     val late = item.at in 1..now
@@ -386,7 +397,7 @@ private fun ReviewRow(
     // His Done waits for your check: ✓ Received, thanks · ↩ Not done yet, the same on every card.
     val check = tt?.takeIf { giver && it.doneCheck }
     var notYet by remember(check?.id) { mutableStateOf(false) }
-    if (notYet && check != null) TeamNotDoneSheet(check) { notYet = false }
+    if (notYet && check != null) TeamNotDoneSheet(check, onSent = onNotDoneSent) { notYet = false }
     TaskCard(
         title = item.title,
         done = false,
@@ -485,7 +496,9 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
         tick++
     }
     val item = remember(s, calls, texts, sched, mine, tick) { if (s.status == ReviewSession.Status.RUNNING) ReviewSession.current(ctx) else null }
-    val upNext = remember(s, calls, texts, sched, mine, tick) { if (item != null) ReviewSession.upNext(ctx, 3) else emptyList() }
+    val upNext = remember(s, calls, texts, sched, mine, tick) { if (item != null && !s.byPerson) ReviewSession.upNext(ctx, 3) else emptyList() }
+    // 👤 By person: everything still open for this person, on one screen.
+    val left = remember(s, calls, texts, sched, mine, tick) { if (item != null && s.byPerson) ReviewSession.groupLeft(ctx) else emptyList() }
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ReviewItem?>(null) }
     var historyFor by remember { mutableStateOf<ReviewItem?>(null) }
@@ -582,7 +595,70 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                     Text("No review session running.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = onBack) { Text("Back to Review") }
                 }
-                ReviewSession.Status.RUNNING -> if (item != null) {
+                ReviewSession.Status.RUNNING -> if (item != null && s.byPerson) {
+                    val g = ReviewSession.currentPart(s)
+                    val number = ReviewSession.groupNumber(s, g)
+                    val next = ReviewSession.groupName(s, g + 1)
+                    PartBars(s)
+                    LazyColumn(
+                        Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 8.dp),
+                    ) {
+                        item(key = "person") {
+                            PersonHead(
+                                name = ReviewSession.groupName(s, g),
+                                number = number,
+                                items = left,
+                                onCall = { leaving[0] = true; dial(ctx, number) },
+                                onWhatsApp = {
+                                    leaving[0] = true
+                                    val list = left.mapIndexed { i, n -> "${i + 1}. ${n.title}" }.joinToString("\n")
+                                    if (!WhatsApp.open(ctx, number, "Please update me on these:\n$list")) leaving[0] = false
+                                },
+                            )
+                        }
+                        items(left, key = { it.key }) { n ->
+                            Box(Modifier.animateItem()) {
+                                // THE card, open, with its own buttons: tap them while you talk.
+                                ReviewRow(
+                                    item = n,
+                                    now = System.currentTimeMillis(),
+                                    onCall = { dialOnly(n) },
+                                    onDone = {
+                                        ReviewSession.focus(ctx, n.key)
+                                        handled(n, (if (n.isReplied) "Accepted · " else "Done · ") + n.title) {
+                                            ReviewActions.done(ctx, n)
+                                            ReviewSession.markDone(ctx)
+                                            null
+                                        }
+                                        tick++
+                                    },
+                                    onNewTime = { newTimeFor = n },
+                                    onDetails = { editFor = n },
+                                    startOpen = true,
+                                    onNotDoneSent = {
+                                        ReviewSession.focus(ctx, n.key)
+                                        ReviewSession.markNewTime(ctx)
+                                        scope.launch { snack.showSnackbar("↩ Not done yet · ${n.title}") }
+                                        tick++
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    SnackbarHost(snack)
+                    Button(
+                        onClick = { ReviewSession.skipGroup(ctx); tick++ },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(
+                            if (next.isNotEmpty()) "⏭ Next: ${Names.first(next) ?: next} ›" else "⏭ Finish",
+                            fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else if (item != null) {
                     PartBars(s)
                     // Up next on top; the card below keeps its place whatever is here.
                     Column(
@@ -649,7 +725,9 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                 selected = null,
                 onPick = { ms ->
                     newTimeFor = null
+                    ReviewSession.focus(ctx, it0.key)
                     setTime(it0, ms)
+                    tick++
                 },
                 onDismiss = { newTimeFor = null },
             )
@@ -685,8 +763,17 @@ private fun PartBars(s: ReviewSession.State) {
     val cs = MaterialTheme.colorScheme
     val counts = ReviewSession.partCounts(s)
     val cur = ReviewSession.currentPart(s)
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ReviewSession.PARTS.forEachIndexed { i, (emoji, name) ->
+    // 👤 By person: one bar per person instead of the 4 parts; more than 4 scroll sideways.
+    val bars = if (s.byPerson) s.groups.indices.map { i ->
+        val n = ReviewSession.groupName(s, i)
+        if (ReviewSession.groupNumber(s, i).isBlank()) "–" to n else "👤" to (Names.first(n) ?: n)
+    } else ReviewSession.PARTS
+    val many = bars.size > 4
+    Row(
+        Modifier.fillMaxWidth().then(if (many) Modifier.horizontalScroll(rememberScrollState()) else Modifier).padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        bars.forEachIndexed { i, (emoji, name) ->
             val (behind, total) = counts[i]
             if (total == 0) return@forEachIndexed
             val finished = behind >= total
@@ -699,7 +786,7 @@ private fun PartBars(s: ReviewSession.State) {
                 finished -> DoneInk
                 else -> cs.onSurfaceVariant
             }
-            Column(Modifier.weight(1f)) {
+            Column(if (many) Modifier.width(84.dp) else Modifier.weight(1f)) {
                 Text(
                     if (finished) "✓ $name" else "$emoji $name",
                     fontSize = 10.5.sp, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold, color = ink,
@@ -720,6 +807,44 @@ private fun PartBars(s: ReviewSession.State) {
 }
 
 private val DoneInk: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF7FE0C2) else Color(0xFF0B6B55)
+
+/** 👤 By person: who this screen is about, with one call (or one WhatsApp list) for all of their tasks. */
+@Composable
+private fun PersonHead(name: String, number: String, items: List<ReviewItem>, onCall: () -> Unit, onWhatsApp: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val replied = items.count { it.isReplied }
+    Surface(shape = RoundedCornerShape(18.dp), color = cs.surface, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+                    Text(name.take(1).uppercase().ifBlank { "–" }, color = cs.onPrimaryContainer, fontWeight = FontWeight.ExtraBold)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${items.size} task${if (items.size == 1) "" else "s"}" + (if (replied > 0) " · $replied already say Done" else ""),
+                        style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
+                    )
+                }
+            }
+            if (number.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onCall, modifier = Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(14.dp)) {
+                        Text("📞 Call about all ${items.size}", fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                    Button(
+                        onClick = onWhatsApp,
+                        modifier = Modifier.weight(0.7f).height(44.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen, contentColor = WhatsAppInk),
+                    ) { Text("WA list", fontWeight = FontWeight.Bold, maxLines = 1) }
+                }
+            }
+        }
+    }
+}
 
 /** What comes after this one: only the task text, one block with thin lines between (no buttons, chips or ticks). */
 @Composable

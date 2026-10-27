@@ -363,7 +363,10 @@ object ReviewSession {
         val day: String = "",
         /** Which of the 4 parts each queued item belongs to (see [PARTS]), so the bars still count it once it's done. */
         val parts: Map<String, Int> = emptyMap(),
+        /** 👤 By person: one bar per person ("name" with "number" after a tab); empty = the 4 parts. */
+        val groups: List<String> = emptyList(),
     ) {
+        val byPerson: Boolean get() = groups.isNotEmpty()
         val current: String? get() = queue.getOrNull(pos)
         val total: Int get() = queue.size
         val handled: Int get() = pos.coerceAtMost(queue.size)
@@ -404,6 +407,7 @@ object ReviewSession {
                     val k = e.substringBeforeLast('=', "")
                     e.substringAfterLast('=').toIntOrNull()?.let { n -> k to n }
                 }.filter { it.first.isNotBlank() }.toMap(),
+                groups = s.getString("groups", "").orEmpty().split('\n').filter { it.isNotBlank() },
             )
         }
         // A new day: what was left goes first into the next review (never dropped), then a fresh start.
@@ -435,6 +439,7 @@ object ReviewSession {
             .putLong("remindAt", s.remindAt)
             .putString("day", s.day)
             .putString("parts", s.parts.entries.joinToString(",") { "${it.key}=${it.value}" })
+            .putString("groups", s.groups.joinToString("\n"))
             .commit()
     }
 
@@ -451,7 +456,19 @@ object ReviewSession {
      */
     fun start(ctx: Context, mode: String): Boolean {
         val found = ReviewData.queue(ctx, mode)
-        val parts = found.associate { it.key to partOf(it.section) }
+        var parts = found.associate { it.key to partOf(it.section) }
+        var groups = emptyList<String>()
+        // 👤 By person: all of one person together (most tasks first), the ones with no person last.
+        if (byPerson(ctx)) {
+            val byKey = found.groupBy { if (it.number.isBlank()) "" else Work.personKey(it.number) }
+            val order = byKey.keys.sortedWith(compareBy<String>({ it.isEmpty() }, { -(byKey[it]?.size ?: 0) }))
+            groups = order.map { k ->
+                val l = byKey[k].orEmpty()
+                val name = if (k.isEmpty()) "No person" else TeamRepo.memberByKey(k)?.name ?: l.firstOrNull { it.person.isNotBlank() }?.person ?: l.first().number
+                name + "\t" + (if (k.isEmpty()) "" else TeamRepo.memberByKey(k)?.phone ?: l.first().number)
+            }
+            parts = found.associate { it.key to order.indexOf(if (it.number.isBlank()) "" else Work.personKey(it.number)) }
+        }
         val items = found.map { it.key }
         val fresh = items.toSet()
         val left = (carry(ctx) + leftovers(init(ctx))).distinct().filter { it in fresh }
@@ -461,8 +478,45 @@ object ReviewSession {
         cancelReminder(ctx)
         ReviewReminder.cancelSnooze(ctx)
         setCarry(ctx, emptyList())
-        set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today(), parts = parts))
+        set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today(), parts = parts,
+            groups = groups))
         return true
+    }
+
+    /** Review order: the 4 parts (false) or 👤 By person (true). Kept until changed. */
+    fun byPerson(ctx: Context): Boolean = p(ctx).getBoolean("by_person", false)
+    fun setByPerson(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("by_person", on).apply()
+
+    /** 👤 By person: this person's name and number. */
+    fun groupName(s: State, i: Int): String = s.groups.getOrNull(i)?.substringBefore('\t').orEmpty()
+    fun groupNumber(s: State, i: Int): String = s.groups.getOrNull(i)?.substringAfter('\t', "").orEmpty()
+
+    /** 👤 By person: what is still open for the current person, in order. */
+    fun groupLeft(ctx: Context): List<ReviewItem> = groupKeys(init(ctx)).mapNotNull { ReviewData.find(ctx, it) }
+
+    private fun groupKeys(s: State): List<String> {
+        val g = currentPart(s)
+        return s.queue.drop(s.pos).takeWhile { (s.parts[it] ?: 0) == g }
+    }
+
+    /** 👤 By person: a row was tapped out of order; it becomes the current one, so Done / New time act on it. */
+    fun focus(ctx: Context, key: String) {
+        val s = init(ctx)
+        val i = s.queue.indexOf(key)
+        if (i <= s.pos) return
+        val q = s.queue.toMutableList()
+        q.removeAt(i)
+        q.add(s.pos, key)
+        set(ctx, s.copy(queue = q))
+    }
+
+    /** 👤 By person: ⏭ Skip the rest of this person. */
+    fun skipGroup(ctx: Context) {
+        val s = init(ctx)
+        val left = groupKeys(s).ifEmpty { listOfNotNull(s.current) }
+        val next = s.copy(pos = s.pos + left.size, skipped = s.skipped + left, awaiting = "", awaitingAt = 0L)
+        set(ctx, next)
+        if (next.pos >= next.queue.size) finish(ctx)
     }
 
     /** The 4 parts of a session, in order: emoji and name. */
@@ -476,7 +530,7 @@ object ReviewSession {
     }
 
     /** Per part: how many are behind you and how many there are, for the bars at the top. */
-    fun partCounts(s: State): List<Pair<Int, Int>> = PARTS.indices.map { i ->
+    fun partCounts(s: State): List<Pair<Int, Int>> = (if (s.byPerson) s.groups.indices else PARTS.indices).map { i ->
         val keys = s.queue.withIndex().filter { (s.parts[it.value] ?: 0) == i }
         keys.count { it.index < s.pos } to keys.size
     }
