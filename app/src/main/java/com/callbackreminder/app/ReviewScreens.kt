@@ -501,6 +501,46 @@ private fun ReviewRow(
     }
 }
 
+/**
+ * CLOSE YOUR DAY, under the evening review's summary: today's 📋 "Tick after evening review" block as THE card,
+ * the 4 numbers that go with its tick, and ✓ Done only.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CloseDayCard(blocks: List<DossierTask>, done: Int, newTime: Int, skipped: Int, tomorrow: Int, offerUndo: (String, () -> Unit) -> Unit) {
+    val ctx = LocalContext.current
+    val day = Dossier.openDay()
+    fun close() {
+        val ticked = blocks.filter { DossierStore.tick(it.id, day) }
+        if (ticked.isEmpty()) TeamDossier.lockedToast(ctx)
+        else offerUndo("Day closed · today's report saved") { ticked.forEach { DossierStore.untick(it.id, day) } }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+        ChipHeading("CLOSE YOUR DAY", modifier = Modifier.padding(start = 4.dp))
+        blocks.forEach { b ->
+            TaskCard(
+                title = b.title,
+                done = false,
+                onTick = { close() },
+                time = b.rangeLabel,
+                sub = b.frequency,
+                chips = listOf(
+                    RowChip("$done done", ChipTone.GREEN), RowChip("$newTime new time", ChipTone.ORANGE),
+                    RowChip("$skipped skipped", ChipTone.MUTED), RowChip("$tomorrow planned tmrw", ChipTone.BLUE),
+                ),
+                onClick = {},
+                pos = RowPos.SINGLE,
+                highlighted = true,
+            )
+        }
+        Button(
+            onClick = { close() },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = DoneGreen, contentColor = Color(0xFF00382A)),
+        ) { Text("✓ Done", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+    }
+}
+
 /** The team task behind a Review row: one you gave (a follow-up) or one given to you (a My task). */
 private fun reviewTeamTask(c: android.content.Context, item: ReviewItem, tasks: List<TeamTask>): TeamTask? {
     val link = when (item.kind) {
@@ -1215,6 +1255,15 @@ private fun SessionSummary(
     var pickFor by remember { mutableStateOf<List<ReviewItem>?>(null) }
     var timeFor by remember { mutableStateOf<ReviewItem?>(null) }
     val handledAny = s.handled > 0 || left.isNotEmpty()
+    // 📋 Close your day: the numbers as they stand after moving or leaving what was left.
+    var moved by remember { mutableIntStateOf(0) }
+    val newTimeNow = s.newTime + moved
+    val skippedNow = open.size + leftAlone.size + later.size
+    val records by DossierStore.records.collectAsState()
+    val closing = remember(records) { if (s.mode in ReviewSession.WHOLE_DAY && DayClose.isEvening(ctx)) DayClose.openBlocks() else emptyList() }
+    LaunchedEffect(newTimeNow, skippedNow) {
+        if (s.mode in ReviewSession.WHOLE_DAY) DayClose.onReviewFinished(ctx, s.done, newTimeNow, skippedNow)
+    }
 
     /** On to the other tab while it has tasks, so you are walked through without looking for it. */
     fun after(acted: Set<String>) {
@@ -1231,7 +1280,8 @@ private fun SessionSummary(
     fun move(items: List<ReviewItem>, label: String, held: Boolean, whenFor: (ReviewItem) -> Long) {
         val undos = items.map { ReviewActions.snapshot(it) } + if (held) items.map { Held.push(ctx, it) } else emptyList()
         items.forEach { i -> ReviewActions.newTime(ctx, i, whenFor(i)) }
-        offerUndo("Moved ${items.size} $label") { undos.forEach { it() } }
+        moved += items.size
+        offerUndo("Moved ${items.size} $label") { undos.forEach { it() }; moved -= items.size }
         after(items.map { it.key }.toSet())
     }
 
@@ -1322,6 +1372,9 @@ private fun SessionSummary(
                         modifier = Modifier.padding(16.dp)
                     )
                 }
+            }
+            if (closing.isNotEmpty() && open.isEmpty()) {
+                CloseDayCard(closing, s.done, newTimeNow, skippedNow, DayClose.plannedTomorrow(ctx), offerUndo)
             }
             if (leftAlone.isNotEmpty()) {
                 Text(

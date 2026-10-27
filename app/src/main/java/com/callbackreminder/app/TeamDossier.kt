@@ -30,6 +30,8 @@ data class TeamBlock(
     val onOffDay: Boolean = false,
     val remindBefore: Int = 0,
     val proof: Boolean = false,
+    /** 📋 Tick after evening review: his tick carries the day's numbers. */
+    val afterReview: Boolean = false,
     /** Who added it (uid) and his name then; blocks never change after that, only the Owner deletes them. */
     val by: String = "",
     val byName: String = "",
@@ -47,13 +49,13 @@ data class TeamBlock(
     fun toTask(localId: Long = 0L) = DossierTask(
         id = localId, title = title, note = note, minute = minute, days = days, monthDay = monthDay,
         remindBefore = remindBefore, startDate = LocalDate.now().toString(), createdAt = 0L,
-        endMinute = endMinute, everyWeeks = everyWeeks, onOffDay = onOffDay,
+        endMinute = endMinute, everyWeeks = everyWeeks, onOffDay = onOffDay, afterReview = afterReview,
     )
 
     fun toMap(): Map<String, Any> = mapOf(
         "id" to id, "title" to title, "note" to note, "minute" to minute, "endMinute" to endMinute, "days" to days,
         "monthDay" to monthDay, "everyWeeks" to everyWeeks, "onOffDay" to onOffDay, "remindBefore" to remindBefore, "proof" to proof,
-        "by" to by, "byName" to byName,
+        "afterReview" to afterReview, "by" to by, "byName" to byName,
     )
 
     val rangeLabel: String get() = Dossier.timeLabel(minute) + " - " + Dossier.timeLabel(endMinute % (24 * 60))
@@ -70,7 +72,7 @@ data class TeamBlock(
                 id = id, title = m["title"] as? String ?: "", note = m["note"] as? String ?: "", minute = minute,
                 endMinute = int("endMinute", minOf(minute + 30, 24 * 60)), days = int("days", Dossier.ALL_DAYS),
                 monthDay = int("monthDay", 0), everyWeeks = int("everyWeeks", 1), onOffDay = m["onOffDay"] == true,
-                remindBefore = int("remindBefore", 0), proof = m["proof"] == true,
+                remindBefore = int("remindBefore", 0), proof = m["proof"] == true, afterReview = m["afterReview"] == true,
                 by = m["by"] as? String ?: "", byName = m["byName"] as? String ?: "",
             )
         }
@@ -186,7 +188,7 @@ object TeamDossier {
             blocks.forEach { b ->
                 val local = links[b.id]?.toLongOrNull()?.let { DossierStore.get(it) }
                 if (local == null) {
-                    val t = DossierStore.add(b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, false, b.endMinute, b.everyWeeks, b.onOffDay)
+                    val t = DossierStore.add(b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, false, b.endMinute, b.everyWeeks, b.onOffDay, b.afterReview)
                     links[b.id] = t.id.toString()
                     if (b.proof) proof += t.id.toString()
                     // "✏ Basharat added: Stock check · 12:00 - 12:30 pm · Mon-Sat"
@@ -198,9 +200,9 @@ object TeamDossier {
                     val want = b.toTask(local.id)
                     if (local.title != want.title || local.note != want.note || local.minute != want.minute || local.endMinute != want.endMinute ||
                         local.days != want.days || local.monthDay != want.monthDay || local.everyWeeks != want.everyWeeks ||
-                        local.onOffDay != want.onOffDay || local.remindBefore != want.remindBefore
+                        local.onOffDay != want.onOffDay || local.remindBefore != want.remindBefore || local.afterReview != want.afterReview
                     ) {
-                        DossierStore.edit(local.id, b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, null, b.endMinute, b.everyWeeks, b.onOffDay)
+                        DossierStore.edit(local.id, b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, null, b.endMinute, b.everyWeeks, b.onOffDay, b.afterReview)
                     }
                     if (b.proof) proof += local.id.toString()
                 }

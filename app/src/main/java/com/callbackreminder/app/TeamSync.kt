@@ -627,6 +627,7 @@ object TeamSync {
                 "reason" to (rec?.reason ?: ""), "due" to d.dueAt(open), "date" to open.toString(),
                 "blockId" to (TeamDossier.blockOf(c, d.id) ?: ""), "proof" to TeamDossier.needsProof(c, d.id),
                 "photo" to TeamDossier.sent(c, d.id, open, TeamDossier.PHOTO), "voice" to TeamDossier.sent(c, d.id, open, TeamDossier.VOICE),
+                "afterReview" to d.afterReview,
             )
         }
         return mapOf(
@@ -635,6 +636,8 @@ object TeamSync {
             "tasks" to tasks,
             "followUps" to fus,
             "dossier" to dossier,
+            // 📋 The last week's evening reviews, for "Review done 5 of 6 days this week" on his day.
+            "reports" to DayClose.recentMaps(c),
             "privateCount" to TeamLinks.privateCount(c),
         )
     }

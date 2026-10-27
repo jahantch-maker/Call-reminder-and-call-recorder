@@ -1194,7 +1194,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
         val myFirst = me?.first
         fun num(v: Any?) = (v as? Number)?.toLong() ?: 0L
         val rows: List<Map<String, Any?>> = when (tab) { 0 -> tasks; 1 -> fus; else -> dossier }
-        if (tab == 2) TeamDossierTab(m, if (day == null) null else dossier)
+        if (tab == 2) TeamDossierTab(m, if (day == null) null else dossier, list("reports").mapNotNull { DayReport.of(it) })
         else if (day == null) Text("${m.first}'s phone hasn't sent his day yet. It does when he opens the app.", color = cs.onSurfaceVariant)
         else if (rows.isEmpty()) Text("Nothing for today.", color = cs.onSurfaceVariant)
         else TaskGroup {
@@ -1247,7 +1247,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
  * ticks in orange, 📷 photos, reasons and voice notes from his phone. [today] is null until his phone sent his day.
  */
 @Composable
-private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
+private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?, reports: List<DayReport> = emptyList()) {
     val cs = MaterialTheme.colorScheme
     val team by TeamRepo.team.collectAsState()
     val meNow by TeamRepo.me.collectAsState()
@@ -1337,7 +1337,7 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
     }
 
     open?.let { (b, r) ->
-        TeamBlockDayDialog(m, b, r, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
+        TeamBlockDayDialog(m, b, r, reports, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
     }
     val cur = blocks.orEmpty()
     if (adding) {
@@ -1365,7 +1365,7 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?) {
 /** One block on his day: tick time, the 📷 photo, his reason and voice note; Edit for the Owner. */
 @Composable
 private fun TeamBlockDayDialog(
-    m: TeamMember, b: TeamBlock?, r: Map<String, Any?>?, canEdit: Boolean, onEdit: () -> Unit, onDismiss: () -> Unit,
+    m: TeamMember, b: TeamBlock?, r: Map<String, Any?>?, reports: List<DayReport>, canEdit: Boolean, onEdit: () -> Unit, onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1400,6 +1400,19 @@ private fun TeamBlockDayDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 if (b?.proof == true) Text("📷 Photo proof on tick", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                // 📋 Tick after evening review: this week's score, then each day's report (orange: no evening review).
+                if (b?.afterReview == true || r?.get("afterReview") == true) {
+                    val byDate = reports.associateBy { it.date }
+                    val (rev, days) = DayClose.weekScore(byDate, { d -> b?.toTask()?.copy(startDate = "2000-01-01")?.isOn(d) ?: true })
+                    WeekScore(rev, days)
+                    val todayDate = r?.get("date") as? String
+                    val lines = (reports.filter { it.date != todayDate } +
+                        listOfNotNull(todayDate?.takeIf { doneAt > 0L }?.let { byDate[it] ?: DayReport(it) })).sortedByDescending { it.date }
+                    lines.forEach { x ->
+                        Text("${TeamUi.shortDate(java.time.LocalDate.parse(x.date).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())} · ${x.line}",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (x.reviewed) cs.onSurface else ReviewOrange)
+                    }
+                }
                 if (r?.get("photo") == true) {
                     val bmp = remember(photo) { photo?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
                     var big by remember { mutableStateOf(false) }

@@ -340,6 +340,8 @@ object ReviewData {
  */
 object ReviewSession {
     const val MODE_ALL = "all"
+    /** A review of everything: Start review on All (or from the reminder). Only these close the day. */
+    val WHOLE_DAY = setOf(MODE_ALL, "tab:0")
     const val MODE_CALLS = "calls"
 
     const val ACTION_REMIND = "com.callbackreminder.app.SESSION_REMIND"
@@ -660,7 +662,12 @@ object ReviewSession {
 
     fun finish(ctx: Context) {
         cancelReminder(ctx)
-        set(ctx, init(ctx).copy(status = Status.ENDED, awaiting = ""))
+        val s = init(ctx)
+        set(ctx, s.copy(status = Status.ENDED, awaiting = ""))
+        // The evening review (of everything, not one tab or person): today's numbers for the 📋 block.
+        if (s.status != Status.ENDED && s.mode in WHOLE_DAY) runCatching {
+            DayClose.onReviewFinished(ctx, s.done, s.newTime, (s.skipped + s.noAnswer + s.later).distinct().size)
+        }
     }
 
     /** Closes the summary (or End from Home / the popup): back to no session. */
