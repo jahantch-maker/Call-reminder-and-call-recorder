@@ -230,6 +230,13 @@ object TeamRules {
     fun setFreeExt(c: Context, n: Int) = p(c).edit().putInt("free_ext", n).apply()
     fun extLabel(n: Int): String = if (n <= 0) "Never" else "${n}×"
 
+    /** ↩ Not done yet · the quick WHY chips, yours to change in Settings › Team. */
+    val NOT_DONE_DEFAULT = listOf("Photo missing", "Incomplete", "Wrong site", "Not as asked", "Quality")
+    fun notDoneReasons(c: Context): List<String> =
+        p(c).getString("not_done", null)?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: NOT_DONE_DEFAULT
+    fun setNotDoneReasons(c: Context, list: List<String>) =
+        p(c).edit().putString("not_done", list.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n")).apply()
+
     fun label(m: Int): String = when {
         m <= 0 -> "Off"
         m >= 24 * 60 -> "1 day"

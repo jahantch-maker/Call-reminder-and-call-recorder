@@ -60,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -382,6 +383,10 @@ private fun ReviewRow(
                     ?.let { CardBanner(it, ChipTone.MUTED, { ReviewActions.call(ctx, item) }, "Call") }
         }
     }
+    // His Done waits for your check: ✓ Received, thanks · ↩ Not done yet, the same on every card.
+    val check = tt?.takeIf { giver && it.doneCheck }
+    var notYet by remember(check?.id) { mutableStateOf(false) }
+    if (notYet && check != null) TeamNotDoneSheet(check) { notYet = false }
     TaskCard(
         title = item.title,
         done = false,
@@ -413,6 +418,7 @@ private fun ReviewRow(
             },
             onNewTime = if (needsPerson) null else onNewTime,
             buttonLabel = if (sched) "Set time" else "New time",
+            onNotDone = check?.let { { notYet = true } },
         )
     }
 }
@@ -483,6 +489,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ReviewItem?>(null) }
     var historyFor by remember { mutableStateOf<ReviewItem?>(null) }
+    var notDoneFor by remember { mutableStateOf<Pair<ReviewItem, TeamTask>?>(null) }
     // "Why not done?" typed on the card, saved in its history with the new time.
     var reason by remember(item?.key) { mutableStateOf("") }
     // Off to WhatsApp, or a call that isn't a follow-up call: leaving the app then doesn't pause the session.
@@ -615,6 +622,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
                         onEdit = { editFor = item },
                         onHistory = { historyFor = item },
+                        onNotDone = { t -> notDoneFor = item to t },
                         onSkip = {
                             if (item.isReplied) {
                                 handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
@@ -650,6 +658,14 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     // ✏️ Edit: the task's own editor; the session carries on from the same card after it closes.
     editFor?.let { e -> TaskEditorDialog(task = OpenTask.of(e), onDismiss = { editFor = null; tick++ }) }
     historyFor?.let { h -> ReviewItemTimeline(h) { historyFor = null } }
+    // ↩ Not done yet: back to him with the reason, and the session moves on.
+    notDoneFor?.let { (it0, t) ->
+        TeamNotDoneSheet(t, onSent = {
+            ReviewSession.markNewTime(ctx)
+            scope.launch { snack.showSnackbar("↩ Not done yet · ${it0.title}") }
+            tick++
+        }) { notDoneFor = null }
+    }
 }
 
 /** The full-window Timeline of a Needs you / review item, whatever kind it is. */
@@ -760,10 +776,16 @@ private fun SessionCard(
     onEdit: () -> Unit,
     onHistory: (() -> Unit)?,
     onSkip: () -> Unit,
+    onNotDone: (TeamTask) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val noPerson = item.number.isBlank()
+    // His Done waits for your check: ✓ Received, thanks · ↩ Not done yet in the same two places.
+    val teamTasks by TeamRepo.tasks.collectAsState()
+    val check = remember(item.key, teamTasks) {
+        if (TeamRepo.activeNow) reviewTeamTask(ctx, item, teamTasks)?.takeIf { it.fromUid == TeamRepo.uid && it.doneCheck } else null
+    }
     // A follow-up can't get a time before it has a person.
     val needsPerson = item.kind == ReviewItem.Kind.SCHED_FU && noPerson
     var addingPerson by remember(item.key) { mutableStateOf(false) }
@@ -798,6 +820,7 @@ private fun SessionCard(
                 onWhatsApp = if (noPerson) null else onWhatsApp,
                 newTimeLabel = if (item.at > 0L) "New time" else "Set time",
                 onAddPerson = if (needsPerson) ({ addingPerson = !addingPerson }) else null,
+                onNotDone = check?.let { t -> { onNotDone(t) } },
             )
             Spacer(Modifier.height(6.dp))
             if (awaiting) {

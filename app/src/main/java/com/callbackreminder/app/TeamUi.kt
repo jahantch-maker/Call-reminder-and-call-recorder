@@ -561,7 +561,8 @@ private fun TeamActive(
         }
     }
 
-    if (admin || hasReports) {
+    // Everyone can give tasks, so everyone has these rules for the tasks they give.
+    run {
         TeamHeading("Date rules")
         var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
         var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
@@ -570,6 +571,8 @@ private fun TeamActive(
         var locked by remember { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
         var freeExt by remember { mutableIntStateOf(TeamRules.freeExt(ctx)) }
         var rule by remember { mutableIntStateOf(-1) }
+        var reasons by remember { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
+        var editReasons by remember { mutableStateOf(false) }
         TeamCard {
             RuleRow("No deadline picked · remind me", TeamRules.label(noDate)) { rule = 0 }
             RuleRow("Urgent, no deadline · notify me", TeamRules.label(urgent)) { rule = 1 }
@@ -577,8 +580,14 @@ private fun TeamActive(
             RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
             RuleRow("Deadline locked", if (locked) "On" else "Off") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
             RuleRow("Extend without asking", TeamRules.extLabel(freeExt)) { rule = 3 }
+            RuleRow("Not done reasons", "${reasons.size}") { editReasons = true }
             Text("New tasks follow these. Locked: once he sets his deadline, he can only ask to extend it.",
                 fontSize = 12.sp, color = cs.onSurfaceVariant)
+        }
+        if (editReasons) NotDoneReasonsDialog(reasons, onDismiss = { editReasons = false }) { list ->
+            TeamRules.setNotDoneReasons(ctx, list)
+            reasons = TeamRules.notDoneReasons(ctx)
+            editReasons = false
         }
         if (rule >= 0) {
             val (title, choices, sel) = when (rule) {
@@ -621,6 +630,36 @@ private fun TeamActive(
             onSave = { boss, role, nums -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums) } },
             onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
     }
+}
+
+/** Settings › Team › Not done reasons: the WHY chips of ↩ Not done yet. Add, rename, move up, delete. */
+@Composable
+private fun NotDoneReasonsDialog(start: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    val list = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(start) } }
+    var adding by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Not done reasons") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("The quick WHY chips when you send a task back.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                list.forEachIndexed { i, r ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(r, { list[i] = it }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp))
+                        TextButton(onClick = { if (i > 0) { val x = list.removeAt(i); list.add(i - 1, x) } }, enabled = i > 0) { Text("↑") }
+                        TextButton(onClick = { list.removeAt(i) }, enabled = list.size > 1) { Text("✕", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(adding, { adding = it }, placeholder = { Text("New reason") }, singleLine = true,
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp))
+                    TextButton(onClick = { if (adding.isNotBlank()) { list.add(adding.trim()); adding = "" } }) { Text("Add") }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(list.toList() + listOfNotNull(adding.trim().takeIf { it.isNotEmpty() })) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** A slim date-rule row: name, value on the right. */
@@ -883,7 +922,7 @@ fun TeamCheckButtons(t: TeamTask) {
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
+fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var why by remember { mutableStateOf<String?>(null) }
@@ -892,7 +931,7 @@ fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
     var recording by remember { mutableStateOf(false) }
     var iPick by remember { mutableStateOf(false) }
     var due by remember { mutableStateOf<Long?>(null) }
-    val quick = listOf("Photo missing", "Incomplete", "Wrong site", "Not as asked", "Quality")
+    val quick = remember { TeamRules.notDoneReasons(ctx) }
     val ready = why != null && (!iPick || due != null)
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -942,6 +981,7 @@ fun TeamNotDoneSheet(t: TeamTask, onDismiss: () -> Unit) {
                     TeamRepo.notDoneYet(t, reason, if (iPick) due ?: 0L else 0L)
                     voice?.let { (b, d) -> TeamRepo.send(t, Team.VOICE, "", data = b, durMs = d) }
                     TeamSync.giverNotDone(ctx, t, if (iPick) due ?: 0L else 0L)
+                    onSent()
                     onDismiss()
                 },
                 enabled = ready,

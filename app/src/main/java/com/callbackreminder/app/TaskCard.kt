@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -270,13 +271,15 @@ fun CardPanel(
     links: List<RowLink>,
     onNewTime: (() -> Unit)?,
     buttonLabel: String = "New time",
+    /** A Done from your team waiting for your check: ✓ Received, thanks · ↩ Not done yet in the first two places. */
+    onNotDone: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     details.forEach {
         Text(it, fontSize = 12.5.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
     }
     val acts = LocalCardActions.current
-    if (acts != null && !acts.done && (onNewTime != null || acts.onDone != null)) {
+    if (acts != null && !acts.done && (onNewTime != null || acts.onDone != null || onNotDone != null)) {
         Spacer(Modifier.height(6.dp))
         TaskActionBar(
             onDone = acts.onDone,
@@ -285,6 +288,7 @@ fun CardPanel(
             onWhatsApp = acts.onWhatsApp,
             newTimeLabel = buttonLabel,
             compact = true,
+            onNotDone = onNotDone,
         )
     } else if (onNewTime != null) {
         Spacer(Modifier.height(6.dp))
@@ -333,13 +337,16 @@ fun TaskActionBar(
     onAddPerson: (() -> Unit)? = null,
     compact: Boolean = false,
     modifier: Modifier = Modifier.fillMaxWidth(),
+    /** His Done waits for your check: Done reads "Received, thanks" and New time becomes ↩ Not done yet. */
+    onNotDone: (() -> Unit)? = null,
 ) {
     val green = Tones.done.pair
     val orange = chipColors(ChipTone.ORANGE)
     val blue = Tones.call.pair
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        BarSlot(Icons.Rounded.Check, "Done", green, onDone, compact, Modifier.weight(1f))
-        BarSlot(Icons.Rounded.Schedule, newTimeLabel, orange, onNewTime, compact, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Check, if (onNotDone != null) "Received, thanks" else "Done", green, onDone, compact, Modifier.weight(1f))
+        if (onNotDone != null) BarSlot(Icons.AutoMirrored.Rounded.Undo, "Not done yet", Tones.late.pair, onNotDone, compact, Modifier.weight(1f))
+        else BarSlot(Icons.Rounded.Schedule, newTimeLabel, orange, onNewTime, compact, Modifier.weight(1f))
         if (onAddPerson != null) {
             BarSlot(Icons.Rounded.PersonAdd, "Add person", blue, onAddPerson, compact, Modifier.weight(2f))
         } else {
