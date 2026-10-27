@@ -572,7 +572,7 @@ object TeamRepo {
     suspend fun adminsToMembers() {
         val me = _me.value ?: return
         if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
-        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it)) }
+        _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it), it.ownDossier, it.setDossier) }
         p().edit().putBoolean("admins_to_members", true).apply()
     }
 
