@@ -20,9 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -166,8 +163,8 @@ fun TaskTimelineWindow(
             }
         }
         Surface(color = cs.background, modifier = Modifier.fillMaxSize()) {
-            // Zero when the system already fitted the window between the bars; the real bar sizes when it did not.
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            // Measured on the real screen: the bottom bar can't end up under the phone's buttons, on any phone.
+            Column(Modifier.fillMaxSize().fitBetweenBars()) {
                 val picked = notes.filter { it.at in selected }
                 if (picked.isNotEmpty()) TimelineSelectionBar(
                     count = picked.size,

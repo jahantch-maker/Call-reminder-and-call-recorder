@@ -10,6 +10,13 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -78,4 +85,34 @@ fun navBarMissing(): Dp {
     val density = LocalDensity.current
     val local = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
     return (navBarHeight() - local).coerceAtLeast(0.dp)
+}
+
+/**
+ * Keeps a full-screen popup between the phone's bars by measuring where it really is on the screen, instead of trusting
+ * the insets a popup reports (some phones report none and the popup also reaches past the screen's edge). Whatever of
+ * the popup lies under the status bar or the navigation buttons is added as padding; the keyboard counts too.
+ */
+@Composable
+fun Modifier.fitBetweenBars(): Modifier {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val decor = view.context.findActivity()?.window?.decorView
+    var topPx by remember { mutableIntStateOf(0) }
+    var bottomPx by remember { mutableIntStateOf(0) }
+    val imePx = WindowInsets.ime.getBottom(density)
+    return this
+        .onGloballyPositioned { c ->
+            decor ?: return@onGloballyPositioned
+            val bars = ViewCompat.getRootWindowInsets(decor)?.getInsets(WindowInsetsCompat.Type.systemBars()) ?: return@onGloballyPositioned
+            val mine = IntArray(2).also { view.getLocationOnScreen(it) }
+            val screen = IntArray(2).also { decor.getLocationOnScreen(it) }
+            val top = mine[1] + c.positionInRoot().y.toInt()
+            val bottom = top + c.size.height
+            val newTop = (screen[1] + bars.top - top).coerceAtLeast(0)
+            val newBottom = (bottom - (screen[1] + decor.height - bars.bottom)).coerceAtLeast(0)
+            // A coarse step so a one-pixel wobble never starts a loop.
+            if (kotlin.math.abs(newTop - topPx) > 1) topPx = newTop
+            if (kotlin.math.abs(newBottom - bottomPx) > 1) bottomPx = newBottom
+        }
+        .padding(top = with(density) { topPx.toDp() }, bottom = with(density) { maxOf(bottomPx, imePx).toDp() })
 }
