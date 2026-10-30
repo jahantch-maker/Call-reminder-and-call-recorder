@@ -1,0 +1,87 @@
+package com.callbackreminder.app
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * What changed in each version, in plain words for the owner and the team. No personal names.
+ * Every PR that bumps the version adds its own entry at the top; the What's new page shows the last three.
+ */
+object ChangeLog {
+    data class Entry(val version: String, val date: String, val new: List<String>, val fixed: List<String>)
+
+    const val SHOWN = 3
+
+    val entries = listOf(
+        Entry(
+            "0.46.0", "30 Oct",
+            new = listOf("What's new page in Settings: see what changed in each version"),
+            fixed = emptyList(),
+        ),
+        Entry(
+            "0.45.7", "30 Oct",
+            new = emptyList(),
+            fixed = listOf("One person shows under one name everywhere, even if tasks were typed with different names"),
+        ),
+        Entry(
+            "0.45.6", "30 Oct",
+            new = listOf("Tasks waiting on someone's deadline now show in To schedule"),
+            fixed = listOf("Fixes to the Not done flow", "Chips are one size everywhere"),
+        ),
+        Entry(
+            "0.45.0", "30 Oct",
+            new = listOf("Voice notes: play, pause, resume and faster playback", "One timeline per task"),
+            fixed = listOf("Deleted messages show like in WhatsApp"),
+        ),
+    )
+
+    val recent: List<Entry> get() = entries.take(SHOWN)
+}
+
+/** The What's new page, opened from the version bubble at the end of Settings. */
+@Composable
+fun WhatsNewScreen(onBack: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    SettingsPage(title = "What's new", onBack = onBack) {
+        ChangeLog.recent.forEachIndexed { i, e ->
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = cs.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Row {
+                        Text("Version ${e.version}", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                        Text(e.date, fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    }
+                    if (e.new.isNotEmpty()) ChangeGroup("NEW", cs.secondary, e.new)
+                    if (e.fixed.isNotEmpty()) ChangeGroup("FIXED", cs.primary, e.fixed)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChangeGroup(title: String, color: androidx.compose.ui.graphics.Color, lines: List<String>) {
+    Spacer(Modifier.height(10.dp))
+    Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color, letterSpacing = 0.5.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        lines.forEach { Text("•  $it", fontSize = 14.sp) }
+    }
+}

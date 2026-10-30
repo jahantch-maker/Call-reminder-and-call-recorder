@@ -400,6 +400,7 @@ private object Screen {
     const val TEAM_SETTINGS = 36
     const val TEAM_DAY = 38
     const val TEAM_TIMELINE = 39
+    const val WHATS_NEW = 40
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -600,6 +601,7 @@ private fun AppRoot(
                     onOpenAppearance = { open(Screen.APPEARANCE) },
                     onOpenMyDay = { open(Screen.MY_DAY_SETTINGS) },
                     onOpenTeam = { open(Screen.TEAM_SETTINGS) },
+                    onOpenWhatsNew = { open(Screen.WHATS_NEW) },
                 )
                 Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
                     resumeKey = resumeKey,
@@ -617,6 +619,7 @@ private fun AppRoot(
                 Screen.CALENDAR_SETTINGS -> CalendarSettingsScreen(onBack = { back() })
                 Screen.APPEARANCE -> AppearanceSettingsScreen(onBack = { back() })
                 Screen.TEAM_SETTINGS -> TeamSettingsScreen(onBack = { back() })
+                Screen.WHATS_NEW -> WhatsNewScreen(onBack = { back() })
                 Screen.TEAM_DAY -> TeamDayScreen(onBack = { back() })
                 Screen.TEAM_TIMELINE -> TeamTimelineScreen(onBack = { back() })
                 Screen.DAILY_WA -> DailyWhatsAppScreen(resumeKey = resumeKey, onBack = { back() })
@@ -847,7 +850,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         },
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
-                        onOpenUpdate = { open(Screen.SETTINGS) },
+                        onOpenUpdate = { AppUpdate.jumpToCard = true; open(Screen.SETTINGS) },
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
                         onOpenOverdue = { open(Screen.OVERDUE) },
                         onOpenMyTasks = { sub ->

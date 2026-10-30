@@ -140,6 +140,7 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit = {},
     onOpenMyDay: () -> Unit = {},
     onOpenTeam: () -> Unit = {},
+    onOpenWhatsNew: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -175,8 +176,6 @@ fun SettingsScreen(
         val team by TeamRepo.team.collectAsState()
         val teamMe by TeamRepo.me.collectAsState()
         val teamMembers by TeamRepo.members.collectAsState()
-        // Update: this version and the Update button, always on top.
-        UpdateCard()
         // Who is signed in, below it; tap = Team.
         AccountCard(
             name = teamUser?.displayName?.takeIf { it.isNotBlank() } ?: teamMe?.name,
@@ -235,6 +234,8 @@ fun SettingsScreen(
                 if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"
                 else "${setupItems.count { it }} of ${setupItems.size} permissions allowed", onOpenSetup)
         }
+        // Update: this version, Update and What's new, at the end.
+        UpdateCard(onOpenWhatsNew)
     }
 }
 
@@ -1429,11 +1430,19 @@ private fun SoundChooserDialog(
 /** A settings page: back arrow and title, then its cards in a scrolling column. */
 @Composable
 internal fun SettingsPage(title: String, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
+    val scroll = rememberScrollState()
+    // The Home "update available" notice opens Settings with the version bubble in view.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (AppUpdate.jumpToCard && title == "Settings") {
+            AppUpdate.jumpToCard = false
+            scroll.scrollTo(scroll.maxValue)
+        }
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
                 .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
