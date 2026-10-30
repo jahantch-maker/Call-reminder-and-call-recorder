@@ -221,6 +221,15 @@ fun SettingsScreen(
         }
         BadgeGroup("PHONE") {
             BadgeRow(Icons.Rounded.Backup, BadgeTone.BLUE, "Backup", remember(resumeKey) { Backup.summary(ctx) }, onOpenBackup)
+            var silenceCalls by remember(resumeKey) { mutableStateOf(RingerSilence.enabled(ctx)) }
+            val toggleSilence = { on: Boolean ->
+                silenceCalls = on
+                RingerSilence.setEnabled(ctx, on)
+                // One time: Android asks you to allow Do Not Disturb access for the app.
+                if (on && !RingerSilence.hasAccess(ctx)) RingerSilence.openAccessSettings(ctx)
+            }
+            BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) },
+                onClick = { toggleSilence(!silenceCalls) }, switch = silenceCalls, onSwitch = toggleSilence)
             BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
             BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
                 if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"

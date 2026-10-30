@@ -56,6 +56,9 @@ object TeamMedia {
 
     /** Starts a new voice note. False when the microphone couldn't start (e.g. a call is being recorded). */
     fun startRecording(c: Context): Boolean {
+        // Recording a note stops any voice note or call recording that is playing.
+        stopPlaying()
+        RecordingPlayer.stop()
         cancelRecording()
         return startPart(c)
     }
@@ -186,8 +189,8 @@ object TeamMedia {
     val paused = MutableStateFlow(false)
     private var player: MediaPlayer? = null
 
-    /** 1× → 1.25× → 1.5×, remembered. */
-    val SPEEDS = listOf(1f, 1.25f, 1.5f)
+    /** 1× → 1.5× → 2×, remembered. */
+    val SPEEDS = listOf(1f, 1.5f, 2f)
     val speed = MutableStateFlow(1f)
     private fun prefs(c: Context) = c.getSharedPreferences("voice_notes", Context.MODE_PRIVATE)
     fun loadSpeed(c: Context) { speed.value = prefs(c).getFloat("speed", 1f).takeIf { it in SPEEDS } ?: 1f }
@@ -214,18 +217,20 @@ object TeamMedia {
         start(c, id, bytes, 0f)
     }
 
-    /** Jumps to [frac] (0-1) of [id], starting it if another note (or none) is loaded. */
+    /**
+     * Moves the dot to [frac] (0-1) of [id]. It never starts a note that isn't playing: another note (or none)
+     * loaded means this one is loaded paused at that spot, and ▶ goes on from there.
+     */
     fun seek(c: Context, id: String, bytes: ByteArray, frac: Float) {
         val p = player
         if (p != null && playing.value == id) {
             runCatching { p.seekTo((p.duration * frac.coerceIn(0f, 1f)).toInt()) }
-            if (paused.value) { runCatching { p.start(); applySpeed(p) }; paused.value = false }
             return
         }
-        start(c, id, bytes, frac)
+        start(c, id, bytes, frac, autoplay = false)
     }
 
-    private fun start(c: Context, id: String, bytes: ByteArray, frac: Float) {
+    private fun start(c: Context, id: String, bytes: ByteArray, frac: Float, autoplay: Boolean = true) {
         stopPlaying()
         loadSpeed(c)
         try {
@@ -238,10 +243,9 @@ object TeamMedia {
             p.setOnCompletionListener { stopPlaying() }
             p.prepare()
             if (frac > 0f) p.seekTo((p.duration * frac.coerceIn(0f, 1f)).toInt())
-            p.start()
-            applySpeed(p)
             player = p
-            paused.value = false
+            if (autoplay) { p.start(); applySpeed(p) }
+            paused.value = !autoplay
             playing.value = id
         } catch (e: Exception) {
             stopPlaying()
@@ -263,6 +267,13 @@ object TeamMedia {
     }
 
     // ------------------------------------------------------------ photos
+
+    /** A file to hand to Share: the bytes written to the cache, as a content link other apps may read. */
+    fun shareUri(c: Context, bytes: ByteArray, ext: String): Uri {
+        val f = File(dir(c), "share.$ext")
+        f.writeBytes(bytes)
+        return FileProvider.getUriForFile(c, "${c.packageName}.files", f)
+    }
 
     /** Where the camera app saves the next photo. */
     fun cameraUri(c: Context): Uri {

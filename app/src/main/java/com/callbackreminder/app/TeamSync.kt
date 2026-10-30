@@ -512,7 +512,7 @@ object TeamSync {
      * His My task from the team was moved to Follow-ups: a true move. The same task (Timeline, photos, the locked
      * deadline) now follows his follow-up, and the giver sees who does it and when he calls them.
      */
-    fun onMovedToFollowUps(c: Context, myTaskId: Long, link: Long, toName: String) {
+    fun onMovedToFollowUps(c: Context, myTaskId: Long, link: Long, toName: String, inTeam: Boolean = false) {
         if (link == 0L) return
         synchronized(lock) {
             val recv = TeamLinks.map(c, "recv")
@@ -523,7 +523,7 @@ object TeamSync {
             TeamLinks.putMap(c, "recv", recv)
             TeamLinks.putMap(c, "recvFu", recvFu)
             val callAt = ReminderStore.items.value.firstOrNull { it.linkId == link && !it.done }?.dueAt ?: 0L
-            TeamRepo.tasks.value.firstOrNull { it.id == taskId }?.let { TeamRepo.passedDown(it, Names.first(toName) ?: toName, callAt) }
+            TeamRepo.tasks.value.firstOrNull { it.id == taskId }?.let { TeamRepo.passedDown(it, Names.first(toName) ?: toName, callAt, inTeam) }
         }
         version.value++
     }

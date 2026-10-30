@@ -140,6 +140,8 @@ class MainActivity : ComponentActivity() {
         ToScheduleStore.init(this)
         MyTaskStore.init(this)
         DossierStore.init(this)
+        // Do Not Disturb left on by a voice note that never finished goes back to how it was.
+        CrashLog.guard(this, "Voice notes") { if (!TeamMedia.recording) RingerSilence.end(this) }
         CrashLog.guard(this, "Team") { TeamRepo.start(this) }
         // Setting alarms must never stop the app from opening.
         CrashLog.guard(this, "Setting reminders at start") {

@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,15 +71,18 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
+/** How many of the newest loudness bars the live wave keeps (older ones have run off the left edge). */
+private const val LIVE_BARS = 80
+
 /** The played part of a wave and its dot (WhatsApp's green). */
 private val VoiceGreen = Color(0xFF3DD6B5)
 private val RecRed = Color(0xFFFF5A5A)
 
 /**
  * One voice note, WhatsApp style, the same everywhere (Timeline, task cards, Dossier, private notes): ▶ / ⏸, the
- * note's wave with a moving dot (the played part green), the current second, and the speed while it plays
- * (1× → 1.25× → 1.5×, remembered). Tap the wave or drag the dot to jump. [onPlay] runs on every play or jump
- * (for the sender's 🎙 going blue). [end] sits at the end of the time line (the bubble's time and ticks).
+ * note's wave with a moving dot (the played part green), the current second, and the speed chip
+ * (1× → 1.5× → 2×, remembered). Tap the wave or drag the dot to move the dot: it never starts the note, only ▶
+ * does, from where the dot is. [onPlay] runs when the note starts playing (for the sender's 🎙 going blue). [end] sits at the end of the time line (the bubble's time and ticks).
  */
 @Composable
 fun VoicePlayer(
@@ -97,20 +101,25 @@ fun VoicePlayer(
     val playing by TeamMedia.playing.collectAsState()
     val paused by TeamMedia.paused.collectAsState()
     val speed by TeamMedia.speed.collectAsState()
+    LaunchedEffect(Unit) { TeamMedia.loadSpeed(ctx) }
     val loaded = playing == id
     val running = loaded && !paused
     var pos by remember(id) { mutableFloatStateOf(0f) }
     var drag by remember(id) { mutableStateOf<Float?>(null) }
     LaunchedEffect(loaded, paused) {
         if (!loaded) pos = 0f
-        while (loaded) { pos = TeamMedia.progress(id); if (paused) break; delay(50) }
+        while (loaded) {
+            pos = TeamMedia.progress(id)
+            if (paused) { delay(150); pos = TeamMedia.progress(id); break }
+            delay(50)
+        }
     }
     val shown = drag ?: if (loaded) pos else 0f
     val bars = remember(id, wave) { TeamMedia.bars(wave, id) }
     Column(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
-                onClick = { if (bytes != null) { TeamMedia.play(ctx, id, bytes); onPlay() } },
+                onClick = { if (bytes != null) { TeamMedia.play(ctx, id, bytes); if (!running) onPlay() } },
                 enabled = bytes != null,
                 modifier = Modifier.size(button).clip(CircleShape).background(cs.primary),
             ) {
@@ -122,7 +131,11 @@ fun VoicePlayer(
                 Modifier.weight(1f).height(30.dp)
                     .pointerInput(id, bytes) {
                         detectTapGestures { o ->
-                            if (bytes != null) { TeamMedia.seek(ctx, id, bytes, o.x / size.width); onPlay() }
+                            if (bytes != null) {
+                                val f = (o.x / size.width).coerceIn(0f, 1f)
+                                TeamMedia.seek(ctx, id, bytes, f)
+                                pos = f
+                            }
                         }
                     }
                     .pointerInput(id, bytes) {
@@ -131,7 +144,7 @@ fun VoicePlayer(
                             onDragEnd = {
                                 val f = drag
                                 drag = null
-                                if (f != null && bytes != null) { TeamMedia.seek(ctx, id, bytes, f); pos = f; onPlay() }
+                                if (f != null && bytes != null) { TeamMedia.seek(ctx, id, bytes, f); pos = f }
                             },
                             onDragCancel = { drag = null },
                         ) { change, dx ->
@@ -142,15 +155,13 @@ fun VoicePlayer(
             ) {
                 WaveBars(bars, shown, fg, dot = true, big = drag != null, modifier = Modifier.fillMaxWidth().height(30.dp))
             }
-            if (loaded) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    speedLabel(speed),
-                    fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF111111),
-                    modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(Color(0xFFEDEFF6))
-                        .clickable { TeamMedia.cycleSpeed(ctx) }.padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                speedLabel(speed),
+                fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF111111),
+                modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(Color(0xFFEDEFF6))
+                    .clickable { TeamMedia.cycleSpeed(ctx) }.padding(horizontal = 8.dp, vertical = 3.dp),
+            )
         }
         Row(Modifier.fillMaxWidth().padding(start = button + 8.dp, top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
             val at = drag ?: if (loaded) pos else -1f
@@ -166,12 +177,25 @@ fun VoicePlayer(
     }
 }
 
-private fun speedLabel(s: Float): String = when (s) { 1.25f -> "1.25×"; 1.5f -> "1.5×"; else -> "1×" }
+private fun speedLabel(s: Float): String = when (s) { 1.5f -> "1.5×"; 2f -> "2×"; else -> "1×" }
 
 /** The bars of a wave; the part before [progress] green with the dot on it. */
 @Composable
-private fun WaveBars(bars: List<Float>, progress: Float, fg: Color, dot: Boolean, big: Boolean, modifier: Modifier) {
+private fun WaveBars(bars: List<Float>, progress: Float, fg: Color, dot: Boolean, big: Boolean, modifier: Modifier, scrollGap: Dp? = null) {
     Canvas(modifier) {
+        if (scrollGap != null) {
+            // Live recording: every bar keeps its size, the newest comes in on the right and the wave runs to the left.
+            val gap = scrollGap.toPx()
+            val w = gap * 0.55f
+            bars.forEachIndexed { i, h ->
+                val x = size.width - (bars.size - i) * gap
+                if (x < 0f) return@forEachIndexed
+                val bh = (size.height * 0.85f * h).coerceAtLeast(w)
+                drawRoundRect(fg.copy(alpha = if (h <= 1f / 9f + 0.01f) 0.45f else 1f), topLeft = Offset(x, (size.height - bh) / 2),
+                    size = Size(w, bh), cornerRadius = CornerRadius(w / 2))
+            }
+            return@Canvas
+        }
         val n = bars.size.coerceAtLeast(1)
         val gap = size.width / n
         val w = (gap * 0.55f).coerceAtLeast(2f)
@@ -228,6 +252,26 @@ internal fun TeamHoldToRecord(onState: (Boolean) -> Unit, onRecorded: (ByteArray
         val r = TeamMedia.stopRecording()
         if (r == null) Toast.makeText(ctx, "Too short: speak a little longer", Toast.LENGTH_SHORT).show()
         else onRecorded(r.first, r.second)
+    }
+    // A call's ringtone must not get into the note: the ringer is silenced while recording (Settings › Voice notes);
+    // without Do Not Disturb access a ringing call pauses the note instead.
+    DisposableEffect(active) {
+        var stop: () -> Unit = {}
+        if (active) {
+            val silenced = RingerSilence.begin(ctx)
+            if (!silenced && RingerSilence.enabled(ctx)) {
+                stop = RingerSilence.watchRinging(ctx) {
+                    if (TeamMedia.recording) {
+                        TeamMedia.pauseRecording()
+                        ms = TeamMedia.elapsedMs()
+                        pausedRec = true
+                        locked = true
+                        Toast.makeText(ctx, "Paused: a call is coming in", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        onDispose { stop(); if (active) RingerSilence.end(ctx) }
     }
     // While recording: one wave bar every 100 ms, the time, and the 2-minute stop (it then waits on the bar).
     LaunchedEffect(active, pausedRec) {
@@ -294,8 +338,11 @@ internal fun TeamHoldToRecord(onState: (Boolean) -> Unit, onRecorded: (ByteArray
                 ) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(RecRed))
                     Text(TeamMedia.duration(ms), fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("‹ Slide to cancel   ·   ⌃ slide up 🔒", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(start = with(density) { (-slide / 3).toDp() }.coerceAtMost(60.dp)))
+                    // The live wave: rises when you speak, flat dots when you are quiet.
+                    WaveBars(levels.takeLast(LIVE_BARS).map { it.coerceAtLeast(1) / 9f }, 1f, MaterialTheme.colorScheme.primary,
+                        dot = false, big = false, modifier = Modifier.weight(1f).height(26.dp), scrollGap = 5.dp)
+                    Text("‹ Slide to cancel", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = with(density) { (-slide / 3).toDp() }.coerceAtMost(40.dp)))
                 }
             }
         }
@@ -333,8 +380,8 @@ private fun RecordingBar(ms: Long, levels: List<Int>, paused: Boolean, onDelete:
                         Spacer(Modifier.width(8.dp))
                         Text(TeamMedia.duration(ms), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.width(44.dp))
                         // The newest bars, sliding in from the right.
-                        val tail = levels.takeLast(TeamMedia.WAVE_BARS).map { it.coerceAtLeast(1) / 9f }
-                        WaveBars(tail, 1f, cs.onSurface, dot = false, big = false, modifier = Modifier.weight(1f).height(26.dp))
+                        WaveBars(levels.takeLast(LIVE_BARS).map { it.coerceAtLeast(1) / 9f }, 1f, cs.primary, dot = false, big = false,
+                            modifier = Modifier.weight(1f).height(26.dp), scrollGap = 5.dp)
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp, start = 6.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
