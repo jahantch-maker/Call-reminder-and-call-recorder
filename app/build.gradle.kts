@@ -13,8 +13,20 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 57
-        versionName = "0.42.0"
+        versionCode = 58
+        versionName = "0.43.0"
+    }
+
+    // Two apps from the same code: "full" is the main app, "cr" is the CR test copy. Only the name, the icon
+    // colour, the package (.test) and the update channel differ (see src/cr/res). Both are in google-services.json.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("full") { dimension = "edition" }
+        create("cr") {
+            dimension = "edition"
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+        }
     }
 
     // A fixed test key so every new build installs as an update over the previous one.

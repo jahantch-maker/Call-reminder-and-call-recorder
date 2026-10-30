@@ -175,7 +175,9 @@ fun SettingsScreen(
         val team by TeamRepo.team.collectAsState()
         val teamMe by TeamRepo.me.collectAsState()
         val teamMembers by TeamRepo.members.collectAsState()
-        // Who is signed in, always on top; tap = Team.
+        // Update: this version and the Update button, always on top.
+        UpdateCard()
+        // Who is signed in, below it; tap = Team.
         AccountCard(
             name = teamUser?.displayName?.takeIf { it.isNotBlank() } ?: teamMe?.name,
             email = teamUser?.email,
