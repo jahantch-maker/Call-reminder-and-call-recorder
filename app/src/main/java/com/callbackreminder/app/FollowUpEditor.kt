@@ -724,7 +724,7 @@ fun FollowUpDialog(
         if (same != null) item?.let { ToScheduleStore.remove(it.id) }
         fromMyTask?.let {
             // A task from your manager passed on to someone outside the app: the link follows it.
-            if (TeamLinks.teamTaskOfMyTask(ctx, it.id) != null) TeamSync.onMovedToFollowUps(ctx, it.id, TeamSync.linkForNew(ctx, number, task), name)
+            if (TeamLinks.teamTaskOfMyTask(ctx, it.id) != null) TeamSync.onMovedToFollowUps(ctx, it.id, TeamSync.linkForNew(ctx, number, task), name, inTeam = TeamRepo.memberByNumber(number) != null)
             MyTaskStore.delete(it.id)
         }
         if (!timed) {

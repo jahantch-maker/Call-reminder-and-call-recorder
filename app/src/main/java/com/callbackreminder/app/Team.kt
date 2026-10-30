@@ -1018,6 +1018,17 @@ object TeamRepo {
             "↪ ${t.toFirst} passed it to $to" + (if (inTeam) "" else " (outside team)") + if (callAt > 0L) " · his call ${TeamUi.shortWhen(callAt)}" else "")
     }
 
+    /**
+     * Lines written before a task passed to a team member picked from the phone book was recognised say "(outside
+     * team)": it is dropped when that name is a member of the team.
+     */
+    fun withoutWrongOutside(text: String): String {
+        if (!text.contains(" (outside team)")) return text
+        val to = Regex("passed it to (.+?) \\(outside team\\)").find(text)?.groupValues?.get(1)?.trim() ?: return text
+        val isMember = _members.value.any { it.active && (it.first.equals(to, true) || it.name.equals(to, true)) }
+        return if (isMember) text.replace(" (outside team)", "") else text
+    }
+
     /** A line in the task's history only (e.g. "text sent"). */
     fun note(t: TeamTask, text: String) {
         update(t, emptyMap(), text)
