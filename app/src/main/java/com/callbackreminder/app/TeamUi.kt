@@ -959,13 +959,10 @@ const val NEXT_PART_LABEL = "✓ Done,\n➜ next part"
 fun TeamNextPartSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    var me by remember { mutableStateOf(true) }
-    var picked by remember { mutableStateOf<Pair<String, String>?>(null) }
     var left by remember { mutableStateOf("") }
-    var myTime by remember { mutableStateOf(false) }
-    var myPick by remember { mutableStateOf(false) }
-    var outside by remember { mutableStateOf<Pair<String, String>?>(null) }
-    val member = picked?.let { (_, num) -> TeamRepo.memberByNumber(num) }
+    var mine by remember { mutableStateOf(false) }
+    var other by remember { mutableStateOf(false) }
+    var sent by remember { mutableStateOf(false) }
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp + navBarMissing()),
@@ -973,81 +970,46 @@ fun TeamNextPartSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Uni
         ) {
             Text("➜ Who does the next part?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(t.title, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Surface(
-                onClick = { me = true; picked = null },
-                shape = RoundedCornerShape(14.dp),
-                color = if (me) cs.primaryContainer else cs.surfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Me", fontWeight = FontWeight.Bold)
-                        Text("Goes to My tasks, you pick the time", fontSize = 12.sp, color = cs.onSurfaceVariant)
-                    }
-                    RadioButton(selected = me, onClick = { me = true; picked = null })
-                }
-            }
-            PersonPicker(prompt = null) { n, num -> me = false; picked = n to num }
-            picked?.let { (n, num) ->
-                Text(
-                    if (member != null && member.uid == t.toUid) "${member.first} did this part: pick someone else"
-                    else if (member != null) "👥 ${member.first} is on the app: this task and its Timeline go to him"
-                    else "👤 ${n.ifBlank { num }} is not on the app: it becomes your follow-up with him",
-                    fontSize = 12.sp, color = cs.primary
-                )
-            }
             OutlinedTextField(left, { left = it }, placeholder = { Text("What's left? (optional)") }, trailingIcon = voiceMic(left) { left = it },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 3)
+            Surface(onClick = { mine = true }, shape = RoundedCornerShape(14.dp), color = cs.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    Text("Me", fontWeight = FontWeight.Bold)
+                    Text("Opens New task: set the time now, or leave it for the review session", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                }
+            }
+            Surface(onClick = { other = true }, shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    Text("Someone else", fontWeight = FontWeight.Bold)
+                    Text("Opens New follow-up: Team · Contacts · Recent calls · Used recently", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                }
+            }
             Text("✓ ${t.toFirst} gets \"Received, thanks\" · his part stays in his history", fontSize = 12.sp, color = Tones.done.pair.second)
-            Button(
-                onClick = {
-                    val p = picked
-                    when {
-                        me || p == null -> myTime = true
-                        member != null -> {
-                            TeamNext.toMember(ctx, t, member, left)
-                            onSent(); onDismiss()
-                        }
-                        else -> {
-                            TeamNext.received(ctx, t, left, p.first.ifBlank { p.second })
-                            outside = p
-                        }
-                    }
-                },
-                enabled = me || (picked != null && member?.uid != t.toUid),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) { Text("Send next part", fontWeight = FontWeight.Bold) }
         }
     }
-    if (myTime) SnoozeSheet(
-        heading = "Your time",
-        about = t.title,
-        onPick = { ms -> myTime = false; TeamNext.toMe(ctx, t, left, ms); onSent(); onDismiss() },
-        onPickTime = { myTime = false; myPick = true },
-        onDismiss = { myTime = false },
-        plusRow = true,
+    if (mine) MyTaskDialog(
+        existing = null,
+        onDismiss = { mine = false },
+        onSwitchKind = null,
+        initialTitle = t.title,
+        initialNote = left.trim(),
+        onSaved = { _, saved -> TeamNext.toMine(ctx, t, left, saved); onSent(); onDismiss() },
     )
-    if (myPick) DateTimePickerFlow(
-        initialMs = System.currentTimeMillis() + 3_600_000L,
-        onPicked = { ms -> myPick = false; TeamNext.toMe(ctx, t, left, ms); onSent(); onDismiss() },
-        onDismiss = { myPick = false },
+    if (other) FollowUpDialog(
+        onDismiss = { other = false; if (sent) { onSent(); onDismiss() } },
+        initialTask = listOf(t.title, left.trim()).filter { it.isNotEmpty() }.joinToString(" · "),
+        nextPartOf = t,
+        nextPartLeft = left.trim(),
+        onNextPartDone = { sent = true },
     )
-    outside?.let { (n, num) ->
-        FollowUpDialog(
-            onDismiss = { outside = null; onSent(); onDismiss() },
-            initialName = n, initialNumber = num,
-            initialTask = listOf(t.title, left.trim()).filter { it.isNotEmpty() }.joinToString(" · "),
-        )
-    }
 }
 
 /** What ✓ Done, ➜ next part does. */
 object TeamNext {
-    /** Next part with you: a My task (no time = To schedule), whose Timeline link opens this task's Timeline. */
-    fun toMe(c: Context, t: TeamTask, left: String, at: Long) {
+    /** Next part with you: the My task saved in the New task window (no time = To schedule); its Timeline link opens this task's Timeline. */
+    fun toMine(c: Context, t: TeamTask, left: String, mine: MyTask) {
         TeamRepo.nextPart(t, null, left)
         checkedHere(c, t)
-        val mine = MyTaskStore.add(title = t.title, note = left.trim(), dueAt = at, name = "", number = "")
         val m = TeamLinks.map(c, "nextMine")
         m[mine.id.toString()] = t.id
         TeamLinks.putMap(c, "nextMine", m)

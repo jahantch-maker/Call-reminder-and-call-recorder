@@ -547,6 +547,10 @@ fun FollowUpDialog(
     onMoveToMyTasks: (() -> Unit)? = null,
     /** Opened in place (a person page, Home, the review session): "Show in Follow-ups ›", History and WA. */
     extras: TaskExtras? = null,
+    /** "✓ Done, ➜ next part": the same team task moves on to the person picked here (or becomes a follow-up if he is outside the app). */
+    nextPartOf: TeamTask? = null,
+    nextPartLeft: String = "",
+    onNextPartDone: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val editCall = remember { FollowUps.call(linkId) }
@@ -656,6 +660,7 @@ fun FollowUpDialog(
     }
     val anyTime = !text.parked && ((callOn && due != null) || (textOn && text.times.isNotEmpty()))
     val problem = when {
+        nextPartOf != null && teamMember != null && teamMember.uid == nextPartOf.toUid -> "${teamMember.first} did this part: pick someone else"
         teamMember != null && task.isBlank() -> "Write the task first"
         teamMember != null && myTime && due == null -> "Pick your time, or tap He picks"
         taskRequired && !editing && item == null && task.isBlank() -> "Write the task first"
@@ -664,6 +669,7 @@ fun FollowUpDialog(
         else -> null
     }
     val heading = when {
+        nextPartOf != null -> "➜ Next part"
         editing && startWithText -> "Add texts to this follow-up"
         editing || item != null -> "Edit follow-up"
         else -> "New follow-up"
@@ -672,6 +678,17 @@ fun FollowUpDialog(
 
     /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
     fun save(same: FollowUps.Same?) {
+        if (nextPartOf != null) {
+            if (teamMember != null) {
+                TeamNext.toMember(ctx, nextPartOf, teamMember, nextPartLeft)
+                onNextPartDone()
+                Toast.makeText(ctx, "Next part is with ${teamMember.first}", Toast.LENGTH_SHORT).show()
+                onDismiss()
+                return
+            }
+            TeamNext.received(ctx, nextPartOf, nextPartLeft, name.ifBlank { number })
+            onNextPartDone()
+        }
         passTask?.let { pt ->
             attach.forEach { a -> TeamRepo.send(pt, a.kind, "", data = a.data, durMs = a.durMs) }
             if (pt.hisDate && promise > 0L && promise != pt.due) TeamRepo.setHisDate(pt, promise)

@@ -531,14 +531,16 @@ internal fun MyTaskDialog(
     initialLength: Int = 0,
     /** A new task's text to start with (the widget's 🎤). */
     initialTitle: String = "",
+    /** A new task's note to start with ("What's left?" of a next part). */
+    initialNote: String = "",
     /** Opened in place (a person page, Home, the review session): "Show in My tasks ›", History and WA. */
     extras: TaskExtras? = null,
 ) {
     val ctx = LocalContext.current
     val lists by MyTaskStore.lists.collectAsState()
     var title by remember { mutableStateOf(existing?.title ?: initialTitle) }
-    var note by remember { mutableStateOf(existing?.note.orEmpty()) }
-    var showNote by remember { mutableStateOf(existing?.note?.isNotBlank() == true) }
+    var note by remember { mutableStateOf(existing?.note ?: initialNote) }
+    var showNote by remember { mutableStateOf((existing?.note ?: initialNote).isNotBlank()) }
     var due by remember { mutableLongStateOf(existing?.dueAt ?: initialDue) }
     // New tasks show the time rows at once, with no time and no length yet: both are chosen every time.
     var showTime by remember { mutableStateOf(existing == null || existing.timed || initialDue > 0L) }
