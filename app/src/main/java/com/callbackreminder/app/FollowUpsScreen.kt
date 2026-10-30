@@ -326,7 +326,7 @@ internal class FuEntry(val call: Reminder?, val text: SmsReminder?) {
             (!callReview || call!!.reviewLaterUntil > System.currentTimeMillis()) &&
             (!textReview || text!!.reviewLaterUntil > System.currentTimeMillis()) && open
 
-    val name: String get() = call?.name ?: text!!.name
+    val name: String get() = PersonNames.of(number, call?.name ?: text!!.name)
     val number: String get() = call?.number ?: text!!.number
     val person: String get() = call?.title ?: text!!.title
     val createdAt: Long get() = minOf(call?.createdAt ?: Long.MAX_VALUE, text?.createdAt ?: Long.MAX_VALUE)
@@ -550,9 +550,11 @@ private fun FollowUpsAll(
                     }
                     FollowUpsUi.SORT_PERSON -> {
                         block("review", "Waiting for you", "${review.size}", cs.error, review)
-                        open.groupBy { it.person }.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach { (p, list) ->
-                            block("person-$p", p, "${list.size}", cs.primary, list.sortedBy { it.at })
-                        }
+                        // One group per person (their number), not per typed name.
+                        open.groupBy { Work.personKey(it.number).ifEmpty { "n:" + it.person.lowercase() } }.values
+                            .sortedBy { it.first().person.lowercase() }.forEach { list ->
+                                block("person-${Work.personKey(list.first().number).ifEmpty { list.first().person }}", list.first().person, "${list.size}", cs.primary, list.sortedBy { it.at })
+                            }
                     }
                     else -> {
                         block("review", "Waiting for you", "${review.size}", cs.error, review)

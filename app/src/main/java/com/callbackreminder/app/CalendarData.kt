@@ -328,7 +328,7 @@ object CalendarData {
             val done = r.done && !r.review
             if ((!r.done || (done && showDone)) && !r.review && r.dueAt in from until to) {
                 out += CalFollowUp(
-                    true, r.id, r.note.ifBlank { "Call back" }, r.name.ifBlank { r.number }, r.number, r.dueAt,
+                    true, r.id, r.note.ifBlank { "Call back" }, r.title, r.number, r.dueAt,
                     !done && r.dueAt <= now, done
                 )
             }

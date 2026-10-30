@@ -298,7 +298,7 @@ fun SearchScreen(
             .filter { has(it.title) || has(it.words) }
             .map { s -> Hit(s.title, "Settings › ${s.title}", false, Icons.Rounded.Settings) { onOpenSetting(s.key) } },
         "Calls" to calls.filter { r ->
-            task(r.note) || name(r.name) || num(r.number) || r.delays.any { why(it.reason) }
+            task(r.note) || name(r.name) || name(r.title) || num(r.number) || r.delays.any { why(it.reason) }
         }.map { r ->
             val done = r.done && !r.review
             Hit(r.headline(), listOf(r.title, if (r.done) "done ${Fmt.dueLabel(r.doneAt)}" else Fmt.dueLabel(r.dueAt)).joinToString(" · "), done, Icons.Rounded.Call, rk = "call:${r.id}",
@@ -313,7 +313,7 @@ fun SearchScreen(
                 onOpenCalls()
             }
         },
-        "To schedule" to waiting.filter { t -> task(t.note) || task(t.message) || name(t.name) || num(t.number) }
+        "To schedule" to waiting.filter { t -> task(t.note) || task(t.message) || name(t.name) || name(t.title) || num(t.number) }
             .sortedByDescending { it.createdAt }
             .map { t ->
                 Hit(t.headline, listOfNotNull(t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() }, "no time yet").joinToString(" · "), false, Icons.Rounded.Schedule, rk = "sched:${t.id}") {
@@ -321,14 +321,14 @@ fun SearchScreen(
                     onOpenToSchedule()
                 }
             },
-        "Texts" to texts.filter { t -> task(t.message) || task(t.code) || name(t.name) || num(t.number) }.map { t ->
+        "Texts" to texts.filter { t -> task(t.message) || task(t.code) || name(t.name) || name(t.title) || num(t.number) }.map { t ->
             Hit(t.message, listOf(t.title, if (t.done) "done" else Fmt.dueLabel(t.alarmAt)).joinToString(" · "), t.done, Icons.Rounded.Sms, rk = "text:${t.id}",
                 reopen = if (!t.done) null else ({ Reopen.text(t.id); reopened(t.message) })) {
                 SmsUi.showRequest.value = t.id
                 onOpenTexts()
             }
         },
-        "My tasks" to myTasks.filter { m -> task(m.title) || note(m.note) || name(m.name) || num(m.number) }.map { m ->
+        "My tasks" to myTasks.filter { m -> task(m.title) || note(m.note) || name(m.name) || name(m.personTitle) || num(m.number) }.map { m ->
             Hit(
                 m.title,
                 listOfNotNull(MyTaskStore.listName(m.listId), if (m.timed) Fmt.dueLabel(m.dueAt) else "no time yet", m.personTitle.takeIf { m.hasPerson })
@@ -360,11 +360,11 @@ fun SearchScreen(
             .filter { p -> name(p.name) || num(p.number) }
             .map { p -> Hit(p.title, Work.line(p, System.currentTimeMillis()), p.pending == 0, Icons.Rounded.Person, rk = "person:${p.key}") { onOpenPerson(p.key) } },
         "Archive · done over ${Db.ARCHIVE_DAYS} days ago" to (
-            archive.first.filter { r -> task(r.note) || name(r.name) || num(r.number) || r.delays.any { why(it.reason) } }
+            archive.first.filter { r -> task(r.note) || name(r.name) || name(r.title) || num(r.number) || r.delays.any { why(it.reason) } }
                 .map { r -> Hit(r.headline(), listOf(r.title, "done ${Fmt.dueLabel(r.doneAt)}").joinToString(" · "), true, Icons.Rounded.Call) {} } +
-                archive.second.filter { t -> task(t.message) || task(t.code) || name(t.name) || num(t.number) }
+                archive.second.filter { t -> task(t.message) || task(t.code) || name(t.name) || name(t.title) || num(t.number) }
                     .map { t -> Hit(t.message, listOf(t.title, "done ${Fmt.dueLabel(t.doneAt)}").joinToString(" · "), true, Icons.Rounded.Sms) {} } +
-                archive.third.filter { m -> task(m.title) || note(m.note) || name(m.name) || num(m.number) }
+                archive.third.filter { m -> task(m.title) || note(m.note) || name(m.name) || name(m.personTitle) || num(m.number) }
                     .map { m -> Hit(m.title, listOfNotNull("done ${Fmt.dueLabel(m.doneAt)}", m.personTitle.takeIf { m.hasPerson }).joinToString(" · "), true, Icons.Rounded.TaskAlt) {} }
             ),
         "Recordings" to if (!on.getValue(SearchSource.RECORDINGS)) emptyList() else recordings.filter { r ->

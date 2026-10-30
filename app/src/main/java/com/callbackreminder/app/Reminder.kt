@@ -35,9 +35,9 @@ data class Reminder(
     /** The 8-digit task number (yyMMddNN) the person texts back when it's done; shared with its texts. */
     val code: String = "",
 ) {
-    /** What we show as the headline: the name, else the number, else a placeholder. */
+    /** What we show as the headline: the person's one name (see [PersonNames]), else the number, else a placeholder. */
     val title: String
-        get() = name.ifBlank { number }.ifBlank { "Unknown caller" }
+        get() = PersonNames.of(number, name).ifBlank { number }.ifBlank { "Unknown caller" }
 
     /** The time of the repeat after the current one, or null for one-offs and finished series. */
     fun nextOccurrence(): Long? = repeat

@@ -186,7 +186,7 @@ object Work {
             val member = TeamRepo.memberByKey(k)
             PersonSummary(
                 key = k,
-                name = member?.name ?: latest?.second?.takeIf { it.isNotBlank() } ?: name,
+                name = member?.name ?: PersonNames.of(latest?.third.orEmpty(), latest?.second?.takeIf { it.isNotBlank() } ?: name),
                 number = member?.phone ?: latest?.third.orEmpty(),
                 pending = mine.size,
                 overdue = mine.count { it.overdue },
@@ -208,4 +208,35 @@ object Work {
     ).joinToString(" · ")
 
     fun startOfDay(d: LocalDate): Long = d.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+}
+
+/**
+ * One name per person: every task with the same number shows the name the People tab shows, a team member's
+ * own name, else the name on that number's newest task. Tasks keep whatever name was typed when they were made;
+ * it is only the shown name that is shared.
+ */
+object PersonNames {
+    @Volatile private var byKey: Map<String, String> = emptyMap()
+
+    /** Rebuild after any task list changes. */
+    fun refresh() {
+        val newest = HashMap<String, Pair<Long, String>>()
+        fun add(at: Long, name: String, number: String) {
+            val k = RecentPeople.key(number)
+            if (k.isEmpty() || name.isBlank()) return
+            if ((newest[k]?.first ?: Long.MIN_VALUE) < at) newest[k] = at to name
+        }
+        ReminderStore.items.value.forEach { add(it.createdAt, it.name, it.number) }
+        SmsStore.items.value.forEach { add(it.createdAt, it.name, it.number) }
+        MyTaskStore.items.value.forEach { if (it.hasPerson) add(it.createdAt, it.name, it.number) }
+        byKey = newest.mapValues { it.value.second }
+    }
+
+    /** The shown name for this number; [stored] (the name typed on the task) when the number is unknown or blank. */
+    fun of(number: String, stored: String): String {
+        val k = RecentPeople.key(number)
+        if (k.isEmpty()) return stored
+        TeamRepo.mainKey(number)?.let { mk -> TeamRepo.memberByKey(mk)?.name?.takeIf { it.isNotBlank() } }?.let { return it }
+        return byKey[k] ?: stored
+    }
 }

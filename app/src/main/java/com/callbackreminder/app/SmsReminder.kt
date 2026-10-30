@@ -103,7 +103,7 @@ data class SmsReminder(
     }
 
     val title: String
-        get() = name.ifBlank { number }.ifBlank { "Unknown" }
+        get() = PersonNames.of(number, name).ifBlank { number }.ifBlank { "Unknown" }
 
     val isBurst: Boolean
         get() = burstCount > 1
