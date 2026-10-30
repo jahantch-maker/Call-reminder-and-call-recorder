@@ -252,8 +252,10 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         val before = t
         if (t.done) {
             Arrivals.arrive("mt-${t.id}")
-            MyTaskStore.setDone(t.id, false)
-            scope.offerUndo(snack, "Not done · ${t.title}") { Arrivals.arrive("mt-${t.id}"); MyTaskStore.restore(before) }
+            Reopen.myTask(ctx, t.id, null)
+            scope.offerUndo(snack, "Reopened · ${t.title}") { Arrivals.arrive("mt-${t.id}"); MyTaskStore.restore(before) }
+            // Its time has passed: ask for a new one first, so it doesn't come back overdue.
+            if (t.timed && Reopen.needsTime(t.dueAt)) newTimeFor = MyTaskStore.get(t.id)
             return
         }
         if (t.id in ticking) return
@@ -898,6 +900,45 @@ private fun DossierProgress(day: LocalDate, now: Long, done: Int, total: Int) {
  * One dossier task: tick box, title, how often it repeats (and when it was ticked), this month's
  * score, and "＋ Why not done?" under every unticked task, whether or not its time has passed.
  */
+/**
+ * v0.44: Dossier at the end of a review session (Settings › Review › 📋 Dossier on). Only today's blocks whose time
+ * has passed and that aren't ticked yet, so nothing is ticked in advance; the same rows and buttons as the Dossier page.
+ */
+@Composable
+fun SessionDossierBlocks() {
+    val ctx = LocalContext.current
+    val dossier by DossierStore.tasks.collectAsState()
+    val records by DossierStore.records.collectAsState()
+    val now = System.currentTimeMillis()
+    val day = Dossier.openDay(now)
+    // Ticked ones stay in place (✓) until the page closes, so the list doesn't jump under your finger.
+    val shown = remember(dossier) {
+        dossier.filter { it.isOn(day) && it.dueAt(day) <= now && records[DossierStore.key(it.id, day)]?.done != true }.sortedBy { it.minute }
+    }
+    var whyFor by remember { mutableStateOf<DossierTask?>(null) }
+    if (shown.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChipHeading("📋 DOSSIER · ${shown.count { records[DossierStore.key(it.id, day)]?.done != true }} LEFT")
+        shown.forEach { t ->
+            DossierRow(
+                t = t,
+                day = day,
+                rec = records[DossierStore.key(t.id, day)],
+                now = now,
+                showScore = false,
+                onTick = { tickOrUntick(ctx, t, day, records[DossierStore.key(t.id, day)]) },
+                onWhy = { whyFor = t },
+                onOpen = { whyFor = t.takeIf { records[DossierStore.key(it.id, day)]?.done != true } },
+                onEdit = null,
+                onDelete = null,
+            )
+        }
+    }
+    whyFor?.let { t ->
+        WhyNotSheet(t = t, day = day, rec = records[DossierStore.key(t.id, day)], onDismiss = { whyFor = null })
+    }
+}
+
 @Composable
 private fun DossierRow(
     t: DossierTask,

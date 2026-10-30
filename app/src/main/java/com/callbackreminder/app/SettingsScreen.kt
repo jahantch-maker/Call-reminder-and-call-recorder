@@ -521,6 +521,20 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
             )
         }
 
+        val sims = remember { SimPopup.sims(ctx) }
+        if (sims.size > 1) {
+            SectionCard(
+                title = "Each SIM",
+                subtitle = "Switch one off (your personal SIM) and its calls stay quiet. A number that still has an open task with you always asks."
+            ) {
+                sims.forEachIndexed { i, sim ->
+                    if (i > 0) HorizontalDivider()
+                    var simOn by remember(sim.slot) { mutableStateOf(SimPopup.on(ctx, sim.slot)) }
+                    SwitchRow(sim.label, simOn) { simOn = it; SimPopup.set(ctx, sim.slot, it) }
+                }
+            }
+        }
+
         SectionCard(title = "Try it out", subtitle = "See the popup without making a real call.") {
             Button(
                 onClick = {

@@ -293,15 +293,21 @@ object TeamUi {
         }
     }
 
-    fun lastSeenLabel(m: TeamMember): String = when {
-        m.onlineNow() -> "🟢 Online now"
-        m.lastSeen <= 0L -> "Not opened yet"
-        TeamPresence.lastAt(m.uid) > 0L -> TeamPresence.lastAt(m.uid).let { at ->
-            if (Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate() == java.time.LocalDate.now()) "Last seen today ${Fmt.timeOnly(at)}"
-            else "Last seen ${Fmt.dueLabel(at)}"
+    /**
+     * v0.44 "🟢 Active now" / "Last active 12 min ago": the app open on his phone (not the phone itself), so it never
+     * promises more than it knows. Shown on his person page, the Timeline top and the Team page; everyone sees everyone.
+     */
+    fun lastSeenLabel(m: TeamMember): String {
+        if (m.onlineNow()) return "🟢 Active now"
+        if (m.lastSeen <= 0L) return "Not opened yet"
+        val at = TeamPresence.lastAt(m.uid).takeIf { it > 0L } ?: m.lastSeen
+        val min = (System.currentTimeMillis() - at) / 60_000L
+        return when {
+            min < 1L -> "Last active just now"
+            min < 60L -> "Last active $min min ago"
+            Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate() == java.time.LocalDate.now() -> "Last active today ${Fmt.timeOnly(at)}"
+            else -> "Last active ${Fmt.dueLabel(at)}"
         }
-        m.onlineToday() -> "Last seen today ${Fmt.timeOnly(m.lastSeen)}"
-        else -> "Last seen ${Fmt.dueLabel(m.lastSeen)}"
     }
 }
 
@@ -924,17 +930,151 @@ private fun TeamChartDialog(
     }
 }
 
-/** ✓ Received, thanks / ↩ Not done yet, in the card's own bar style: on a Done card. */
+/** ✓ Received · ↩ Not done · ✓ Done, ➜ next part, in the card's own bar style: on a Done card. */
 @Composable
 fun TeamCheckButtons(t: TeamTask) {
     var notYet by remember { mutableStateOf(false) }
+    var next by remember { mutableStateOf(false) }
     if (t.doneAt > 0L) Text("${t.toFirst}: Done ${Fmt.dueLabel(t.doneAt)}" + if (t.passedTo.isNotBlank()) " · by ${t.passedTo}" else "",
         fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        BarSlot(Icons.Rounded.Check, "Received, thanks", Tones.done.pair, { TeamRepo.check(t) }, true, Modifier.weight(1f))
-        BarSlot(Icons.Rounded.Schedule, "Not done yet", Tones.late.pair, { notYet = true }, true, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Check, "Received", Tones.done.pair, { TeamRepo.check(t) }, true, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Schedule, "Not done", Tones.late.pair, { notYet = true }, true, Modifier.weight(1f))
+        BarSlot(null, NEXT_PART_LABEL, Tones.call.pair, { next = true }, true, Modifier.weight(1f), lines = 2)
     }
     if (notYet) TeamNotDoneSheet(t) { notYet = false }
+    if (next) TeamNextPartSheet(t) { next = false }
+}
+
+/** The third check button, on two short lines so the bar keeps its one row. */
+const val NEXT_PART_LABEL = "✓ Done,\n➜ next part"
+
+/**
+ * v0.44 ✓ Done, ➜ next part: his part is received with thanks (it stays done in his history) and the SAME task goes
+ * on. Me on top (it comes to My tasks, you pick the time), then the same 4 buttons as giving a task. Someone on the
+ * team gets this task with its Timeline; someone outside the app becomes a normal follow-up on your side.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun TeamNextPartSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var me by remember { mutableStateOf(true) }
+    var picked by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var left by remember { mutableStateOf("") }
+    var myTime by remember { mutableStateOf(false) }
+    var myPick by remember { mutableStateOf(false) }
+    var outside by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val member = picked?.let { (_, num) -> TeamRepo.memberByNumber(num) }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp + navBarMissing()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("➜ Who does the next part?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(t.title, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Surface(
+                onClick = { me = true; picked = null },
+                shape = RoundedCornerShape(14.dp),
+                color = if (me) cs.primaryContainer else cs.surfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Me", fontWeight = FontWeight.Bold)
+                        Text("Goes to My tasks, you pick the time", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    }
+                    RadioButton(selected = me, onClick = { me = true; picked = null })
+                }
+            }
+            PersonPicker(prompt = null) { n, num -> me = false; picked = n to num }
+            picked?.let { (n, num) ->
+                Text(
+                    if (member != null && member.uid == t.toUid) "${member.first} did this part: pick someone else"
+                    else if (member != null) "👥 ${member.first} is on the app: this task and its Timeline go to him"
+                    else "👤 ${n.ifBlank { num }} is not on the app: it becomes your follow-up with him",
+                    fontSize = 12.sp, color = cs.primary
+                )
+            }
+            OutlinedTextField(left, { left = it }, placeholder = { Text("What's left? (optional)") }, trailingIcon = voiceMic(left) { left = it },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 3)
+            Text("✓ ${t.toFirst} gets \"Received, thanks\" · his part stays in his history", fontSize = 12.sp, color = Tones.done.pair.second)
+            Button(
+                onClick = {
+                    val p = picked
+                    when {
+                        me || p == null -> myTime = true
+                        member != null -> {
+                            TeamNext.toMember(ctx, t, member, left)
+                            onSent(); onDismiss()
+                        }
+                        else -> {
+                            TeamNext.received(ctx, t, left, p.first.ifBlank { p.second })
+                            outside = p
+                        }
+                    }
+                },
+                enabled = me || (picked != null && member?.uid != t.toUid),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) { Text("Send next part", fontWeight = FontWeight.Bold) }
+        }
+    }
+    if (myTime) SnoozeSheet(
+        heading = "Your time",
+        about = t.title,
+        onPick = { ms -> myTime = false; TeamNext.toMe(ctx, t, left, ms); onSent(); onDismiss() },
+        onPickTime = { myTime = false; myPick = true },
+        onDismiss = { myTime = false },
+        plusRow = true,
+    )
+    if (myPick) DateTimePickerFlow(
+        initialMs = System.currentTimeMillis() + 3_600_000L,
+        onPicked = { ms -> myPick = false; TeamNext.toMe(ctx, t, left, ms); onSent(); onDismiss() },
+        onDismiss = { myPick = false },
+    )
+    outside?.let { (n, num) ->
+        FollowUpDialog(
+            onDismiss = { outside = null; onSent(); onDismiss() },
+            initialName = n, initialNumber = num,
+            initialTask = listOf(t.title, left.trim()).filter { it.isNotEmpty() }.joinToString(" · "),
+        )
+    }
+}
+
+/** What ✓ Done, ➜ next part does. */
+object TeamNext {
+    /** Next part with you: a My task (no time = To schedule), whose Timeline link opens this task's Timeline. */
+    fun toMe(c: Context, t: TeamTask, left: String, at: Long) {
+        TeamRepo.nextPart(t, null, left)
+        checkedHere(c, t)
+        val mine = MyTaskStore.add(title = t.title, note = left.trim(), dueAt = at, name = "", number = "")
+        val m = TeamLinks.map(c, "nextMine")
+        m[mine.id.toString()] = t.id
+        TeamLinks.putMap(c, "nextMine", m)
+    }
+
+    /** Next part with someone on the team: the same task, his part received; your follow-up waits for the new person. */
+    fun toMember(c: Context, t: TeamTask, to: TeamMember, left: String) {
+        TeamRepo.nextPart(t, to, left)
+        val link = TeamLinks.map(c, "given")[t.id]?.toLongOrNull() ?: return
+        val at = if (t.hisDate || t.due == 0L) TeamSync.waitAt(c, t.deadline) else t.due
+        ReminderStore.items.value.filter { it.linkId == link && it.done && it.review }.forEach { ReminderStore.reschedule(it.id, at, "Next part with ${to.first}:") }
+    }
+
+    /** Next part with someone outside the app: his part is received; the follow-up is made in the window that opens. */
+    fun received(c: Context, t: TeamTask, left: String, who: String) {
+        TeamRepo.nextPart(t, null, left, outsider = who)
+        checkedHere(c, t)
+    }
+
+    /** Your "Done, check it" call-back for it is checked at once (the sync would do it a moment later). */
+    private fun checkedHere(c: Context, t: TeamTask) {
+        val link = TeamLinks.map(c, "given")[t.id]?.toLongOrNull() ?: return
+        ReminderStore.items.value.filter { it.linkId == link && it.done && it.review }.forEach { ReminderStore.reviewed(it.id) }
+    }
+
+    /** The team task a My task continues (✓ Done, ➜ next part with you), if any. */
+    fun teamOfMine(c: Context, myTaskId: Long): String? = TeamLinks.map(c, "nextMine")[myTaskId.toString()]
 }
 
 /**

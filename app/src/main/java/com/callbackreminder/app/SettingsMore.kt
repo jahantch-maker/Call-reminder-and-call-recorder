@@ -60,6 +60,22 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
+        // v0.44: one switch per category, the same names the notifications show next to "Callback Reminder".
+        SectionCard(title = "Each category", subtitle = "Silence one, keep the rest") {
+            NotifKind.values().forEachIndexed { i, k ->
+                if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                val level = tick.let { Notify.kindLevel(ctx, k) }
+                Column(Modifier.fillMaxWidth()) {
+                    Text("${k.emoji} ${k.label}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NotifLevel.values().forEach { l ->
+                            FilterChip(selected = level == l, onClick = { Notify.setKindLevel(ctx, k, l); tick++ }, label = { Text(l.label) })
+                        }
+                    }
+                }
+            }
+        }
         NotifType.values().groupBy { it.group }.forEach { (group, types) ->
             SectionCard(title = group, subtitle = "") {
                 types.forEachIndexed { i, t ->
