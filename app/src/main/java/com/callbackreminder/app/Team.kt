@@ -157,8 +157,6 @@ data class TeamTask(
     // Your contact names win: the stored names are only for people not in the team list.
     val toFirst: String get() = TeamRepo.member(toUid)?.first ?: Names.first(toName) ?: toName
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
-    /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
-    val isDeleted: Boolean get() = text == Team.DELETED
 }
 
 object Team {
@@ -230,6 +228,8 @@ data class TeamMsg(
     val wave: String = "",
 ) {
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
+    /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
+    val isDeleted: Boolean get() = text == Team.DELETED
 }
 
 /** Settings › Team › Date rules: when a missing date or an unseen task comes to you. Kept on this phone. */
@@ -1103,8 +1103,13 @@ object TeamRepo {
      * Only the text and data fields change, which the Firestore rules already allow, so nothing new to publish.
      */
     fun deleteMsg(t: TeamTask, m: TeamMsg) {
-        if (teamId == null || !Team.canUndo(m, uid)) return
-        msgs(t.id).document(m.id).update(mapOf("text" to Team.DELETED, "data" to FieldValue.delete()))
+        if (Team.canUndo(m, uid)) deleteMsgId(t, m.id)
+    }
+
+    /** The same by id: for the 5-second Undo right after sending (the message is yours by definition). */
+    fun deleteMsgId(t: TeamTask, id: String) {
+        if (teamId == null) return
+        msgs(t.id).document(id).update(mapOf("text" to Team.DELETED, "data" to FieldValue.delete()))
             .addOnFailureListener { logFail(it, "Undo message") }
     }
 

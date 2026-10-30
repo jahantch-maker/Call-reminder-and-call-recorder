@@ -239,7 +239,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
         })
         val canTalk = me == t.fromUid || me == t.toUid
         if (canTalk) TeamComposer(t, isDoer = me == t.toUid, replyTo = replyTo, onReplyDone = { replyTo = null },
-            onSent = { id -> id?.let { scope.offerUndoFor(snack, "Sent", 5L) { TeamRepo.deleteMsg(t, it) } } },
+            onSent = { id -> id?.let { mid -> scope.offerUndoFor(snack, "Sent", 5L) { TeamRepo.deleteMsgId(t, mid) } } },
             onExtended = { msg, before ->
                 scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
             })
