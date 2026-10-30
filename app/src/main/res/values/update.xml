@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Which build on the public releases page this app updates from -->
+    <string name="update_channel" translatable="false">main-app</string>
+</resources>

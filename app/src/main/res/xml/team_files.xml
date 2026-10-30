@@ -2,4 +2,6 @@
 <!-- Team edition: the photo the camera app saves for a task message, shared only with that camera app. -->
 <paths>
     <cache-path name="team" path="team/" />
+    <!-- Settings › Update: the downloaded new version -->
+    <cache-path name="updates" path="updates/" />
 </paths>

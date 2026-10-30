@@ -215,7 +215,7 @@ Requirements: JDK 17, Gradle 8.10.2, Android SDK 35.
 
 ```bash
 gradle assembleRelease
-# APK: app/build/outputs/apk/release/app-release.apk  (about 2 MB, R8-minified)
+# APK: app/build/outputs/apk/full/release/app-full-release.apk (main) and .../cr/release/app-cr-release.apk (CR Test)  (about 2 MB, R8-minified)
 ```
 
 GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) does the same on every push to `main`

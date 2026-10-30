@@ -834,6 +834,7 @@ private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int)
                         },
                         onOpenSetup = { open(Screen.SETUP) },
                         onOpenRecordingSettings = { open(Screen.RECORDING_SETTINGS) },
+                        onOpenUpdate = { open(Screen.SETTINGS) },
                         onOpenToSchedule = { open(Screen.TO_SCHEDULE) },
                         onOpenOverdue = { open(Screen.OVERDUE) },
                         onOpenMyTasks = { sub ->

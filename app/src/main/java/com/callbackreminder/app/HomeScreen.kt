@@ -97,8 +97,11 @@ fun HomeScreen(
     onOpenPerson: (key: String) -> Unit,
     onOpenItem: (WorkItem) -> Unit,
     onOpenSearch: (String) -> Unit = {},
+    onOpenUpdate: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val newerVersion by AppUpdate.newer.collectAsState()
+    LaunchedEffect(Unit) { AppUpdate.autoCheck(ctx) }
     val unreadable by Db.failed.collectAsState()
     var unreadableSeen by remember { mutableStateOf(false) }
     val calls by ReminderStore.items.collectAsState()
@@ -179,6 +182,18 @@ fun HomeScreen(
             }
 
             item(key = "search") { HomeSearchBar(onOpen = onOpenSearch) }
+
+            // A newer version is waiting: Update itself lives at the top of Settings.
+            newerVersion?.let { v ->
+                item(key = "update") {
+                    Banner(
+                        title = "Update available",
+                        body = "Version ${v.name} is ready. Open Settings to update.",
+                        button = "Open Settings",
+                        onClick = onOpenUpdate
+                    )
+                }
+            }
 
             // A list that couldn't be read is never saved over: say so, and point to the backup.
             if (unreadable.isNotEmpty() && !unreadableSeen) {
