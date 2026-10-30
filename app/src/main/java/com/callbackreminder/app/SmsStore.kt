@@ -26,6 +26,7 @@ object SmsStore {
         if (::appCtx.isInitialized) return
         appCtx = context.applicationContext
         _items.value = load()
+        PersonNames.refresh()
     }
 
     private fun prefs() = appCtx.getSharedPreferences("sms_reminders", Context.MODE_PRIVATE)
@@ -81,6 +82,7 @@ object SmsStore {
     private fun save(list: List<SmsReminder>) {
         rows.save(appCtx, list)
         _items.value = list
+        PersonNames.refresh()
     }
 
     private fun toJson(r: SmsReminder): JSONObject {

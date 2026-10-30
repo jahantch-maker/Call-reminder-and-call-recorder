@@ -48,7 +48,7 @@ data class MyTask(
     val length: Int get() = if (durationMin > 0) durationMin else MyTaskStore.DEFAULT_LENGTH
     val endAt: Long get() = dueAt + length * 60_000L
     val timed: Boolean get() = dueAt > 0L
-    val personTitle: String get() = name.ifBlank { number }
+    val personTitle: String get() = PersonNames.of(number, name).ifBlank { number }
 }
 
 /** One line in a My task's History: created, time moved, done, not done. */
@@ -191,6 +191,7 @@ object MyTaskStore {
         if (::appCtx.isInitialized) return
         appCtx = context.applicationContext
         _items.value = load()
+        PersonNames.refresh()
         _lists.value = loadLists()
     }
 
@@ -228,6 +229,7 @@ object MyTaskStore {
     private fun save(list: List<MyTask>) {
         rows.save(appCtx, list)
         _items.value = list
+        PersonNames.refresh()
     }
 
     private fun toJson(t: MyTask): JSONObject {
