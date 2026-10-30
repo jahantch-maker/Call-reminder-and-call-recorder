@@ -140,14 +140,20 @@ fun chipColors(tone: ChipTone): Pair<Color, Color> {
     }
 }
 
-/** THE chip: 12sp SemiBold, radius 8, in one of the [chipColors]. Every chip in the app is this one. */
+/**
+ * THE chip: 12sp SemiBold on a fixed 15sp line, radius 8, a 1dp edge, in one of the [chipColors]. The fixed line keeps
+ * an emoji (📅 ⏳ 🔕 💤) from making it taller, and the edge (in its own colour) matches the outlined time and person
+ * chips ([TaskChip]), so every chip in the app is the same height at every display size.
+ */
 @Composable
 fun SmallChip(c: RowChip) {
     val (bg, fg) = chipColors(c.tone)
+    val shape = RoundedCornerShape(8.dp)
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .background(bg)
+            .border(BorderStroke(1.dp, bg), shape)
             .then(if (c.onClick != null) Modifier.clickable(onClick = c.onClick) else Modifier)
             .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -156,9 +162,12 @@ fun SmallChip(c: RowChip) {
             Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(3.dp))
         }
-        Text(c.text, color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(c.text, color = fg, fontSize = 12.sp, lineHeight = CHIP_LINE, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
+
+/** The one line height of every chip's text. */
+val CHIP_LINE = 15.sp
 
 /**
  * The round one-tap button on the right of a row. [size] 44.dp is the bigger Follow-ups button; [finished] greys

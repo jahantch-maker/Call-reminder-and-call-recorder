@@ -984,19 +984,9 @@ fun SameTaskDialog(same: FollowUps.Same, onCancel: () -> Unit, onSaveNew: () -> 
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(same.task, fontWeight = FontWeight.Bold, color = cs.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(8.dp), color = NoTimeOrange.copy(alpha = 0.22f)) {
-                                Text(
-                                    if (waiting) "📞 No time yet" else "📞 ${Fmt.dueLabel(same.due)}",
-                                    color = NoTimeOrange, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
-                            Surface(shape = RoundedCornerShape(8.dp), color = Color.Transparent, border = BorderStroke(1.dp, cs.outline)) {
-                                Text(
-                                    "👤 $who", color = cs.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
+                            // The same chips as the cards.
+                            TaskChip(if (waiting) "📞 No time yet" else "📞 ${Fmt.dueLabel(same.due)}", if (waiting) CHIP_ORANGE else CHIP_PLAIN)
+                            TaskChip("👤 $who", CHIP_PLAIN)
                         }
                         if (same.savedAt > 0L) Text("Saved ${Fmt.dueLabel(same.savedAt)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
                     }

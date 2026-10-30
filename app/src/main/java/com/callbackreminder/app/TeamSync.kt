@@ -220,6 +220,14 @@ object TeamSync {
         val local = recv[t.id]?.toLongOrNull()?.let { MyTaskStore.get(it) }
         val remoteMoved = before != null && dueOf(before) != t.due
         if (passed != null) {
+            // Not done yet on a task he passed to someone outside the team: his finished call with them comes back,
+            // or his sync would see it done and mark the task done again at once.
+            if (before != null && t.status == Team.REOPENED && statusOf(before) != Team.REOPENED) {
+                ReminderStore.items.value.filter { it.linkId == passed }.maxByOrNull { it.id }?.takeIf { it.done }?.let { last ->
+                    ReminderStore.reopen(last.id)
+                    if (t.due > 0L) ReminderStore.reschedule(last.id, t.due, "Not done yet · ${t.fromFirst}:")
+                }
+            }
             if (t.status == Team.CANCELLED || t.status == Team.RETURNED) {
                 FollowUps.finishCall(passed)
                 FollowUps.stopTexts(passed)
@@ -288,16 +296,17 @@ object TeamSync {
                 return
             }
             when {
-                // He has to pick a new deadline (Not done yet · He picks): your call-back waits at your Latest.
-                t.open && t.due == 0L && pending != null && (dueOf(before) ?: 0L) > 0L && t.deadline > 0L && pending.dueAt != t.deadline ->
-                    ReminderStore.reschedule(pending.id, t.deadline, "Waiting for ${t.toFirst}'s deadline:")
-                // Older versions parked it in To schedule: it moves to Follow-ups.
-                t.open && t.due == 0L && calls.isEmpty() ->
-                    ToScheduleStore.items.value.firstOrNull { it.linkId == link && it.callOn && it.number.isNotBlank() }
-                        ?.let { FollowUps.setTime(c, it, waitAt(c, t.deadline)) }
+                // He has to pick a (new) deadline: your call-back has no real time yet, so it waits in To schedule
+                // until he picks (older versions left it in Follow-ups at your Latest).
+                t.open && t.due == 0L && pending != null &&
+                    ((dueOf(before) ?: 0L) > 0L || (t.deadline > 0L && pending.dueAt == t.deadline)) ->
+                    waitForHim(c, pending, t.toFirst)
                 t.open && t.due > 0L -> {
-                    if (pending == null && calls.isEmpty()) {
-                        ToScheduleStore.items.value.firstOrNull { it.linkId == link }?.let { FollowUps.setTime(c, it, t.due) }
+                    // Waiting in To schedule (his date, or after Not done yet): it follows his deadline now.
+                    // Only when his deadline is new, so a time you took away yourself stays away.
+                    if (pending == null) {
+                        if (before == null || dueOf(before) != t.due || calls.isEmpty())
+                            ToScheduleStore.items.value.firstOrNull { it.linkId == link }?.let { FollowUps.setTime(c, it, t.due) }
                     } else if (pending != null && pending.dueAt != t.due && (before == null || dueOf(before) != t.due)) {
                         ReminderStore.reschedule(pending.id, t.due, "${t.toFirst}'s date:")
                     }
@@ -498,8 +507,8 @@ object TeamSync {
         val item = ToScheduleStore.put(
             ToScheduleItem(id = 0L, name = to.name, number = to.phone, note = title.trim(), createdAt = 0L, callOn = callOn, starred = urgent, linkId = link)
         )
-        // A given task always lives in Follow-ups: his date not picked yet, it waits at your Latest.
-        FollowUps.setTime(c, item, myTime?.takeIf { it > 0L } ?: waitAt(c, deadline))
+        // Your time: it goes to Follow-ups then. His date: it waits in To schedule until he picks one.
+        myTime?.takeIf { it > 0L }?.let { FollowUps.setTime(c, item, it) }
         synchronized(lock) {
             val given = TeamLinks.map(c, "given")
             given[id] = link.toString()
@@ -530,17 +539,24 @@ object TeamSync {
 
     /**
      * Your Not done yet on his Done: your call-back leaves Replied. With [newDue] it rings then; with 0 (he picks)
-     * it waits in Follow-ups at your Latest ("⏳ His deadline?") until he sets one.
+     * it waits in To schedule ("⏳ His deadline?") until he sets one, then follows his deadline by itself.
      */
     fun giverNotDone(c: Context, t: TeamTask, newDue: Long) {
         initStores(c)
         val link = TeamLinks.map(c, "given")[t.id]?.toLongOrNull() ?: return
         val call = ReminderStore.items.value.filter { it.linkId == link }.let { l -> l.firstOrNull { !it.done } ?: l.maxByOrNull { it.id } } ?: return
         if (newDue > 0L) ReminderStore.reschedule(call.id, newDue, "Not done yet · new deadline")
-        else {
-            if (call.done) ReminderStore.reopen(call.id)
-            ReminderStore.reschedule(call.id, waitAt(c, t.deadline), "Not done yet · waiting for ${t.toFirst}'s deadline")
-        }
+        else waitForHim(c, call, t.toFirst, "Not done yet · ")
+    }
+
+    /**
+     * Your call-back for a task whose deadline he picks: its time goes and it waits in To schedule with the 📞 switch
+     * kept on. When he picks, [giverSide] gives it his deadline and it moves to Follow-ups.
+     */
+    internal fun waitForHim(c: Context, call: Reminder, who: String, lead: String = "") {
+        if (call.done) ReminderStore.reopen(call.id)
+        val open = ReminderStore.get(call.id)?.takeIf { !it.done } ?: return
+        FollowUps.removeTime(c, open, FollowUps.text(open.linkId), why = "${lead}Waiting for $who's deadline · To schedule")
     }
 
     /** Remove member › give his tasks to someone else: your follow-up now names the new person. */
