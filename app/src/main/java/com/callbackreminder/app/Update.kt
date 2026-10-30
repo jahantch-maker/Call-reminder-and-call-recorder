@@ -19,6 +19,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,6 +65,9 @@ object AppUpdate {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private fun prefs(c: Context) = c.getSharedPreferences("update", Context.MODE_PRIVATE)
+
+    /** Set by the Home update notice so Settings scrolls to the version bubble at its end. */
+    @Volatile var jumpToCard = false
 
     private val _newer = MutableStateFlow<Latest?>(null)
     /** The newer version waiting, or null when this one is the latest. Survives restarts without network. */
@@ -188,9 +192,9 @@ object AppUpdate {
     }
 }
 
-/** Top of Settings: this version, Check for update, and Update when a newer one is waiting. */
+/** End of Settings: this version, Check for update, and Update when a newer one is waiting. */
 @Composable
-fun UpdateCard() {
+fun UpdateCard(onWhatsNew: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val newer by AppUpdate.newer.collectAsState()
@@ -227,6 +231,8 @@ fun UpdateCard() {
                     OutlinedButton(onClick = { AppUpdate.checkNow(ctx) }, enabled = s !is AppUpdate.State.Checking) {
                         Text("Check for update")
                     }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onWhatsNew) { Text("What's new ›") }
                 }
             }
         }
