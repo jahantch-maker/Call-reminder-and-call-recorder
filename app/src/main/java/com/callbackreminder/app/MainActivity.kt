@@ -203,6 +203,13 @@ class MainActivity : ComponentActivity() {
                     showTab(Tab.HOME, Screen.REVIEW)
                     return
                 }
+                // Not in Replied (no call-back with it): its Follow-ups card has the same check buttons.
+                if (link != null) {
+                    FollowUpsUi.view.value = FollowUpsUi.ALL
+                    FollowUpsUi.showEntry.value = "link-$link"
+                    showTab(Tab.FOLLOW_UPS)
+                    return
+                }
             }
             TeamSync.Open.CARD.name -> {
                 val mine = TeamLinks.map(this, "recv")[task]?.toLongOrNull()?.takeIf { MyTaskStore.get(it) != null }
@@ -230,7 +237,9 @@ class MainActivity : ComponentActivity() {
             OPEN_MY_TASKS, OPEN_DOSSIER -> {
                 MyTasksUi.tabRequest.value = if (asked == OPEN_DOSSIER) MyTasksUi.DOSSIER else MyTasksUi.ONE_TIME
                 val task = intent?.getLongExtra(EXTRA_TASK, -1L) ?: -1L
-                if (task >= 0) MyTasksUi.showTask.value = task
+                if (task >= 0) {
+                    if (asked == OPEN_DOSSIER) MyTasksUi.showDossier.value = task else MyTasksUi.showTask.value = task
+                }
                 intent?.removeExtra(EXTRA_TASK)
                 intent?.removeExtra(EXTRA_OPEN)
                 showTab(Tab.MY_TASKS)

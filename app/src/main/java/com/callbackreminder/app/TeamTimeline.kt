@@ -156,6 +156,11 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
                 }
             )
+            // v0.44: the other person's 🟢 Active now / Last active, like WhatsApp's line under the name.
+            val members by TeamRepo.members.collectAsState()
+            members.firstOrNull { it.uid == (if (t.toUid == me) t.fromUid else t.toUid) }?.let { m ->
+                Text("${m.first} · ${TeamUi.lastSeenLabel(m)}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            }
         }
         val items = remember(t.events, msgs) {
             (t.events.map { TimelineItem.Line(it.at, it.text) } + msgs.orEmpty().map { TimelineItem.Msg(it) }).sortedBy { it.at }

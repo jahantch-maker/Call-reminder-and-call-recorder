@@ -748,12 +748,15 @@ internal fun FollowUpCard(
         val check = teamTask?.takeIf { giver && it.doneCheck && !finished }
         var notYet by remember(check?.id) { mutableStateOf(false) }
         if (notYet && check != null) TeamNotDoneSheet(check) { notYet = false }
+        var nextPart by remember(check?.id) { mutableStateOf(false) }
+        if (nextPart && check != null) TeamNextPartSheet(check) { nextPart = false }
         CardPanel(
             details = details + listOfNotNull(check?.takeIf { it.doneAt > 0L }?.let { t ->
                 "${t.toFirst}: Done ${Fmt.dueLabel(t.doneAt)}" + if (t.passedTo.isNotBlank()) " · by ${t.passedTo}" else ""
             }),
             onNewTime = if (finished) null else onNewTime,
             onNotDone = check?.let { { notYet = true } },
+            onNextPart = check?.let { { nextPart = true } },
             // The same order on every card: Timeline · Edit · (Remove time · Move to … · Texts) · Delete.
             links = buildList {
                 add(RowLink(tlLabel, onClick = timeline))

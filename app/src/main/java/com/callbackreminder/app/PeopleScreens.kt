@@ -290,6 +290,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     val texts by SmsStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
     val recordings by RecordingStore.items.collectAsState()
+    val teamMembers by TeamRepo.members.collectAsState()
     val now = rememberTicker(resumeKey)
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var addMenu by remember { mutableStateOf(false) }
@@ -366,6 +367,10 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                         Text(number, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     WhatsAppNumberLine(number, resumeKey)
+                    // v0.44: a team member's 🟢 Active now / Last active, live.
+                    teamMembers.let { TeamRepo.memberByNumber(number) }?.let { m ->
+                        Text(TeamUi.lastSeenLabel(m), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { dial(ctx, number) }, enabled = number.isNotBlank()) {

@@ -102,6 +102,8 @@ data class TeamTask(
     val moreAt: Long,
     val reason: String,
     val passedTo: String,
+    /** v0.44 ✓ Done, ➜ next part: who did the part before (his part stays done in his history, view only). */
+    val partFrom: String = "",
     val events: List<TaskEvent>,
     /** ❓ Ask waiting for the giver's answer (the no-date timer pauses meanwhile). */
     val askAt: Long = 0L,
@@ -861,6 +863,7 @@ object TeamRepo {
         (f["seenAt"] as? Long)?.let { x = x.copy(seenAt = it) }
         (f["doneAt"] as? Long)?.let { x = x.copy(doneAt = it) }
         (f["passedTo"] as? String)?.let { x = x.copy(passedTo = it) }
+        (f["partFrom"] as? String)?.let { x = x.copy(partFrom = it) }
         (f["askAt"] as? Long)?.let { x = x.copy(askAt = it) }
         (f["stuckAt"] as? Long)?.let { x = x.copy(stuckAt = it) }
         (f["stuckText"] as? String)?.let { x = x.copy(stuckText = it) }
@@ -1027,6 +1030,39 @@ object TeamRepo {
                     d.reference.update("viewers", viewers)
                 }
             }.onFailure { CrashLog.record(appCtx, it, "Team reassign") }
+        }
+    }
+
+    /**
+     * v0.44 ✓ Done, ➜ next part: his part is received with thanks (it stays done in his history, and he keeps seeing
+     * the task, view only) and the SAME task with its Timeline goes on to [to]. Null: you do the next part yourself.
+     */
+    fun nextPart(t: TeamTask, to: TeamMember?, left: String, outsider: String = "") {
+        val u = uid ?: return
+        val me = _me.value ?: return
+        if (teamId == null || t.fromUid != u) return
+        val now = System.currentTimeMillis()
+        val tail = left.trim().takeIf { it.isNotEmpty() }?.let { " · “$it”" }.orEmpty()
+        if (to == null || to.uid == u) {
+            update(t, mapOf("status" to Team.CHECKED, "checkedAt" to now, "partFrom" to t.toUid),
+                "✓ Received from ${t.toFirst} · next part with ${outsider.ifBlank { me.first }}$tail")
+            return
+        }
+        val viewers = (t.viewers + listOf(u, to.uid) + to.managers + me.managers).distinct()
+        val f = mutableMapOf<String, Any>(
+            "toUid" to to.uid, "toName" to to.name, "toPhone" to to.phone, "viewers" to viewers, "partFrom" to t.toUid,
+            "status" to if (t.hisDate || t.due == 0L) Team.SENT else Team.DATED, "checkedAt" to now,
+            "seenAt" to 0L, "deliveredAt" to 0L, "doneAt" to 0L, "passedTo" to "", "askAt" to 0L, "stuckAt" to 0L,
+            "createdAt" to now,
+        )
+        if (t.hisDate) f["due"] = 0L
+        update(t, f, "✓ Received from ${t.toFirst} · next part with ${to.first}$tail")
+        scope.launch {
+            runCatching {
+                msgs(t.id).whereArrayContains("viewers", u).get().await().documents.forEach { d ->
+                    d.reference.update("viewers", viewers)
+                }
+            }.onFailure { CrashLog.record(appCtx, it, "Team next part") }
         }
     }
 
@@ -1310,6 +1346,7 @@ object TeamRepo {
         moreAt = s.getLong("moreAt") ?: 0L,
         reason = s.getString("reason").orEmpty(),
         passedTo = s.getString("passedTo").orEmpty(),
+        partFrom = s.getString("partFrom").orEmpty(),
         events = (s.get("events") as? List<*>)?.mapNotNull { e ->
             val m = e as? Map<*, *> ?: return@mapNotNull null
             TaskEvent((m["at"] as? Number)?.toLong() ?: 0L, m["text"] as? String ?: "")

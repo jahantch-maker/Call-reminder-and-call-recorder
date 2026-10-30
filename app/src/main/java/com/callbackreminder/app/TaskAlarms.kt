@@ -37,11 +37,13 @@ object TaskAlarms {
 
     private fun am(ctx: Context) = ctx.getSystemService(AlarmManager::class.java)
 
-    private fun openApp(ctx: Context, open: String, req: Int): PendingIntent = PendingIntent.getActivity(
+    /** Opens the app on [open]; with [task] the notification's own task is scrolled to and outlined. */
+    private fun openApp(ctx: Context, open: String, req: Int, task: Long = -1L): PendingIntent = PendingIntent.getActivity(
         ctx,
         req,
         Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_OPEN, open)
+            .apply { if (task >= 0) putExtra(MainActivity.EXTRA_TASK, task) }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         FLAGS
     )
@@ -107,7 +109,7 @@ object TaskAlarms {
             .setSubText("Reminder before")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BEFORE_BASE + t.id.toInt()))
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BEFORE_BASE + t.id.toInt(), t.id))
             .setAutoCancel(true)
         Notify.post(ctx, NotifType.MY_TASK, NotifIds.taskBefore(t.id), b)
     }
@@ -136,7 +138,7 @@ object TaskAlarms {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BASE + t.id.toInt()))
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BASE + t.id.toInt(), t.id))
             .setAutoCancel(true)
             .setWhen(t.dueAt)
             .setShowWhen(true)
@@ -227,7 +229,7 @@ object TaskAlarms {
             .setSubText("Dossier")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, DOSSIER_BASE + t.id.toInt()))
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, DOSSIER_BASE + t.id.toInt(), t.id))
             .setAutoCancel(true)
             .addAction(0, "✓ Done", done)
         Notify.post(ctx, NotifType.DOSSIER, NotifIds.dossier(t.id), b)
@@ -243,7 +245,7 @@ object TaskAlarms {
             .setContentText("Reminder before your dossier task")
             .setSubText("Dossier")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, BEFORE_BASE + t.id.toInt()))
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER, BEFORE_BASE + t.id.toInt(), t.id))
             .setAutoCancel(true)
         Notify.post(ctx, NotifType.DOSSIER_BEFORE, NotifIds.dossierBefore(t.id), b)
     }

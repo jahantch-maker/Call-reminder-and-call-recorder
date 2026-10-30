@@ -132,7 +132,7 @@ fun TaskCard(
             .then(if (highlighted) Modifier.border(BorderStroke(2.dp, cs.primary), shape ?: RoundedCornerShape(14.dp)) else Modifier)
     ) {
         if (pos == RowPos.MIDDLE || pos == RowPos.LAST) HorizontalDivider(color = cs.surfaceVariant, thickness = 1.dp)
-        CardBannerLine(banner)
+        CardBannerLine(banner, onClick)
         Box(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -210,12 +210,14 @@ fun TaskCard(
     }
 }
 
-/** The thin line across a card's top: what waits on it, in its colour; tap opens it (the Timeline). */
-/** The thin line on top of a card; [action] (like "Answer" or "Call") shows on the right before ›. */
+/**
+ * The thin line on top of a card: what waits on it, in its colour. v0.44: tapping it does what tapping the card does
+ * (opens it in place); it never calls or jumps away. [onClick] and [action] are kept for older callers but unused.
+ */
 data class CardBanner(val text: String, val tone: ChipTone, val onClick: (() -> Unit)? = null, val action: String? = null)
 
 @Composable
-private fun CardBannerLine(banner: CardBanner?) {
+private fun CardBannerLine(banner: CardBanner?, onCardClick: () -> Unit) {
     // Kept while it slides away, so it doesn't go blank first.
     var last by remember { androidx.compose.runtime.mutableStateOf(banner) }
     if (banner != null) last = banner
@@ -230,14 +232,12 @@ private fun CardBannerLine(banner: CardBanner?) {
             Modifier
                 .fillMaxWidth()
                 .background(bbg)
-                .then(if (b.onClick != null) Modifier.clickable(onClick = b.onClick) else Modifier)
+                .clickable(onClick = onCardClick)
                 .padding(start = 12.dp, end = 12.dp, top = 3.dp, bottom = 3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(b.text, color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
-            if (b.action != null) Text(b.action + " ", color = bfg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            if (b.onClick != null) Text("›", color = bfg, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -271,8 +271,10 @@ fun CardPanel(
     links: List<RowLink>,
     onNewTime: (() -> Unit)?,
     buttonLabel: String = "New time",
-    /** A Done from your team waiting for your check: ✓ Received, thanks · ↩ Not done yet in the first two places. */
+    /** A Done from your team waiting for your check: ✓ Received · ↩ Not done in the first two places. */
     onNotDone: (() -> Unit)? = null,
+    /** …and ✓ Done, ➜ next part in the third. */
+    onNextPart: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     details.forEach {
@@ -289,6 +291,7 @@ fun CardPanel(
             newTimeLabel = buttonLabel,
             compact = true,
             onNotDone = onNotDone,
+            onNextPart = onNextPart,
         )
     } else if (onNewTime != null) {
         Spacer(Modifier.height(6.dp))
@@ -337,16 +340,19 @@ fun TaskActionBar(
     onAddPerson: (() -> Unit)? = null,
     compact: Boolean = false,
     modifier: Modifier = Modifier.fillMaxWidth(),
-    /** His Done waits for your check: Done reads "Received, thanks" and New time becomes ↩ Not done yet. */
+    /** His Done waits for your check: Done reads "Received" and New time becomes ↩ Not done. */
     onNotDone: (() -> Unit)? = null,
+    /** v0.44 with [onNotDone]: a third check button, ✓ Done, ➜ next part. */
+    onNextPart: (() -> Unit)? = null,
 ) {
     val green = Tones.done.pair
     val orange = chipColors(ChipTone.ORANGE)
     val blue = Tones.call.pair
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        BarSlot(Icons.Rounded.Check, if (onNotDone != null) "Received, thanks" else "Done", green, onDone, compact, Modifier.weight(1f))
-        if (onNotDone != null) BarSlot(Icons.AutoMirrored.Rounded.Undo, "Not done yet", Tones.late.pair, onNotDone, compact, Modifier.weight(1f))
+        BarSlot(Icons.Rounded.Check, if (onNotDone != null) "Received" else "Done", green, onDone, compact, Modifier.weight(1f))
+        if (onNotDone != null) BarSlot(Icons.AutoMirrored.Rounded.Undo, "Not done", Tones.late.pair, onNotDone, compact, Modifier.weight(1f))
         else BarSlot(Icons.Rounded.Schedule, newTimeLabel, orange, onNewTime, compact, Modifier.weight(1f))
+        if (onNotDone != null && onNextPart != null) BarSlot(null, NEXT_PART_LABEL, Tones.call.pair, onNextPart, compact, Modifier.weight(1f), lines = 2)
         if (onAddPerson != null) {
             BarSlot(Icons.Rounded.PersonAdd, "Add person", blue, onAddPerson, compact, Modifier.weight(2f))
         } else {
@@ -365,6 +371,8 @@ internal fun BarSlot(
     onClick: (() -> Unit)?,
     compact: Boolean,
     modifier: Modifier,
+    /** 2: the label on two short lines with no icon ("✓ Done, / ➜ next part"). */
+    lines: Int = 1,
 ) {
     val cs = MaterialTheme.colorScheme
     val on = onClick != null
@@ -379,6 +387,11 @@ internal fun BarSlot(
         modifier = modifier.height(if (compact) 44.dp else 54.dp),
     ) {
         Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            if (lines > 1) {
+                FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold,
+                    maxLines = lines, lineHeight = if (compact) 12.sp else 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, minScale = 0.62f)
+                return@Column
+            }
             if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 17.dp else 20.dp))
             else Text("WA", color = fg, fontWeight = FontWeight.Black, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 17.sp)
             FitText(label, if (compact) 10.5.sp else 12.sp, Modifier.padding(horizontal = 2.dp), color = fg, fontWeight = FontWeight.Bold, minScale = 0.62f)

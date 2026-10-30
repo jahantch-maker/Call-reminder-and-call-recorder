@@ -212,7 +212,14 @@ val SETTINGS_INDEX = listOf(
     SettingEntry("Voice typing", "voice typing mic microphone urdu english speak", "voice"),
 )
 
-private class Hit(val title: String, val sub: String, val done: Boolean, val icon: ImageVector, val open: () -> Unit)
+private class Hit(
+    val title: String, val sub: String, val done: Boolean, val icon: ImageVector,
+    /** v0.44: ↩ Reopen on a done task (null = it can't be reopened from here). */
+    val reopen: (() -> Unit)? = null,
+    /** v0.44: what RECENT remembers when it is opened, like "call:12" (null = not kept). */
+    val rk: String? = null,
+    val open: () -> Unit,
+)
 
 /**
  * Universal search: one box for calls, follow-ups waiting in To schedule, texts, My tasks, Dossier, people, recordings and settings.
@@ -237,6 +244,27 @@ fun SearchScreen(
     var showSettings by remember { mutableStateOf(false) }
     var refresh by remember { mutableStateOf(0) }
     var expanded by remember { mutableStateOf(setOf<String>()) }
+    // ↩ Reopen of a task whose time has passed: its title and what to do with the new time.
+    var reopenAsk by remember { mutableStateOf<Pair<String, (Long) -> Unit>?>(null) }
+    var reopenPick by remember { mutableStateOf<Pair<String, (Long) -> Unit>?>(null) }
+    var recent by remember { mutableStateOf(SearchRecent.load(ctx)) }
+    fun keepRecent(h: Hit) {
+        val k = h.rk ?: return
+        SearchRecent.add(ctx, k, h.title, h.sub)
+    }
+    fun openRecent(k: String) {
+        val (kind, id) = k.substringBefore(':') to k.substringAfter(':')
+        when (kind) {
+            "call" -> id.toLongOrNull()?.let { CallsUi.showRequest.value = it; onOpenCalls() }
+            "text" -> id.toLongOrNull()?.let { SmsUi.showRequest.value = it; onOpenTexts() }
+            "sched" -> id.toLongOrNull()?.let { ToScheduleUi.show.value = it; onOpenToSchedule() }
+            "task" -> id.toLongOrNull()?.let { MyTasksUi.showTask.value = it; onOpenMyTasks() }
+            "dossier" -> id.toLongOrNull()?.let { MyTasksUi.showDossier.value = it; onOpenMyTasks() }
+            "person" -> onOpenPerson(id)
+        }
+        SearchRecent.load(ctx).firstOrNull { it.key == k }?.let { SearchRecent.add(ctx, it.key, it.title, it.sub) }
+    }
+    fun reopened(title: String) = android.widget.Toast.makeText(ctx, "Reopened · $title", android.widget.Toast.LENGTH_SHORT).show()
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val waiting by ToScheduleStore.items.collectAsState()
@@ -273,7 +301,14 @@ fun SearchScreen(
             task(r.note) || name(r.name) || num(r.number) || r.delays.any { why(it.reason) }
         }.map { r ->
             val done = r.done && !r.review
-            Hit(r.headline(), listOf(r.title, if (r.done) "done ${Fmt.dueLabel(r.doneAt)}" else Fmt.dueLabel(r.dueAt)).joinToString(" · "), done, Icons.Rounded.Call) {
+            Hit(r.headline(), listOf(r.title, if (r.done) "done ${Fmt.dueLabel(r.doneAt)}" else Fmt.dueLabel(r.dueAt)).joinToString(" · "), done, Icons.Rounded.Call, rk = "call:${r.id}",
+                reopen = if (!done) null else ({
+                    if (Reopen.needsTime(r.dueAt)) {
+                        reopenAsk = r.headline() to { ms: Long -> Reopen.call(ctx, r.id, ms); reopened(r.headline()) }
+                    } else {
+                        Reopen.call(ctx, r.id, null); reopened(r.headline())
+                    }
+                })) {
                 CallsUi.showRequest.value = r.id
                 onOpenCalls()
             }
@@ -281,13 +316,14 @@ fun SearchScreen(
         "To schedule" to waiting.filter { t -> task(t.note) || task(t.message) || name(t.name) || num(t.number) }
             .sortedByDescending { it.createdAt }
             .map { t ->
-                Hit(t.headline, listOfNotNull(t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() }, "no time yet").joinToString(" · "), false, Icons.Rounded.Schedule) {
+                Hit(t.headline, listOfNotNull(t.title.takeIf { t.number.isNotBlank() || t.name.isNotBlank() }, "no time yet").joinToString(" · "), false, Icons.Rounded.Schedule, rk = "sched:${t.id}") {
                     ToScheduleUi.show.value = t.id
                     onOpenToSchedule()
                 }
             },
         "Texts" to texts.filter { t -> task(t.message) || task(t.code) || name(t.name) || num(t.number) }.map { t ->
-            Hit(t.message, listOf(t.title, if (t.done) "done" else Fmt.dueLabel(t.alarmAt)).joinToString(" · "), t.done, Icons.Rounded.Sms) {
+            Hit(t.message, listOf(t.title, if (t.done) "done" else Fmt.dueLabel(t.alarmAt)).joinToString(" · "), t.done, Icons.Rounded.Sms, rk = "text:${t.id}",
+                reopen = if (!t.done) null else ({ Reopen.text(t.id); reopened(t.message) })) {
                 SmsUi.showRequest.value = t.id
                 onOpenTexts()
             }
@@ -298,7 +334,15 @@ fun SearchScreen(
                 listOfNotNull(MyTaskStore.listName(m.listId), if (m.timed) Fmt.dueLabel(m.dueAt) else "no time yet", m.personTitle.takeIf { m.hasPerson })
                     .joinToString(" · "),
                 m.done,
-                Icons.Rounded.TaskAlt
+                Icons.Rounded.TaskAlt,
+                rk = "task:${m.id}",
+                reopen = if (!m.done) null else ({
+                    if (m.timed && Reopen.needsTime(m.dueAt)) {
+                        reopenAsk = m.title to { ms: Long -> Reopen.myTask(ctx, m.id, ms); reopened(m.title) }
+                    } else {
+                        Reopen.myTask(ctx, m.id, null); reopened(m.title)
+                    }
+                }),
             ) {
                 MyTasksUi.showTask.value = m.id
                 onOpenMyTasks()
@@ -307,14 +351,14 @@ fun SearchScreen(
         "Dossier" to dossier.filter { d ->
             task(d.title) || note(d.note) || records.values.any { it.taskId == d.id && why(it.reason) }
         }.map { d ->
-            Hit(d.title, "${d.frequency} · ${d.timeLabel}", false, Icons.Rounded.Checklist) {
+            Hit(d.title, "${d.frequency} · ${d.timeLabel}", false, Icons.Rounded.Checklist, rk = "dossier:${d.id}") {
                 MyTasksUi.showDossier.value = d.id
                 onOpenMyTasks()
             }
         },
         "People" to Work.people(System.currentTimeMillis(), calls, texts, myTasks, all = true)
             .filter { p -> name(p.name) || num(p.number) }
-            .map { p -> Hit(p.title, Work.line(p, System.currentTimeMillis()), p.pending == 0, Icons.Rounded.Person) { onOpenPerson(p.key) } },
+            .map { p -> Hit(p.title, Work.line(p, System.currentTimeMillis()), p.pending == 0, Icons.Rounded.Person, rk = "person:${p.key}") { onOpenPerson(p.key) } },
         "Archive · done over ${Db.ARCHIVE_DAYS} days ago" to (
             archive.first.filter { r -> task(r.note) || name(r.name) || num(r.number) || r.delays.any { why(it.reason) } }
                 .map { r -> Hit(r.headline(), listOf(r.title, "done ${Fmt.dueLabel(r.doneAt)}").joinToString(" · "), true, Icons.Rounded.Call) {} } +
@@ -353,7 +397,27 @@ fun SearchScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (q.isEmpty()) {
+            if (q.isEmpty() && recent.isNotEmpty()) {
+                // v0.44 RECENT: the last 5 tasks or people opened from search; ✕ takes one off.
+                item(key = "recent") {
+                    Column {
+                        ChipHeading("RECENT", modifier = Modifier.padding(top = 8.dp, start = 4.dp, bottom = 4.dp))
+                        TaskGroup {
+                            recent.forEachIndexed { i, r ->
+                                if (i > 0) HorizontalDivider(Modifier.padding(start = 56.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.weight(1f)) {
+                                        HitRow(Hit(r.title, r.sub, false, SearchRecent.icon(r.key)) { openRecent(r.key) })
+                                    }
+                                    IconButton(onClick = { SearchRecent.remove(ctx, r.key); recent = SearchRecent.load(ctx) }) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Remove")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (q.isEmpty()) {
                 item(key = "hint") {
                     Text(
                         "Type a word, name or number. Search looks in tasks, people, notes, recordings and settings.",
@@ -377,7 +441,7 @@ fun SearchScreen(
                         TaskGroup {
                             (if (all) hits else hits.take(3)).forEachIndexed { i, h ->
                                 if (i > 0) HorizontalDivider(Modifier.padding(start = 56.dp))
-                                HitRow(h)
+                                HitRow(h) { keepRecent(h) }
                             }
                             if (hits.size > 3) {
                                 HorizontalDivider()
@@ -391,6 +455,24 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+    reopenAsk?.let { (title, go) ->
+        SnoozeSheet(
+            heading = "↩ Reopen · new time",
+            about = title,
+            onPick = { ms -> reopenAsk = null; go(ms) },
+            onPickTime = { reopenAsk = null; reopenPick = title to go },
+            onDismiss = { reopenAsk = null },
+            plusRow = true,
+        )
+    }
+    reopenPick?.let { (_, go) ->
+        DateTimePickerFlow(
+            initialMs = System.currentTimeMillis() + 3_600_000L,
+            onPicked = { ms -> reopenPick = null; go(ms) },
+            onDismiss = { reopenPick = null },
+        )
     }
 
     if (showSettings) {
@@ -413,10 +495,10 @@ fun SearchScreen(
 }
 
 @Composable
-private fun HitRow(h: Hit) {
+private fun HitRow(h: Hit, onOpened: () -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = h.open).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable { onOpened(); h.open() }.padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -438,5 +520,42 @@ private fun HitRow(h: Hit) {
                 Text(h.sub, style = MaterialTheme.typography.bodySmall, color = if (h.done) cs.outline else cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        if (h.done && h.reopen != null) {
+            TextButton(onClick = h.reopen) { Text("↩ Reopen", fontWeight = FontWeight.SemiBold) }
+        }
+    }
+}
+
+
+/** v0.44 RECENT on the empty search: the last 5 tasks or people you opened from search, newest first. */
+private object SearchRecent {
+    class Entry(val key: String, val title: String, val sub: String)
+
+    private const val MAX = 5
+    private fun p(c: Context) = c.getSharedPreferences("search_recent", Context.MODE_PRIVATE)
+
+    fun load(c: Context): List<Entry> = runCatching {
+        val a = org.json.JSONArray(p(c).getString("list", "[]") ?: "[]")
+        (0 until a.length()).map { i -> a.getJSONObject(i).let { o -> Entry(o.getString("k"), o.optString("t"), o.optString("s")) } }
+    }.getOrDefault(emptyList())
+
+    private fun save(c: Context, list: List<Entry>) {
+        val a = org.json.JSONArray()
+        list.take(MAX).forEach { e -> a.put(org.json.JSONObject().put("k", e.key).put("t", e.title).put("s", e.sub)) }
+        p(c).edit().putString("list", a.toString()).apply()
+    }
+
+    fun add(c: Context, key: String, title: String, sub: String) =
+        save(c, listOf(Entry(key, title, sub)) + load(c).filter { it.key != key })
+
+    fun remove(c: Context, key: String) = save(c, load(c).filter { it.key != key })
+
+    fun icon(key: String): ImageVector = when (key.substringBefore(':')) {
+        "call" -> Icons.Rounded.Call
+        "text" -> Icons.Rounded.Sms
+        "sched" -> Icons.Rounded.Schedule
+        "dossier" -> Icons.Rounded.Checklist
+        "person" -> Icons.Rounded.Person
+        else -> Icons.Rounded.TaskAlt
     }
 }

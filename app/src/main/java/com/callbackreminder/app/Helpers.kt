@@ -258,6 +258,8 @@ data class CallInfo(
     val prefillNote: String = "",
     /** "Call again": the lengths (seconds) of the earlier calls in this round, comma separated. */
     val earlier: String = "",
+    /** The call log's PHONE_ACCOUNT_ID: which SIM the call went through ("" when unknown). */
+    val accountId: String = "",
 ) {
     /** Every call in this round, oldest first: the earlier ones, then this one. */
     val roundDurations: List<Long>
@@ -272,6 +274,7 @@ object CallLookup {
         CallLog.Calls.TYPE,
         CallLog.Calls.DURATION,
         CallLog.Calls.DATE,
+        CallLog.Calls.PHONE_ACCOUNT_ID,
     )
 
     fun hasPermission(ctx: Context) =
@@ -316,6 +319,7 @@ object CallLookup {
                             type = c.getInt(3),
                             durationSec = duration,
                             endedAt = c.getLong(5) + duration * 1000L,
+                            accountId = c.getString(6) ?: "",
                         )
                     )
                 }

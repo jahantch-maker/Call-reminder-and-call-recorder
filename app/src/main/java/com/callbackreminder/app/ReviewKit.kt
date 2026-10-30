@@ -50,6 +50,8 @@ object ReviewPrefs {
         REPLIED("replied", "✅", "Replied, check it", "They replied Done, or you chose Done, review it"),
         OVERDUE("overdue", "🔴", "Overdue", "Follow-ups and My tasks past their time"),
         SCHEDULE("sched", "🕘", "To schedule", "Follow-ups and My tasks with no time"),
+        /** v0.44: today's Dossier blocks whose time has passed and aren't ticked, after everything else. */
+        DOSSIER("dossier", "📋", "Dossier", "Today's blocks whose time has passed, not ticked yet · last"),
     }
 
     fun groupOf(s: ReviewSection): Group? = when (s) {
@@ -70,6 +72,7 @@ object ReviewPrefs {
     fun inSession(c: Context, g: Group): Boolean {
         val key = "grp_${g.key}"
         if (p(c).contains(key)) return p(c).getBoolean(key, true)
+        if (g == Group.DOSSIER) return true
         // Before v0.33 each section had its own Session switch: keep what was chosen for the first of the group.
         val first = ORDER.first { groupOf(it) == g }
         return p(c).getBoolean("sec_session_${first.key}", true)

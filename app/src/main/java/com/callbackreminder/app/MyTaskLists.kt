@@ -292,7 +292,8 @@ internal fun MyTaskCard(
                 buttonLabel = if (t.timed) "New time" else "Set time",
                 // The same order on every card: Timeline · Edit · (Remove time · Move to … · Private) · Delete.
                 links = buildList {
-                    add(RowLink("Timeline", onClick = { history = true }))
+                    // ✓ Done, ➜ next part with you: the task's own team Timeline, with every part before.
+                    add(RowLink("Timeline", onClick = { TeamNext.teamOfMine(ctx, t.id)?.let { TeamUi.openTimeline(it) } ?: run { history = true } }))
                     add(RowLink("Edit", onClick = onEdit))
                     if (!t.done && t.timed && onRemoveTime != null) add(RowLink("Remove time", onClick = onRemoveTime))
                     if (!t.done && onMoveToFollowUps != null) add(RowLink("Move to Follow-ups", onClick = onMoveToFollowUps))

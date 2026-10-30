@@ -165,6 +165,17 @@ object TeamSync {
                 val before = last[t.id]
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
+                // ✓ Done, ➜ next part: your part was received and the task went on to someone else. Told once;
+                // your own copy stays done in your history.
+                if (t.partFrom == me && t.toUid != me && t.fromUid != me) {
+                    val told = TeamLinks.set(c, "partTold")
+                    if (t.id !in told) {
+                        told += t.id
+                        TeamLinks.putSet(c, "partTold", told)
+                        notify(c, "part:${t.id}", "✓ ${t.fromFirst}: Received, thanks", t.title, mine = null, taskId = t.id,
+                            kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+                    }
+                }
                 // A new message from someone else on the task: ❓ and ⚠ on their own, the rest in the task's one notification.
                 if (before != null && t.lastMsgAt > msgOf(before) && t.lastMsgBy != me && t.lastMsgBy.isNotEmpty()) {
                     val who = TeamRepo.member(t.lastMsgBy)?.first ?: if (t.lastMsgBy == t.fromUid) t.fromFirst else t.toFirst
@@ -471,7 +482,7 @@ object TeamSync {
     }
 
     /** Where your follow-up waits until he picks his deadline: your Latest, else the start of the next working day. */
-    private fun waitAt(c: Context, latest: Long): Long =
+    internal fun waitAt(c: Context, latest: Long): Long =
         latest.takeIf { it > System.currentTimeMillis() } ?: ReviewData.nextWorkStart(c)
 
     /**

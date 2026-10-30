@@ -238,9 +238,12 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
         val key = showAsked ?: return@LaunchedEffect
         // The task's own row, not the people list.
         if (byPerson) { byPerson = false; ReviewSession.setByPerson(ctx, false) }
+        // The tab it was last left on may not hold it (Overdue when it sits in Replied): then All.
+        val home = data.entries.firstOrNull { (_, items) -> items.any { it.key == key } }?.key
+        if (home != null && home !in ReviewData.tabSections(tab)) tab = 0
         outlined = key
         kotlinx.coroutines.delay(150L)
-        listState.revealKey(*shown.map { "${it.key}-$key" }.toTypedArray())
+        listState.revealKey(*ReviewSection.values().map { "${it.key}-$key" }.toTypedArray())
         kotlinx.coroutines.delay(3_000L)
         if (outlined == key) outlined = null
         ReviewUi.show.value = null
@@ -455,15 +458,17 @@ private fun ReviewRow(
     val banner = remember(tt, teamV) {
         tt?.let { t ->
             TeamUi.banner(ctx, t, TeamRepo.uid)
-                // Needs you › Team: the grey early warning, with Call ›.
+                // Needs you › Team: the grey early warning. Calls only come from 📞.
                 ?: TeamUi.earlyWarning(ctx, t)?.takeIf { item.section == ReviewSection.TEAM }
-                    ?.let { CardBanner(it, ChipTone.MUTED, { ReviewActions.call(ctx, item) }, "Call") }
+                    ?.let { CardBanner(it, ChipTone.MUTED) }
         }
     }
     // His Done waits for your check: ✓ Received, thanks · ↩ Not done yet, the same on every card.
     val check = tt?.takeIf { giver && it.doneCheck }
     var notYet by remember(check?.id) { mutableStateOf(false) }
     if (notYet && check != null) TeamNotDoneSheet(check, onSent = onNotDoneSent) { notYet = false }
+    var nextPart by remember(check?.id) { mutableStateOf(false) }
+    if (nextPart && check != null) TeamNextPartSheet(check) { nextPart = false }
     TaskCard(
         title = item.title,
         done = false,
@@ -497,6 +502,7 @@ private fun ReviewRow(
             onNewTime = if (needsPerson) null else onNewTime,
             buttonLabel = if (sched) "Set time" else "New time",
             onNotDone = check?.let { { notYet = true } },
+            onNextPart = check?.let { { nextPart = true } },
         )
     }
 }
@@ -610,6 +616,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     var editFor by remember { mutableStateOf<ReviewItem?>(null) }
     var historyFor by remember { mutableStateOf<ReviewItem?>(null) }
     var notDoneFor by remember { mutableStateOf<Pair<ReviewItem, TeamTask>?>(null) }
+    var nextPartFor by remember { mutableStateOf<Pair<ReviewItem, TeamTask>?>(null) }
     // "Why not done?" typed on the card, saved in its history with the new time.
     var reason by remember(item?.key) { mutableStateOf("") }
     // Off to WhatsApp, or a call that isn't a follow-up call: leaving the app then doesn't pause the session.
@@ -806,6 +813,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onEdit = { editFor = item },
                         onHistory = { historyFor = item },
                         onNotDone = { t -> notDoneFor = item to t },
+                        onNextPart = { t -> nextPartFor = item to t },
                         onSkip = {
                             if (item.isReplied) {
                                 handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
@@ -850,6 +858,14 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
             scope.launch { snack.showSnackbar("↩ Not done yet · ${it0.title}") }
             tick++
         }) { notDoneFor = null }
+    }
+    // ✓ Done, ➜ next part: his part is received, the task goes on, and the session moves on.
+    nextPartFor?.let { (it0, t) ->
+        TeamNextPartSheet(t, onSent = {
+            ReviewSession.markDone(ctx)
+            scope.launch { snack.showSnackbar("➜ Next part · ${it0.title}") }
+            tick++
+        }) { nextPartFor = null }
     }
 }
 
@@ -1009,6 +1025,7 @@ private fun SessionCard(
     onHistory: (() -> Unit)?,
     onSkip: () -> Unit,
     onNotDone: (TeamTask) -> Unit = {},
+    onNextPart: (TeamTask) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1053,6 +1070,7 @@ private fun SessionCard(
                 newTimeLabel = if (item.at > 0L) "New time" else "Set time",
                 onAddPerson = if (needsPerson) ({ addingPerson = !addingPerson }) else null,
                 onNotDone = check?.let { t -> { onNotDone(t) } },
+                onNextPart = check?.let { t -> { onNextPart(t) } },
             )
             Spacer(Modifier.height(6.dp))
             if (awaiting) {
@@ -1372,6 +1390,10 @@ private fun SessionSummary(
                         modifier = Modifier.padding(16.dp)
                     )
                 }
+            }
+            // v0.44 📋 Dossier last: its blocks whose time has passed, ticked here like on the Dossier page.
+            if (s.mode in ReviewSession.WHOLE_DAY && ReviewPrefs.inSession(ctx, ReviewPrefs.Group.DOSSIER) && open.isEmpty()) {
+                SessionDossierBlocks()
             }
             if (closing.isNotEmpty() && open.isEmpty()) {
                 CloseDayCard(closing, s.done, newTimeNow, skippedNow, DayClose.plannedTomorrow(ctx), offerUndo)

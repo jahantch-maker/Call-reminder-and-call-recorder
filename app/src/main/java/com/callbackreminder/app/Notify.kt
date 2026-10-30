@@ -73,7 +73,7 @@ enum class NotifKind(val emoji: String, val label: String, val color: Int, val u
     MY_TASKS("☑", "My tasks", 0xFF4C6FFF.toInt()),
     DOSSIER("📋", "Dossier", 0xFF9B5DE5.toInt()),
     FOLLOW_UPS("📞", "Follow-ups", 0xFFFF7A1A.toInt()),
-    MESSAGES("💬", "Messages", 0xFF1FB5A3.toInt());
+    MESSAGES("💬", "Team messages", 0xFF1FB5A3.toInt());
 
     val group get() = "kind_$name"
     val summaryId get() = 38_000_000 + ordinal
@@ -102,6 +102,21 @@ object Notify {
     fun setLevel(ctx: Context, t: NotifType, l: NotifLevel) {
         if (t.locked != null) return
         p(ctx).edit().putString(t.name, l.name).apply()
+    }
+
+    /** v0.44: each category ([NotifKind]) also has its own Off · Silent · Sound, on top of the kind's own level. */
+    fun kindLevel(ctx: Context, k: NotifKind): NotifLevel =
+        p(ctx).getString("kind_${k.name}", null)?.let { s -> NotifLevel.values().firstOrNull { it.name == s } } ?: NotifLevel.SOUND
+
+    fun setKindLevel(ctx: Context, k: NotifKind, l: NotifLevel) {
+        p(ctx).edit().putString("kind_${k.name}", l.name).apply()
+    }
+
+    /** The quieter of the kind's level and its category's (a locked kind is never silenced by its category). */
+    private fun effective(ctx: Context, t: NotifType, kind: NotifKind?): NotifLevel {
+        val own = level(ctx, t)
+        if (kind == null || t.locked != null) return own
+        return minOf(own, kindLevel(ctx, kind))
     }
 
     fun on(ctx: Context, t: NotifType) = level(ctx, t) != NotifLevel.OFF
@@ -134,7 +149,7 @@ object Notify {
     @SuppressLint("MissingPermission")
     fun post(ctx: Context, t: NotifType, id: Int, b: NotificationCompat.Builder, kind: NotifKind? = NotifKind.of(t)) {
         if (!Notifier.canNotify(ctx)) return
-        when (level(ctx, t)) {
+        when (effective(ctx, t, kind)) {
             NotifLevel.OFF -> return
             NotifLevel.SILENT -> {
                 createChannel(ctx)
@@ -149,9 +164,11 @@ object Notify {
             NotificationManagerCompat.from(ctx).notify(id, b.build())
             return
         }
+        // "Callback Reminder · My tasks": Android always shows the app name, the category sits right after it.
+        b.setSubText(kind.label)
         b.setColor(kind.color).setGroup(kind.group).setSortKey(if (kind.urgent) "0" else "1")
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
-        if (kind.urgent) b.setPriority(NotificationCompat.PRIORITY_MAX)
+        if (kind.urgent && effective(ctx, t, kind) == NotifLevel.SOUND) b.setPriority(NotificationCompat.PRIORITY_MAX)
         val n = b.build()
         n.extras.getCharSequence(NotificationCompat.EXTRA_TITLE)?.toString()?.let { title ->
             // "☑ Call bank manager": a title that starts with its own emoji (🔴, 📅…) keeps it.
@@ -175,7 +192,7 @@ object Notify {
         val b = NotificationCompat.Builder(ctx, channel ?: CH_QUIET)
             .setSmallIcon(R.drawable.ic_stat_task)
             .setColor(kind.color)
-            .setContentTitle("${kind.emoji} ${kind.label} · $shown")
+            .setContentTitle("${kind.emoji} ${kind.label} · $shown new")
             .setSubText(kind.label)
             .setGroup(kind.group)
             .setGroupSummary(true)

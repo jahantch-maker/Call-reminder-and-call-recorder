@@ -126,11 +126,13 @@ internal class FuController(
     fun moveBack(e: FuEntry) {
         val undo = undoFor(e)
         when {
-            e.call != null -> ReminderStore.reopen(e.call.id)
-            e.text != null -> SmsStore.reopen(e.text.id)
+            e.call != null -> Reopen.call(ctx, e.call.id, null)
+            e.text != null -> Reopen.text(e.text.id)
         }
         close(e)
-        scope.offerUndo(snack, "Moved back · ${e.title}", undo)
+        scope.offerUndo(snack, "Reopened · ${e.title}", undo)
+        // Its time has passed: ask for a new one first, so it doesn't come back overdue.
+        if (e.call != null && Reopen.needsTime(e.call.dueAt)) newTimeFor = e
     }
 
     fun removeTime(e: FuEntry) {

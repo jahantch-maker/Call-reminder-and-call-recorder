@@ -311,7 +311,8 @@ class CallEndReceiver : BroadcastReceiver() {
             when {
                 again != null -> again
                 task != null -> FollowUp.attach(task, entries, queue)
-                else -> queue
+                // A SIM with its popup switched off: only numbers with an open task still ask.
+                else -> queue.filter { SimPopup.allowed(ctx, it) }
             }
         )
     }
