@@ -166,8 +166,8 @@ internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? =
     val orange = chipColors(ChipTone.ORANGE)
     // The same chip as every other: red late, orange no time, outlined for the person and a plain time.
     val (bg, fg, border) = when (tone) {
-        CHIP_RED -> Triple(red.first, red.second, null)
-        CHIP_ORANGE -> Triple(orange.first, orange.second, null)
+        CHIP_RED -> Triple(red.first, red.second, BorderStroke(1.dp, red.first))
+        CHIP_ORANGE -> Triple(orange.first, orange.second, BorderStroke(1.dp, orange.first))
         else -> Triple(Color.Transparent, cs.onSurface, BorderStroke(1.dp, cs.outlineVariant))
     }
     Surface(
@@ -180,7 +180,7 @@ internal fun TaskChip(text: String, tone: Int, icon: (@Composable () -> Unit)? =
         Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             icon?.invoke()
             // On a narrow screen a long time goes on two lines ("Yesterday,\n7:22 PM") rather than being cut.
-            FitText(text, 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 15.sp)
+            FitText(text, 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = CHIP_LINE)
         }
     }
 }

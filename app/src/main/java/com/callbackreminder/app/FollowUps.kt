@@ -302,6 +302,7 @@ object FollowUps {
         text: TextPlan?,
         starred: Boolean,
         oldDue: Long,
+        why: String = "Time removed, waiting in To schedule",
     ): ToScheduleItem {
         val calls = ReminderStore.items.value.filter { it.linkId == linkId }
         val texts = SmsStore.items.value.filter { it.linkId == linkId }
@@ -309,7 +310,7 @@ object FollowUps {
         val pendingText = texts.firstOrNull { !it.done }
         val now = System.currentTimeMillis()
         val events = (pendingCall?.events ?: calls.maxByOrNull { it.id }?.events).orEmpty() +
-            CallEvent(now, "Time removed, waiting in To schedule")
+            CallEvent(now, why)
         val log = (pendingText?.log ?: texts.maxByOrNull { it.id }?.log).orEmpty() +
             SmsLogEntry(now, SmsLogEntry.Status.MOVED, "Time removed: texts paused")
         calls.filter { !it.done }.forEach { ReminderStore.delete(it.id) }
@@ -344,7 +345,7 @@ object FollowUps {
     }
 
     /** Remove time on a follow-up row: like Edit › Remove time, keeping its call and texts as they are. */
-    fun removeTime(c: Context, call: Reminder?, text: SmsReminder?): ToScheduleItem {
+    fun removeTime(c: Context, call: Reminder?, text: SmsReminder?, why: String? = null): ToScheduleItem {
         val link = ensureLink(c, call, text)
         val pendingCall = call?.takeIf { !it.done }
         val pendingText = text?.takeIf { !it.done }
@@ -358,6 +359,7 @@ object FollowUps {
             text = pendingText?.let { planOf(it) },
             starred = call?.starred ?: false,
             oldDue = pendingCall?.dueAt ?: text?.taskDue?.takeIf { it > 0L } ?: pendingText?.dueAt ?: 0L,
+            why = why ?: "Time removed, waiting in To schedule",
         )
     }
 

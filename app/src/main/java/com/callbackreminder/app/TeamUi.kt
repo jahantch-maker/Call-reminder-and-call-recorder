@@ -1019,8 +1019,10 @@ object TeamNext {
     fun toMember(c: Context, t: TeamTask, to: TeamMember, left: String) {
         TeamRepo.nextPart(t, to, left)
         val link = TeamLinks.map(c, "given")[t.id]?.toLongOrNull() ?: return
-        val at = if (t.hisDate || t.due == 0L) TeamSync.waitAt(c, t.deadline) else t.due
-        ReminderStore.items.value.filter { it.linkId == link && it.done && it.review }.forEach { ReminderStore.reschedule(it.id, at, "Next part with ${to.first}:") }
+        val checks = ReminderStore.items.value.filter { it.linkId == link && it.done && it.review }
+        // His date: your call-back waits in To schedule until he picks one; a fixed deadline carries over.
+        if (t.hisDate || t.due == 0L) checks.forEach { TeamSync.waitForHim(c, it, to.first, "Next part with ${to.first} · ") }
+        else checks.forEach { ReminderStore.reschedule(it.id, t.due, "Next part with ${to.first}:") }
     }
 
     /** Next part with someone outside the app: his part is received; the follow-up is made in the window that opens. */
