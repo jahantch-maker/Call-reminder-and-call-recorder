@@ -15,12 +15,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,11 +37,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -148,11 +154,20 @@ fun TaskTimelineWindow(
     }
     Dialog(
         onDismissRequest = { TeamMedia.stopPlaying(); onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        // The window is fitted between the phone's bars by the system itself, so the bottom bar can never sit under the buttons.
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // The area behind the bars is the app's own colour, with no dimming, like the team Timeline screen.
+        val bg = cs.background.toArgb()
+        (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { w ->
+            SideEffect {
+                w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bg))
+                w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            }
+        }
         Surface(color = cs.background, modifier = Modifier.fillMaxSize()) {
-            // safeBottomPadding keeps the bar above the phone's buttons and the keyboard inside this window too.
-            Column(Modifier.fillMaxSize().statusBarsPadding().safeBottomPadding(0.dp)) {
+            // Zero when the system already fitted the window between the bars; the real bar sizes when it did not.
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val picked = notes.filter { it.at in selected }
                 if (picked.isNotEmpty()) TimelineSelectionBar(
                     count = picked.size,
@@ -215,7 +230,7 @@ fun TaskTimelineWindow(
                             when (x) {
                                 is DayChip -> DayChipView(x.label)
                                 is TimelineLine -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(TimelineDates.unfreeze(x.text, x.at) + " · " + Fmt.timeOnly(x.at), fontSize = 12.5.sp,
+                                    Text(TimelineDates.unfreeze(TeamRepo.withoutWrongOutside(x.text), x.at) + " · " + Fmt.timeOnly(x.at), fontSize = 12.5.sp,
                                         color = if (x.bad) cs.error else cs.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                     if (x.note.isNotBlank()) Text("“${x.note}”", fontStyle = FontStyle.Italic, fontSize = 13.sp, color = cs.onSurfaceVariant)
                                 }
@@ -227,26 +242,37 @@ fun TaskTimelineWindow(
                     }
                     FloatingDayChip(list, rows, Modifier.align(Alignment.TopCenter))
                 }
-                Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
-                    fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 androidx.compose.material3.SnackbarHost(snack, Modifier.padding(horizontal = 12.dp))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(draft, { draft = it }, placeholder = { Text("Add a note…") }, modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(20.dp), maxLines = 4, trailingIcon = voiceMic(draft) { draft = it })
-                    if (draft.isNotBlank()) IconButton(onClick = {
-                        val n = TaskNote(System.currentTimeMillis(), TaskNotes.TEXT, draft.trim())
-                        TaskNotes.add(ctx, noteKey, n)
-                        draft = ""
-                        added(n)
-                    }) { Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Add note", tint = cs.primary) }
-                    else {
-                        IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.primary) }
-                        TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
+                // Same composer as the team Timeline: what you can do on top (the photo), then the message box and the mic / send.
+                Column(Modifier.fillMaxWidth().background(cs.surface)) {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
+                            fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.onSurfaceVariant) }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = draft, onValueChange = { draft = it }, placeholder = { Text("Add a note…") },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(24.dp), maxLines = 4,
+                            trailingIcon = voiceMic(draft) { draft = it },
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                focusedContainerColor = cs.surfaceVariant, unfocusedContainerColor = cs.surfaceVariant,
+                            ),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        if (draft.isNotBlank()) IconButton(onClick = {
+                            val n = TaskNote(System.currentTimeMillis(), TaskNotes.TEXT, draft.trim())
+                            TaskNotes.add(ctx, noteKey, n)
+                            draft = ""
+                            added(n)
+                        }, modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF3DD6B5))) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Add note", tint = Color(0xFF053D2E))
+                        } else TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
                             val n = TaskNote(System.currentTimeMillis(), TaskNotes.VOICE, durMs = d, wave = TeamMedia.waveFor(d))
                             TaskNotes.add(ctx, noteKey, n, b)
                             added(n)
-                        }, size = 44.dp)
+                        })
                     }
                 }
             }

@@ -257,8 +257,10 @@ internal fun TeamHoldToRecord(onState: (Boolean) -> Unit, onRecorded: (ByteArray
     // without Do Not Disturb access a ringing call pauses the note instead.
     DisposableEffect(active) {
         var stop: () -> Unit = {}
+        // `active` is read again when the effect is disposed (after it turned false), so what was started is kept here.
+        var silenced = false
         if (active) {
-            val silenced = RingerSilence.begin(ctx)
+            silenced = RingerSilence.begin(ctx)
             if (!silenced && RingerSilence.enabled(ctx)) {
                 stop = RingerSilence.watchRinging(ctx) {
                     if (TeamMedia.recording) {
@@ -271,7 +273,7 @@ internal fun TeamHoldToRecord(onState: (Boolean) -> Unit, onRecorded: (ByteArray
                 }
             }
         }
-        onDispose { stop(); if (active) RingerSilence.end(ctx) }
+        onDispose { stop(); if (silenced) RingerSilence.end(ctx) }
     }
     // While recording: one wave bar every 100 ms, the time, and the 2-minute stop (it then waits on the bar).
     LaunchedEffect(active, pausedRec) {

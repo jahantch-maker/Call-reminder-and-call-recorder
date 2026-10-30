@@ -191,7 +191,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
             // One "First seen by …" line per person (it used to come back on every visit), real dates in old lines.
             val seen = HashSet<String>()
             val lines = t.events.filter { e -> !(e.text.startsWith("Seen by ") || e.text.startsWith("First seen by ")) || seen.add(e.text.removePrefix("First ").replaceFirstChar { c -> c.uppercase() }) }
-                .map { TimelineItem.Line(it.at, TimelineDates.unfreeze(it.text.let { x -> if (x.startsWith("Seen by ")) "First s" + x.substring(1) else x }, it.at)) }
+                .map { TimelineItem.Line(it.at, TimelineDates.unfreeze(TeamRepo.withoutWrongOutside(it.text.let { x -> if (x.startsWith("Seen by ")) "First s" + x.substring(1) else x }), it.at)) }
             withDayChips((lines + msgs.orEmpty().map { TimelineItem.Msg(it) }).sortedBy { it.at }) { it.at }
         }
         val items = rows
