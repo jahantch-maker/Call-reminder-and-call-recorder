@@ -117,6 +117,10 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     var msgs by remember(taskId) { mutableStateOf<List<TeamMsg>?>(null) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var selected by remember(taskId) { mutableStateOf<Set<String>>(emptySet()) }
+    var replyTo by remember(taskId) { mutableStateOf<TeamMsg?>(null) }
+    var infoOf by remember(taskId) { mutableStateOf<TeamMsg?>(null) }
+    var taskFrom by remember(taskId) { mutableStateOf<String?>(null) }
     DisposableEffect(taskId) {
         val reg = taskId?.let { id -> TeamRepo.watchMsgs(id) { msgs = it } }
         onDispose { reg?.remove(); TeamMedia.stopPlaying() }
@@ -132,8 +136,29 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(cs.background)) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // ← a small TIMELINE label; the task itself is the big heading.
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // ← a small TIMELINE label; the task itself is the big heading. A long press selects messages: this bar
+        // then takes the place of the label.
+        val picked = msgs.orEmpty().filter { it.id in selected }
+        if (picked.isNotEmpty()) TimelineSelectionBar(
+            count = picked.size,
+            actions = buildList {
+                val one = picked.singleOrNull()
+                val live = picked.filter { !it.isDeleted }
+                if (one != null && !one.isDeleted && t != null && (me == t.fromUid || me == t.toUid)) add(SelAction("↩", "Reply") { replyTo = one; selected = emptySet() })
+                if (live.any { it.text.isNotBlank() }) add(SelAction("⧉", "Copy") {
+                    copyText(ctx, live.filter { it.text.isNotBlank() }.joinToString("\n") { it.text })
+                    selected = emptySet()
+                })
+                if (one != null && !one.isDeleted) add(SelAction("⇪", "Share") { shareMsg(ctx, one); selected = emptySet() })
+                if (picked.all { Team.canUndo(it, me) }) add(SelAction("↶", "Undo") {
+                    picked.forEach { m -> t?.let { TeamRepo.deleteMsg(it, m) } }
+                    selected = emptySet()
+                })
+                if (one != null && one.fromUid == me && !one.isDeleted) add(SelAction("ⓘ", "Info") { infoOf = one; selected = emptySet() })
+                if (one != null && !one.isDeleted && one.text.isNotBlank()) add(SelAction("＋", "Task") { taskFrom = one.text; selected = emptySet() })
+            },
+            onClose = { selected = emptySet() },
+        ) else Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = cs.onBackground) }
             Text("TIMELINE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant)
         }
@@ -162,26 +187,41 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                 Text("${m.first} · ${TeamUi.lastSeenLabel(m)}", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
             }
         }
-        val items = remember(t.events, msgs) {
-            (t.events.map { TimelineItem.Line(it.at, it.text) } + msgs.orEmpty().map { TimelineItem.Msg(it) }).sortedBy { it.at }
+        val rows = remember(t.events, msgs) {
+            // One "First seen by …" line per person (it used to come back on every visit), real dates in old lines.
+            val seen = HashSet<String>()
+            val lines = t.events.filter { e -> !(e.text.startsWith("Seen by ") || e.text.startsWith("First seen by ")) || seen.add(e.text.removePrefix("First ").replaceFirstChar { c -> c.uppercase() }) }
+                .map { TimelineItem.Line(it.at, TimelineDates.unfreeze(it.text.let { x -> if (x.startsWith("Seen by ")) "First s" + x.substring(1) else x }, it.at)) }
+            withDayChips((lines + msgs.orEmpty().map { TimelineItem.Msg(it) }).sortedBy { it.at }) { it.at }
         }
+        val items = rows
         val photos = remember(msgs) { msgs.orEmpty().filter { it.kind == Team.PHOTO && it.data != null } }
         var viewing by remember { mutableStateOf<Int?>(null) }
         val list = rememberLazyListState()
         LaunchedEffect(items.size) { if (items.isNotEmpty()) list.animateScrollToItem(items.size - 1) }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
             state = list,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            items(items, key = { if (it is TimelineItem.Msg) "m" + it.m.id else "l${it.at}${(it as TimelineItem.Line).text.hashCode()}" }) { item ->
+            items(items, key = {
+                when (it) {
+                    is DayChip -> "d${TimelineDates.day(it.at)}"
+                    is TimelineItem.Msg -> "m" + it.m.id
+                    else -> "l${(it as TimelineItem.Line).at}${it.text.hashCode()}"
+                }
+            }) { item ->
                 when (item) {
+                    is DayChip -> DayChipView(item.label)
                     is TimelineItem.Line -> Text(
                         item.text + " · " + Fmt.timeOnly(item.at), fontSize = 12.5.sp, color = cs.onSurfaceVariant,
                         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                     )
                     is TimelineItem.Msg -> TeamBubble(t, item.m, mine = item.m.fromUid == me,
+                        selected = item.m.id in selected, selecting = selected.isNotEmpty(),
+                        onToggle = { selected = if (item.m.id in selected) selected - item.m.id else selected + item.m.id },
                         onPhoto = { viewing = photos.indexOfFirst { p -> p.id == item.m.id }.coerceAtLeast(0) })
                 }
             }
@@ -191,16 +231,22 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     fontSize = 11.sp, color = cs.outline, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
             }
         }
+        FloatingDayChip(list, items, Modifier.align(Alignment.TopCenter))
+        }
         // 📅 A deadline request waits: the giver approves or keeps the date; he can take it back.
         if (t.asking) TeamExtendRequest(t, me, onAnswered = { msg, before ->
             scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
         })
         val canTalk = me == t.fromUid || me == t.toUid
-        if (canTalk) TeamComposer(t, isDoer = me == t.toUid, onExtended = { msg, before ->
-            scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
-        })
+        if (canTalk) TeamComposer(t, isDoer = me == t.toUid, replyTo = replyTo, onReplyDone = { replyTo = null },
+            onSent = { id -> id?.let { scope.offerUndoFor(snack, "Sent", 5L) { TeamRepo.deleteMsg(t, it) } } },
+            onExtended = { msg, before ->
+                scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
+            })
         else Text("Only ${t.fromFirst} and ${t.toFirst} write here. You can read it.", fontSize = 12.sp, color = cs.onSurfaceVariant,
             modifier = Modifier.padding(16.dp))
+        infoOf?.let { m -> TeamMsgInfo(t, m) { infoOf = null } }
+        taskFrom?.let { txt -> FollowUpDialog(onDismiss = { taskFrom = null }, initialTask = txt) }
         viewing?.let { start ->
             PhotoViewer(photos.mapNotNull { it.data }, start, onDismiss = { viewing = null }) { i -> photos.getOrNull(i)?.let { TeamRepo.markPlayed(t.id, it) } }
         }
@@ -249,11 +295,11 @@ private fun playedByAll(t: TeamTask, m: TeamMsg): Boolean = recipients(t, m).all
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Unit) {
+private fun TeamBubble(
+    t: TeamTask, m: TeamMsg, mine: Boolean, selected: Boolean, selecting: Boolean, onToggle: () -> Unit, onPhoto: () -> Unit,
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val playing by TeamMedia.playing.collectAsState()
-    var info by remember { mutableStateOf(false) }
     val (bg, label) = when (m.tag) {
         Team.ASK -> AskBg to "❓ ${m.fromFirst} asks"
         Team.STUCK -> StuckBg to "⚠ ${m.fromFirst} is stuck"
@@ -263,17 +309,27 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
     }
     val fg = when (m.tag) { Team.ASK -> AskFg; Team.STUCK -> StuckFg; Team.PROOF -> ProofFg; else -> if (mine) cs.onPrimaryContainer else cs.onSurface }
     val (ticks, blue) = if (mine) tickState(t, m) else 0 to false
-    Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
+    // The whole row answers a long press (and, once something is selected, a tap): not only the bubble.
+    Box(
+        Modifier.fillMaxWidth()
+            .background(if (selected) cs.primary.copy(alpha = 0.18f) else Color.Transparent)
+            .combinedClickable(onClick = { if (selecting) onToggle() }, onLongClick = onToggle),
+        contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
         Surface(
             shape = RoundedCornerShape(16.dp), color = bg,
-            modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp))
-                .combinedClickable(onClick = {}, onLongClick = if (mine) ({ info = true }) else null),
+            modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 label?.let {
                     Text(it, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = when (m.tag) {
                         Team.ASK, Team.STUCK, Team.PROOF -> fg; else -> cs.primary
                     })
+                }
+                if (m.isDeleted) {
+                    Text("🚫 This message was deleted", fontSize = 14.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = fg.copy(alpha = 0.7f))
+                    Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.End))
+                    return@Column
                 }
                 when {
                     m.kind == Team.VOICE && m.data != null -> VoicePlayer(
@@ -293,12 +349,23 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                         val bmp = remember(m.id) { TeamMedia.bitmap(m.data)?.asImageBitmap() }
                         if (bmp != null) Image(
                             bmp, contentDescription = "Photo", contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPhoto)
+                            modifier = Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = if (selecting) onToggle else onPhoto)
                         )
                     }
                     m.kind != Team.TEXT -> Text("(removed after ${Team.MEDIA_DAYS} days)", fontSize = 12.sp, color = fg.copy(alpha = 0.7f))
                 }
-                if (m.text.isNotBlank()) Text(m.text, color = fg, fontSize = 15.sp)
+                if (m.text.isNotBlank()) {
+                    // "↩ Name: quoted text" on the first line is a reply: shown as a small quote above the message.
+                    val quoted = m.text.startsWith("↩ ") && m.text.contains('\n')
+                    if (quoted) {
+                        Text(
+                            m.text.substringBefore('\n').removePrefix("↩ "), fontSize = 12.sp, color = fg.copy(alpha = 0.75f), maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(fg.copy(alpha = 0.10f)).padding(6.dp),
+                        )
+                    }
+                    Text(if (quoted) m.text.substringAfter('\n') else m.text, color = fg, fontSize = 15.sp)
+                }
                 if (!(m.kind == Team.VOICE && m.data != null)) Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
                     if (mine) {
@@ -308,10 +375,17 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                 }
             }
         }
+        // Once something is selected every tap on the row picks or drops it, whatever is under the finger.
+        if (selecting) Box(Modifier.matchParentSize().clickable(onClick = onToggle))
     }
-    if (info) {
+}
+
+/** WhatsApp's Message info: when it was sent and, per person, delivered / seen / played. */
+@Composable
+private fun TeamMsgInfo(t: TeamTask, m: TeamMsg, onDismiss: () -> Unit) {
+    run {
         AlertDialog(
-            onDismissRequest = { info = false },
+            onDismissRequest = onDismiss,
             title = { Text("Message info", fontSize = 17.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -335,7 +409,7 @@ private fun TeamBubble(t: TeamTask, m: TeamMsg, mine: Boolean, onPhoto: () -> Un
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { info = false }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { onDismiss() }) { Text("OK") } },
         )
     }
 }
@@ -378,7 +452,10 @@ private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, Tea
  * the giver). Bottom: type and ➤, or hold 🎤 for a voice note (up to 2 min). Tap ❓ or ⚠, then type or hold 🎤.
  */
 @Composable
-private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, TeamTask) -> Unit) {
+private fun TeamComposer(
+    t: TeamTask, isDoer: Boolean, replyTo: TeamMsg?, onReplyDone: () -> Unit, onSent: (String?) -> Unit,
+    onExtended: (String, TeamTask) -> Unit,
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var text by remember(t.id) { mutableStateOf("") }
@@ -390,13 +467,28 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, Team
     val pickPhoto = rememberTeamPhotoPicker { photo = it }
     val other = if (isDoer) t.fromFirst else t.toFirst
 
+    // A reply starts with its quote ("↩ Name: text"), which the bubble shows as a small quote above the message.
+    fun quote(): String = replyTo?.let { r ->
+        val said = when { r.text.isNotBlank() -> r.text.substringAfterLast('\n'); r.kind == Team.VOICE -> "🎤 Voice note"; else -> "📷 Photo" }
+        "↩ ${r.fromFirst}: ${said.take(80)}\n"
+    }.orEmpty()
+
     fun sendText() {
         if (text.isBlank()) return
-        if (TeamRepo.send(t, Team.TEXT, text, tag)) { text = ""; tag = "" }
+        if (TeamRepo.send(t, Team.TEXT, quote() + text, tag)) { text = ""; tag = ""; onReplyDone(); onSent(TeamRepo.lastSentId) }
         else Toast.makeText(ctx, "Couldn't send: check Settings › Team", Toast.LENGTH_SHORT).show()
     }
 
     Column(Modifier.fillMaxWidth().background(cs.surface)) {
+        replyTo?.let { r ->
+            Row(Modifier.fillMaxWidth().background(cs.surfaceVariant).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "↩ Replying to ${r.fromFirst}: " + r.text.ifBlank { if (r.kind == Team.VOICE) "🎤 Voice note" else "📷 Photo" }.substringAfterLast('\n'),
+                    fontSize = 13.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onReplyDone, modifier = Modifier.size(28.dp)) { Icon(Icons.Rounded.Close, contentDescription = "Cancel reply", modifier = Modifier.size(16.dp)) }
+            }
+        }
         if (tag.isNotEmpty() || recording) {
             Row(
                 Modifier.fillMaxWidth().background(if (tag == Team.STUCK) StuckBg else if (tag == Team.ASK) AskBg else cs.surfaceVariant)
@@ -451,7 +543,7 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, Team
                 TeamHoldToRecord(
                     onState = { recording = it },
                     onRecorded = { bytes, dur ->
-                        TeamRepo.send(t, Team.VOICE, "", tag, bytes, dur)
+                        if (TeamRepo.send(t, Team.VOICE, "", tag, bytes, dur)) onSent(TeamRepo.lastSentId)
                         tag = ""
                     },
                 )
@@ -460,7 +552,7 @@ private fun TeamComposer(t: TeamTask, isDoer: Boolean, onExtended: (String, Team
     }
     photo?.let { bytes ->
         TeamPhotoCaptionDialog(bytes, title = "Send a photo", button = "Send", onDismiss = { photo = null }) { caption ->
-            TeamRepo.send(t, Team.PHOTO, caption, tag, bytes)
+            if (TeamRepo.send(t, Team.PHOTO, caption, tag, bytes)) onSent(TeamRepo.lastSentId)
             tag = ""
             photo = null
         }

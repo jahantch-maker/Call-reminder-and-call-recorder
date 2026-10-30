@@ -689,7 +689,7 @@ fun FollowUpDialog(
             }
             item?.let { ToScheduleStore.remove(it.id) }
             fromMyTask?.let {
-                TeamSync.onMovedToFollowUps(ctx, it.id, link, teamMember.name)
+                TeamSync.onMovedToFollowUps(ctx, it.id, link, teamMember.name, inTeam = true)
                 MyTaskStore.delete(it.id)
             }
             Toast.makeText(ctx, "Sent to ${teamMember.first}'s app", Toast.LENGTH_SHORT).show()

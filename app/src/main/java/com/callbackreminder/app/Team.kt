@@ -157,6 +157,8 @@ data class TeamTask(
     // Your contact names win: the stored names are only for people not in the team list.
     val toFirst: String get() = TeamRepo.member(toUid)?.first ?: Names.first(toName) ?: toName
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
+    /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
+    val isDeleted: Boolean get() = text == Team.DELETED
 }
 
 object Team {
@@ -197,6 +199,14 @@ object Team {
 
     /** Photos and voice notes are kept this long after a task closes; the text stays. */
     const val MEDIA_DAYS = 90L
+
+    /** What a message's text becomes when its sender undoes it ("🚫 This message was deleted"). */
+    const val DELETED = "\u0001deleted"
+    /** Your own message can be undone for one hour. */
+    const val UNDO_MS = 3_600_000L
+
+    fun canUndo(m: TeamMsg, me: String?): Boolean =
+        me != null && m.fromUid == me && !m.isDeleted && !m.pending && System.currentTimeMillis() - m.at < UNDO_MS
 }
 
 /** One message on a task's Timeline: typed, a voice note or a photo; [tag] marks ❓ Ask, ⚠ Stuck, proof or the brief. */
@@ -886,6 +896,8 @@ object TeamRepo {
         return x
     }
 
+    private val seenWritten = mutableMapOf<String, Long>()
+
     fun markSeen(t: TeamTask) {
         if (t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)) return
         val now = System.currentTimeMillis()
@@ -893,7 +905,11 @@ object TeamRepo {
         val f = mutableMapOf<String, Any>("seenAt" to now)
         if (t.status == Team.SENT) f["status"] = Team.SEEN
         if (t.deliveredAt == 0L) f["deliveredAt"] = now
-        update(t, f, "Seen by ${t.toFirst}")
+        // Two opens before the first write comes back must not write it twice.
+        val last = seenWritten[t.id] ?: 0L
+        if (now - last < 60_000L) return
+        seenWritten[t.id] = now
+        update(t, f, "First seen by ${t.toFirst}")
     }
 
     /** His phone has the task (two grey ticks on the giver's card). Quiet: no Timeline line. */
@@ -997,9 +1013,9 @@ object TeamRepo {
     const val KEEP = -1L
 
     /** He moved it to his Follow-ups for someone outside the team: the same task, now with his call to them. */
-    fun passedDown(t: TeamTask, to: String, callAt: Long = 0L) {
+    fun passedDown(t: TeamTask, to: String, callAt: Long = 0L, inTeam: Boolean = false) {
         update(t, mapOf("passedTo" to to),
-            "↪ ${t.toFirst} passed it to $to (outside team)" + if (callAt > 0L) " · his call ${TeamUi.shortWhen(callAt)}" else "")
+            "↪ ${t.toFirst} passed it to $to" + (if (inTeam) "" else " (outside team)") + if (callAt > 0L) " · his call ${TeamUi.shortWhen(callAt)}" else "")
     }
 
     /** A line in the task's history only (e.g. "text sent"). */
@@ -1078,6 +1094,20 @@ object TeamRepo {
      * Sends a message on [t]'s Timeline (it shows at once and goes up when data is on). [tag] ❓ Ask pauses his
      * no-date timer until the giver answers; ⚠ Stuck shows red. Any message from the giver answers both.
      */
+    /** The id of the message [send] wrote last (for its 5-second Undo). */
+    var lastSentId: String? = null
+        private set
+
+    /**
+     * Takes one of your messages back: its text and media go, a "deleted" mark stays so the Timeline stays honest.
+     * Only the text and data fields change, which the Firestore rules already allow, so nothing new to publish.
+     */
+    fun deleteMsg(t: TeamTask, m: TeamMsg) {
+        if (teamId == null || !Team.canUndo(m, uid)) return
+        msgs(t.id).document(m.id).update(mapOf("text" to Team.DELETED, "data" to FieldValue.delete()))
+            .addOnFailureListener { logFail(it, "Undo message") }
+    }
+
     fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L): Boolean {
         val u = auth().currentUser ?: return false
         val me = _me.value ?: return false
@@ -1089,7 +1119,9 @@ object TeamRepo {
         )
         if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
         if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
-        msgs(t.id).document().set(doc)
+        val ref = msgs(t.id).document()
+        lastSentId = ref.id
+        ref.set(doc)
         val preview = when (kind) {
             Team.VOICE -> "🎤 Voice note"
             Team.PHOTO -> "📷 Photo" + if (text.isNotBlank()) ": ${text.trim()}" else ""

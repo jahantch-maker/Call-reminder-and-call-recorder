@@ -396,7 +396,7 @@ object MyTaskStore {
             position = minOf(top, now),
             remindBefore = remindBefore.distinct().sorted(),
             durationMin = cleanLength(durationMin),
-            events = listOf(TaskEvent(now, if (dueAt > 0L) "Created · due ${Fmt.dueLabel(dueAt)}" else "Created · no time")),
+            events = listOf(TaskEvent(now, if (dueAt > 0L) "Created · due ${Fmt.fullDate(dueAt)}" else "Created · no time")),
         )
         save(_items.value + t)
         if (t.hasPerson) RecentPeople.record(appCtx, t.name, t.number)
@@ -469,8 +469,8 @@ object MyTaskStore {
         val now = System.currentTimeMillis()
         return when {
             new <= 0L -> TaskEvent(now, "Time removed (To schedule)")
-            old <= 0L -> TaskEvent(now, "Time set · ${Fmt.dueLabel(new)}")
-            else -> TaskEvent(now, "Time moved · ${Fmt.dueLabel(old)} → ${Fmt.dueLabel(new)}")
+            old <= 0L -> TaskEvent(now, "Time set · ${Fmt.fullDate(new)}")
+            else -> TaskEvent(now, "Time moved · ${Fmt.fullDate(old)} → ${Fmt.fullDate(new)}")
         }
     }
 
