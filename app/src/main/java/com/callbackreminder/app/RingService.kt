@@ -55,6 +55,12 @@ object RingController {
     @Synchronized
     fun start(ctx: Context, r: Reminder, timeoutMs: Long = 0L) {
         val app = ctx.applicationContext
+        // The ringtone is part of the popup: without "show over other apps" there is no screen to stop it from, so the
+        // reminder is a normal notification (or nothing, when notifications are off too).
+        if (!Settings.canDrawOverlays(app)) {
+            if (Notifier.canNotify(app)) Notifier.showReminder(app, r)
+            return
+        }
         if (r.id !in _active.value) _active.value = _active.value + r.id
         val token = Any()
         ringTokens[r.id] = token

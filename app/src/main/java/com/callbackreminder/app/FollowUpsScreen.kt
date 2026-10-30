@@ -693,7 +693,8 @@ internal fun FollowUpCard(
 
     val details = buildList {
         val parts = mutableListOf<String>()
-        if (call != null) parts += "📞 Call " + Fmt.dueLabel(if (call.done) call.doneAt else call.dueAt) + if (call.done) " (done)" else ""
+        // A waiting call's time is already the 📞 chip; the line stays only for a finished call (when it was done).
+        if (call != null && call.done) parts += "📞 Call " + Fmt.dueLabel(call.doneAt) + " (done)"
         if (text != null) {
             val times = when {
                 !e.textActive -> if (text.done) "finished" else "all sent"

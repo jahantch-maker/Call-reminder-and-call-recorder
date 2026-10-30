@@ -1037,6 +1037,20 @@ object TeamNext {
 
     /** The team task a My task continues (✓ Done, ➜ next part with you), if any. */
     fun teamOfMine(c: Context, myTaskId: Long): String? = TeamLinks.map(c, "nextMine")[myTaskId.toString()]
+
+    /** The follow-up made for someone outside the app keeps the team task's Timeline (Hannan's done and what came before). */
+    fun markFollowUp(c: Context, t: TeamTask, link: Long) {
+        if (link == 0L) return
+        val m = TeamLinks.map(c, "nextFu")
+        m[link.toString()] = t.id
+        TeamLinks.putMap(c, "nextFu", m)
+    }
+
+    fun teamOfFollowUp(c: Context, link: Long, tasks: List<TeamTask>): TeamTask? {
+        if (link == 0L) return null
+        val id = TeamLinks.map(c, "nextFu")[link.toString()] ?: return null
+        return tasks.firstOrNull { it.id == id }
+    }
 }
 
 /**

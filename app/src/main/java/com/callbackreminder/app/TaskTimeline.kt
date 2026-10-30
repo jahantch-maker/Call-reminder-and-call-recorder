@@ -320,7 +320,7 @@ fun FollowUpTimeline(call: Reminder?, text: SmsReminder?, onDismiss: () -> Unit)
     val ctx = LocalContext.current
     val link = call?.linkId?.takeIf { it != 0L } ?: text?.linkId?.takeIf { it != 0L } ?: 0L
     val tasks by TeamRepo.tasks.collectAsState()
-    val team = remember(link, tasks) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, link, tasks) else null }
+    val team = remember(link, tasks) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, link, tasks) ?: TeamNext.teamOfFollowUp(ctx, link, tasks) else null }
     if (team != null) {
         LaunchedEffect(team.id) { TeamUi.openTimeline(team.id); onDismiss() }
         return
@@ -368,7 +368,7 @@ fun MyTaskTimeline(t: MyTask, onDismiss: () -> Unit) {
 fun ScheduledTimeline(s: ToScheduleItem, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val tasks by TeamRepo.tasks.collectAsState()
-    val team = remember(s.linkId, tasks) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, s.linkId, tasks) else null }
+    val team = remember(s.linkId, tasks) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, s.linkId, tasks) ?: TeamNext.teamOfFollowUp(ctx, s.linkId, tasks) else null }
     if (team != null) {
         LaunchedEffect(team.id) { TeamUi.openTimeline(team.id); onDismiss() }
         return
