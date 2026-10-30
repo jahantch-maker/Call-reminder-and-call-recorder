@@ -340,6 +340,8 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         visible = true
         Notify.tidy(this)
+        // Opening the app always puts a ringing reminder to rest (it stays as a quiet notification).
+        RingController.silenceAll(this)
     }
 
     override fun onStop() {

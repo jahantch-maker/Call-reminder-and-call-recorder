@@ -722,6 +722,8 @@ fun FollowUpDialog(
             else -> FollowUps.create(ctx, name, number, task, saveDue, callEff, pilot, plan, starred, from = item)
         }
         if (same != null) item?.let { ToScheduleStore.remove(it.id) }
+        // ✓ Done, ➜ next part to someone outside the app: this follow-up keeps the team task's Timeline.
+        if (nextPartOf != null) TeamNext.markFollowUp(ctx, nextPartOf, TeamSync.linkForNew(ctx, number, task))
         fromMyTask?.let {
             // A task from your manager passed on to someone outside the app: the link follows it.
             if (TeamLinks.teamTaskOfMyTask(ctx, it.id) != null) TeamSync.onMovedToFollowUps(ctx, it.id, TeamSync.linkForNew(ctx, number, task), name, inTeam = TeamRepo.memberByNumber(number) != null)
