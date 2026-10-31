@@ -39,15 +39,14 @@
   const stepsFor = (type) => ((D.cfg && D.cfg.steps && D.cfg.steps[type]) || STEPS_DEFAULT[type]).map((x) => x.slice());
 
   // ------------------------------------------------------------------ data model
-  /** The team without the owner: attendance, actions and the team totals. */
-  function team() {
-    return D.members.filter((m) => m.status === "active" && m.uid !== (D.team && D.team.ownerUid)).sort((a, b) => first(a.name).localeCompare(first(b.name)));
-  }
-  /** People and Person pages: the owner's own tasks first, then the team. */
+  /** Everyone in the meeting: the owner (GM) first, then the team A–Z. Used everywhere: People, Person,
+   *  attendance, actions and the team totals. */
   function people() {
-    const me = D.members.find((m) => m.uid === (D.team && D.team.ownerUid));
-    return (me ? [me] : []).concat(team());
+    const ownerUid = D.team && D.team.ownerUid;
+    const me = D.members.find((m) => m.uid === ownerUid && m.status === "active");
+    return (me ? [me] : []).concat(D.members.filter((m) => m.status === "active" && m.uid !== ownerUid).sort((a, b) => first(a.name).localeCompare(first(b.name))));
   }
+  const team = people;
   function member(uid) { return D.members.find((m) => m.uid === uid); }
 
   /** Every task of every person, the same shape: given (team) tasks and own tasks. */
