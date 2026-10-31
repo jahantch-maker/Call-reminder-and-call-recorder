@@ -1,217 +1,24 @@
-/* Team Meeting web app · Rafiq Builders
- * Owner only. Reads the team's tasks (given tasks and each person's own non-Private tasks) from Firebase and runs
- * the daily / weekly meeting: attendance, last actions, people, late reasons, read-back, minutes, close.
- * Read-only for tasks; it only writes meeting actions (as tasks given by the owner), minutes and settings.
+/* Meetings module: the daily / weekly meeting, actions, minutes, the late-reason report and the meeting settings.
+ * Views return HTML; the shell (shell.js) draws them and calls RB.meet.bind(root). Data lives in core.js / calc.js.
  */
 (function () {
   "use strict";
+  const RB = window.RB, D = RB.D, Store = RB.Store, S = RB.S, C = RB.calc, DEMO = RB.DEMO;
+  const { esc, first, fmtDay, fmtWhen, fmtShort, member } = RB;
+  const { OWN_DEFAULT, OUT_DEFAULT, RED_DEFAULT, STEP_NAMES, STEPS_DEFAULT, reasonsCfg, outsideSet, red, stepsFor, people, team, items, isLate, isOverdue, lastReason, isOutside, daysLate, startOfDay, weekStart, range, facts, weeklyPct, reasonCounts } = C;
   const DAY = 86400000, GRACE = 60000;
-  const $app = document.getElementById("app"), $modal = document.getElementById("modal");
-  const DEMO = /[?&]demo\b/.test(location.search);
-
-  // ------------------------------------------------------------------ defaults
-  const OWN_DEFAULT = ["Forgot", "Too much work", "Waiting on staff", "Date was too tight", "Priority changed"];
-  const OUT_DEFAULT = ["Material late", "Payment held", "Client / vendor delay", "Weather"];
-  const RED_DEFAULT = { overdue: 2, late: 3, moved: 5, noDate: 3, avgLate: 3 };
-  const STEP_NAMES = { attendance: "Attendance", lastActions: "Last actions", trend: "Team trend", reasons: "Top late reasons", people: "People → Person", readback: "Read-back", minutes: "Minutes" };
-  const STEPS_DEFAULT = {
-    daily: [["attendance", 1, true], ["lastActions", 1, true], ["people", 6, true], ["trend", 3, false], ["reasons", 5, false], ["readback", 1, true], ["minutes", 1, true]],
-    weekly: [["attendance", 2, true], ["lastActions", 5, true], ["trend", 3, true], ["reasons", 12, true], ["people", 10, true], ["readback", 3, true], ["minutes", 5, true]],
-  };
-
-  // ------------------------------------------------------------------ state
-  const D = { me: null, team: null, members: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [] };
-  const S = { view: "home", period: "week", sort: "az", person: null, pchip: "overdue", sel: null, settingsTab: "reasons", minutesId: null, reasonSel: null, tick: 0 };
+  const $modal = document.getElementById("modal");
+  let $app = document.getElementById("content");
+  Object.assign(S, { view: "home", period: "week", sort: "az", person: null, pchip: "overdue", sel: null, settingsTab: "reasons", minutesId: null, reasonSel: null, tick: 0 }, S);
   let RUN = null; // running meeting: {id, type, steps, i, stepStart}
-
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const first = (n) => String(n || "").trim().split(/\s+/)[0] || "Member";
-  const fmtDay = (t) => new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-  const fmtWhen = (t) => { const d = new Date(t); return fmtDay(t) + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); };
-  const fmtShort = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  const reasonsCfg = () => {
-    const r = D.reasons || {};
-    const norm = (a, d) => (Array.isArray(a) && a.length ? a : d.map((n) => ({ name: n }))).map((x) => (typeof x === "string" ? { name: x } : x));
-    return { own: norm(r.own, OWN_DEFAULT), outside: norm(r.outside, OUT_DEFAULT) };
-  };
-  const outsideSet = () => new Set(reasonsCfg().outside.map((x) => x.name));
-  const red = () => Object.assign({}, RED_DEFAULT, (D.cfg && D.cfg.red) || {});
-  const stepsFor = (type) => ((D.cfg && D.cfg.steps && D.cfg.steps[type]) || STEPS_DEFAULT[type]).map((x) => x.slice());
-
-  // ------------------------------------------------------------------ data model
-  /** Everyone in the meeting: the owner (GM) first, then the team A–Z. Used everywhere: People, Person,
-   *  attendance, actions and the team totals. */
-  function people() {
-    const ownerUid = D.team && D.team.ownerUid;
-    const me = D.members.find((m) => m.uid === ownerUid && m.status === "active");
-    return (me ? [me] : []).concat(D.members.filter((m) => m.status === "active" && m.uid !== ownerUid).sort((a, b) => first(a.name).localeCompare(first(b.name))));
-  }
-  const team = people;
-  function member(uid) { return D.members.find((m) => m.uid === uid); }
-
-  /** Every task of every person, the same shape: given (team) tasks and own tasks. */
-  function items() {
-    const out = [];
-    D.tasks.forEach((t) => {
-      if (!t.toUid || t.status === "cancelled" || t.status === "returned") return;
-      out.push({
-        src: "team", id: t.id, uid: t.toUid, title: t.title, promise: t.firstDue || t.due || 0, due: t.due || 0,
-        done: t.status === "done" || t.status === "checked", doneAt: t.doneAt || 0, moves: t.extCount || 0,
-        reasons: t.lateReasons || [], events: t.events || [], meeting: !!t.meeting, from: t.fromName, createdAt: t.createdAt || 0, raw: t,
-      });
-    });
-    Object.keys(D.own).forEach((uid) => (D.own[uid] || []).forEach((t) => {
-      out.push({
-        src: "own", id: t.id, uid, title: t.title, promise: t.firstDueAt || t.dueAt || 0, due: t.dueAt || 0, done: !!t.done,
-        doneAt: t.doneAt || 0, moves: t.moves || 0, reasons: t.reasons || [], events: t.events || [], person: t.person, createdAt: t.createdAt || 0, raw: t,
-      });
-    }));
-    return out;
-  }
-  const isLate = (x) => x.done && x.promise > 0 && x.doneAt - x.promise > GRACE;
-  const isOverdue = (x, now) => !x.done && x.promise > 0 && x.promise < now;
-  const lastReason = (x) => (x.reasons && x.reasons.length ? x.reasons[x.reasons.length - 1] : null);
-  const isOutside = (x) => { const r = lastReason(x); return !!(r && (r.o || outsideSet().has(r.r))); };
-  const daysLate = (x) => Math.max(1, Math.round((startOfDay(x.doneAt) - startOfDay(x.promise)) / DAY));
-
-  function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
-  function weekStart(t) { const d = new Date(startOfDay(t)); const wd = (d.getDay() + 6) % 7; return d.getTime() - wd * DAY; }
-  function range(period, now) {
-    if (period === "month") { const d = new Date(now); const a = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); const b = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(); return [a, b]; }
-    const a = weekStart(now); return [a, a + 7 * DAY];
-  }
   const rangeLabel = (a, b) => (S.period === "month" ? new Date(a).toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "This week · " + fmtShort(a) + " – " + fmtShort(b - DAY));
-
-  /** The plain facts for one person (or everyone, uid null) in [a, b). */
-  function facts(all, uid, a, b, now) {
-    const mine = all.filter((x) => uid == null ? team().some((p) => p.uid === x.uid) : x.uid === uid);
-    const due = mine.filter((x) => x.promise >= a && x.promise < b && x.promise <= now);
-    const f = { due: due.length, onTime: 0, late: 0, lateOut: 0, overdue: 0, moved: 0, noDate: 0, avgLate: 0, done: 0 };
-    let lateDays = 0, lateN = 0;
-    due.forEach((x) => {
-      f.moved += x.moves;
-      if (x.done) f.done++;
-      if (x.done && !isLate(x)) f.onTime++;
-      else if (isLate(x)) { if (isOutside(x)) f.lateOut++; else f.late++; lateDays += daysLate(x); lateN++; }
-      else if (isOverdue(x, now)) f.overdue++;
-    });
-    f.noDate = mine.filter((x) => !x.done && !x.promise).length;
-    f.avgLate = lateN ? Math.round(lateDays / lateN) : 0;
-    f.pct = f.due ? Math.round((f.onTime / f.due) * 100) : null;
-    return f;
-  }
-  function weeklyPct(all, uid, now, weeks) {
-    const out = [];
-    for (let i = weeks - 1; i >= 0; i--) { const a = weekStart(now) - i * 7 * DAY; out.push(facts(all, uid, a, a + 7 * DAY, now).pct); }
-    return out;
-  }
-  function reasonCounts(all, uid, a, b) {
-    const c = {};
-    all.forEach((x) => {
-      if (uid != null && x.uid !== uid) return;
-      if (uid == null && !team().some((p) => p.uid === x.uid)) return;
-      (x.reasons || []).forEach((r) => { if (r.at >= a && r.at < b) { const k = r.r || "Other"; c[k] = c[k] || { n: 0, out: !!r.o || outsideSet().has(k), items: [] }; c[k].n++; c[k].items.push(x); } });
-    });
-    return Object.entries(c).sort((p, q) => q[1].n - p[1].n);
-  }
-
-  // ------------------------------------------------------------------ store (Firebase or demo)
-  let db = null, uid = null, teamRef = null;
-  const Store = {
-    async addAction(toUid, title, due, fromReason) {
-      const to = member(toUid), me = member(uid) || { name: "Owner", managers: [] };
-      const now = Date.now();
-      const viewers = Array.from(new Set([uid, toUid].concat(to.managers || [], me.managers || [])));
-      const doc = {
-        title: title.trim(), fromUid: uid, fromName: me.name, toUid, toName: to.name, toPhone: to.phone || "", viewers,
-        createdAt: now, updatedAt: now, deadline: due, urgent: false, dateBy: "giver", due, firstDue: due, status: "dated",
-        seenAt: 0, doneAt: 0, checkedAt: 0, moreDue: 0, moreReason: "", moreAt: 0, reason: "", passedTo: "", askAt: 0, stuckAt: 0, stuckText: "",
-        lastMsgAt: 0, lastMsgBy: "", lastMsgText: "", photoProof: false, proofAt: 0, deliveredAt: 0, locked: true, freeExt: 0, extCount: 0,
-        reminderAt: 0, nPhoto: 0, nVoice: 0, nBy: {}, meeting: true, meetingFrom: fromReason || "",
-        events: [{ at: now, text: "Given by " + first(me.name) + " · 🤝 Meeting · 📅 Deadline " + fmtWhen(due) }],
-      };
-      if (DEMO) { const id = "d" + now; D.tasks.push(Object.assign({ id }, doc)); return id; }
-      const ref = await teamRef.collection("tasks").add(doc);
-      return ref.id;
-    },
-    async saveMeeting(m) {
-      if (DEMO) { const i = D.meetings.findIndex((x) => x.id === m.id); if (i >= 0) D.meetings[i] = m; else D.meetings.unshift(m); return m.id; }
-      const data = Object.assign({}, m); delete data.id;
-      if (m.id) { await teamRef.collection("meetings").doc(m.id).set(data); return m.id; }
-      const ref = await teamRef.collection("meetings").add(data); m.id = ref.id; return ref.id;
-    },
-    async saveConfig(doc, data) {
-      if (DEMO) { if (doc === "reasons") D.reasons = data; else D.cfg = data; return; }
-      await teamRef.collection("config").doc(doc).set(data);
-    },
-    async msgs(taskId) {
-      if (DEMO) return (window.DEMO_DATA && window.DEMO_DATA.msgs[taskId]) || [];
-      const s = await teamRef.collection("tasks").doc(taskId).collection("msgs").orderBy("at").get();
-      return s.docs.map((d) => Object.assign({ id: d.id }, d.data()));
-    },
-  };
-
-  // ------------------------------------------------------------------ start
-  function start() {
-    if (DEMO) {
-      const d = window.DEMO_DATA.make();
-      Object.assign(D, d); uid = d.team.ownerUid; render(); return;
-    }
-    firebase.initializeApp(window.FIREBASE_CONFIG);
-    db = firebase.firestore();
-    firebase.auth().onAuthStateChanged(async (u) => {
-      if (!u) return signInPage();
-      uid = u.uid;
-      try {
-        const us = await db.collection("users").doc(uid).get();
-        const t = us.exists && us.data().teamId;
-        if (!t) return message("This Google account isn't in a team.", "Sign in with the same Gmail you use in the phone app.", true);
-        teamRef = db.collection("teams").doc(t);
-        const ts = await teamRef.get();
-        if (!ts.exists || ts.data().ownerUid !== uid) return message("Only the team owner can open this page.", "You're signed in as " + esc(u.email) + ".", true);
-        D.team = Object.assign({ id: t }, ts.data());
-        listen();
-      } catch (e) { message("Couldn't open the team.", esc(e.message || e) + "<br>If this is the first time, the new Firestore rules may not be pasted yet.", true); }
-    });
-  }
-  function listen() {
-    let n = 0;
-    const kick = () => { if (++n >= 3) render(); else if (n > 3) render(); };
-    teamRef.collection("members").onSnapshot((s) => {
-      D.members = s.docs.map((d) => Object.assign({ uid: d.id }, d.data()));
-      D.members.forEach((m) => {
-        if (D.own[m.uid] !== undefined || m.status !== "active") return;
-        D.own[m.uid] = [];
-        teamRef.collection("own").doc(m.uid).collection("tasks").onSnapshot((q) => { D.own[m.uid] = q.docs.map((d) => Object.assign({ id: d.id }, d.data())); soft(); }, () => {});
-      });
-      kick(); soft();
-    }, (e) => message("Couldn't read the team.", esc(e.message), true));
-    teamRef.collection("tasks").onSnapshot((s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); kick(); soft(); }, (e) => message("Couldn't read the tasks.", esc(e.message) + "<br>Paste the new Firestore rules (see the app's instructions) and reload.", true));
-    teamRef.collection("config").onSnapshot((s) => { s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); }); kick(); soft(); }, () => kick());
-    teamRef.collection("meetings").orderBy("startedAt", "desc").limit(100).onSnapshot((s) => { D.meetings = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); soft(); }, () => {});
-  }
-  let softT = null;
-  function soft() { if ($modal.innerHTML) return; clearTimeout(softT); softT = setTimeout(() => { if (D.team) render(); }, 300); }
-
-  function signInPage() {
-    $app.innerHTML = `<div class="center"><h2 style="font-size:26px">Team Meeting</h2><div class="muted">Sign in with the same Gmail as your phone app.</div>
-      <button class="btnp" id="gs">Sign in with Google</button></div>`;
-    document.getElementById("gs").onclick = () => firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch((e) => alertBox(esc(e.message)));
-  }
-  function message(a, b, out) {
-    $app.innerHTML = `<div class="center"><h2>${a}</h2><div class="muted">${b}</div>${out ? '<button class="btnt" id="so">Sign out</button>' : ""}</div>`;
-    const so = document.getElementById("so"); if (so) so.onclick = () => firebase.auth().signOut();
-  }
+  const render = () => RB.render();
 
   // ------------------------------------------------------------------ rendering helpers
-  function tabs() {
-    const t = [["people", "People"], ["reasons", "Late reasons"], ["person", "Person"], ["actions", "Actions"], ["minutes", "Minutes"]];
-    return `<div class="seg">${t.map(([k, l]) => `<button data-go="${k}" class="${S.view === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  }
+  function tabs() { return ""; }
   const periodSeg = () => `<div class="seg"><button data-period="week" class="${S.period === "week" ? "on" : ""}">Week</button><button data-period="month" class="${S.period === "month" ? "on" : ""}">Month</button></div>`;
   function header(title, sub, right) {
-    return `<div class="top"><div><h2>${title}</h2><div class="s">${sub}</div></div>${tabs()}<div class="sp"></div>${right || ""}${periodSeg()}
-      <button class="pill" data-go="settings">⚙ Settings</button>${RUN ? "" : '<button class="btnp" data-go="home">▶ Meeting</button>'}</div>`;
+    return `<div class="subhead"><div><h3>${title}</h3><div class="s">${sub || ""}</div></div><div class="sp"></div>${right || ""}${periodSeg()}</div>`;
   }
   function kpis(all, a, b, now) {
     const f = facts(all, null, a, b, now);
@@ -324,8 +131,8 @@
     const reasons = reasonCounts(all, S.person, now - 56 * DAY, now + DAY);
     const acts = openActions().filter((t) => t.toUid === S.person);
     const chips = [["overdue", "Overdue"], ["late", "Late"], ["moved", "Moved"], ["nodate", "No date"], ["open", "Coming up"], ["done", "Done"]].map(([k, l]) => `<button class="sc ${S.pchip === k ? "on" : ""}" data-pchip="${k}">${l} ${groups[k].length}</button>`).join("");
-    const who = `<div class="who"><div class="big">${esc(first(p.name)[0])}</div><div><h2>${esc(first(p.name))}</h2><div class="s">${rangeLabel(a, b)} · <a class="link" data-person="${prev.uid}" href="#">‹ ${esc(first(prev.name))}</a> · <a class="link" data-person="${next.uid}" href="#">${esc(first(next.name))} ›</a></div></div></div>`;
-    return `<div class="top">${who}${tabs()}<div class="sp"></div>${periodSeg()}<button class="pill" data-go="settings">⚙ Settings</button>${RUN ? "" : '<button class="btnp" data-go="home">▶ Meeting</button>'}</div>
+    const who = `<div class="who"><div class="big">${esc(first(p.name)[0])}</div><div><h2>${esc(first(p.name))}</h2><div class="s">${rangeLabel(a, b)} · ${RUN ? '<a class="link" data-go="people" href="#">All people</a> · ' : ""}<a class="link" data-person="${prev.uid}" href="#">‹ ${esc(first(prev.name))}</a> · <a class="link" data-person="${next.uid}" href="#">${esc(first(next.name))} ›</a></div></div></div>`;
+    return `<div class="subhead">${who}<div class="sp"></div>${periodSeg()}</div>
       <div class="body"><div style="width:290px;display:flex;flex-direction:column;gap:12px">
         <div class="card"><h3>His ${S.period}</h3><div class="mini"><div>Due<b>${f.due}</b></div><div>On time<b>${f.onTime}</b></div><div class="${bad(f.late, R.late)}">Late<b>${f.late}</b></div><div>Late (outside)<b style="color:#8a90a3">${f.lateOut}</b></div><div class="${bad(f.overdue, R.overdue)}">Still overdue<b>${f.overdue}</b></div><div class="${bad(f.moved, R.moved)}">Moved<b>${f.moved}×</b></div><div class="${bad(f.noDate, R.noDate)}">No date<b>${f.noDate}</b></div><div class="${bad(f.avgLate, R.avgLate)}">Avg days late<b>${f.avgLate || "–"}</b></div></div></div>
         <div class="card"><h3>On time · last 8 weeks</h3>${trendSvg(trend, 260, 96, team)}</div>
@@ -408,8 +215,7 @@
     const now = Date.now(), last = lastMeeting();
     const tot = (t) => stepsFor(t).filter((s) => s[2]).reduce((p, s) => p + Number(s[1]), 0);
     const open = openActions().length;
-    return `<div class="top"><div><h2>Team Meeting</h2><div class="s">${esc(D.team ? D.team.name : "")}</div></div>${tabs()}<div class="sp"></div><button class="pill" data-go="settings">⚙ Settings</button></div>
-      <div class="center" style="min-height:60vh"><div class="muted">${fmtWhen(now)}</div>
+    return `<div class="center" style="min-height:60vh"><div class="muted">${fmtWhen(now)}</div>
       <button class="bigbtn btnp" data-start="daily">▶ Start daily meeting · ${tot("daily")} min</button>
       <button class="bigbtn" style="background:var(--sv);color:var(--onprc)" data-start="weekly">▶ Start weekly meeting · ${tot("weekly")} min</button>
       <div class="muted" style="font-size:12.5px">${last ? "Last meeting: " + fmtDay(last.startedAt) + " · " + last.type + " · " : ""}${open} action${open === 1 ? "" : "s"} open</div>
@@ -444,7 +250,7 @@
     const m = curMeeting(); if (!m) { RUN = null; return vHome(); }
     const st = RUN.steps[RUN.i], now = Date.now(), all = items(), [a, b] = range(RUN.type === "daily" ? "week" : S.period, now);
     let inner = "";
-    const head = (t, s) => `<div class="top"><div><h2>${t}</h2><div class="s">${s || ""}</div></div>${tabs()}<div class="sp"></div>${periodSeg()}</div>`;
+    const head = (t, s) => `<div class="subhead"><div><h3>${t}</h3><div class="s">${s || ""}</div></div><div class="sp"></div>${periodSeg()}</div>`;
     if (!st) {
       const used = Math.round((now - m.startedAt) / 60000), att = m.attendance || {};
       const pres = Object.values(att).filter((v) => v === "present" || v === "late").length;
@@ -464,11 +270,11 @@
       const acts = (m.actions || []).map((id) => D.tasks.find((t) => t.id === id)).filter(Boolean);
       inner = `${head("Today's actions · read-back", 'Each owner says "yes, mine" · tap when they do')}<div class="body"><div class="card" style="flex:1;max-width:820px">${acts.map((t) => `<div class="pr" data-agree="${t.id}" style="cursor:pointer"><span class="n">${esc(t.title)} · ${esc(first(t.toName))} · ${fmtDay(t.due)}</span><span class="tg ${m.agreed && m.agreed[t.id] ? "p" : ""}">${m.agreed && m.agreed[t.id] ? "✓ Agreed" : "Tap when agreed"}</span></div>`).join("") || '<div class="muted">No actions yet in this meeting. Use + Action below.</div>'}</div></div>`;
     } else if (st.key === "minutes") inner = `${head("Minutes · " + fmtDay(m.startedAt), RUN.type)}${vMinutes(true)}`;
-    return `<div class="shell">${stepBar()}${inner}<div style="flex:1"></div>${pinBar()}</div>`;
+    return `<div class="run">${stepBar()}${inner}<div style="flex:1"></div>${pinBar()}</div>`;
   }
 
   // ------------------------------------------------------------------ settings
-  function vSettings() {
+  function vSettings(bare) {
     const tabsS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"]].map(([k, l]) => `<button data-stab="${k}" class="${S.settingsTab === k ? "on" : ""}">${l}</button>`).join("");
     let body = "";
     if (S.settingsTab === "reasons") {
@@ -486,7 +292,7 @@
     } else {
       body = `<div class="card" style="max-width:640px"><h3>Ranking and score: off for now</h3><div class="muted" style="line-height:1.5">Switched off until the team is used to the meetings. Everything is already being saved, so when it comes on it will have weeks of history. The four agreed rules: one fair score for everyone (moves and No date cost points), a minimum of 5 tasks to be ranked, outside reasons not counted, and a trend arrow against the last 4 weeks.</div></div>`;
     }
-    return `<div class="top"><div><h2>Settings</h2><div class="s">Only you can see and change these</div></div><div class="seg">${tabsS}</div><div class="sp"></div><button class="pill" data-go="back">‹ Back</button>${DEMO ? "" : '<button class="pill" id="signout">Sign out</button>'}</div><div class="body" style="flex-direction:column">${body}</div>`;
+    return bare ? `<div class="body" style="flex-direction:column">${body}</div>` : `<div class="subhead"><div class="seg">${tabsS}</div></div><div class="body" style="flex-direction:column">${body}</div>`;
   }
 
   // ------------------------------------------------------------------ dialogs
@@ -564,54 +370,26 @@
     m.sharedAt = Date.now(); Store.saveMeeting(m).then(render);
   }
 
-  // ------------------------------------------------------------------ render + events
-  function render() {
-    if (!D.team) return;
-    let html;
-    if (RUN && S.view !== "settings" && !S.free) html = vRun();
-    else if (S.view === "people") html = vPeople();
-    else if (S.view === "person") html = vPerson();
-    else if (S.view === "reasons") html = vReasons();
-    else if (S.view === "actions") html = vActions();
-    else if (S.view === "minutes") html = vMinutes();
-    else if (S.view === "settings") html = vSettings();
-    else html = vHome();
-    const banner = RUN && (S.view === "settings" || S.free) ? `<div class="banner">Meeting running · <a href="#" class="link" data-backrun="1">back to the meeting</a></div>` : "";
-    $app.innerHTML = `<div class="shell">${banner}${html}</div>`;
-    bind();
-  }
   function bind() {
     const on = (sel, fn) => $app.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e, ev); }));
-    on("[data-go]", (e) => {
-      const g = e.dataset.go;
-      if (g === "back") { S.view = S.prevView || "home"; render(); return; }
-      if (g === "settings") S.prevView = S.view;
-      if (RUN && g !== "settings") {
-        // During a meeting the tabs are one tap away: People/Person stay inside the step, others open freely.
-        const st = RUN.steps[RUN.i];
-        if (st && st.key === "people" && (g === "people" || g === "person")) { S.free = false; S.view = g; render(); return; }
-        S.free = true;
-      }
-      S.view = g; render();
-    });
-    on("[data-backrun]", () => { S.free = false; if (S.view === "settings") S.view = "people"; render(); });
+    on("[data-go]", (e) => { S.view = e.dataset.go; render(); });
     on("[data-period]", (e) => { S.period = e.dataset.period; render(); });
     on("[data-sort]", (e) => { S.sort = e.dataset.sort; render(); });
-    on("[data-person]", (e) => { S.person = e.dataset.person; S.sel = null; S.pchip = "overdue"; S.view = "person"; if (RUN) { const st = RUN.steps[RUN.i]; S.free = !(st && st.key === "people"); } render(); });
+    on("[data-person]", (e) => { S.person = e.dataset.person; S.sel = null; S.pchip = "overdue"; S.view = "person"; if (!RUN) RB.go("app", "person"); else render(); });
     on("[data-pchip]", (e) => { S.pchip = e.dataset.pchip; S.sel = null; render(); });
     on("[data-sel]", (e) => { S.sel = e.dataset.sel; render(); });
     on("[data-full]", (e) => fullTimeline(e.dataset.full));
-    on("[data-reason]", (e) => { S.reasonSel = e.dataset.reason; if (!RUN) S.view = "reasons"; render(); });
+    on("[data-reason]", (e) => { S.reasonSel = e.dataset.reason; if (!RUN) RB.go("app", "reasons"); else render(); });
     on("[data-newaction]", () => newAction());
     on("[data-action-person]", (e) => newAction({ person: e.dataset.actionPerson, from: "From person: " + first(member(e.dataset.actionPerson).name) }));
     on("[data-action-reason]", (e) => newAction({ from: "From reason: " + e.dataset.actionReason }));
     on("[data-quick]", (e) => quickLine(e.dataset.quick));
     on("[data-start]", (e) => startMeeting(e.dataset.start));
-    on("[data-step]", (e) => { RUN.i = Math.max(0, Math.min(RUN.steps.length, RUN.i + Number(e.dataset.step))); RUN.stepStart = Date.now(); S.view = "people"; S.free = false; window.scrollTo(0, 0); render(); });
+    on("[data-step]", (e) => { RUN.i = Math.max(0, Math.min(RUN.steps.length, RUN.i + Number(e.dataset.step))); RUN.stepStart = Date.now(); S.view = "people"; window.scrollTo(0, 0); render(); });
     on("[data-att]", (e) => saveCur((m) => { const cyc = ["present", "late", "absent", "leave"]; const v = (m.attendance || {})[e.dataset.att] || "present"; m.attendance[e.dataset.att] = cyc[(cyc.indexOf(v) + 1) % cyc.length]; }));
     on("[data-agree]", (e) => saveCur((m) => { m.agreed = m.agreed || {}; m.agreed[e.dataset.agree] = !m.agreed[e.dataset.agree]; }));
     on("[data-share]", (e) => share(e.dataset.share));
-    on("[data-close]", async () => { await saveCur((m) => (m.closedAt = Date.now())); S.minutesId = RUN.id; RUN = null; S.view = "minutes"; S.free = false; render(); });
+    on("[data-close]", async () => { await saveCur((m) => (m.closedAt = Date.now())); S.minutesId = RUN.id; RUN = null; RB.go("meetings", "minutes"); });
     on("[data-minutes]", (e) => { S.minutesId = e.dataset.minutes; render(); });
     on("[data-add]", async (e) => {
       const kind = e.dataset.add, inp = document.getElementById(kind === "decisions" ? "addDec" : "addNote"), v = inp.value.trim(); if (!v) return;
@@ -621,7 +399,6 @@
     const mq = document.getElementById("mq"); if (mq) mq.oninput = () => { S.mq = mq.value; render(); const n = document.getElementById("mq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     // settings
     on("[data-stab]", (e) => { S.settingsTab = e.dataset.stab; render(); });
-    const so = document.getElementById("signout"); if (so) so.onclick = () => firebase.auth().signOut().then(() => location.reload());
     const saveReasons = (rc) => Store.saveConfig("reasons", { own: rc.own, outside: rc.outside, updatedAt: Date.now() }).then(render);
     on("[data-rr]", (e) => {
       const [k, i, act] = e.dataset.rr.split(":"), rc = reasonsCfg(), r = rc[k][Number(i)];
@@ -649,5 +426,14 @@
     c.textContent = "⏱ " + mmss(shown) + " / " + mmss(lim); c.className = "clk" + (shown > lim ? " over" : "");
   }, 1000);
 
-  window.addEventListener("load", start);
+  RB.meet = {
+    running: () => !!RUN,
+    html(view) {
+      if (RUN && view !== "settings") return vRun();
+      const v = { people: vPeople, person: vPerson, reasons: vReasons, actions: vActions, minutes: vMinutes, settings: () => vSettings(true), home: vHome }[view] || vHome;
+      return v();
+    },
+    bind(root) { $app = root; bind(); },
+    newAction, openActions, actionStatus, minutesText, fullTimeline, rangeLabel, trendSvg, reasonBars, itemChips, timelineOf, personItems,
+  };
 })();
