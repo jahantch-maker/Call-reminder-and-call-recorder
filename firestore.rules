@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Callback Reminder · Team edition (Firebase project rafiq-builders).
+// Callback Reminder · Team edition + Rafiq Builders portal (Firebase project rafiq-builders).
 // Paste this into Firebase console › Firestore Database › Rules › Publish.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -12,6 +12,12 @@ service cloud.firestore {
     function isActive(t) { return isMember(t) && member(t).status == 'active'; }
     function isAdmin(t) { return isActive(t) && member(t).role in ['owner', 'admin']; }
     function isOwner(t) { return get(/databases/$(database)/documents/teams/$(t)).data.ownerUid == me(); }
+    // v0.49 portal access: 'none' | 'view' | 'edit' for one portal section, from the member's resolved permissions.
+    function lvl(t, sec) { return member(t).get('perms', {}).get('portal', {}).get(sec, 'none'); }
+    function portalEdit(t, sec) { return isActive(t) && (isOwner(t) || lvl(t, sec) == 'edit'); }
+    function portalSee(t, sec) { return isActive(t) && (isOwner(t) || lvl(t, sec) in ['view', 'edit']); }
+    function appSw(t, k) { return member(t).get('perms', {}).get('app', {}).get(k, false) == true; }
+    function otherMember(t, u) { return get(/databases/$(database)/documents/teams/$(t)/members/$(u)).data; }
 
     // Join codes: anyone signed in can look one up; made once with the team.
     match /codes/{code} {
@@ -32,16 +38,66 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if signedIn() && (uid == me() || isActive(t));
         // Asking to join: yourself, as a pending member. The owner's own row when the team is made.
+        // v0.49 A Gmail the owner already added as a seat joins that seat at once (no permissions of its own: the portal fills them).
         allow create: if signedIn() && uid == me() && (
           (request.resource.data.status == 'pending' && request.resource.data.role == 'member') ||
-          (isOwner(t) && request.resource.data.role == 'owner' && request.resource.data.status == 'active'));
-        // Owner/Admin: approve, chart, role, remove. Yourself: only harmless fields.
+          (isOwner(t) && request.resource.data.role == 'owner' && request.resource.data.status == 'active') ||
+          (request.resource.data.status == 'active' && request.resource.data.role == 'member' && !('perms' in request.resource.data)
+            && request.auth.token.email_verified == true
+            && request.resource.data.seatId == request.auth.token.email.lower()
+            && exists(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower()))));
+        // Owner/Admin: approve, chart, role, remove. v0.49 a person with Team Edit access does the same for non-owners.
+        // Yourself: only harmless fields.
         allow update: if signedIn() && (
           (isAdmin(t) && resource.data.role != 'owner' && request.resource.data.role != 'owner') ||
           (isAdmin(t) && uid == me()) ||
-          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone'])));
-        // Leaving (yourself) or declining a request (Owner/Admin).
-        allow delete: if signedIn() && (uid == me() || (isAdmin(t) && resource.data.role != 'owner'));
+          (isOwner(t)) ||
+          (portalEdit(t, 'team') && resource.data.role != 'owner' && request.resource.data.role != 'owner') ||
+          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email'])));
+        // Leaving (yourself) or declining a request (Owner/Admin). v0.49 members cannot leave an RB seat: only owners remove.
+        allow delete: if signedIn() && ((uid == me() && !('seatId' in resource.data)) || (isAdmin(t) && resource.data.role != 'owner') || isOwner(t) || (portalEdit(t, 'team') && resource.data.status == 'pending'));
+      }
+
+      // v0.49 Seats: one per official Gmail (the document id is the lowercase Gmail). Anyone signed in may look up the seat of
+      // their own Gmail (to join); members read them all; the owner or a Team editor writes them.
+      match /seats/{gmail} {
+        allow read: if signedIn() && (isActive(t) || (request.auth.token.email.lower() == gmail));
+        allow write: if signedIn() && portalEdit(t, 'team');
+      }
+
+      // v0.49 Change log: owners read it; every access, chart, seat and offboard change adds a line; nobody edits or deletes one.
+      match /changelog/{c} {
+        allow read: if signedIn() && isActive(t) && isOwner(t);
+        allow create: if signedIn() && isActive(t) && request.resource.data.by == me()
+          && (isOwner(t) || lvl(t, 'team') == 'edit' || lvl(t, 'docs') == 'edit' || lvl(t, 'settings') == 'edit');
+        allow update, delete: if false;
+      }
+
+      // v0.49 Documents (Google Drive links): job descriptions, SOPs and work documents. Every member reads them (the portal shows
+      // each person only his designation's); the owner or a Documents editor writes them. The Drive files carry their own sharing.
+      match /docs/{d} {
+        allow read: if signedIn() && isActive(t);
+        allow write: if signedIn() && portalEdit(t, 'docs');
+      }
+
+      // v0.49 Policies: owners only, plus the designations an owner shared each one with. Only owners write them.
+      // Staff find theirs through config/policyIndex (designation → policy ids) and read each one by id.
+      match /policies/{d} {
+        allow get: if signedIn() && isActive(t) && (isOwner(t) || lvl(t, 'docs') == 'edit'
+          || member(t).get('designation', '') in resource.data.get('shareWith', []));
+        allow list: if signedIn() && isActive(t) && (isOwner(t) || lvl(t, 'docs') == 'edit');
+        allow write: if signedIn() && isActive(t) && isOwner(t);
+      }
+
+      // v0.49 Reading progress: he marks his own; the owner, Documents editors and his heads read it.
+      match /reading/{u} {
+        allow read: if signedIn() && isActive(t) && (u == me() || isOwner(t) || lvl(t, 'docs') == 'edit' || me() in otherMember(t, u).get('managers', []));
+        allow write: if signedIn() && isActive(t) && u == me();
+      }
+
+      // v0.49 Emergency cloud backup (nightly, last 7 nights): readable and writable only by that person, never by the owner.
+      match /backups/{u}/nights/{n} {
+        allow read, write: if signedIn() && isActive(t) && u == me();
       }
 
       // Team tasks: seen by the giver, the person it is for, and everyone above either of them.
@@ -49,10 +105,10 @@ service cloud.firestore {
         // v0.48 the owner also reads every task, for the team meeting web app.
         allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t));
         allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
-        allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
+        allow update: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t))
           && request.resource.data.fromUid == resource.data.fromUid
-          // Only the giver may give it to someone else (Edit › person).
-          && (request.resource.data.toUid == resource.data.toUid || resource.data.fromUid == me());
+          // Only the giver (or, when someone is offboarded, an owner) may give it to someone else (Edit › person).
+          && (request.resource.data.toUid == resource.data.toUid || resource.data.fromUid == me() || isOwner(t));
 
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
@@ -91,18 +147,24 @@ service cloud.firestore {
       // v0.48 Own My tasks (never 🔒 Private) shared for the team meeting: written by him, read by him and the owner.
       match /own/{uid}/tasks/{task} {
         allow write: if signedIn() && uid == me() && isActive(t);
-        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t));
+        // v0.49 and the people above him, when they have App view access in the portal.
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || (lvl(t, 'app') != 'none' && me() in otherMember(t, uid).get('managers', [])));
       }
 
       // v0.48 Late reasons, red lines and meeting steps: the owner sets them in the web app; every member reads them.
+      // v0.49 designations: Team editors; reasons: Settings editors or a person with "Edit late-reason list"; the rest: Settings editors.
       match /config/{doc} {
         allow read: if signedIn() && isActive(t);
-        allow write: if signedIn() && isOwner(t);
+        allow write: if signedIn() && isActive(t) && (isOwner(t)
+          || (doc == 'designations' && lvl(t, 'team') == 'edit')
+          || (doc == 'reasons' && (lvl(t, 'settings') == 'edit' || appSw(t, 'editReasons')))
+          || (doc == 'meeting' && lvl(t, 'settings') == 'edit'));
       }
 
-      // v0.48 Team meetings (attendance, decisions, notes, actions): the owner only.
+      // v0.48 Team meetings (attendance, decisions, notes, actions). v0.49 Meetings "Edit" runs them, "View" reads the minutes.
       match /meetings/{m} {
-        allow read, write: if signedIn() && isOwner(t);
+        allow read: if signedIn() && portalSee(t, 'meetings');
+        allow write: if signedIn() && portalEdit(t, 'meetings');
       }
 
       // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.

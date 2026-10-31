@@ -1,9 +1,9 @@
 {
-  "name": "Team Meeting",
-  "short_name": "Meeting",
+  "name": "Rafiq Builders",
+  "short_name": "RB",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#1f2937",
+  "theme_color": "#222326",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }
