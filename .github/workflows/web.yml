@@ -1,0 +1,37 @@
+name: Publish meeting web app
+
+# Every merge to main that touches the web app publishes it to https://rafiq-builders.web.app.
+# "Run workflow" on the Actions page publishes it by hand.
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "firebase.json", ".firebaserc", ".github/workflows/web.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Waiting for the Firebase key
+        if: env.HAS_KEY != 'true'
+        run: echo "::warning::Add the FIREBASE_SERVICE_ACCOUNT secret to publish the web app."
+
+      - name: Stamp the version (the open page shows an Update bar when this changes)
+        if: env.HAS_KEY == 'true'
+        run: echo "{\"version\":\"${GITHUB_SHA::7}\",\"at\":\"$(date -u +%FT%TZ)\"}" > web/version.json
+
+      - name: Publish to Firebase Hosting
+        if: env.HAS_KEY == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: rafiq-builders
+          channelId: live
