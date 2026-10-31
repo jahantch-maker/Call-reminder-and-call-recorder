@@ -179,6 +179,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     )
                     if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
                     if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
+                    OnTime.chip(t)?.let { add(it) }
                 }
             )
             // v0.44: the other person's 🟢 Active now / Last active, like WhatsApp's line under the name.

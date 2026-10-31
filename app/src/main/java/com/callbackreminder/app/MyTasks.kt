@@ -39,6 +39,9 @@ data class MyTask(
     val durationMin: Int = MyTaskStore.DEFAULT_LENGTH,
     /** What happened to it, oldest first (kept since v0.31; older tasks start empty). */
     val events: List<TaskEvent> = emptyList(),
+    /** v0.47 the first time it was given (its promise for the on-time mark) and how often it was pushed later since. */
+    val firstDueAt: Long = 0L,
+    val moves: Int = 0,
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
     /** The length was chosen (new tasks have none until they get a time). */
@@ -223,10 +226,40 @@ object MyTaskStore {
             events = o.optJSONArray("events")?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it).let { e -> TaskEvent(e.optLong("a"), e.optString("t")) } }
             } ?: emptyList(),
+            firstDueAt = o.optLong("firstDueAt"),
+            moves = o.optInt("moves"),
         )
     }
 
-    private fun save(list: List<MyTask>) {
+    private fun save(list: List<MyTask>) = saveRows(promises(_items.value, list))
+
+    /**
+     * The on-time mark's memory: a task keeps the first time it was given, and every push to a later time counts as a
+     * move (pulling it earlier takes one back, so an Undo leaves no trace). A time put back after Remove time counts
+     * against the first one.
+     */
+    private fun promises(before: List<MyTask>, after: List<MyTask>): List<MyTask> {
+        val old = before.associateBy { it.id }
+        return after.map { t ->
+            val o = old[t.id]
+            when {
+                o == null -> if (t.firstDueAt == 0L && t.dueAt > 0L) t.copy(firstDueAt = t.dueAt) else t
+                t.dueAt == o.dueAt || t.dueAt <= 0L || t.done -> t.copy(firstDueAt = maxOf(t.firstDueAt, o.firstDueAt), moves = maxOf(t.moves, o.moves))
+                else -> {
+                    val first = o.firstDueAt.takeIf { it > 0L } ?: o.dueAt.takeIf { it > 0L } ?: t.dueAt
+                    val from = o.dueAt.takeIf { it > 0L } ?: first
+                    val moves = when {
+                        t.dueAt > from -> o.moves + 1
+                        t.dueAt < from && o.dueAt > 0L -> maxOf(0, o.moves - 1)
+                        else -> o.moves
+                    }
+                    t.copy(firstDueAt = first, moves = moves)
+                }
+            }
+        }
+    }
+
+    private fun saveRows(list: List<MyTask>) {
         rows.save(appCtx, list)
         _items.value = list
         PersonNames.refresh()
@@ -249,6 +282,8 @@ object MyTaskStore {
             .put("remindBefore", JSONArray().apply { t.remindBefore.forEach { put(it) } })
             .put("durationMin", t.durationMin)
             .put("events", JSONArray().apply { t.events.forEach { put(JSONObject().put("a", it.at).put("t", it.text)) } })
+            .put("firstDueAt", t.firstDueAt)
+            .put("moves", t.moves)
     }
 
     // ---- Lists ----

@@ -253,7 +253,9 @@ internal fun MyTaskCard(
                 // His deadline is set but not his own reminder: it waits in To schedule until he sets one.
                 listOfNotNull(RowChip("⏰ Set reminder", ChipTone.ORANGE, onClick = onNewTime)
                     .takeIf { teamTask != null && teamTask.open && teamTask.due > 0L && !t.timed && !t.done }) +
-                listOfNotNull(RowChip("🔒", ChipTone.MUTED).takeIf { isPriv && !t.done }),
+                listOfNotNull(RowChip("🔒", ChipTone.MUTED).takeIf { isPriv && !t.done }) +
+                // v0.47 the on-time mark on his own tasks (a given task has it in its team chips above).
+                listOfNotNull(OnTime.chip(OnTime.label(t)).takeIf { inTeam && teamTask == null && !isPriv }),
             note = t.note.takeIf { !t.done },
             sub = listName,
             starred = t.starred,
