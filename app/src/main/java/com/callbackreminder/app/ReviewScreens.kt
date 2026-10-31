@@ -469,10 +469,14 @@ private fun ReviewRow(
     if (notYet && check != null) TeamNotDoneSheet(check, onSent = onNotDoneSent) { notYet = false }
     var nextPart by remember(check?.id) { mutableStateOf(false) }
     if (nextPart && check != null) TeamNextPartSheet(check) { nextPart = false }
+    // A task someone gave you: the same Done · Deadline · My reminder bar as on your My tasks card, no Call or WhatsApp.
+    val his = tt?.takeIf { !giver && it.open && item.isMine }
+    var donePhoto by remember(his?.id) { mutableStateOf(false) }
+    if (donePhoto && his != null) TeamDoneWithPhoto(his, item.id) { donePhoto = false }
     TaskCard(
         title = item.title,
         done = false,
-        onTick = onDone,
+        onTick = { if (his != null && his.photoProof) donePhoto = true else onDone() },
         tickEnabled = !sched,
         time = if (item.at > 0L) Fmt.dueLabel(item.at) else null,
         late = late,
@@ -482,8 +486,8 @@ private fun ReviewRow(
             // One chip per meaning: skip ours when the team chips already say it.
             item.chips.filterNot { c -> c.endsWith("late") || team.any { it.text == c } }.map { RowChip(it, ChipTone.MUTED) } + team
         },
-        onCall = if (ReviewActions.canCall(item)) onCall else null,
-        onWhatsApp = if (item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
+        onCall = if (his == null && ReviewActions.canCall(item)) onCall else null,
+        onWhatsApp = if (his == null && item.number.isNotBlank()) ({ WhatsApp.forItem(ctx, item) }) else null,
         expanded = open,
         onClick = { open = !open },
         pos = RowPos.SINGLE,
@@ -492,6 +496,10 @@ private fun ReviewRow(
         urgent = tt?.let { it.urgent && it.open } == true,
         highlighted = highlighted,
     ) {
+        if (his != null) {
+            TeamReceiverPanel(his, myTaskId = item.id, onDone = onDone, onReminder = onNewTime, onMove = null)
+            return@TaskCard
+        }
         CardPanel(
             details = listOfNotNull(item.code.takeIf { it.isNotEmpty() }?.let { "# Task no. $it" }),
             links = buildList {

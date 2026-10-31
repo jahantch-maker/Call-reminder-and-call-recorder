@@ -13,8 +13,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 69
-        versionName = "0.46.1"
+        versionCode = 70
+        versionName = "0.46.2"
     }
 
     // Two apps from the same code: "full" is the main app, "cr" is the CR test copy. Only the name, the icon

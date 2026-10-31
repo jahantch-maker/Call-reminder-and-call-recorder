@@ -1001,7 +1001,7 @@ object TeamRepo {
      */
     fun notDoneYet(t: TeamTask, reason: String, newDue: Long = KEEP) {
         val why = reason.trim()
-        val f = mutableMapOf<String, Any>("status" to Team.REOPENED, "reason" to why, "doneAt" to 0L, "moreAt" to 0L)
+        val f = mutableMapOf<String, Any>("status" to Team.REOPENED, "reason" to why, "doneAt" to 0L, "moreAt" to 0L, "proofAt" to 0L)
         val tail = when {
             newDue == KEEP -> ""
             newDue <= 0L -> { f["due"] = 0L; f["dateBy"] = Team.HIS_DATE; " · ${t.toFirst} picks a new deadline" }

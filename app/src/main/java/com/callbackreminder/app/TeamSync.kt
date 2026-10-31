@@ -254,7 +254,7 @@ object TeamSync {
                 local?.let { if (!it.done) MyTaskStore.delete(it.id) }
                 recv.remove(t.id)
             }
-            t.status == Team.DONE || t.status == Team.CHECKED -> local?.let { if (!it.done) MyTaskStore.setDone(it.id, true) }
+            t.status == Team.DONE || t.status == Team.CHECKED -> local?.let { if (!it.done) MyTaskStore.setDone(it.id, true, force = true) }
         }
         if (t.open && t.deliveredAt == 0L) TeamRepo.markDelivered(t)
 
