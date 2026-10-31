@@ -179,6 +179,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     )
                     if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
                     if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
+                    if (t.meeting) add(RowChip("🤝 Meeting", ChipTone.PURPLE))
                     OnTime.chip(t)?.let { add(it) }
                 }
             )

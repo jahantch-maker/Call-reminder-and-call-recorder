@@ -178,6 +178,7 @@ object TeamUi {
         OnTime.chip(t)?.let { add(it) }
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
+        if (t.meeting) add(RowChip("🤝 Meeting", ChipTone.PURPLE))
     }
 
     /** Your side, his date not picked yet: "⏳ His deadline? · Latest Thu". */
@@ -196,6 +197,7 @@ object TeamUi {
         if (t.asking) add(RowChip("📅 Asked for ${shortWhen(t.moreDue)}", ChipTone.MUTED))
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
+        if (t.meeting) add(RowChip("🤝 Meeting", ChipTone.PURPLE))
         if (t.status == Team.CHECKED) add(RowChip("Received ✓", ChipTone.GREEN))
         OnTime.chip(t)?.let { add(it) }
         if (t.status == Team.DONE) add(RowChip("Waiting for ${t.fromFirst}'s check", ChipTone.MUTED))

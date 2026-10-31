@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "site": "rafiqbuilders",
+    "public": "web",
+    "ignore": ["**/.*"],
+    "headers": [
+      { "source": "**/*.@(html|js|css|json)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  }
+}

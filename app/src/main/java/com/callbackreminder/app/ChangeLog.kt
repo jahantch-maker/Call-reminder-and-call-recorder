@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.48.0", "1 Nov",
+            new = listOf(
+                "When a date moves, more time is asked, or a task is done after its date, one tap tells why (the reasons come from the owner's list)",
+                "Your tasks (except Private ones) are shared with the owner for team meetings, with their dates, moves and reasons",
+                "Tasks agreed in a team meeting show a 🤝 Meeting label",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.47.0", "31 Oct",
             new = listOf(
                 "On-time mark on every finished team task: On time, or how late it was, measured against the first deadline, with how often it was extended",
