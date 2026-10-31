@@ -4,7 +4,7 @@ name: Publish meeting web app
 # "Run workflow" on the Actions page publishes it by hand.
 on:
   push:
-    branches: [main, claude/web-publish-fix]
+    branches: [main]
     paths: ["web/**", "firebase.json", ".firebaserc", ".github/workflows/web.yml"]
   workflow_dispatch:
 
