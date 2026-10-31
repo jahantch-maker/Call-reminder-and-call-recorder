@@ -1,6 +1,6 @@
 name: Publish meeting web app
 
-# Every merge to main that touches the web app publishes it to https://rafiq-builders.web.app.
+# Every merge to main that touches the web app publishes it to https://rafiqbuilders.web.app.
 # "Run workflow" on the Actions page publishes it by hand.
 on:
   push:

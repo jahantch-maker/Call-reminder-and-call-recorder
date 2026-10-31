@@ -1,6 +1,6 @@
 # Team Meeting web app
 
-Owner-only page for the daily and weekly team meeting. Lives at https://rafiq-builders.web.app.
+Owner-only page for the daily and weekly team meeting. Lives at https://rafiqbuilders.web.app.
 
 - Sign in with the same Gmail as the team owner in the phone app. Firestore rules (`firestore.rules`) let only the owner read the team's tasks here.
 - `?demo` shows sample data; nothing is read or saved.

@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "rafiqbuilders",
     "public": "web",
     "ignore": ["**/.*"],
     "headers": [
