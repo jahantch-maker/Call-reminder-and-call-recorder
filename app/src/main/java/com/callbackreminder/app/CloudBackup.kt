@@ -83,6 +83,12 @@ object CloudBackup {
 
     /** Downloads that night and puts everything back; the app then restarts. Returns null when it worked. */
     suspend fun restore(ctx: Context, day: String): String? = try {
+        restoreOrThrow(ctx, day)
+    } catch (e: Exception) {
+        e.message?.takeIf { it.isNotBlank() } ?: "Couldn't restore"
+    }
+
+    private suspend fun restoreOrThrow(ctx: Context, day: String): String? {
         val t = TeamRepo.teamId ?: return "Not in a team"
         val u = TeamRepo.uid ?: return "Not signed in"
         val col = nights(t, u)
@@ -100,9 +106,7 @@ object CloudBackup {
         val err = Backup.restore(ctx, Uri.fromFile(file))
         file.delete()
         if (err == null) Backup.restartApp(ctx)
-        err
-    } catch (e: Exception) {
-        e.message?.takeIf { it.isNotBlank() } ?: "Couldn't restore"
+        return err
     }
 }
 
