@@ -4,7 +4,7 @@ name: Publish meeting web app
 # "Run workflow" on the Actions page publishes it by hand.
 on:
   push:
-    branches: [main]
+    branches: [main, claude/web-publish-fix]
     paths: ["web/**", "firebase.json", ".firebaserc", ".github/workflows/web.yml"]
   workflow_dispatch:
 
@@ -29,9 +29,17 @@ jobs:
 
       - name: Publish to Firebase Hosting
         if: env.HAS_KEY == 'true'
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: rafiq-builders
-          channelId: live
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          set +e
+          npx -y firebase-tools@13 deploy --only hosting --project rafiq-builders --non-interactive 2>&1 | tee deploy.log
+          status=${PIPESTATUS[0]}
+          rm -f "$RUNNER_TEMP/sa.json"
+          if [ "$status" -ne 0 ]; then
+            # Show the reason on the check itself, so it can be read without the full log.
+            grep -iE "error|denied|permission|not found|404|403" deploy.log | head -8 | while IFS= read -r l; do echo "::error::$l"; done
+            exit "$status"
+          fi
