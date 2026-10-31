@@ -39,9 +39,14 @@
   const stepsFor = (type) => ((D.cfg && D.cfg.steps && D.cfg.steps[type]) || STEPS_DEFAULT[type]).map((x) => x.slice());
 
   // ------------------------------------------------------------------ data model
+  /** Everyone in the meeting: the owner (GM) first, then the team A–Z. Used everywhere: People, Person,
+   *  attendance, actions and the team totals. */
   function people() {
-    return D.members.filter((m) => m.status === "active" && m.uid !== (D.team && D.team.ownerUid)).sort((a, b) => first(a.name).localeCompare(first(b.name)));
+    const ownerUid = D.team && D.team.ownerUid;
+    const me = D.members.find((m) => m.uid === ownerUid && m.status === "active");
+    return (me ? [me] : []).concat(D.members.filter((m) => m.status === "active" && m.uid !== ownerUid).sort((a, b) => first(a.name).localeCompare(first(b.name))));
   }
+  const team = people;
   function member(uid) { return D.members.find((m) => m.uid === uid); }
 
   /** Every task of every person, the same shape: given (team) tasks and own tasks. */
@@ -79,7 +84,7 @@
 
   /** The plain facts for one person (or everyone, uid null) in [a, b). */
   function facts(all, uid, a, b, now) {
-    const mine = all.filter((x) => uid == null ? people().some((p) => p.uid === x.uid) : x.uid === uid);
+    const mine = all.filter((x) => uid == null ? team().some((p) => p.uid === x.uid) : x.uid === uid);
     const due = mine.filter((x) => x.promise >= a && x.promise < b && x.promise <= now);
     const f = { due: due.length, onTime: 0, late: 0, lateOut: 0, overdue: 0, moved: 0, noDate: 0, avgLate: 0, done: 0 };
     let lateDays = 0, lateN = 0;
@@ -104,7 +109,7 @@
     const c = {};
     all.forEach((x) => {
       if (uid != null && x.uid !== uid) return;
-      if (uid == null && !people().some((p) => p.uid === x.uid)) return;
+      if (uid == null && !team().some((p) => p.uid === x.uid)) return;
       (x.reasons || []).forEach((r) => { if (r.at >= a && r.at < b) { const k = r.r || "Other"; c[k] = c[k] || { n: 0, out: !!r.o || outsideSet().has(k), items: [] }; c[k].n++; c[k].items.push(x); } });
     });
     return Object.entries(c).sort((p, q) => q[1].n - p[1].n);
@@ -249,7 +254,7 @@
     const sortChips = [["az", "A–Z"], ["overdue", "Overdue"], ["late", "Late"], ["moved", "Moved"], ["nodate", "No date"]].map(([k, l]) => `<button class="sc ${S.sort === k ? "on" : ""}" data-sort="${k}">${l}</button>`).join("");
     const html = `${kpis(all, a, b, now)}<div class="card"><div class="chiprow"><span class="lb">SORT</span>${sortChips}</div><div class="tablewrap"><table>
       <tr><th>Name</th><th class="c">Due</th><th class="c">On time</th><th class="c">Late</th><th class="c">Late (outside)</th><th class="c">Still overdue</th><th class="c">Moved / extended</th><th class="c">No date</th><th class="c">Avg days late</th></tr>
-      ${rows.map(({ p, f }) => `<tr class="click" data-person="${p.uid}"><td><span class="av">${esc(first(p.name)[0] || "?")}</span>${esc(first(p.name))}</td><td class="c">${f.due}</td><td class="c">${f.onTime}</td>${cell(f.late, R.late)}<td class="c ${f.lateOut ? "grey" : "z"}">${f.lateOut}</td>${cell(f.overdue, R.overdue)}${cell(f.moved, R.moved, "×")}${cell(f.noDate, R.noDate)}<td class="c ${!f.avgLate ? "z" : f.avgLate >= R.avgLate ? "bad" : ""}">${f.avgLate || "–"}</td></tr>`).join("")}
+      ${rows.map(({ p, f }) => `<tr class="click" data-person="${p.uid}"><td><span class="av">${esc(first(p.name)[0] || "?")}</span>${esc(first(p.name))}${p.uid === (D.team && D.team.ownerUid) ? ' <span class="muted">· you</span>' : ""}</td><td class="c">${f.due}</td><td class="c">${f.onTime}</td>${cell(f.late, R.late)}<td class="c ${f.lateOut ? "grey" : "z"}">${f.lateOut}</td>${cell(f.overdue, R.overdue)}${cell(f.moved, R.moved, "×")}${cell(f.noDate, R.noDate)}<td class="c ${!f.avgLate ? "z" : f.avgLate >= R.avgLate ? "bad" : ""}">${f.avgLate || "–"}</td></tr>`).join("")}
       </table></div>${rows.length ? "" : '<div class="muted" style="padding:12px">No active team members yet.</div>'}
       <div class="foot">Red = at or above the line set in Settings · Red lines. Tap a name to open that person. Ranking and score: off until you switch them on.</div></div>`;
     if (embedded) return html;
@@ -413,7 +418,7 @@
   function curMeeting() { return RUN && D.meetings.find((m) => m.id === RUN.id); }
   async function startMeeting(type) {
     const steps = stepsFor(type).filter((s) => s[2]);
-    const att = {}; people().forEach((p) => (att[p.uid] = "present"));
+    const att = {}; team().forEach((p) => (att[p.uid] = "present"));
     const m = { type, startedAt: Date.now(), closedAt: 0, plannedMin: steps.reduce((p, s) => p + Number(s[1]), 0), attendance: att, decisions: [], notes: [], actions: [], agreed: {}, sharedAt: 0 };
     const id = await Store.saveMeeting(m);
     if (DEMO) m.id = id;
@@ -448,7 +453,7 @@
         <button class="bigbtn btnp" data-close="1">Close and lock minutes</button></div>`;
     } else if (st.key === "attendance") {
       const att = m.attendance || {}, lab = { present: ["p", "✓ Present"], late: ["l", "⏰ Late"], absent: ["a", "✕ Absent"], leave: ["", "🌴 On leave"] };
-      inner = `${head("Who is here?", "Everyone starts Present · tap a name to change")}<div class="body"><div class="card" style="flex:1;max-width:640px">${people().map((p) => { const v = att[p.uid] || "present"; return `<div class="pr" data-att="${p.uid}" style="cursor:pointer"><span class="n">${esc(first(p.name))}</span><span class="tg ${lab[v][0]}">${lab[v][1]}</span></div>`; }).join("")}</div></div>`;
+      inner = `${head("Who is here?", "Everyone starts Present · tap a name to change")}<div class="body"><div class="card" style="flex:1;max-width:640px">${team().map((p) => { const v = att[p.uid] || "present"; return `<div class="pr" data-att="${p.uid}" style="cursor:pointer"><span class="n">${esc(first(p.name))}</span><span class="tg ${lab[v][0]}">${lab[v][1]}</span></div>`; }).join("")}</div></div>`;
     } else if (st.key === "lastActions") inner = `${head("Last meeting's actions", "🟢 done · 🔴 late · ⚪ not due yet")}<div class="body"><div class="main">${vActions(true)}</div></div>`;
     else if (st.key === "trend") {
       const tr = weeklyPct(all, null, now, 8);
@@ -490,7 +495,7 @@
   function nextWorkDay(from, plus) { let d = startOfDay(from) + plus * DAY; return d; }
   function newAction(opts) {
     opts = opts || {};
-    const ps = people(); let who = opts.person || null, when = null, title = "";
+    const ps = team(); let who = opts.person || null, when = null, title = "";
     const now = Date.now(), at6 = (d) => d + 18 * 3600000;
     const fri = (() => { let d = startOfDay(now); for (let i = 1; i < 8; i++) { const x = d + i * DAY; if (new Date(x).getDay() === 5) return x; } return d + DAY; })();
     const nextMeeting = nextWorkDay(now, 1) + 11 * 3600000;

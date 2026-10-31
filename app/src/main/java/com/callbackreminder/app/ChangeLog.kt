@@ -29,6 +29,11 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.48.1", "1 Nov",
+            new = listOf("A meeting task the owner gives himself closes as soon as he marks it Done"),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.48.0", "1 Nov",
             new = listOf(
                 "When a date moves, more time is asked, or a task is done after its date, one tap tells why (the reasons come from the owner's list)",

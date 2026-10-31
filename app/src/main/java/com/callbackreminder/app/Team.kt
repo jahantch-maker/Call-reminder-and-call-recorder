@@ -1013,7 +1013,10 @@ object TeamRepo {
         // The on-time mark goes on the Done line too, with the first deadline it was measured against.
         val first = OnTime.promise(t)
         val mark = OnTime.label(t, now)?.let { m -> " · $m" + if (first > 0L && m != "No date") " · first deadline ${TeamUi.shortWhen(first)}" else "" }.orEmpty()
-        update(t, mapOf("status" to Team.DONE, "doneAt" to now, "askAt" to 0L, "stuckAt" to 0L),
+        // v0.48.1 A meeting action the owner gave himself: nobody else to check it, so Done closes it.
+        val self = t.fromUid == t.toUid
+        update(t, mapOf("status" to (if (self) Team.CHECKED else Team.DONE), "doneAt" to now, "askAt" to 0L, "stuckAt" to 0L) +
+            (if (self) mapOf("checkedAt" to now) else emptyMap()),
             (if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}") + mark)
         // v0.48 Done after the first deadline: one tap on why it was late.
         if (first > 0L && now - first > 60_000L) ReasonAsk.askTeamTask(t, ReasonAsk.LATE)
