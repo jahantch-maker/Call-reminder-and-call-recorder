@@ -175,6 +175,7 @@ object TeamUi {
             t.status == Team.CANCELLED -> add(RowChip("Cancelled", ChipTone.MUTED))
             t.status == Team.RETURNED -> add(RowChip("Returned", ChipTone.MUTED))
         }
+        OnTime.chip(t)?.let { add(it) }
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
     }
@@ -195,6 +196,8 @@ object TeamUi {
         if (t.asking) add(RowChip("📅 Asked for ${shortWhen(t.moreDue)}", ChipTone.MUTED))
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
+        if (t.status == Team.CHECKED) add(RowChip("Received ✓", ChipTone.GREEN))
+        OnTime.chip(t)?.let { add(it) }
         if (t.status == Team.DONE) add(RowChip("Waiting for ${t.fromFirst}'s check", ChipTone.MUTED))
     }
 
@@ -1338,6 +1341,7 @@ fun TeamDayScreen(onBack: () -> Unit) {
                         if (!from.isNullOrBlank()) add(RowChip(if (from == myFirst) "↘ from you" else "↘ $from", ChipTone.BLUE))
                         val reason = r["reason"] as? String
                         if (tab == 2 && !done && !reason.isNullOrBlank()) add(RowChip("Why: $reason", ChipTone.ORANGE))
+                        if (tab == 0) OnTime.chip((r["mark"] as? String)?.takeIf { it.isNotBlank() })?.let { add(it) }
                     }
                     TaskCard(
                         title = r["title"] as? String ?: "",

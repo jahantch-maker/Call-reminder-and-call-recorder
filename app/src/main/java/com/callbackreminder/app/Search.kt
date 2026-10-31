@@ -331,7 +331,8 @@ fun SearchScreen(
         "My tasks" to myTasks.filter { m -> task(m.title) || note(m.note) || name(m.name) || name(m.personTitle) || num(m.number) }.map { m ->
             Hit(
                 m.title,
-                listOfNotNull(MyTaskStore.listName(m.listId), if (m.timed) Fmt.dueLabel(m.dueAt) else "no time yet", m.personTitle.takeIf { m.hasPerson })
+                listOfNotNull(MyTaskStore.listName(m.listId), if (m.timed) Fmt.dueLabel(m.dueAt) else "no time yet", m.personTitle.takeIf { m.hasPerson },
+                    OnTime.doneText(ctx, m))
                     .joinToString(" · "),
                 m.done,
                 Icons.Rounded.TaskAlt,

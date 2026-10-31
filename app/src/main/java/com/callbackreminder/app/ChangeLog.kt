@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.47.0", "31 Oct",
+            new = listOf(
+                "On-time mark on every finished team task: On time, or how late it was, measured against the first deadline, with how often it was extended",
+                "Your own My tasks get the mark too (not Private ones): the first time you set is the promise, and every move later is counted",
+                "Own tasks without a time show No date",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.46.2", "31 Oct",
             new = emptyList(),
             fixed = listOf(

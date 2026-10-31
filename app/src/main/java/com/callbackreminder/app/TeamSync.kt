@@ -636,9 +636,12 @@ object TeamSync {
             .sortedWith(compareBy({ it.done }, { if (it.dueAt == 0L) Long.MAX_VALUE else it.dueAt }))
             .take(60)
             .map { t ->
+                val given = recv[t.id.toString()]?.let { fromOf[it] }
                 mapOf(
                     "title" to t.title, "due" to t.dueAt, "done" to t.done, "doneAt" to t.doneAt,
-                    "from" to (recv[t.id.toString()]?.let { fromOf[it]?.fromFirst } ?: ""),
+                    "from" to (given?.fromFirst ?: ""),
+                    // v0.47 the on-time mark, as his own card shows it.
+                    "mark" to ((if (given != null) OnTime.chip(given)?.text else OnTime.label(t)) ?: ""),
                 )
             }
         val fus = ReminderStore.items.value

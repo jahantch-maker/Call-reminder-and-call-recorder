@@ -125,6 +125,8 @@ data class TeamTask(
     val freeExt: Int = 0,
     /** Times the deadline was pushed (approved, or within the free ones). */
     val extCount: Int = 0,
+    /** v0.47 the first deadline ever set: the on-time mark is measured against it (0 = none yet, or an older task). */
+    val firstDue: Long = 0L,
     /** His own reminder (only his phone rings for it); 0 = at the deadline. */
     val reminderAt: Long = 0L,
     /** Messages sent on the Timeline, by sender; photos and voice notes in all. */
@@ -819,7 +821,7 @@ object TeamRepo {
                 "createdAt" to now, "updatedAt" to now,
                 "deadline" to deadline, "urgent" to urgent,
                 "dateBy" to if (fixed) Team.GIVER_DATE else Team.HIS_DATE,
-                "due" to (giverDue ?: 0L),
+                "due" to (giverDue ?: 0L), "firstDue" to (giverDue ?: 0L),
                 "status" to if (fixed) Team.DATED else Team.SENT,
                 "seenAt" to 0L, "doneAt" to 0L, "checkedAt" to 0L,
                 "moreDue" to 0L, "moreReason" to "", "moreAt" to 0L,
@@ -856,10 +858,13 @@ object TeamRepo {
         if (teamId == null) return
         val all = fields.toMutableMap()
         all["updatedAt"] = System.currentTimeMillis()
+        // The first deadline ever set is kept for the on-time mark; later moves only count as extensions.
+        val due = fields["due"] as? Long ?: 0L
+        if (t.firstDue == 0L && due > 0L && "firstDue" !in all) all["firstDue"] = due
         if (event != null) all["events"] = FieldValue.arrayUnion(ev(event))
         tasksRef().document(t.id).update(all)
         // Shown at once, before the server answers.
-        _tasks.value = _tasks.value.map { if (it.id == t.id) applyLocal(it, fields, event) else it }
+        _tasks.value = _tasks.value.map { if (it.id == t.id) applyLocal(it, all, event) else it }
     }
 
     private fun applyLocal(t: TeamTask, f: Map<String, Any>, event: String?): TeamTask {
@@ -891,6 +896,7 @@ object TeamRepo {
         (f["deadline"] as? Long)?.let { x = x.copy(deadline = it) }
         (f["dateBy"] as? String)?.let { x = x.copy(dateBy = it) }
         (f["extCount"] as? Int)?.let { x = x.copy(extCount = it) }
+        (f["firstDue"] as? Long)?.let { x = x.copy(firstDue = it) }
         (f["reminderAt"] as? Long)?.let { x = x.copy(reminderAt = it) }
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
@@ -982,12 +988,17 @@ object TeamRepo {
         update(before, mapOf(
             "due" to before.due, "deadline" to before.deadline, "status" to before.status, "moreAt" to before.moreAt,
             "moreDue" to before.moreDue, "moreReason" to before.moreReason, "extCount" to before.extCount,
+            "firstDue" to before.firstDue,
         ), "↩ Undone")
     }
 
     fun markDone(t: TeamTask) {
-        update(t, mapOf("status" to Team.DONE, "doneAt" to System.currentTimeMillis(), "askAt" to 0L, "stuckAt" to 0L),
-            if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}")
+        val now = System.currentTimeMillis()
+        // The on-time mark goes on the Done line too, with the first deadline it was measured against.
+        val first = OnTime.promise(t)
+        val mark = OnTime.label(t, now)?.let { m -> " · $m" + if (first > 0L && m != "No date") " · first deadline ${TeamUi.shortWhen(first)}" else "" }.orEmpty()
+        update(t, mapOf("status" to Team.DONE, "doneAt" to now, "askAt" to 0L, "stuckAt" to 0L),
+            (if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}") + mark)
     }
 
     /** Received, thanks ✓: closes it and thanks him. */
@@ -1412,6 +1423,7 @@ object TeamRepo {
         locked = s.getBoolean("locked") ?: false,
         freeExt = (s.getLong("freeExt") ?: 0L).toInt(),
         extCount = (s.getLong("extCount") ?: 0L).toInt(),
+        firstDue = s.getLong("firstDue") ?: 0L,
         reminderAt = s.getLong("reminderAt") ?: 0L,
         nBy = longs(s.get("nBy")),
         nPhoto = (s.getLong("nPhoto") ?: 0L).toInt(),
