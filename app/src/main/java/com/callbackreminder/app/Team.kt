@@ -139,6 +139,8 @@ data class TeamTask(
      *  seen on the Timeline, and the voice notes / photos each person has played or opened. */
     val msgSeen: Map<String, Long> = emptyMap(),
     val played: Map<String, List<String>> = emptyMap(),
+    /** v0.48 🤝 Meeting: an action agreed in a team meeting (given from the meeting web app). */
+    val meeting: Boolean = false,
 ) {
     /** [uid] has seen [m] on the Timeline (blue ticks). */
     fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
@@ -390,6 +392,9 @@ object TeamRepo {
                 if (m.active && was?.active != true) {
                     listenMembersAndTasks(t, u.uid)
                     TeamWorker.schedule(appCtx)
+                    // v0.48 the owner's late reasons, and own tasks shared for team meetings.
+                    LateReasons.refresh(appCtx)
+                    OwnShare.changed(appCtx)
                 }
             },
         )
@@ -930,8 +935,18 @@ object TeamRepo {
 
     private fun because(reason: String) = reason.trim().takeIf { it.isNotEmpty() }?.let { " · “$it”" } ?: ""
 
+    /** v0.48 his "why" for a slip: kept on the task for the team meeting, and a line on the Timeline. */
+    fun addLateReason(taskId: String, r: LateReason) {
+        val t = _tasks.value.firstOrNull { it.id == taskId } ?: return
+        val line = "🏷 Why: ${r.reason}" + (if (r.note.isNotBlank()) " · “${r.note}”" else "") + if (r.outside) " (outside)" else ""
+        update(t, mapOf("lateReasons" to FieldValue.arrayUnion(mapOf(
+            "at" to r.at, "r" to r.reason, "k" to r.kind, "o" to r.outside, "n" to r.note, "by" to (uid ?: ""),
+        ))), line)
+    }
+
     /** He set his deadline (or moved it, while it isn't locked). */
     fun setHisDate(t: TeamTask, due: Long) {
+        if (t.due > 0L && due > t.due) ReasonAsk.askTeamTask(t, ReasonAsk.MOVE, due)
         update(t, mapOf("due" to due, "status" to Team.DATED, "seenAt" to (t.seenAt.takeIf { it > 0L } ?: System.currentTimeMillis())),
             if (t.due > 0L && t.due != due) "📅 Deadline ${change(t.due, due)}" else "📅 Deadline set · ${TeamUi.shortWhen(due)}")
     }
@@ -962,6 +977,7 @@ object TeamRepo {
      * the giver approves. Returns true when it moved at once.
      */
     fun extend(t: TeamTask, due: Long, reason: String): Boolean {
+        ReasonAsk.askTeamTask(t, ReasonAsk.EXT, due)
         if (t.extCount < t.freeExt) {
             update(t, mapOf("due" to due, "deadline" to maxOf(t.deadline, due), "status" to Team.DATED, "moreAt" to 0L, "extCount" to t.extCount + 1),
                 "📅 Deadline extended · ${change(t.due, due)}${because(reason)}")
@@ -999,6 +1015,8 @@ object TeamRepo {
         val mark = OnTime.label(t, now)?.let { m -> " · $m" + if (first > 0L && m != "No date") " · first deadline ${TeamUi.shortWhen(first)}" else "" }.orEmpty()
         update(t, mapOf("status" to Team.DONE, "doneAt" to now, "askAt" to 0L, "stuckAt" to 0L),
             (if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}") + mark)
+        // v0.48 Done after the first deadline: one tap on why it was late.
+        if (first > 0L && now - first > 60_000L) ReasonAsk.askTeamTask(t, ReasonAsk.LATE)
     }
 
     /** Received, thanks ✓: closes it and thanks him. */
@@ -1431,5 +1449,6 @@ object TeamRepo {
         msgDel = longs(s.get("msgDel")),
         msgSeen = longs(s.get("msgSeen")),
         played = (s.get("played") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to strings(v) } }?.toMap() ?: emptyMap(),
+        meeting = s.getBoolean("meeting") ?: false,
     )
 }

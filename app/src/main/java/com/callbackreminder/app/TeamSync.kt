@@ -63,6 +63,7 @@ object TeamLinks {
         if (on) s += myTaskId.toString() else s -= myTaskId.toString()
         putSet(c, "private", s)
         TeamSync.version.value++
+        OwnShare.changed(c)
     }
     fun privateCount(c: Context): Int = set(c, "private").count { id -> MyTaskStore.get(id.toLongOrNull() ?: -1L)?.done == false }
 }

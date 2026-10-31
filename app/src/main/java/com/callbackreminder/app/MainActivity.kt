@@ -163,6 +163,9 @@ class MainActivity : ComponentActivity() {
                 )
                 DayClearedWatcher()
                 DayClearedOverlay()
+                // v0.48 the one-tap "why" after a slip, and the one-time team meeting notice.
+                ReasonAskHost()
+                MeetingShareNotice()
               }
             }
         }

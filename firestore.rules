@@ -46,7 +46,8 @@ service cloud.firestore {
 
       // Team tasks: seen by the giver, the person it is for, and everyone above either of them.
       match /tasks/{task} {
-        allow read: if signedIn() && me() in resource.data.viewers && isActive(t);
+        // v0.48 the owner also reads every task, for the team meeting web app.
+        allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t));
         allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
         allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
           && request.resource.data.fromUid == resource.data.fromUid
@@ -56,7 +57,7 @@ service cloud.firestore {
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
         match /msgs/{m} {
-          allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
+          allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t));
           allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
           allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
             && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text'])
@@ -85,6 +86,23 @@ service cloud.firestore {
       match /proofs/{p} {
         allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
         allow create, update: if signedIn() && isActive(t) && request.resource.data.uid == me() && me() in request.resource.data.viewers;
+      }
+
+      // v0.48 Own My tasks (never 🔒 Private) shared for the team meeting: written by him, read by him and the owner.
+      match /own/{uid}/tasks/{task} {
+        allow write: if signedIn() && uid == me() && isActive(t);
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t));
+      }
+
+      // v0.48 Late reasons, red lines and meeting steps: the owner sets them in the web app; every member reads them.
+      match /config/{doc} {
+        allow read: if signedIn() && isActive(t);
+        allow write: if signedIn() && isOwner(t);
+      }
+
+      // v0.48 Team meetings (attendance, decisions, notes, actions): the owner only.
+      match /meetings/{m} {
+        allow read, write: if signedIn() && isOwner(t);
       }
 
       // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.

@@ -42,6 +42,8 @@ data class MyTask(
     /** v0.47 the first time it was given (its promise for the on-time mark) and how often it was pushed later since. */
     val firstDueAt: Long = 0L,
     val moves: Int = 0,
+    /** v0.48 the "why" picked for each slip (a move, a Done after the date), oldest first. */
+    val reasons: List<LateReason> = emptyList(),
 ) {
     val hasPerson: Boolean get() = number.isNotBlank()
     /** The length was chosen (new tasks have none until they get a time). */
@@ -228,10 +230,32 @@ object MyTaskStore {
             } ?: emptyList(),
             firstDueAt = o.optLong("firstDueAt"),
             moves = o.optInt("moves"),
+            reasons = o.optJSONArray("reasons")?.let { a ->
+                (0 until a.length()).map { a.getJSONObject(it).let { e ->
+                    LateReason(e.optLong("a"), e.optString("r"), e.optString("k"), e.optBoolean("o"), e.optString("n"))
+                } }
+            } ?: emptyList(),
         )
     }
 
-    private fun save(list: List<MyTask>) = saveRows(promises(_items.value, list))
+    private fun save(list: List<MyTask>) {
+        val before = _items.value.associateBy { it.id }
+        val after = promises(_items.value, list)
+        saveRows(after)
+        // v0.48 a push to a later time asks why (team on, not 🔒 Private).
+        if (TeamRepo.activeNow) after.forEach { t ->
+            val o = before[t.id] ?: return@forEach
+            if (!t.done && t.moves > o.moves) ReasonAsk.askMyTask(appCtx, t, ReasonAsk.MOVE)
+        }
+    }
+
+    /** v0.48 the "why" for a slip, kept on the task (and shared with the owner when it isn't 🔒 Private). */
+    @Synchronized
+    fun addReason(id: Long, r: LateReason) {
+        val old = get(id) ?: return
+        val line = "Why: ${r.reason}" + (if (r.note.isNotBlank()) " · ${r.note}" else "") + if (r.outside) " (outside)" else ""
+        saveRows(_items.value.map { if (it.id == id) old.copy(reasons = old.reasons + r, events = old.events + TaskEvent(r.at, line)) else it })
+    }
 
     /**
      * The on-time mark's memory: a task keeps the first time it was given, and every push to a later time counts as a
@@ -263,6 +287,7 @@ object MyTaskStore {
         rows.save(appCtx, list)
         _items.value = list
         PersonNames.refresh()
+        OwnShare.changed(appCtx)
     }
 
     private fun toJson(t: MyTask): JSONObject {
@@ -284,6 +309,9 @@ object MyTaskStore {
             .put("events", JSONArray().apply { t.events.forEach { put(JSONObject().put("a", it.at).put("t", it.text)) } })
             .put("firstDueAt", t.firstDueAt)
             .put("moves", t.moves)
+            .put("reasons", JSONArray().apply {
+                t.reasons.forEach { put(JSONObject().put("a", it.at).put("r", it.reason).put("k", it.kind).put("o", it.outside).put("n", it.note)) }
+            })
     }
 
     // ---- Lists ----
@@ -477,6 +505,9 @@ object MyTaskStore {
         save(_items.value.map { if (it.id == id) t else it })
         TaskAlarms.cancelTaskNotification(appCtx, id)
         if (done) TaskAlarms.cancelTask(appCtx, id) else TaskAlarms.scheduleTask(appCtx, t)
+        // v0.48 Done after its first time: one tap on why it was late.
+        val promise = OnTime.promise(t)
+        if (done && promise > 0L && now - promise > 60_000L && TeamRepo.activeNow) ReasonAsk.askMyTask(appCtx, t, ReasonAsk.LATE)
     }
 
     @Synchronized
