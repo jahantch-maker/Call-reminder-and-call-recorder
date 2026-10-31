@@ -109,6 +109,7 @@ object Backup {
         schedule(ctx)
         val error = backUpNow(ctx)
         if (error != null) notifyFailed(ctx, error)
+        CloudBackup.request(ctx)
     }
 
     // ---- Writing ----

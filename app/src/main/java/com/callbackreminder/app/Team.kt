@@ -56,7 +56,17 @@ data class TeamMember(
     val ownDossier: Boolean = false,
     /** ✏ Sets the Dossier of the people under him (the Owner's switch). */
     val setDossier: Boolean = false,
+    /** v0.49 The seat (his official Gmail) and designation in the Rafiq Builders portal; blank = not in a seat yet. */
+    val seatId: String = "",
+    val designation: String = "",
+    /** v0.49 The app switches the portal set for him (null = none set yet: the old behaviour). */
+    val appPerms: Map<String, Boolean>? = null,
+    /** v0.49 Whom the chart lets him give tasks to (uids); null = everyone, as before. */
+    val giveTo: List<String>? = null,
 ) {
+    /** One app switch from the portal's Access page; [legacy] is what applies until the portal has set any. */
+    fun can(key: String, legacy: Boolean): Boolean = if (role == Team.OWNER && key != "callRec") true else appPerms?.get(key) ?: legacy
+
     /** Every number of his, Main first: any of them is him. */
     val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
     val waNumber: String get() = wa.ifBlank { phone }
@@ -585,10 +595,37 @@ object TeamRepo {
         "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 
+    /**
+     * v0.49 A Gmail the owner already added as a seat joins that seat at once ("Welcome to Rafiq Builders · Surveyor");
+     * any other Gmail waits in the portal's Waiting to join. Returns the seat's designation, "" when he joins his seat
+     * without one, or null when there is no seat for this Gmail.
+     */
+    private suspend fun seatFor(u: FirebaseUser, t: String): String? {
+        val mail = u.email?.trim()?.lowercase().orEmpty()
+        if (mail.isEmpty()) return null
+        val s = runCatching { db().collection("teams").document(t).collection("seats").document(mail).get(Source.SERVER).await() }.getOrNull()
+        return if (s != null && s.exists()) s.getString("designation").orEmpty() else null
+    }
+
+    private suspend fun writeJoin(u: FirebaseUser, t: String, myName: String, myPhone: String) {
+        val now = System.currentTimeMillis()
+        val seat = seatFor(u, t)
+        val ref = db().collection("teams").document(t).collection("members").document(u.uid)
+        if (seat != null) {
+            ref.set(memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.ACTIVE, now, myName) + mapOf("seatId" to u.email.orEmpty().trim().lowercase())).await()
+            p().edit().putString("welcome", seat).apply()
+        } else {
+            ref.set(memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, now, myName)).await()
+            p().edit().remove("welcome").apply()
+        }
+    }
+
+    /** "Welcome to Rafiq Builders · Surveyor": set when he joined his seat straight away. Null = he is waiting or already settled. */
+    fun welcome(): String? = if (::appCtx.isInitialized) p().getString("welcome", null) else null
+    fun clearWelcome() { if (::appCtx.isInitialized) p().edit().remove("welcome").apply() }
+
     private suspend fun joinNow(u: FirebaseUser, t: String, myName: String, myPhone: String): String? {
-        db().collection("teams").document(t).collection("members").document(u.uid).set(
-            memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, System.currentTimeMillis(), myName)
-        ).await()
+        writeJoin(u, t, myName, myPhone)
         db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
         setTeamId(t)
         start(appCtx)
@@ -611,9 +648,7 @@ object TeamRepo {
         val c = code.trim().uppercase()
         val doc = db().collection("codes").document(c).get().await()
         val t = doc.getString("teamId") ?: throw IllegalStateException("No team has the code $c. Check the letters with your manager.")
-        db().collection("teams").document(t).collection("members").document(u.uid).set(
-            memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, System.currentTimeMillis(), myName)
-        ).await()
+        writeJoin(u, t, myName, myPhone)
         db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
         setTeamId(t)
         start(appCtx)
@@ -757,7 +792,9 @@ object TeamRepo {
     /** Everyone you can give a task to: the whole team but you, the people below you first. */
     fun canGiveTo(): List<TeamMember> {
         val u = uid ?: return emptyList()
-        return _members.value.filter { it.active && it.uid != u }.sortedBy { if (u in it.managers) 0 else 1 }
+        // v0.49 the chart in the portal decides: down his branch, sideways, and the extra givers the owner added.
+        val allowed = _me.value?.giveTo
+        return _members.value.filter { it.active && it.uid != u && (allowed == null || it.uid in allowed) }.sortedBy { if (u in it.managers) 0 else 1 }
     }
 
     /** The team member with this phone number, if any. */
@@ -1401,6 +1438,11 @@ object TeamRepo {
         wa = s.getString("wa").orEmpty(),
         ownDossier = s.getBoolean("ownDossier") == true,
         setDossier = s.getBoolean("setDossier") == true,
+        seatId = s.getString("seatId").orEmpty(),
+        designation = s.getString("designation").orEmpty(),
+        appPerms = ((s.get("perms") as? Map<*, *>)?.get("app") as? Map<*, *>)?.entries
+            ?.mapNotNull { (k, v) -> (k as? String)?.let { key -> (v as? Boolean)?.let { key to it } } }?.toMap(),
+        giveTo = (s.get("canGiveTo") as? List<*>)?.mapNotNull { it as? String },
     )
 
     private fun taskOf(s: DocumentSnapshot) = TeamTask(
