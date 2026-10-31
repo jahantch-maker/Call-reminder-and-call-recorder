@@ -427,9 +427,16 @@ object MyTaskStore {
     }
 
     @Synchronized
-    fun setDone(id: Long, done: Boolean) {
+    fun setDone(id: Long, done: Boolean, force: Boolean = false) {
         val old = get(id) ?: return
         if (old.done == done) return
+        // A task that asks for photo proof is only done with the photo (✅ Done with photo), never by a tick.
+        if (done && !force && TeamUi.proofRequired(appCtx, id)) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(appCtx, "📷 Photo proof needed: open the task and tap Done", android.widget.Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         val now = System.currentTimeMillis()
         val t = old.copy(done = done, doneAt = if (done) now else 0L, events = old.events + TaskEvent(now, if (done) "Done" else "Not done, opened again"))
         save(_items.value.map { if (it.id == id) t else it })

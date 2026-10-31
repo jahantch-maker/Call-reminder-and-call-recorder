@@ -709,7 +709,7 @@ internal fun TeamDoneWithPhoto(t: TeamTask, myTaskId: Long?, onDismiss: () -> Un
             TeamRepo.send(t, Team.PHOTO, caption, Team.PROOF, bytes)
             val sent = TeamRepo.tasks.value.firstOrNull { it.id == t.id } ?: t
             TeamRepo.markDone(sent)
-            myTaskId?.let { MyTaskStore.setDone(it, true) }
+            myTaskId?.let { MyTaskStore.setDone(it, true, force = true) }
             onDismiss()
         }
     }

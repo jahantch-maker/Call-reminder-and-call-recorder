@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.46.2", "31 Oct",
+            new = emptyList(),
+            fixed = listOf(
+                "A task given to you shows Done, Deadline and My reminder in Needs you and the review session, without Call and WhatsApp",
+                "Your reminder is set after your deadline, so the task stays in To schedule until both are set",
+                "A task that asks for a photo can't be ticked off without it, and Not done yet asks for a new photo",
+            ),
+        ),
+        Entry(
             "0.46.1", "31 Oct",
             new = listOf("The app now starts at Small size for anyone who never changed Display size"),
             fixed = listOf(

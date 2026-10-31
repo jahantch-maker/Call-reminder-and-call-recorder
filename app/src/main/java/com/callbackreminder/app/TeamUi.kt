@@ -138,6 +138,13 @@ object TeamUi {
     fun taskOfMyTask(c: Context, myTaskId: Long, tasks: List<TeamTask>): TeamTask? =
         TeamLinks.teamTaskOfMyTask(c, myTaskId)?.let { id -> tasks.firstOrNull { it.id == id } }
 
+    /** His task asks for photo proof and none was sent yet: a tick must not close it. */
+    fun proofRequired(c: Context, myTaskId: Long): Boolean {
+        if (!TeamRepo.activeNow) return false
+        val t = taskOfMyTask(c, myTaskId, TeamRepo.tasks.value) ?: return false
+        return t.open && t.photoProof && t.proofAt == 0L
+    }
+
     /** The team task behind a follow-up: one you gave (your side) or passed down (his side). */
     fun taskOfLink(c: Context, linkId: Long, tasks: List<TeamTask>): TeamTask? {
         if (linkId == 0L) return null
@@ -1176,7 +1183,13 @@ fun TeamReceiverPanel(t: TeamTask, myTaskId: Long?, onDone: () -> Unit, onRemind
             photo = t.photoProof,
             onDone = { if (t.photoProof) donePhoto = true else onDone() },
             onDeadline = if (t.hisDate && !t.deadlineLocked) ({ pick = true }) else null,
-            onReminder = onReminder,
+            // The task stays in To schedule until both are set: the deadline comes first, then his reminder.
+            onReminder = onReminder?.let { go ->
+                {
+                    if (t.hisDate && t.due == 0L) Toast.makeText(ctx, "Set your deadline first, then your reminder", Toast.LENGTH_LONG).show()
+                    else go()
+                }
+            },
         )
     }
     androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
