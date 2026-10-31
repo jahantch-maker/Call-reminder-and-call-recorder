@@ -237,17 +237,17 @@ object TeamSync {
             t.open -> {
                 if (local == null) {
                     val made = MyTaskStore.add(
-                        title = t.title, note = "", dueAt = t.due, name = "", number = "",
+                        title = t.title, note = "", dueAt = 0L, name = "", number = "",
                         starred = t.urgent,
                     )
                     recv[t.id] = made.id.toString()
                 } else {
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
                     if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
-                    // His reminder rings at the deadline until he sets his own: then only he moves it.
-                    // A date he picks himself never sets his reminder: he taps ⏰ My reminder.
-                    if (local.dueAt != t.due && !(t.hisDate && local.dueAt == 0L) && ((before == null && local.dueAt == 0L) || (remoteMoved && (local.dueAt == 0L || local.dueAt == dueOf(before)))))
-                        MyTaskStore.setDue(local.id, t.due)
+                    // His task waits in To schedule until he sets his own reminder (⏰ My reminder): a deadline never
+                    // sets it. Not done yet clears his old reminder too, so he sets it again.
+                    if (t.status == Team.REOPENED && statusOf(before) != Team.REOPENED && local.dueAt != 0L)
+                        MyTaskStore.setDue(local.id, 0L)
                 }
             }
             t.status == Team.CANCELLED || t.status == Team.RETURNED -> {

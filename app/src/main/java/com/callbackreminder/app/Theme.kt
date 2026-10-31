@@ -61,7 +61,7 @@ object Appearance {
 
     /** Display size, this app only: Extra small · Small · Default · Large (Large kept modest so nothing is cut). */
     val SIZES = listOf("Extra small" to 0.80f, "Small" to 0.90f, "Default" to 1.0f, "Large" to 1.10f)
-    const val SIZE_DEFAULT = 2
+    const val SIZE_DEFAULT = 1
     private const val KEY_SIZE = "app_display_size"
     fun displaySize(c: Context): Int = AppSettings.getString(c, KEY_SIZE).toIntOrNull()?.takeIf { it in SIZES.indices } ?: SIZE_DEFAULT
     fun setDisplaySize(c: Context, i: Int) { AppSettings.setString(c, KEY_SIZE, i.toString()); _version.value++ }
