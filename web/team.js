@@ -127,7 +127,7 @@
     const list = (a) => (a.length ? a.map(esc).join(", ") : "nobody");
     const m = document.getElementById("modal");
     m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">Check before saving</b><div class="impact" style="margin-top:10px">
-      <b>${esc(nm)}</b> will report to <b>${im.nh ? esc(RB.holderName(im.nh)) : "the owners"}</b> (now ${im.old ? esc(RB.holderName(im.old)) : "the owners"}).<br>
+      <b>${esc(nm)}</b> will report to <b>${im.nh ? esc(RB.holderName(im.nh)) : "nobody (top)"}</b> (now ${im.old ? esc(RB.holderName(im.old)) : "nobody (top)"}).<br>
       • Reports under ${esc(first(nm))} move with ${s.role === "owner" ? "them" : "him"}: ${list(im.desc.map((x) => RB.holderName(x)))}<br>
       • Now also see ${esc(first(nm))}'s branch: ${list(im.sees)}<br>
       • Stop seeing it: ${list(im.stops)}<br>
@@ -135,29 +135,27 @@
       • New sideways colleagues (can give tasks to ${esc(first(nm))}): ${list(im.side)}</div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:16px"><button class="link" id="cn">Cancel</button><button class="btnp" id="cy">Confirm</button></div></div></div>`;
     document.getElementById("cn").onclick = () => (m.innerHTML = "");
-    document.getElementById("cy").onclick = async () => { m.innerHTML = ""; await RB.Store.put("seats", id, { reportsTo: newHeadId || "" }, true); await done("Chart: " + nm + " now reports to " + (im.nh ? RB.holderName(im.nh) : "the owners") + " (was " + (im.old ? RB.holderName(im.old) : "the owners") + ")"); RB.render(); };
+    document.getElementById("cy").onclick = async () => { m.innerHTML = ""; await RB.Store.put("seats", id, { reportsTo: newHeadId || "" }, true); await done("Chart: " + nm + " now reports to " + (im.nh ? RB.holderName(im.nh) : "nobody (top)") + " (was " + (im.old ? RB.holderName(im.old) : "nobody (top)") + ")"); RB.render(); };
   }
 
   function node(s) {
     const g = (s.extraGivers || []).length;
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
-    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed() && s.role !== "owner"}" data-node="${esc(s.id)}"><b>${esc(s.status === "filled" ? first(s.name) : "Empty seat")}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
+    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
   }
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + k.map(subtree).join("") + "</ul>" : ""}</li>`; };
   function chart() {
-    const owners = RB.owners(), ownerIds = owners.map((o) => o.id);
-    const tops = D.seats.filter((s) => s.role !== "owner" && (!s.reportsTo || ownerIds.includes(s.reportsTo) || !RB.seat(s.reportsTo)));
-    const sel = RB.seat(S.seatSel) || D.seats.find((x) => x.role !== "owner" && x.status === "filled");
+    const tops = D.seats.filter((s) => !s.reportsTo || !RB.seat(s.reportsTo) || s.reportsTo === s.id);
+    const sel = RB.seat(S.seatSel) || D.seats.find((x) => x.status === "filled");
     if (sel) S.seatSel = sel.id;
     const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head, or use “Reports to” on the right." : "View only"}</span></div>
-      <div class="chart"><div class="tree"><div class="mh2">APP OWNER · sees everyone, gives tasks to anyone</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="ownrow">${owners.map(node).join("")}</div>
-      <div class="drophead" style="height:22px;border-left:2px solid #C9CACD"></div><ul style="padding-top:0">${tops.map(subtree).join("")}</ul></div></div></div>`;
+      <div class="chart"><div class="tree">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : '<div class="mh2">TOP</div>'}<ul>${tops.map(subtree).join("")}</ul></div></div></div>`;
     let side = "";
     if (sel) {
-      const heads = [["", "the owners"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
+      const heads = [["", "— nobody (top) —"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
       const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
       side = `<div class="ph"><div class="pav" style="background:${sel.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(sel)}</div><h2>${esc(RB.holderName(sel))}</h2><div class="s">${esc(sel.designation)}${sel.dept ? " · " + esc(sel.dept) : ""}</div></div>
-        ${sel.role === "owner" ? '<div class="hint">The app owner sees everyone and gives tasks to anyone. Designation and department are free to change; the app rights stay.</div>' : `<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+        ${sel.role === "owner" ? '<div class="hint">App owner: keeps every app right wherever he sits in the chart.</div>' : ""}${`<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
         <div class="foot">One head per person. A change shows what it affects before it is saved.</div></div>
         <div class="sec"><h4>Can get tasks from</h4><div class="sub">By default: his head, his own branch's heads and colleagues with the same head.</div><div>${gv.map((g) => `<span class="chip">${esc(RB.holderName(g))}${ed() ? `<button data-rmgiver="${esc(g.id)}" title="Remove">✕</button>` : ""}</span>`).join("") || '<span class="sub">No extra givers.</span>'}${ed() ? ' <button class="btnt edit-only" id="addgiver">+ Add</button>' : ""}</div></div>`}`;
     }
@@ -409,7 +407,7 @@
       both("[data-delseat]", (e) => deleteSeat(e.dataset.delseat));
       // chart
       root.querySelectorAll("[data-node]").forEach((n) => {
-        n.onclick = () => { S.seatSel = n.dataset.node; RB.render(); };
+        n.onclick = () => { if (!n.dataset.node) return; S.seatSel = n.dataset.node; RB.render(); };
         n.ondragstart = (ev) => { ev.dataTransfer.setData("text/plain", n.dataset.node); n.classList.add("drag"); };
         n.ondragend = () => n.classList.remove("drag");
         n.ondragover = (ev) => { ev.preventDefault(); n.classList.add("over"); };
