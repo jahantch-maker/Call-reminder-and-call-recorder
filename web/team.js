@@ -15,6 +15,20 @@
   };
   const selSeat = () => RB.seat(S.seatSel) || D.seats.find((s) => s.status === "filled") || D.seats[0];
   const done = async (text) => { await RB.log(text); await RB.sync(); };
+  // Access clicks show at once and are saved together half a second after the last click, so quick clicks never undo each other.
+  const lazy = {};
+  function lazySave(key, write, label) {
+    const q = (lazy[key] = lazy[key] || { labels: [], seq: 0 });
+    q.labels.push(label); q.write = write; q.seq++; q.busy = true; RB.hold = true; clearTimeout(q.t);
+    const my = q.seq;
+    q.t = setTimeout(async () => {
+      const labels = q.labels.filter((x, i, a) => a.indexOf(x) === i); q.labels = [];
+      try { await q.write(); await done(labels.join(" · ")); } catch (e) { RB.alertBox("Couldn't save the access change: " + (e.message || e)); }
+      finally { if (q.seq === my) { q.busy = false; RB.hold = Object.values(lazy).some((x) => x.busy); RB.render(); } }
+    }, 500);
+  }
+  const saveOverride = (s, label) => lazySave("seat:" + s.id, () => RB.Store.putField("seats", s.id, "override", RB.seat(s.id).override || {}), label);
+  const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }), label); };
 
   // ------------------------------------------------------------------ people
   function people() {
@@ -195,21 +209,21 @@
   async function setSwitch(k, val) {
     if (S.accMode === "desig" && S.accDesig) {
       const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val;
-      await saveDesig(list, "Default for " + S.accDesig + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
+      saveDesigLazy(list, "Default for " + S.accDesig + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.app = ov.app || {}; ov.app[k] = val;
       if (RB.defaultsOf(s.designation).app[k] === val) delete ov.app[k];
-      await RB.Store.put("seats", s.id, { override: ov }, true); await done(RB.holderName(s) + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
+      s.override = ov; saveOverride(s, RB.holderName(s) + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
     }
   }
   async function setLevel(k, v) {
     if (S.accMode === "desig" && S.accDesig) {
       const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v;
-      await saveDesig(list, "Default for " + S.accDesig + ": portal " + k + " " + v);
+      saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + v);
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.portal = ov.portal || {}; ov.portal[k] = v;
       if (RB.defaultsOf(s.designation).portal[k] === v) delete ov.portal[k];
-      await RB.Store.put("seats", s.id, { override: ov }, true); await done(RB.holderName(s) + ": portal " + k + " " + v);
+      s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + v);
     }
   }
 
@@ -352,8 +366,8 @@
       const ab = root.querySelector("#accback"); if (ab) ab.onclick = () => { S.accMode = "person"; RB.render(); };
       on(root, "[data-sw]", (e) => { if (!ed() || e.classList.contains("dis")) return; setSwitch(e.dataset.sw, !e.classList.contains("on")).then(RB.render); });
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
-      on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; RB.Store.put("seats", s.id, { override: ov }, true).then(() => done(RB.holderName(s) + ": " + k + " back to default")).then(RB.render); });
-      const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { await RB.Store.put("seats", S.accSeat, { override: {} }, true); await done(RB.holderName(RB.seat(S.accSeat)) + ": access reset to default"); });
+      on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
+      const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { const s = RB.seat(S.accSeat); s.override = {}; saveOverride(s, RB.holderName(s) + ": access reset to default"); });
       // waiting
       on(root, "[data-approve]", (e) => approve(e.dataset.approve));
       on(root, "[data-reject]", (e) => RB.confirm("Reject this request? The person can ask again.", "Reject", async () => { const m = RB.member(e.dataset.reject); await RB.Store.del("members", e.dataset.reject); await RB.log("Rejected join request from " + (m.name || m.email)); }, true));

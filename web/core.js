@@ -125,6 +125,12 @@
       if (coll === "policies") await reindex(id, Object.assign({}, D.docs.find((x) => x.id === id) || {}, data).shareWith || []);
       return id;
     },
+    // Replaces one whole field (a map such as a seat's "override"): a normal merge cannot remove keys inside it.
+    async putField(coll, id, field, value) {
+      if (RB.DEMO) return RB.Store.put(coll, id, { [field]: value }, true);
+      await teamRef.collection(coll).doc(id).set({ [field]: value }, { mergeFields: [field] });
+      return id;
+    },
     async add(coll, data) { const id = RB.id(); await RB.Store.put(coll, id, data); return id; },
     async del(coll, id) {
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); if (ex && ex.type === "policy") coll = "policies"; }
@@ -242,7 +248,7 @@
   };
 
   let softT = null;
-  RB.soft = () => { if (document.getElementById("modal").innerHTML) return; clearTimeout(softT); softT = setTimeout(() => RB.render && RB.render(), 250); };
+  RB.soft = () => { if (RB.hold || document.getElementById("modal").innerHTML) return; clearTimeout(softT); softT = setTimeout(() => RB.render && RB.render(), 250); };
   function listen() {
     const onErr = () => {};
     const snap = (name, fn) => teamRef.collection(name).onSnapshot((s) => { fn(s); RB.soft(); }, onErr);
