@@ -543,6 +543,19 @@ private fun TeamActive(
         }
     }
 
+    val showNumbers = me.can("seeNumbers", false)
+
+    @Composable
+    fun NumberChip(text: String, red: Boolean) {
+        Text(
+            text, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            color = if (red) cs.onErrorContainer else cs.onSurface,
+            modifier = Modifier.padding(horizontal = 3.dp)
+                .background(if (red) cs.errorContainer else cs.surfaceVariant, RoundedCornerShape(7.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+
     @Composable
     fun Node(m: TeamMember, depth: Int, byBoss: Map<String, List<TeamMember>>, only: Set<String>?) {
         val canSee = me.uid in m.managers && me.can("seeDay", true)
@@ -568,6 +581,16 @@ private fun TeamActive(
                 }
                 Text(m.roleLabel + " · " + who + (if (openFromMe > 0) " · $openFromMe open from you" else ""), fontSize = 12.sp, color = cs.onSurfaceVariant)
             }
+            // v0.50 "See how my people are doing": late and due-today counts of the tasks I gave him (switch on the portal).
+            if (showNumbers && m.uid != me.uid) {
+                val now = System.currentTimeMillis()
+                val dayEnd = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val given = tasks.filter { it.fromUid == me.uid && it.toUid == m.uid && it.open && it.due > 0L }
+                val late = given.count { it.due < now }
+                val today = given.count { it.due in now until dayEnd }
+                if (late > 0) NumberChip("$late late", true)
+                if (today > 0) NumberChip("$today today", false)
+            }
             if (admin && m.uid != me.uid && m.role != Team.OWNER) TextButton(onClick = { editing = m }) { Text("Edit") }
             if (canSee) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "His day", tint = cs.onSurfaceVariant)
         }
@@ -588,6 +611,23 @@ private fun TeamActive(
         TeamCard {
             active.filter { it.uid in only && (it.reportsTo.isEmpty() || it.reportsTo !in only) }.forEach { Node(it, 0, byBoss, only) }
         }
+        if (!showNumbers && active.any { me.uid in it.managers }) {
+            Text(
+                "How many are late or due today is off for you. You can still give tasks and see their replies.",
+                style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+    }
+
+    // v0.50 Only with the portal's "Edit late-reason list" switch (the owner always can).
+    if (me.can("editReasons", false)) {
+        TeamHeading("Late reasons")
+        var editLate by remember { mutableStateOf(false) }
+        TeamCard(onClick = { editLate = true }) {
+            Text("Edit the list of late reasons", fontWeight = FontWeight.SemiBold)
+            Text("The same list the portal shows. Changes reach everyone's phone.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+        }
+        if (editLate) LateReasonsEditDialog { editLate = false }
     }
 
     // Everyone can give tasks, so everyone has these rules for the tasks they give.

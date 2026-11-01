@@ -20,6 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -247,6 +251,12 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     var restoreList by remember { mutableStateOf<List<Backup.Item>?>(null) }
     var confirm by remember { mutableStateOf<Uri?>(null) }
+    val scope = rememberCoroutineScope()
+    val inTeam = TeamRepo.me.collectAsState().value?.active == true
+    var cloudNights by remember { mutableStateOf<List<Pair<String, Long>>?>(null) }
+    var cloudPick by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var cloudBusy by remember { mutableStateOf(false) }
+    var cloudMsg by remember { mutableStateOf<String?>(null) }
 
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -325,6 +335,69 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
                 Text("Restore from a file…")
             }
         }
+
+        if (inTeam) SectionCard(
+            title = "Cloud backup",
+            subtitle = "Every night, while charging and online, a copy of your tasks, Dossier and settings is saved to your own space " +
+                "in the cloud. The last 7 nights stay. Recordings are never saved there."
+        ) {
+            FilledTonalButton(onClick = {
+                cloudBusy = true
+                cloudMsg = null
+                scope.launch {
+                    val list = CloudBackup.available()
+                    cloudBusy = false
+                    if (list.isEmpty()) cloudMsg = "No cloud backup yet. The first one is made tonight while the phone is charging and online."
+                    else cloudNights = list
+                }
+            }, enabled = !cloudBusy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (cloudBusy) "Looking…" else "Restore from the cloud backup")
+            }
+            cloudMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+
+    cloudNights?.let { list ->
+        AlertDialog(
+            onDismissRequest = { cloudNights = null },
+            title = { Text("Choose a cloud backup") },
+            text = {
+                Column {
+                    list.forEach { (day, at) ->
+                        TextButton(onClick = { cloudNights = null; cloudPick = day to at }, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                if (day == CloudBackup.SIGN_OUT_DAY) "Saved when you signed out · " + Fmt.dueLabel(at) else Fmt.dueLabel(at),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { cloudNights = null }) { Text("Close") } }
+        )
+    }
+
+    cloudPick?.let { (day, at) ->
+        AlertDialog(
+            onDismissRequest = { if (!cloudBusy) cloudPick = null },
+            title = { Text("Restore this cloud backup?") },
+            text = {
+                Text("Made " + Fmt.dueLabel(at) + ". Everything now in the app is replaced by it. Recordings on the phone stay. The app will close and open again." +
+                    (cloudMsg?.let { "\n\n$it" } ?: ""))
+            },
+            confirmButton = {
+                Button(enabled = !cloudBusy, onClick = {
+                    cloudBusy = true
+                    cloudMsg = null
+                    scope.launch {
+                        val err = CloudBackup.restore(ctx, day)
+                        cloudBusy = false
+                        if (err != null) cloudMsg = "Couldn't restore: $err"
+                    }
+                }) { Text(if (cloudBusy) "Restoring…" else "Restore") }
+            },
+            dismissButton = { TextButton(enabled = !cloudBusy, onClick = { cloudPick = null }) { Text("Cancel") } }
+        )
     }
 
     restoreList?.let { items ->
