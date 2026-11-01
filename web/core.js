@@ -82,9 +82,10 @@
 
   // ------------------------------------------------------------------ the chart
   RB.seat = (id) => D.seats.find((s) => s.id === id);
-  RB.holderName = (s) => (s && s.status === "filled" ? s.name || RB.first(s.gmail) : "Empty seat");
+  RB.holderName = (s) => (s && s.status === "filled" ? s.name || RB.first(s.gmail) : s && s.invited && s.name ? s.name + " (invited)" : "Empty seat");
   RB.headOf = (s) => (s && s.reportsTo ? RB.seat(s.reportsTo) : null);
-  RB.children = (id) => D.seats.filter((s) => s.reportsTo === id && s.role !== "owner");
+  // v0.49.3 The app owner sits in the chart like anyone (he is the GM; the company owners are above him).
+  RB.children = (id) => D.seats.filter((s) => s.reportsTo === id);
   RB.descendants = (id) => { const out = []; const walk = (x) => RB.children(x).forEach((c) => { out.push(c); walk(c.id); }); walk(id); return out; };
   RB.chainOf = (s) => { const out = []; let h = RB.headOf(s), n = 0; while (h && n++ < 20) { out.push(h); h = RB.headOf(h); } return out; };
   RB.wouldLoop = (seatId, newHead) => { if (!newHead) return false; if (newHead === seatId) return true; return RB.descendants(seatId).some((d) => d.id === newHead); };
