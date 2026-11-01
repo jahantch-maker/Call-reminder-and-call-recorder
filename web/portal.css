@@ -131,3 +131,5 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
   .cols>.card{min-width:0}.k{min-width:calc(50% - 6px)}
   .cal{grid-template-columns:repeat(7,150px);overflow-x:auto}
 }
+
+.still .k{animation:none}
