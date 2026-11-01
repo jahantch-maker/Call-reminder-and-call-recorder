@@ -87,23 +87,23 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 /* org chart */
 .chart{overflow:auto;padding:10px 4px 30px;position:relative}
 .tree{display:flex;flex-direction:column;align-items:center;min-width:max-content}
-.tree ul{display:flex;gap:0;padding-top:20px;position:relative;list-style:none;margin:0;padding-left:0}
-.tree li{display:flex;flex-direction:column;align-items:center;position:relative;padding:20px 8px 0}
-.tree li:before,.tree li:after{content:"";position:absolute;top:0;right:50%;border-top:2px solid #C9CACD;width:50%;height:20px}
+.tree ul{display:flex;gap:0;padding-top:30px;align-items:flex-start;position:relative;list-style:none;margin:0;padding-left:0}
+.tree li{display:flex;flex-direction:column;align-items:center;position:relative;padding:44px 10px 0}
+.tree li:before,.tree li:after{content:"";position:absolute;top:0;right:50%;border-top:2px solid #C9CACD;width:50%;height:44px}
 .tree li:after{right:auto;left:50%;border-left:2px solid #C9CACD}
-.tree li:only-child:before,.tree li:only-child:after{display:none}
-.tree li:only-child{padding-top:0}
+.tree li:only-child:before{display:none}
+.tree li:only-child:after{border-top:0;border-radius:0!important;width:0}
 .tree li:first-child:before,.tree li:last-child:after{border:0 none}
 .tree li:last-child:before{border-right:2px solid #C9CACD;border-radius:0 8px 0 0}
 .tree li:first-child:after{border-radius:8px 0 0 0}
-.tree ul ul:before{content:"";position:absolute;top:0;left:50%;border-left:2px solid #C9CACD;height:20px}
+.tree ul ul:before{content:"";position:absolute;top:0;left:50%;border-left:2px solid #C9CACD;height:30px}
 .node{background:#fff;border-radius:16px;padding:9px 14px;min-width:120px;text-align:center;cursor:grab;border:2px solid transparent;transition:border-color .15s,box-shadow .15s,transform .15s;box-shadow:0 1px 0 #E3E3DF}
 .node:hover{box-shadow:0 6px 18px #0001;transform:translateY(-1px)}
 .node.sel{border-color:var(--on)}.node.over{border-color:var(--grn);background:#F1FAF4}.node.drag{opacity:.4}
 .node b{display:block;font-size:14.5px}.node span.ty{margin-top:4px;font-size:11.5px;padding:2px 9px}
 .node.emp{border:2px dashed #C9CACD;background:transparent;color:var(--onv)}
 .node.own{background:var(--on);color:#fff}.node.own .ty{background:#fff;color:#1B1C1F}
-.node .gv{display:block;font-size:10.5px;color:var(--org);margin-top:3px;font-weight:700}
+.node .gv{position:absolute;top:-9px;right:-6px;font-size:10px;color:#fff;background:var(--org);border-radius:8px;padding:1px 6px;font-weight:700;white-space:nowrap}
 .chip{display:inline-flex;align-items:center;gap:6px;background:#F7EBDD;color:#8A4A10;border-radius:12px;padding:4px 6px 4px 11px;font-size:12.5px;font-weight:600;margin:3px 4px 0 0}
 .chip button{width:18px;height:18px;border-radius:50%;background:#fff;font-size:11px;line-height:18px}
 .impact{background:#FBF3E4;border-radius:16px;padding:12px 14px;font-size:13.5px;line-height:1.5}
@@ -164,9 +164,20 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 #modal .dlg.popc{position:fixed;width:320px;max-width:calc(100vw - 16px);box-shadow:0 12px 36px #0003}
 
 /* Department outline in the chart */
-.dgroup{position:relative;border:1.5px solid #D5D8DE;border-radius:18px;padding:16px 4px 10px;background:#FAFBFC}
 .dglab{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #D5D8DE;border-radius:10px;padding:1px 10px;font-size:11px;font-weight:700;color:var(--onv);white-space:nowrap}
-.dgroup>ul{padding-top:6px}
+/* Department groups add no height: a band behind the group's own boxes (sized by placeBands), so every reporting step stays on one row. */
+.dgroup{position:relative;display:flex;flex-direction:column;align-items:center}
+.dgroup>.drow{display:flex;gap:12px;justify-content:center;align-items:flex-start}
+.dband{position:absolute;z-index:0;border:1px solid var(--dln);border-top:3px solid var(--dtx);border-radius:4px 16px 16px 16px;background:linear-gradient(180deg,var(--dbg) 0,#fff 90px);box-shadow:0 6px 18px rgba(30,40,60,.07);pointer-events:none}
+.dband .dglab{top:-22px;left:-1px;transform:none;background:var(--dtx);color:#fff;border:0;border-radius:9px 9px 0 0;padding:3px 12px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase}
+.dgroup .node{position:relative;z-index:1;box-shadow:0 2px 6px rgba(30,40,60,.06)}
+.tree li.dg:has(>.dgroup.multi){padding-top:0}
+.tree li.dg:has(>.dgroup.multi):before,.tree li.dg:has(>.dgroup.multi):after{height:0;border-left:0;border-right:0;border-radius:0}
+.dgroup.multi>ul{padding-top:0}
+.dgroup.multi>ul:before{display:none}
+.drow:has(>.dside){display:grid;grid-template-columns:1fr auto 1fr}
+.drow>.dside{display:flex;gap:12px}
+.drow>.dside:first-child{justify-content:flex-end}
 
 /* Owners board at the top of the chart */
 .board{position:relative;border:2px solid var(--on);border-radius:20px;padding:18px 10px 10px;background:#F6F7F9;transition:border-color .15s,background .15s}
@@ -177,3 +188,9 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 .dsec{border:1.5px solid #E3E5EA;border-radius:16px;padding:10px 14px;margin-top:12px}
 .dsech{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid #EEF0F3}
 .dsech b{font-size:15.5px}
+.tree .node{position:relative;box-sizing:border-box;height:62px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.node .gv.only{top:auto;bottom:-9px;right:auto;left:50%;transform:translateX(-50%);background:#EEF0F3;color:var(--onv)}
+.tree{padding-bottom:24px}
+.tree li.dg{padding-left:20px;padding-right:20px}
+.dband{z-index:1}
+.dgroup .node{z-index:2}
