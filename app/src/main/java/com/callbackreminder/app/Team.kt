@@ -593,7 +593,8 @@ object TeamRepo {
         val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
         joinNow(u, teamId, myName, myPhone)
     } catch (e: Exception) {
-        "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
+        if (e.message?.contains("PERMISSION_DENIED") == true) "Couldn't join with this Gmail yet. Ask your manager to check your seat, then try again."
+        else "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 
     /**
@@ -655,7 +656,8 @@ object TeamRepo {
         start(appCtx)
         null
     } catch (e: Exception) {
-        "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
+        if (e.message?.contains("PERMISSION_DENIED") == true) "Couldn't join with this Gmail yet. Ask your manager to check your seat, then try again."
+        else "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 
     /** Cancels your own join request (or leaves the team). */
