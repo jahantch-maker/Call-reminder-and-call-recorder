@@ -29,6 +29,11 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.49.3", "1 Nov",
+            new = listOf("The person who runs the app is now shown as \"App owner\" next to their own designation (for example \"GM · App owner\"), and everyone else shows their designation"),
+            fixed = listOf("A person with the app-owner role is no longer labelled \"Owner\" when the company's real owners are above them"),
+        ),
+        Entry(
             "0.49.2", "1 Nov",
             new = listOf("Your Google Calendar meetings for today are shared with the team account, for the website's Day calendar (only the calendars you switched on)"),
             fixed = emptyList(),

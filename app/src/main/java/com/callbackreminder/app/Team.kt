@@ -75,7 +75,9 @@ data class TeamMember(
     val active: Boolean get() = status == Team.ACTIVE
     val pending: Boolean get() = status == Team.PENDING
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
-    val roleLabel: String get() = role.replaceFirstChar { it.uppercase() }
+    /** v0.49.3 The app owner shows with the seat's designation ("GM · App owner"); the real company owners are just a designation. */
+    val roleLabel: String get() =
+        if (role == Team.OWNER) (if (designation.isBlank()) "App owner" else "$designation · App owner") else designation.ifBlank { role.replaceFirstChar { it.uppercase() } }
 
     /** 🟢 Online now: the app is open on his phone (live, once Realtime Database is on), else opened in the last 15 minutes. */
     fun onlineNow(now: Long = System.currentTimeMillis()): Boolean =

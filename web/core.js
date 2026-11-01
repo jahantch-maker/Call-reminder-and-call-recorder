@@ -44,7 +44,9 @@
     { name: "Surveyor", app: {}, portal: {} },
     { name: "Store Keeper", app: {}, portal: {} },
   ];
-  RB.desigList = () => (D.desig && D.desig.list && D.desig.list.length ? D.desig.list : SEED_DESIG);
+  /** "Owner" is a normal designation (for the company's owners); the app owner is a separate role on a seat. */
+  const OWNER_DESIG = (() => { const app = {}; RB.APP_SW.forEach((x) => (app[x[0]] = x[0] !== "callRec")); return { name: "Owner", app, portal: { app: "edit", meetings: "edit", team: "edit", docs: "edit", settings: "edit" } }; })();
+  RB.desigList = () => { const l = D.desig && D.desig.list && D.desig.list.length ? D.desig.list : SEED_DESIG; return l.some((d) => d.name === "Owner") ? l : l.concat([OWNER_DESIG]); };
   RB.desigOf = (name) => RB.desigList().find((d) => d.name === name);
   RB.desigColor = (name) => { const i = RB.desigList().findIndex((d) => d.name === name); return RB.colorOf(i < 0 ? 0 : i); };
 

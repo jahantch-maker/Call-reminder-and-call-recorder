@@ -11,7 +11,7 @@
   const tag = (name) => `<span class="ty" style="background:${RB.desigColor(name)}">${esc(name || "No designation")}</span>`;
   const seatLine = (s) => {
     const h = RB.headOf(s);
-    return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "Owner" : ""].filter(Boolean).join(" · ");
+    return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "App owner" : ""].filter(Boolean).join(" · ");
   };
   const selSeat = () => RB.seat(S.seatSel) || D.seats.find((s) => s.status === "filled") || D.seats[0];
   const done = async (text) => { await RB.log(text); await RB.sync(); };
@@ -36,7 +36,7 @@
     const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q));
     const sel = selSeat();
     const row = (s) => s.status === "filled"
-      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">Owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
+      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
       : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">Fill seat</button>` : ""}</div>`;
     const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
       <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
@@ -93,7 +93,7 @@
   function editSeat(id) {
     const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
     const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, { k: "dept", label: "DEPARTMENT / SITE", value: s.dept || "" }, { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
-    if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "Owner (sees everyone, gives tasks to anyone)"]] });
+    if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     RB.form("Edit seat", f, "Save", async (v) => {
       const patch = { designation: v.designation, dept: v.dept.trim(), role: v.role || s.role };
       await RB.Store.put("seats", id, patch, true);
@@ -136,7 +136,7 @@
   function node(s) {
     const g = (s.extraGivers || []).length;
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
-    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed() && s.role !== "owner"}" data-node="${esc(s.id)}"><b>${esc(s.status === "filled" ? first(s.name) : "Empty seat")}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
+    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed() && s.role !== "owner"}" data-node="${esc(s.id)}"><b>${esc(s.status === "filled" ? first(s.name) : "Empty seat")}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
   }
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + k.map(subtree).join("") + "</ul>" : ""}</li>`; };
   function chart() {
@@ -145,14 +145,14 @@
     const sel = RB.seat(S.seatSel) || D.seats.find((x) => x.role !== "owner" && x.status === "filled");
     if (sel) S.seatSel = sel.id;
     const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head, or use “Reports to” on the right." : "View only"}</span></div>
-      <div class="chart"><div class="tree"><div class="mh2">OWNERS · see everyone, give tasks to anyone</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="ownrow">${owners.map(node).join("")}</div>
+      <div class="chart"><div class="tree"><div class="mh2">APP OWNER · sees everyone, gives tasks to anyone</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="ownrow">${owners.map(node).join("")}</div>
       <div class="drophead" style="height:22px;border-left:2px solid #C9CACD"></div><ul style="padding-top:0">${tops.map(subtree).join("")}</ul></div></div></div>`;
     let side = "";
     if (sel) {
       const heads = [["", "the owners"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
       const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
       side = `<div class="ph"><div class="pav" style="background:${sel.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(sel)}</div><h2>${esc(RB.holderName(sel))}</h2><div class="s">${esc(sel.designation)}${sel.dept ? " · " + esc(sel.dept) : ""}</div></div>
-        ${sel.role === "owner" ? '<div class="hint">Owners see everyone and give tasks to anyone.</div>' : `<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+        ${sel.role === "owner" ? '<div class="hint">The app owner sees everyone and gives tasks to anyone. Designation and department are free to change; the app rights stay.</div>' : `<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
         <div class="foot">One head per person. A change shows what it affects before it is saved.</div></div>
         <div class="sec"><h4>Can get tasks from</h4><div class="sub">By default: his head, his own branch's heads and colleagues with the same head.</div><div>${gv.map((g) => `<span class="chip">${esc(RB.holderName(g))}${ed() ? `<button data-rmgiver="${esc(g.id)}" title="Remove">✕</button>` : ""}</span>`).join("") || '<span class="sub">No extra givers.</span>'}${ed() ? ' <button class="btnt edit-only" id="addgiver">+ Add</button>' : ""}</div></div>`}`;
     }
@@ -195,14 +195,14 @@
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
     const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
-      <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">Owners can do everything. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
+      <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
       <div class="mh2" style="margin-top:12px">IN THE APP</div>
       ${RB.APP_SW.map(([k, t, sub]) => `<div class="swrow"><div class="w"><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</div>${stag("app." + k)}${sw(k)}</div>`).join("")}</div>`;
     const lv = (k) => ["none", "view", "edit"].map((v) => `<button data-lvl="${k}:${v}" class="${e.portal[k] === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
     const mid = `<div class="card" style="flex:1"><div class="mh2">IN THE PORTAL</div>${RB.SECTIONS.map(([k, l]) => `<div class="swrow"><div class="w"><b>${l}</b></div>${stag("portal." + k)}<div class="lvl ${can ? "" : "dis"}" style="${can ? "" : "pointer-events:none;opacity:.6"}">${lv(k)}</div></div>`).join("")}
       <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Meetings “View” shows only the minutes he was in and the actions on him.</div></div>`;
     const dl = RB.desigList().map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
-    const side = `<div class="card"><h3>Designation defaults</h3><div class="swrow"><div class="w"><b>Owner</b></div><span class="sub">everything</span></div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
+    const side = `<div class="card"><h3>Designation defaults</h3>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, SMS, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
     return { html: `<div class="cols">${left}${mid}</div>`, side, sideCards: true };
   }
