@@ -88,14 +88,19 @@
   RB.anyAccess = () => RB.SECTIONS.some(([k]) => RB.level(k) !== "none");
 
   // ------------------------------------------------------------------ the chart
-  RB.seat = (id) => D.seats.find((s) => s.id === id);
+  /** v0.49.4 Owners board: seats with the "Owner" designation at the top sit together; reporting to "@owners" means to all of them. */
+  RB.OWNERS = "@owners";
+  RB.isBoardOwner = (s) => !!(s && !s.virtual && s.designation === "Owner" && (!s.reportsTo || (s.reportsTo !== RB.OWNERS && !D.seats.some((x) => x.id === s.reportsTo))));
+  RB.boardOwners = () => D.seats.filter(RB.isBoardOwner);
+  const BOARD = { id: "@owners", name: "All owners", status: "filled", virtual: true, designation: "Owner", reportsTo: "", uid: "" };
+  RB.seat = (id) => (id === RB.OWNERS ? (RB.boardOwners().length ? BOARD : undefined) : D.seats.find((s) => s.id === id));
   RB.holderName = (s) => (s && s.status === "filled" ? s.name || RB.first(s.gmail) : s && s.invited && s.name ? s.name + " (invited)" : "Empty seat");
   RB.headOf = (s) => (s && s.reportsTo ? RB.seat(s.reportsTo) : null);
   // v0.49.3 The app owner sits in the chart like anyone (he is the GM; the company owners are above him).
-  RB.children = (id) => D.seats.filter((s) => s.reportsTo === id);
+  RB.children = (id) => { const own = RB.isBoardOwner(D.seats.find((x) => x.id === id)); return D.seats.filter((s) => s.reportsTo === id || (own && s.reportsTo === RB.OWNERS)); };
   RB.descendants = (id) => { const out = []; const walk = (x) => RB.children(x).forEach((c) => { out.push(c); walk(c.id); }); walk(id); return out; };
-  RB.chainOf = (s) => { const out = []; let h = RB.headOf(s), n = 0; while (h && n++ < 20) { out.push(h); h = RB.headOf(h); } return out; };
-  RB.wouldLoop = (seatId, newHead) => { if (!newHead) return false; if (newHead === seatId) return true; return RB.descendants(seatId).some((d) => d.id === newHead); };
+  RB.chainOf = (s) => { const out = []; let h = RB.headOf(s), n = 0; while (h && n++ < 20) { if (h.virtual) { out.push(...RB.boardOwners()); break; } out.push(h); h = RB.headOf(h); } return out; };
+  RB.wouldLoop = (seatId, newHead) => { if (!newHead) return false; if (newHead === seatId) return true; if (newHead === RB.OWNERS) return RB.isBoardOwner(RB.seat(seatId)); return RB.descendants(seatId).some((d) => d.id === newHead); };
   RB.owners = () => D.seats.filter((s) => s.role === "owner");
   /** Whom a person may give tasks to (their own branch, colleagues with the same head, and the extras the owner added). */
   RB.canGiveTo = (s) => {
@@ -218,7 +223,7 @@
       if (s.status !== "filled" || !s.uid) return;
       // Only an owner may write an owner's row; a Team editor skips it (the server would refuse the whole save otherwise).
       if (s.role === "owner" && !RB.isOwner()) return;
-      const e = RB.effective(s), head = RB.headOf(s);
+      const e = RB.effective(s), h0 = RB.headOf(s), head = h0 && h0.virtual ? RB.boardOwners().find((o) => o.uid) : h0;
       const chain = RB.chainOf(s).filter((h) => h.status === "filled" && h.uid).map((h) => h.uid);
       const data = {
         seatId: s.id, designation: s.designation || "", dept: s.dept || "", reportsTo: head && head.uid ? head.uid : "", managers: chain,

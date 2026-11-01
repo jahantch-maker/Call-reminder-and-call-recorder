@@ -75,7 +75,7 @@
   }
 
   function addSeat(prefill) {
-    const heads = [["", "— none (top) —"]].concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s) + " · " + s.designation]));
+    const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s) + " · " + s.designation]));
     RB.form("Add seat", [
       { k: "gmail", label: "OFFICIAL GMAIL", value: (prefill && prefill.gmail) || "", ph: "name@gmail.com" },
       { k: "designation", label: "DESIGNATION", type: "select", value: (prefill && prefill.designation) || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
@@ -97,7 +97,7 @@
     }, "He joins from the phone app with this Gmail and lands in this seat.");
   }
   function editSeat(id) {
-    const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
+    const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
     const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, deptField("DEPARTMENT", s.dept), { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
     if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     RB.form("Edit seat", f, "Save", async (v) => {
@@ -112,11 +112,12 @@
 
   // ------------------------------------------------------------------ chart
   const branchNames = (s) => RB.descendants(s.id).map((x) => RB.holderName(x));
+  const boardOpt = () => (RB.boardOwners().length ? [[RB.OWNERS, "All owners (" + RB.boardOwners().map((o) => RB.holderName(o)).join(", ") + ")"]] : []);
   function impact(s, newHeadId) {
     const nh = newHeadId ? RB.seat(newHeadId) : null, old = RB.headOf(s);
     const desc = RB.descendants(s.id), branchUids = [s.uid].concat(desc.map((x) => x.uid)).filter(Boolean);
     const open = D.tasks.filter((t) => branchUids.includes(t.toUid) && t.status !== "done" && t.status !== "checked" && t.status !== "cancelled").length;
-    const oldChain = RB.chainOf(s).map((x) => x.id), newChain = nh ? [nh].concat(RB.chainOf(nh)).map((x) => x.id) : [];
+    const oldChain = RB.chainOf(s).map((x) => x.id), newChain = nh ? (nh.virtual ? RB.boardOwners() : [nh].concat(RB.chainOf(nh))).map((x) => x.id) : [];
     const sees = newChain.filter((i) => !oldChain.includes(i)).map((i) => RB.holderName(RB.seat(i)));
     const stops = oldChain.filter((i) => !newChain.includes(i)).map((i) => RB.holderName(RB.seat(i)));
     const side = D.seats.filter((x) => x.id !== s.id && x.role !== "owner" && (x.reportsTo || "") === (newHeadId || "") && x.status === "filled").map((x) => first(x.name));
@@ -143,7 +144,7 @@
   function node(s) {
     const g = (s.extraGivers || []).length;
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
-    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
+    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}${RB.isBoardOwner(RB.seat(s.reportsTo)) ? `<span class="gv" style="color:var(--onv)">→ ${esc(RB.holderName(RB.seat(s.reportsTo)))} only</span>` : ""}</div>`;
   }
   // People under one head sit together by department; two or more of the same department share one labelled outline.
   const kidsHtml = (arr) => {
@@ -160,11 +161,14 @@
   };
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + kidsHtml(k) + "</ul>" : ""}</li>`; };
   function chart() {
-    const tops = D.seats.filter((s) => !s.reportsTo || !RB.seat(s.reportsTo) || s.reportsTo === s.id);
+    const board = RB.boardOwners(), bIds = board.map((o) => o.id);
+    const tops = D.seats.filter((s) => !bIds.includes(s.id) && (!s.reportsTo || !RB.seat(s.reportsTo) || s.reportsTo === s.id));
+    const bKids = D.seats.filter((s) => s.reportsTo === RB.OWNERS || bIds.includes(s.reportsTo));
+    const boardLi = board.length ? `<li><div class="board" data-node="${RB.OWNERS}" title="Drop a box here to report to all owners"><div class="dglab">OWNERS${board.length > 1 ? " · drop here to report to all" : ""}</div><div class="brow">${board.map(node).join("")}</div></div>${bKids.length ? "<ul>" + kidsHtml(bKids) + "</ul>" : ""}</li>` : "";
     const z = S.chartZoom || 1;
     const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head. Click a box for details." : "Click a box for details."}</span><div class="sp"></div>
       <div class="zoom"><button class="sc" data-zoom="out" title="Zoom out">−</button><span class="sub" id="zpct">${Math.round(z * 100)}%</span><button class="sc" data-zoom="in" title="Zoom in">+</button><button class="sc" data-zoom="fit">Fit</button><button class="sc" data-zoom="100">100%</button></div></div>
-      <div class="chart" id="chartbox"><div class="tree" id="tree" style="zoom:${z}">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : ""}<ul>${kidsHtml(tops)}</ul></div></div></div>`;
+      <div class="chart" id="chartbox"><div class="tree" id="tree" style="zoom:${z}">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : ""}<ul>${boardLi}${kidsHtml(tops)}</ul></div></div></div>`;
     return { html };
   }
   /** The details of one box (was the right-hand panel): opens as a small popup next to the box. */
@@ -172,7 +176,7 @@
     const sel = RB.seat(id); if (!sel) return;
     S.seatSel = id;
     document.querySelectorAll(".node.sel").forEach((x) => x.classList.remove("sel")); if (anchor) anchor.classList.add("sel");
-    const heads = [["", "— nobody (top) —"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
+    const heads = [["", "— nobody (top) —"]].concat(sel.id && RB.isBoardOwner(sel) ? [] : boardOpt()).concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
     const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
     const m = document.getElementById("modal");
     m.innerHTML = `<div class="back pop"><div class="dlg popc"><div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1"><b style="font-size:17px">${esc(RB.holderName(sel))}</b><div class="sub">${esc(sel.designation || "")}${sel.dept ? " · " + esc(sel.dept) : ""}${sel.role === "owner" ? " · App owner" : ""}</div><div class="sub">${esc(sel.gmail || "")}</div></div><button class="link" id="fc">Close</button></div>
@@ -344,7 +348,7 @@
   }
   function approve(uid) {
     const m = RB.member(uid), empties = D.seats.filter((s) => s.status === "empty");
-    const heads = [["", "— none (top) —"]].concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s)]));
+    const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s)]));
     RB.form("Approve " + (m.name || "request"), [
       { k: "seat", label: "SEAT", type: "select", value: "new", options: [["new", "New seat for " + (m.email || "this Gmail")]].concat(empties.map((s) => [s.id, s.gmail + " · " + s.designation])) },
       { k: "designation", label: "DESIGNATION (new seat)", type: "select", value: RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
@@ -497,16 +501,17 @@
         else if (cb && tree) { tree.style.zoom = 1; const w = tree.scrollWidth, h = tree.scrollHeight; const room = Math.min((cb.clientWidth - 12) / w, (innerHeight - cb.getBoundingClientRect().top - 30) / h); setZoom(Math.min(1, room)); cb.scrollLeft = 0; }
       });
       root.querySelectorAll("[data-node]").forEach((n) => {
-        n.onclick = () => { if (!n.dataset.node) return; chartPop(n.dataset.node, n); };
-        n.ondragstart = (ev) => { ev.dataTransfer.setData("text/plain", n.dataset.node); n.classList.add("drag"); if (tree) tree.classList.add("dragging"); };
+        n.onclick = (ev) => { ev.stopPropagation(); if (!n.dataset.node || n.dataset.node === RB.OWNERS) return; chartPop(n.dataset.node, n); };
+        n.ondragstart = (ev) => { ev.stopPropagation(); ev.dataTransfer.setData("text/plain", n.dataset.node); n.classList.add("drag"); if (tree) tree.classList.add("dragging"); };
         n.ondragend = () => { n.classList.remove("drag"); if (tree) tree.classList.remove("dragging"); };
-        n.ondragover = (ev) => { ev.preventDefault(); n.classList.add("over"); };
+        n.ondragover = (ev) => { ev.preventDefault(); ev.stopPropagation(); n.classList.add("over"); if (cb) cb.ondragover(ev); };
         n.ondragleave = () => n.classList.remove("over");
         n.ondrop = (ev) => {
-          ev.preventDefault(); n.classList.remove("over"); if (tree) tree.classList.remove("dragging");
+          ev.preventDefault(); ev.stopPropagation(); n.classList.remove("over"); if (tree) tree.classList.remove("dragging");
           const id = ev.dataTransfer.getData("text/plain"); if (!id || !ed() || id === n.dataset.node) return;
           const s = RB.seat(id);
           if (!n.dataset.node && s && (!s.reportsTo || !RB.seat(s.reportsTo))) return RB.toast(RB.holderName(s) + " is already at the top");
+          if (n.dataset.node === RB.OWNERS && RB.isBoardOwner(s)) return RB.toast(RB.holderName(s) + " is already on the owners board");
           moveSeat(id, n.dataset.node);
         };
       });
