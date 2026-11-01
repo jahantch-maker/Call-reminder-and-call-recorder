@@ -50,14 +50,20 @@
     const working = D.seats.filter((s) => s.status === "filled").length;
     const rail = allowed.map((k) => `<button class="ri-w" data-sec="${k}" title="${NAMES[k]}"><span class="ri ${k === sec ? "on" : ""}">${ICONS[k]}${badge(k) ? `<b class="bd">${badge(k)}</b>` : ""}</span><span class="tip">${NAMES[k]}</span></button>`).join("");
     const running = RB.meet.running() && sec !== "meetings" ? `<div class="banner">Meeting running · <a href="#" class="link" data-sec="meetings">back to the meeting</a></div>` : "";
-    root.innerHTML = `<div class="app"><nav class="rail"><div class="rl">RB</div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
+    // Fade in only when the page itself changes (section or tab); a click on the same page redraws without any flash.
+    const sig = sec + "/" + tab, anim = sig !== RB._sig; RB._sig = sig;
+    const oldC = document.getElementById("content"), oldS = document.getElementById("side");
+    const keepC = !anim && oldC ? oldC.scrollTop : 0, keepS = !anim && oldS ? oldS.scrollTop : 0;
+    root.innerHTML = `<div class="app${anim ? "" : " still"}"><nav class="rail"><div class="rl">RB</div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
       <div class="pmain"><div class="pc">
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
           <label class="srch"><span>⌕</span><input id="gq" placeholder="Search" value="${esc(S.q)}" autocomplete="off"></label><button class="bell" id="bell" title="Notices">🔔${noticeCount() ? `<b class="bd">${noticeCount()}</b>` : ""}</button></div>
         ${running}
         <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div>
-        <div id="content" class="content fade ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
-      </div>${page.side ? `<aside class="pside fade" id="side">${page.side}</aside>` : ""}</div></div>`;
+        <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
+      </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
+    if (keepC) { const c = document.getElementById("content"); if (c) c.scrollTop = keepC; }
+    if (keepS) { const sd = document.getElementById("side"); if (sd) sd.scrollTop = keepS; }
     root.querySelectorAll("[data-sec]").forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); RB.go(e.dataset.sec); }));
     root.querySelectorAll("[data-tab]").forEach((e) => (e.onclick = () => { setTab(sec, e.dataset.tab); RB.render(); }));
     const so = document.getElementById("signout"); if (so) so.onclick = () => (RB.DEMO ? RB.alertBox("Sign out is off in the sample preview.") : firebase.auth().signOut().then(() => location.reload()));
