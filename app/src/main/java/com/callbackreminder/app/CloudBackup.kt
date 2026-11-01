@@ -87,6 +87,20 @@ object CloudBackup {
         null
     }
 
+    /** Every complete night in the cloud, newest first: its day name and when it was made. Empty when there is none. */
+    suspend fun available(): List<Pair<String, Long>> = try {
+        val t = TeamRepo.teamId
+        val u = TeamRepo.uid
+        if (t == null || u == null) emptyList()
+        else nights(t, u).whereGreaterThan("parts", 0).get().await().documents
+            .mapNotNull { d -> d.getString("day")?.let { it to (d.getLong("at") ?: 0L) } }.sortedByDescending { it.second }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** The day name of the save made at sign-out. */
+    const val SIGN_OUT_DAY = "signout"
+
     private const val OUT = "signout"
 
     /** The save made when he signs out: null when it is safely online, else why not (then nothing is erased). */

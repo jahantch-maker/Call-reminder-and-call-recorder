@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
@@ -236,5 +238,109 @@ fun MeetingShareNotice() {
         title = { Text("Shared for team meetings") },
         text = { Text("Your tasks (except 🔒 Private) are now shared with the owner for team meetings.", fontSize = 15.sp) },
         confirmButton = { TextButton(onClick = { p.edit().putBoolean("notice_seen", true).apply(); seen = true }) { Text("OK") } },
+    )
+}
+
+/**
+ * v0.50 Edit the late-reason list from the phone, for a person the portal gave "Edit late-reason list" (and the owner).
+ * It is the same list as the portal's Settings › Late reasons: add a reason, retire one, bring it back. A retired reason
+ * stays in old reports. The phones of the team read the new list at their next start.
+ */
+@Composable
+fun LateReasonsEditDialog(onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val team = TeamRepo.teamId
+    // name to retired, per list (own, outside); null while loading
+    var own by remember { mutableStateOf<List<Pair<String, Boolean>>?>(null) }
+    var outside by remember { mutableStateOf<List<Pair<String, Boolean>>?>(null) }
+    var newOwn by remember { mutableStateOf("") }
+    var newOutside by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val t = team ?: run { error = "You are not in a team."; return@LaunchedEffect }
+        try {
+            val d = FirebaseFirestore.getInstance().collection("teams").document(t).collection("config").document("reasons")
+                .get().await()
+            fun read(key: String, fallback: List<String>): List<Pair<String, Boolean>> {
+                val raw = d.get(key) as? List<*> ?: return fallback.map { it to false }
+                return raw.mapNotNull { e ->
+                    when (e) {
+                        is String -> e to false
+                        is Map<*, *> -> (e["name"] as? String)?.let { it to (e["retired"] == true) }
+                        else -> null
+                    }
+                }.ifEmpty { fallback.map { it to false } }
+            }
+            own = read("own", LateReasons.OWN_DEFAULT)
+            outside = read("outside", LateReasons.OUTSIDE_DEFAULT)
+        } catch (e: Exception) {
+            error = "Couldn't load the list: ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
+    fun save() {
+        val t = team ?: return
+        val o = own ?: return
+        val x = outside ?: return
+        saving = true
+        scope.launch {
+            fun enc(l: List<Pair<String, Boolean>>) = l.map { (n, r) -> if (r) mapOf("name" to n, "retired" to true) else mapOf("name" to n) }
+            runCatching {
+                FirebaseFirestore.getInstance().collection("teams").document(t).collection("config").document("reasons")
+                    .set(mapOf("own" to enc(o), "outside" to enc(x)), com.google.firebase.firestore.SetOptions.merge()).await()
+            }.onSuccess {
+                LateReasons.refresh(ctx)
+                android.widget.Toast.makeText(ctx, "Late reasons saved", android.widget.Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }.onFailure {
+                saving = false
+                android.widget.Toast.makeText(ctx, "Couldn't save. Try again online.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    @Composable
+    fun Section(title: String, items: List<Pair<String, Boolean>>, onChange: (List<Pair<String, Boolean>>) -> Unit, text: String, onText: (String) -> Unit) {
+        Text(title, fontWeight = FontWeight.Bold)
+        items.forEachIndexed { i, (name, retired) ->
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    if (retired) "$name · retired" else name, modifier = Modifier.weight(1f),
+                    color = if (retired) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                )
+                TextButton(onClick = { onChange(items.toMutableList().also { it[i] = name to !retired }) }) { Text(if (retired) "Bring back" else "Retire") }
+            }
+        }
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            OutlinedTextField(value = text, onValueChange = onText, label = { Text("New reason") }, singleLine = true, modifier = Modifier.weight(1f))
+            TextButton(onClick = {
+                val v = text.trim()
+                if (v.isNotEmpty() && items.none { it.first.equals(v, true) }) { onChange(items + (v to false)); onText("") }
+            }) { Text("Add") }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Late reasons") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val o = own
+                val x = outside
+                when {
+                    error != null -> Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                    o == null || x == null -> Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else -> {
+                        Section("My side", o, { own = it }, newOwn) { newOwn = it }
+                        Section("Outside my control", x, { outside = it }, newOutside) { newOutside = it }
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { save() }, enabled = own != null && !saving) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

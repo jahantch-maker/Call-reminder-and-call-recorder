@@ -783,6 +783,8 @@ class TeamWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     override suspend fun doWork(): Result {
         runCatching { TeamRepo.fetchOnce(applicationContext) }
             .onFailure { CrashLog.record(applicationContext, it, "Team check") }
+        runCatching { ReadingReminders.check(applicationContext) }
+            .onFailure { CrashLog.record(applicationContext, it, "Reading reminder") }
         return Result.success()
     }
 

@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.50.0", "1 Nov",
+            new = listOf(
+                "\"See how my people are doing\": when the owner switches it on for you, your team page shows how many tasks are late and how many are due today for the people you gave tasks to",
+                "\"Edit late-reason list\": when the owner switches it on for you, you can add, retire and bring back late reasons from the phone",
+                "Reading reminders: the phone reminds you the day before and on the last day of your reading deadline, then once a day while it is overdue, until everything on your reading list is read",
+                "Settings › Backup › Cloud backup: restore from any of the last 7 nights saved in the cloud",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.49.3", "1 Nov",
             new = listOf("The person who runs the app is now shown as \"App owner\" next to their own designation (for example \"GM · App owner\"), and everyone else shows their designation"),
             fixed = listOf("A person with the app-owner role is no longer labelled \"Owner\" when the company's real owners are above them"),
