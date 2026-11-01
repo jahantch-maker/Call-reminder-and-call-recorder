@@ -64,7 +64,7 @@
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
     return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}</div>
-      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button><button style="background:var(--blu)" data-access="${esc(s.id)}">Access</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard</button>` : ""}</div>` : ""}</div>
+      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button><button style="background:var(--blu)" data-access="${esc(s.id)}">Access</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of 9 app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
@@ -320,6 +320,16 @@
     };
   }
 
+  // An empty or invited seat (a test, a mistake, or nobody there any more) is deleted completely, with its history.
+  function deleteSeat(id) {
+    const s = RB.seat(id); if (!s || s.status === "filled" || s.role === "owner") return;
+    const under = D.seats.filter((x) => x.reportsTo === id);
+    if (under.length) return RB.alertBox("Move the people who report to this seat first (Chart, or Edit their “Reports to”): " + esc(under.map((x) => RB.holderName(x)).join(", ")) + ".");
+    RB.confirm("Delete the seat " + esc(s.gmail) + "? Its history goes too. Use this for tests and mistakes. When a real person leaves, keep the empty seat.", "Delete seat", async () => {
+      await RB.Store.del("seats", id); await done("Deleted seat " + s.gmail); S.seatSel = null;
+    }, true);
+  }
+
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
     tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Designations"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
@@ -339,6 +349,7 @@
       both("[data-editseat]", (e) => editSeat(e.dataset.editseat));
       both("[data-access]", (e) => { S.accSeat = e.dataset.access; S.accMode = "person"; S.tab.team = "access"; RB.render(); });
       both("[data-offboard]", (e) => offboard(e.dataset.offboard));
+      both("[data-delseat]", (e) => deleteSeat(e.dataset.delseat));
       // chart
       root.querySelectorAll("[data-node]").forEach((n) => {
         n.onclick = () => { S.seatSel = n.dataset.node; RB.render(); };
