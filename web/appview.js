@@ -4,7 +4,7 @@
   const RB = window.RB, D = RB.D, S = RB.S, C = RB.calc, esc = RB.esc, first = RB.first;
   const { fmtDay, fmtWhen, fmtShort } = RB;
   const DAY = 86400000;
-  Object.assign(S, { selUid: null, psub: "tasks", calWeek: 0, calPerson: "all", sort: S.sort || "az", period: S.period || "week" });
+  Object.assign(S, { selUid: null, psub: "tasks", calWeek: 0, calDay: 0, calView: "day", calPerson: "all", sort: S.sort || "az", period: S.period || "week" });
 
   const pastel = (i) => RB.colorOf(i);
   const seatTag = (m) => { const s = RB.seatOfUid(m.uid); const d = s ? s.designation : (m.designation || ""); return d ? `<span class="ty" style="background:${RB.desigColor(d)}">${esc(d)}</span>` : '<span class="ty" style="background:#EFEFEC">Member</span>'; };
@@ -80,7 +80,7 @@
       const t = mine.filter((x) => (x.due >= sod && x.due < sod + DAY) || (!x.done && x.promise && x.promise < sod + DAY) || (x.done && x.doneAt >= sod)).sort((a, b) => a.done - b.done || a.due - b.due);
       body = `<div class="cols"><div class="card"><h3>Tasks today</h3>${t.map((x) => `<div class="arow"><span>${x.done ? "🟢" : isRed(x, now) ? "🔴" : "⚪"}</span><span class="w">${esc(x.title)}<span>${x.src === "team" ? "From " + esc(first(x.from)) : "Own task"}</span></span><span class="d">${x.due ? fmtWhen(x.due) : "No date"}</span></div>`).join("") || '<div class="muted">Nothing today.</div>'}</div>
         <div class="card"><h3>Follow-ups and Dossier</h3>${(day.followUps || []).map((f) => `<div class="arow"><span>${f.done ? "🟢" : "⚪"}</span><span class="w">${esc(f.title)}<span>${esc(f.name || "")}</span></span></div>`).join("")}${(day.dossier || []).map((d) => `<div class="arow"><span>${d.doneAt ? "🟢" : "⚪"}</span><span class="w">${esc(d.title)}<span>Dossier · ${esc(d.time || "")}${d.reason ? " · " + esc(d.reason) : ""}</span></span></div>`).join("") || (!(day.followUps || []).length ? '<div class="muted">Nothing shared for today yet.</div>' : "")}<div class="foot">Private tasks are never shown.${day.updatedAt ? " Updated " + fmtWhen(day.updatedAt) : ""}</div></div></div>`;
-    } else if (S.psub === "calendar") body = calendarGrid(mine, true);
+    } else if (S.psub === "calendar") body = calendarBlock(mine, S.person, true);
     else if (S.psub === "dossier") {
       const bl = (D.dossier[S.person] || {}).blocks || [];
       const hm = (m) => { const h = Math.floor(m / 60), mm = m % 60; return ((h + 11) % 12 + 1) + ":" + String(mm).padStart(2, "0") + (h >= 12 ? " PM" : " AM"); };
@@ -98,17 +98,64 @@
   }
 
   // ------------------------------------------------------------------ calendar
-  function calendarGrid(items, personMode) {
-    const now = Date.now(), a = C.weekStart(now) + S.calWeek * 7 * DAY, sod = C.startOfDay(now);
-    const days = Array.from({ length: 7 }, (_, i) => a + i * DAY);
-    const cell = (d0) => items.filter((x) => x.due >= d0 && x.due < d0 + DAY).sort((x, y) => x.due - y.due).map((x) => `<div class="e ${x.done ? "done" : isRed(x, now) ? "late" : ""}" title="${esc(x.title)}">${new Date(x.due).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${esc(x.title)}${personMode ? "" : " · " + esc(first((RB.member(x.uid) || {}).name))}</div>`).join("");
-    return `<div class="subhead"><button class="btnt" data-cw="-1">‹ Previous</button><b>${fmtShort(a)} – ${fmtShort(a + 6 * DAY)}</b><button class="btnt" data-cw="1">Next ›</button><button class="btnt" data-cw="0">Today</button></div>
-      <div class="cal">${days.map((d0) => `<div class="d ${d0 === sod ? "today" : ""}"><h5>${new Date(d0).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}</h5>${cell(d0) || '<div class="sub">–</div>'}</div>`).join("")}</div>`;
+  // The same kinds and colours as the phone Calendar: Tasks (sky), Dossier (mint); done goes grey, late gets a red edge.
+  const legend = () => '<div class="legend"><span><i class="lk lt"></i>Tasks</span><span><i class="lk ld"></i>Dossier</span><span><i class="lk lg"></i>Done</span><span><i class="lk lr"></i>Late</span></div>';
+  const hourLbl = (h) => (h === 0 ? "12 AM" : h < 12 ? h + " AM" : h === 12 ? "12 PM" : h - 12 + " PM");
+  const clock = (t) => new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const minOf = (t) => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
+  // Side-by-side columns for items that overlap in time, like the phone.
+  function lay(list) {
+    list.sort((a, b) => a.s - b.s || b.e - a.e);
+    const out = []; let cl = [], ce = -1;
+    const flush = () => { const cols = []; cl.forEach((it) => { let c = cols.findIndex((end) => end <= it.s); if (c < 0) { c = cols.length; cols.push(0); } cols[c] = it.e; it.c = c; }); cl.forEach((it) => (it.n = cols.length)); out.push(...cl); cl = []; };
+    list.forEach((it) => { if (cl.length && it.s >= ce) { flush(); ce = -1; } cl.push(it); ce = Math.max(ce, it.e); });
+    if (cl.length) flush();
+    return out;
+  }
+  function dayView(uid, items) {
+    const now = Date.now(), H = 52, d0 = C.startOfDay(now) + S.calDay * DAY;
+    const dow = (new Date(d0 + 12 * 3600000).getDay() + 6) % 7; // Monday = 0, as the Dossier days mask
+    const list = [];
+    ((D.dossier[uid] || {}).blocks || []).filter((b) => b.days & (1 << dow)).forEach((b) => list.push({ k: "kd", s: b.minute, e: Math.max(b.endMinute, b.minute + 20), title: b.title, time: "" }));
+    items.filter((x) => x.uid === uid && x.due >= d0 && x.due < d0 + DAY).forEach((x) => { const m = minOf(x.due); list.push({ k: "kt " + (x.done ? "done" : isRed(x, now) ? "late" : ""), s: m, e: m + 30, title: x.title, time: clock(x.due) }); });
+    const blocks = lay(list).map((b) => `<div class="blk2 ${b.k}" style="top:${(b.s / 60) * H}px;height:${Math.max(((b.e - b.s) / 60) * H - 2, 22)}px;left:calc(58px + (100% - 66px) * ${b.c} / ${b.n});width:calc((100% - 66px) / ${b.n} - 3px)" title="${esc(b.title)}"><b>${esc(b.title)}</b>${b.time ? "<span>" + b.time + "</span>" : ""}</div>`).join("");
+    const hours = Array.from({ length: 24 }, (_, h) => `<div class="hr ${h < 11 || h >= 21 ? "off" : ""}" style="top:${h * H}px;height:${H}px"><span>${hourLbl(h)}</span></div>`).join("");
+    const nowLine = S.calDay === 0 ? `<div class="nowl" style="top:${(minOf(now) / 60) * H}px"><i></i></div>` : "";
+    return { html: `<div class="dayw"><div class="dayg" style="height:${24 * H}px">${hours}${blocks}${nowLine}</div></div>`, scroll: Math.max(0, ((S.calDay === 0 ? minOf(now) / 60 : 9) - 2) * H) };
+  }
+  // The Calendar body: Day | Week switch, the legend, then the day (phone look) or the week.
+  function calendarBlock(items, uid, personMode) {
+    const now = Date.now(), view = uid ? S.calView : "week";
+    let head, body;
+    if (view === "day") {
+      const d0 = C.startOfDay(now) + S.calDay * DAY, dv = dayView(uid, items);
+      head = `<button class="btnt" data-cd="-1">‹</button><b>${S.calDay === 0 ? "Today · " : ""}${new Date(d0).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}</b><button class="btnt" data-cd="1">›</button><button class="btnt" data-cd="0">Today</button>`;
+      body = dv.html;
+      const key = "d" + uid + S.calDay;
+      if (S.calKey !== key || RB._sig !== (personMode ? "app/person" : "app/calendar")) S.calScroll = dv.scroll;
+      S.calKey = key;
+    } else {
+      const a = C.weekStart(now) + S.calWeek * 7 * DAY, sod = C.startOfDay(now);
+      const days = Array.from({ length: 7 }, (_, i) => a + i * DAY);
+      const cell = (d0) => items.filter((x) => x.due >= d0 && x.due < d0 + DAY).sort((x, y) => x.due - y.due).map((x) => `<div class="e kt ${x.done ? "done" : isRed(x, now) ? "late" : ""}" title="${esc(x.title)}">${clock(x.due)} · ${esc(x.title)}${personMode || uid ? "" : ` <span class="who">${esc(first((C.people().find((p) => p.uid === x.uid) || {}).name || ""))}</span>`}</div>`).join("");
+      head = `<button class="btnt" data-cw="-1">‹ Previous</button><b>${fmtShort(a)} – ${fmtShort(a + 6 * DAY)}</b><button class="btnt" data-cw="1">Next ›</button><button class="btnt" data-cw="0">Today</button>`;
+      body = `<div class="cal">${days.map((d0) => `<div class="d ${d0 === sod ? "today" : ""}"><h5>${new Date(d0).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}</h5>${cell(d0) || '<div class="sub">–</div>'}</div>`).join("")}</div>`;
+    }
+    const seg = uid ? `<div class="seg"><button data-cv="day" class="${view === "day" ? "on" : ""}">Day</button><button data-cv="week" class="${view === "week" ? "on" : ""}">Week</button></div>` : "";
+    return `<div class="subhead">${seg}${head}</div>${legend()}${body}`;
+  }
+  // Day view is for one person: the one picked on the Overview, else the one with most items around today.
+  function defPerson() {
+    const ps = C.people(), now = Date.now(), all = C.items();
+    const n = (p) => all.filter((x) => x.uid === p.uid && Math.abs(x.due - now) < 7 * DAY).length + ((D.dossier[p.uid] || {}).blocks || []).length;
+    return (ps.find((p) => p.uid === S.selUid) || ps.slice().sort((a, b) => n(b) - n(a))[0] || {}).uid || "all";
   }
   function calendar() {
     const ps = C.people(), all = C.items();
-    const items = S.calPerson === "all" ? all.filter((x) => ps.some((p) => p.uid === x.uid)) : all.filter((x) => x.uid === S.calPerson);
-    return { html: `<div class="subhead"><select id="calp"><option value="all">Everyone</option>${ps.map((p) => `<option value="${p.uid}" ${S.calPerson === p.uid ? "selected" : ""}>${esc(first(p.name))}</option>`).join("")}</select></div>` + calendarGrid(items, S.calPerson !== "all") };
+    if (S.calView === "day" && S.calPerson === "all") S.calPerson = defPerson();
+    const uid = S.calPerson === "all" ? null : S.calPerson;
+    const items = uid ? all.filter((x) => x.uid === uid) : all.filter((x) => ps.some((p) => p.uid === x.uid));
+    return { html: `<div class="subhead"><select id="calp"><option value="all">Everyone (week)</option>${ps.map((p) => `<option value="${p.uid}" ${S.calPerson === p.uid ? "selected" : ""}>${esc(first(p.name))}</option>`).join("")}</select></div>` + calendarBlock(items, uid, false) };
   }
 
   // ------------------------------------------------------------------ section objects
@@ -123,6 +170,10 @@
       const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e, ev); }));
       on(root, "[data-pick]", (e) => { S.selUid = e.dataset.pick; RB.render(); });
       on(root, "[data-kpi]", (e) => { const k = e.dataset.kpi; if (k === "reasons") RB.go("app", "reasons"); else if (k === "waiting") { S.tab.team = "waiting"; RB.go("team"); } else { S.sort = k === "due" ? "az" : k; RB.render(); } });
+      on(root, "[data-cv]", (e) => { S.calView = e.dataset.cv; if (S.calView === "day" && S.calPerson === "all") S.calPerson = defPerson(); RB.render(); });
+      on(root, "[data-cd]", (e) => { const v = Number(e.dataset.cd); S.calDay = v === 0 ? 0 : S.calDay + v; RB.render(); });
+      const dw = root.querySelector(".dayw");
+      if (dw) { if (S.calScroll) { dw.scrollTop = S.calScroll; S.calInner = S.calScroll; S.calScroll = 0; } else dw.scrollTop = S.calInner || 0; dw.onscroll = () => { S.calInner = dw.scrollTop; }; }
       on(root, "[data-cw]", (e) => { const v = Number(e.dataset.cw); S.calWeek = v === 0 ? 0 : S.calWeek + v; RB.render(); });
       on(root, "[data-psub2]", (e) => { S.psub = e.dataset.psub2; RB.render(); });
       on(side, "[data-openp]", (e) => { S.person = e.dataset.openp; S.psub = e.dataset.psub || "tasks"; RB.go("app", "person"); });
