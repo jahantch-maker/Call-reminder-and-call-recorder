@@ -113,6 +113,7 @@
     async put(coll, id, data, merge) {
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
+        RB.savedSoon();
         if (coll === "config") { if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
@@ -125,12 +126,14 @@
       const ref = teamRef.collection(coll).doc(id);
       if (merge) await ref.set(data, { merge: true }); else await ref.set(data);
       if (coll === "policies") await reindex(id, Object.assign({}, D.docs.find((x) => x.id === id) || {}, data).shareWith || []);
+      RB.savedSoon();
       return id;
     },
     // Replaces one whole field (a map such as a seat's "override"): a normal merge cannot remove keys inside it.
     async putField(coll, id, field, value) {
       if (RB.DEMO) return RB.Store.put(coll, id, { [field]: value }, true);
       await teamRef.collection(coll).doc(id).set({ [field]: value }, { mergeFields: [field] });
+      RB.savedSoon();
       return id;
     },
     async add(coll, data) { const id = RB.id(); await RB.Store.put(coll, id, data); return id; },
@@ -138,6 +141,7 @@
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); if (ex && ex.type === "policy") coll = "policies"; }
       if (RB.DEMO) { const arr = D[COLL[coll]]; const key = coll === "members" ? "uid" : "id"; const i = arr.findIndex((x) => x[key] === id); if (i >= 0) arr.splice(i, 1); return; }
       await teamRef.collection(coll).doc(id).delete();
+      RB.savedSoon();
       if (coll === "policies") await reindex(id, null);
     },
     /** A given task, in the same shape the phone app writes. */
@@ -175,7 +179,19 @@
     },
   };
   /** Change log: owners read it; nobody can edit or delete a line. */
-  RB.log = (text) => RB.Store.add("changelog", { at: Date.now(), by: uid || "", byName: (D.me && D.me.name) || "Owner", text });
+  // "Saved" chip after a change the person made (not after background writes).
+  let userAt = 0, toastT = null;
+  ["click", "keydown"].forEach((ev) => document.addEventListener(ev, () => (userAt = Date.now()), true));
+  RB.toast = (text) => {
+    let t = document.getElementById("toast");
+    if (!t) { t = document.createElement("div"); t.id = "toast"; document.body.appendChild(t); }
+    t.textContent = text || "Saved"; t.classList.add("on");
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2000);
+  };
+  let savedT = null;
+  RB.savedSoon = () => { if (Date.now() - userAt > 8000) return; clearTimeout(savedT); savedT = setTimeout(() => RB.toast("Saved"), 250); };
+  // The history line never blocks a save: if it can't be written, the change still stands.
+  RB.log = (text) => RB.Store.add("changelog", { at: Date.now(), by: uid || "", byName: (D.me && D.me.name) || "Owner", text }).catch((e) => console.warn("log", e));
 
   RB.member = (u) => D.members.find((m) => m.uid === u);
 
@@ -192,6 +208,8 @@
     const writes = [];
     D.seats.forEach((s) => {
       if (s.status !== "filled" || !s.uid) return;
+      // Only an owner may write an owner's row; a Team editor skips it (the server would refuse the whole save otherwise).
+      if (s.role === "owner" && !RB.isOwner()) return;
       const e = RB.effective(s), head = RB.headOf(s);
       const chain = RB.chainOf(s).filter((h) => h.status === "filled" && h.uid).map((h) => h.uid);
       const data = {
@@ -202,7 +220,7 @@
       };
       const cur = RB.member(s.uid);
       if (cur && JSON.stringify([cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs]) === JSON.stringify([data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs])) return;
-      writes.push(RB.Store.put("members", s.uid, data, true));
+      writes.push(RB.Store.put("members", s.uid, data, true).catch((err) => console.warn("sync", s.uid, err)));
     });
     await Promise.all(writes);
   };

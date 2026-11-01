@@ -14,7 +14,8 @@
     return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "App owner" : ""].filter(Boolean).join(" · ");
   };
   const selSeat = () => RB.seat(S.seatSel) || D.seats.find((s) => s.status === "filled") || D.seats[0];
-  const done = async (text) => { await RB.log(text); await RB.sync(); };
+  // The change is already saved; the history line and the phone rows are extras that must never show as an error.
+  const done = async (text) => { try { await RB.log(text); } catch (e) { console.warn("log", e); } await RB.sync(); };
   // Access clicks show at once and are saved together half a second after the last click, so quick clicks never undo each other.
   const lazy = {};
   function lazySave(key, write, label) {
@@ -33,12 +34,16 @@
   // ------------------------------------------------------------------ people
   function people() {
     const q = (S.q || "").toLowerCase();
-    const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q));
+    S.psort = S.psort || "az";
+    const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
+    const by = { az: (a, b) => nm(a).localeCompare(nm(b)), desig: (a, b) => (a.designation || "~").localeCompare(b.designation || "~") || nm(a).localeCompare(nm(b)), dept: (a, b) => (a.dept || "~").localeCompare(b.dept || "~") || nm(a).localeCompare(nm(b)) }[S.psort];
+    const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q)).slice().sort(by);
+    const pchips = [["az", "A–Z"], ["desig", "Designation"], ["dept", "Department"]].map(([k, l]) => `<button class="sc ${S.psort === k ? "on" : ""}" data-psort="${k}">${l}</button>`).join("");
     const sel = selSeat();
     const row = (s) => s.status === "filled"
       ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
       : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">Fill seat</button>` : ""}</div>`;
-    const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
+    const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${pchips}${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
       <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
     return { html, side: seatPanel(sel) };
@@ -161,10 +166,13 @@
 
   // ------------------------------------------------------------------ designations
   function desigs() {
-    const list = RB.desigList();
-    const html = `<div class="card" style="max-width:720px"><div class="subhead"><h3>Designations</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
+    const all = RB.desigList(), seatsOf = (n) => D.seats.filter((s) => s.designation === n).length;
+    S.dsort = S.dsort || "az";
+    const list = S.dsort === "az" ? all.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "seats" ? all.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : all.slice().reverse();
+    const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
+    const html = `<div class="card" style="max-width:760px"><div class="subhead"><h3>Designations · ${all.length}</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
       <div class="hint">A designation is only a label. It carries the default access, which you can still change for any one person.</div>
-      ${list.map((d, i) => { const n = D.seats.filter((s) => s.designation === d.name).length; return `<div class="docrow"><span class="ty" style="background:${RB.colorOf(i)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? "" : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
+      ${list.map((d) => { const n = seatsOf(d.name); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Give those seats another designation first.">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
     return { html };
   }
   const saveDesig = async (list, text) => { await RB.Store.put("config", "designations", { list, updatedAt: Date.now() }); await done(text); };
@@ -378,6 +386,8 @@
       const dd = root.querySelector("#adddes"); if (dd) dd.onclick = addDesig;
       const dd2 = side && side.querySelector("#adddes2"); if (dd2) dd2.onclick = addDesig;
       both("[data-dren]", (e) => renDesig(e.dataset.dren));
+      both("[data-dsort]", (e) => { S.dsort = e.dataset.dsort; RB.render(); });
+      both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
       // access
