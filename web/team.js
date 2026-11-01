@@ -146,20 +146,41 @@
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + k.map(subtree).join("") + "</ul>" : ""}</li>`; };
   function chart() {
     const tops = D.seats.filter((s) => !s.reportsTo || !RB.seat(s.reportsTo) || s.reportsTo === s.id);
-    const sel = RB.seat(S.seatSel) || D.seats.find((x) => x.status === "filled");
-    if (sel) S.seatSel = sel.id;
-    const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head, or use “Reports to” on the right." : "View only"}</span></div>
-      <div class="chart"><div class="tree">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : '<div class="mh2">TOP</div>'}<ul>${tops.map(subtree).join("")}</ul></div></div></div>`;
-    let side = "";
-    if (sel) {
-      const heads = [["", "— nobody (top) —"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
-      const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
-      side = `<div class="ph"><div class="pav" style="background:${sel.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(sel)}</div><h2>${esc(RB.holderName(sel))}</h2><div class="s">${esc(sel.designation)}${sel.dept ? " · " + esc(sel.dept) : ""}</div></div>
-        ${sel.role === "owner" ? '<div class="hint">App owner: keeps every app right wherever he sits in the chart.</div>' : ""}${`<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
-        <div class="foot">One head per person. A change shows what it affects before it is saved.</div></div>
-        <div class="sec"><h4>Can get tasks from</h4><div class="sub">By default: his head, his own branch's heads and colleagues with the same head.</div><div>${gv.map((g) => `<span class="chip">${esc(RB.holderName(g))}${ed() ? `<button data-rmgiver="${esc(g.id)}" title="Remove">✕</button>` : ""}</span>`).join("") || '<span class="sub">No extra givers.</span>'}${ed() ? ' <button class="btnt edit-only" id="addgiver">+ Add</button>' : ""}</div></div>`}`;
+    const z = S.chartZoom || 1;
+    const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head. Click a box for details." : "Click a box for details."}</span><div class="sp"></div>
+      <div class="zoom"><button class="sc" data-zoom="out" title="Zoom out">−</button><span class="sub" id="zpct">${Math.round(z * 100)}%</span><button class="sc" data-zoom="in" title="Zoom in">+</button><button class="sc" data-zoom="fit">Fit</button><button class="sc" data-zoom="100">100%</button></div></div>
+      <div class="chart" id="chartbox"><div class="tree" id="tree" style="zoom:${z}">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : ""}<ul>${tops.map(subtree).join("")}</ul></div></div></div>`;
+    return { html };
+  }
+  /** The details of one box (was the right-hand panel): opens as a small popup next to the box. */
+  function chartPop(id, anchor) {
+    const sel = RB.seat(id); if (!sel) return;
+    S.seatSel = id;
+    document.querySelectorAll(".node.sel").forEach((x) => x.classList.remove("sel")); if (anchor) anchor.classList.add("sel");
+    const heads = [["", "— nobody (top) —"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
+    const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
+    const m = document.getElementById("modal");
+    m.innerHTML = `<div class="back pop"><div class="dlg popc"><div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1"><b style="font-size:17px">${esc(RB.holderName(sel))}</b><div class="sub">${esc(sel.designation || "")}${sel.dept ? " · " + esc(sel.dept) : ""}${sel.role === "owner" ? " · App owner" : ""}</div><div class="sub">${esc(sel.gmail || "")}</div></div><button class="link" id="fc">Close</button></div>
+      <div class="lbl">REPORTS TO</div><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <div class="foot">One head per person. A change shows what it affects before it is saved.</div>
+      <div class="lbl">CAN GET TASKS FROM</div><div class="sub">By default: his head, his own branch's heads and colleagues with the same head.</div><div style="margin-top:6px">${gv.map((g) => `<span class="chip">${esc(RB.holderName(g))}${ed() ? `<button data-rmgiver="${esc(g.id)}" title="Remove">✕</button>` : ""}</span>`).join("") || '<span class="sub">No extra givers.</span>'}${ed() ? ' <button class="btnt edit-only" id="addgiver">+ Add</button>' : ""}</div></div></div>`;
+    const back = m.querySelector(".back"), card = m.querySelector(".popc");
+    back.onclick = (e) => { if (e.target === back) m.innerHTML = ""; };
+    m.querySelector("#fc").onclick = () => (m.innerHTML = "");
+    // Place it next to the box, inside the window.
+    if (anchor) {
+      const r = anchor.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+      let left = r.right + 12; if (left + w > innerWidth - 8) left = r.left - w - 12; if (left < 8) left = Math.max(8, Math.min(innerWidth - w - 8, r.left));
+      let top = Math.min(Math.max(8, r.top - 10), innerHeight - h - 8);
+      Object.assign(card.style, { left: left + "px", top: top + "px" });
     }
-    return { html, side };
+    const rt = m.querySelector("#rt"); if (rt) rt.onchange = () => { const v = rt.value; m.innerHTML = ""; moveSeat(id, v); };
+    m.querySelectorAll("[data-rmgiver]").forEach((b) => (b.onclick = () => { const g = RB.seat(b.dataset.rmgiver); m.innerHTML = ""; RB.Store.put("seats", sel.id, { extraGivers: (sel.extraGivers || []).filter((x) => x !== g.id) }, true).then(() => done("Removed extra giver " + RB.holderName(g) + " for " + RB.holderName(sel))).then(RB.render); }));
+    const ag = m.querySelector("#addgiver"); if (ag) ag.onclick = () => {
+      const s = sel, cand = D.seats.filter((x) => x.id !== s.id && x.status === "filled" && x.role !== "owner" && !(s.extraGivers || []).includes(x.id) && !RB.canGiveTo(x).some((y) => y.id === s.id));
+      if (!cand.length) return RB.alertBox("Everyone who can be added already gives tasks to " + esc(RB.holderName(s)) + ".");
+      RB.form("Add a giver for " + RB.holderName(s), [{ k: "g", label: "WHO CAN GIVE HIM TASKS", type: "select", value: cand[0].id, options: cand.map((x) => [x.id, RB.holderName(x) + " · " + x.designation]) }], "Add", async (v) => { await RB.Store.put("seats", s.id, { extraGivers: (s.extraGivers || []).concat(v.g) }, true); await done(RB.holderName(RB.seat(v.g)) + " can now give tasks to " + RB.holderName(s)); });
+    };
   }
 
   // ------------------------------------------------------------------ designations
@@ -406,21 +427,39 @@
       both("[data-offboard]", (e) => offboard(e.dataset.offboard));
       both("[data-delseat]", (e) => deleteSeat(e.dataset.delseat));
       // chart
+      const cb = root.querySelector("#chartbox"), tree = root.querySelector("#tree");
+      if (cb) {
+        // Keep the chart where it was scrolled to (a click or a save redraws the page).
+        if (S.chartScroll) { cb.scrollLeft = S.chartScroll[0]; cb.scrollTop = S.chartScroll[1]; }
+        cb.onscroll = () => (S.chartScroll = [cb.scrollLeft, cb.scrollTop]);
+        // Dragging near an edge scrolls the chart that way.
+        cb.ondragover = (ev) => {
+          const r = cb.getBoundingClientRect(), edge = 70, step = 24;
+          if (ev.clientX < r.left + edge) cb.scrollLeft -= step; else if (ev.clientX > r.right - edge) cb.scrollLeft += step;
+          if (ev.clientY < r.top + 40) cb.scrollTop -= step; else if (ev.clientY > r.bottom - 40) cb.scrollTop += step;
+          const ce = document.getElementById("content"); if (ce) { if (ev.clientY < 90) ce.scrollTop -= step; else if (ev.clientY > innerHeight - 60) ce.scrollTop += step; }
+        };
+      }
+      const setZoom = (z) => { S.chartZoom = Math.max(0.3, Math.min(1.6, Math.round(z * 100) / 100)); if (tree) tree.style.zoom = S.chartZoom; const p = root.querySelector("#zpct"); if (p) p.textContent = Math.round(S.chartZoom * 100) + "%"; };
+      on(root, "[data-zoom]", (e) => {
+        const k = e.dataset.zoom, z = S.chartZoom || 1;
+        if (k === "in") setZoom(z + 0.1); else if (k === "out") setZoom(z - 0.1); else if (k === "100") setZoom(1);
+        else if (cb && tree) { tree.style.zoom = 1; const w = tree.scrollWidth, h = tree.scrollHeight; const room = Math.min((cb.clientWidth - 12) / w, (innerHeight - cb.getBoundingClientRect().top - 30) / h); setZoom(Math.min(1, room)); cb.scrollLeft = 0; }
+      });
       root.querySelectorAll("[data-node]").forEach((n) => {
-        n.onclick = () => { if (!n.dataset.node) return; S.seatSel = n.dataset.node; RB.render(); };
-        n.ondragstart = (ev) => { ev.dataTransfer.setData("text/plain", n.dataset.node); n.classList.add("drag"); };
-        n.ondragend = () => n.classList.remove("drag");
+        n.onclick = () => { if (!n.dataset.node) return; chartPop(n.dataset.node, n); };
+        n.ondragstart = (ev) => { ev.dataTransfer.setData("text/plain", n.dataset.node); n.classList.add("drag"); if (tree) tree.classList.add("dragging"); };
+        n.ondragend = () => { n.classList.remove("drag"); if (tree) tree.classList.remove("dragging"); };
         n.ondragover = (ev) => { ev.preventDefault(); n.classList.add("over"); };
         n.ondragleave = () => n.classList.remove("over");
-        n.ondrop = (ev) => { ev.preventDefault(); n.classList.remove("over"); const id = ev.dataTransfer.getData("text/plain"); if (id && ed() && id !== n.dataset.node) moveSeat(id, n.dataset.node); };
+        n.ondrop = (ev) => {
+          ev.preventDefault(); n.classList.remove("over"); if (tree) tree.classList.remove("dragging");
+          const id = ev.dataTransfer.getData("text/plain"); if (!id || !ed() || id === n.dataset.node) return;
+          const s = RB.seat(id);
+          if (!n.dataset.node && s && (!s.reportsTo || !RB.seat(s.reportsTo))) return RB.toast(RB.holderName(s) + " is already at the top");
+          moveSeat(id, n.dataset.node);
+        };
       });
-      const rt = side && side.querySelector("#rt"); if (rt) rt.onchange = () => { const v = rt.value; RB.render(); moveSeat(S.seatSel, v); };
-      on(side, "[data-rmgiver]", (e) => { const s = RB.seat(S.seatSel), g = RB.seat(e.dataset.rmgiver); RB.Store.put("seats", s.id, { extraGivers: (s.extraGivers || []).filter((x) => x !== g.id) }, true).then(() => done("Removed extra giver " + RB.holderName(g) + " for " + RB.holderName(s))).then(RB.render); });
-      const ag = side && side.querySelector("#addgiver"); if (ag) ag.onclick = () => {
-        const s = RB.seat(S.seatSel), cand = D.seats.filter((x) => x.id !== s.id && x.status === "filled" && x.role !== "owner" && !(s.extraGivers || []).includes(x.id) && !RB.canGiveTo(x).some((y) => y.id === s.id));
-        if (!cand.length) return RB.alertBox("Everyone who can be added already gives tasks to " + esc(first(RB.holderName(s))) + ".");
-        RB.form("Add a giver for " + RB.holderName(s), [{ k: "g", label: "WHO CAN GIVE HIM TASKS", type: "select", value: cand[0].id, options: cand.map((x) => [x.id, RB.holderName(x) + " · " + x.designation]) }], "Add", async (v) => { await RB.Store.put("seats", s.id, { extraGivers: (s.extraGivers || []).concat(v.g) }, true); await done(RB.holderName(RB.seat(v.g)) + " can now give tasks to " + RB.holderName(s)); });
-      };
       // designations
       const dd = root.querySelector("#adddes"); if (dd) dd.onclick = addDesig;
       const dd2 = side && side.querySelector("#adddes2"); if (dd2) dd2.onclick = addDesig;

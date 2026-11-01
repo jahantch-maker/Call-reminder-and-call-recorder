@@ -11,7 +11,8 @@
 
   // ------------------------------------------------------------------ small helpers
   RB.esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  RB.first = (n) => String(n || "").trim().split(/\s+/)[0] || "Member";
+  // v0.49.4 Full names everywhere (owner's rule): "first" now gives the whole name.
+  RB.first = (n) => String(n || "").trim().replace(/\s+/g, " ") || "Member";
   RB.fmtDay = (t) => new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   RB.fmtShort = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   RB.fmtWhen = (t) => RB.fmtDay(t) + ", " + new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
