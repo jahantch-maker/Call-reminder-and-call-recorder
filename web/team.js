@@ -146,7 +146,7 @@
   function node(s) {
     const g = (s.extraGivers || []).length;
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
-    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}${RB.isBoardOwner(RB.seat(s.reportsTo)) ? `<span class="gv" style="color:var(--onv)">→ ${esc(RB.holderName(RB.seat(s.reportsTo)))} only</span>` : ""}</div>`;
+    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}${RB.isBoardOwner(RB.seat(s.reportsTo)) ? `<span class="gv only">→ ${esc(RB.holderName(RB.seat(s.reportsTo)))} only</span>` : ""}</div>`;
   }
   // People under one head sit together by department; two or more of the same department share one labelled outline.
   const kidsHtml = (arr) => {
@@ -156,10 +156,24 @@
     while (i < sorted.length) {
       const d = dp(sorted[i]); let j = i; while (j < sorted.length && dp(sorted[j]) === d) j++;
       const grp = sorted.slice(i, j);
-      out += d && grp.length > 1 ? `<li class="dg"><div class="dgroup"><div class="dglab">${esc(d)}</div><ul>${grp.map(subtree).join("")}</ul></div></li>` : grp.map(subtree).join("");
+      out += d && grp.length > 1 ? groupHtml(d, grp) : grp.map(subtree).join("");
       i = j;
     }
     return out;
+  };
+  // Each department has its own soft colour. When at most one person in the group has a team, the group's boxes sit
+  // side by side in one row (that person in the middle) and his team hangs below, so the boxes don't drift apart.
+  const DTINT = [["#EEF3FC", "#C9D8F2", "#3D5F9E"], ["#FDF3E7", "#F0D6B4", "#9A6420"], ["#ECF8F1", "#BFE3CE", "#2F7A4E"], ["#F4EEFC", "#D9CBF2", "#6A4BA3"], ["#FDEFF2", "#F2C9D3", "#A3405A"], ["#EAF6F8", "#BEE0E6", "#2C6F7C"], ["#F8F6E6", "#E4DDAE", "#7A6C1E"], ["#EEF0FB", "#CACFF0", "#4651A0"], ["#FBEFEA", "#EDCBBE", "#9C4A2C"], ["#EDF6EA", "#C6E0BC", "#477A35"], ["#F9EEF8", "#E8C6E4", "#8E3F86"], ["#EEF2F4", "#CBD5DB", "#4A5D69"]];
+  const deptTint = (d) => { const i = Math.max(0, RB.deptList().indexOf(d)); const c = DTINT[i % DTINT.length]; return `--dbg:${c[0]};--dln:${c[1]};--dtx:${c[2]}`; };
+  const groupHtml = (d, grp) => {
+    const lab = `<div class="dglab">${esc(d)}</div>`, withKids = grp.filter((x) => RB.children(x.id).length);
+    // Several of them have teams: only a band behind their own boxes is coloured (placed by placeBands), never their teams.
+    if (withKids.length > 1) return `<li class="dg"><div class="dgroup multi" style="${deptTint(d)}"><div class="dband">${lab}</div><ul>${grp.map(subtree).join("")}</ul></div></li>`;
+    const lead = withKids[0], rest = grp.filter((x) => x !== lead), h = Math.floor(rest.length / 2);
+    const k = lead ? RB.children(lead.id) : [];
+    const side = (a) => `<div class="dside">${a.map(node).join("")}</div>`;
+    const inner = lead ? side(rest.slice(0, h)) + node(lead) + side(rest.slice(h)) : rest.map(node).join("");
+    return `<li class="dg"><div class="dgroup" style="${deptTint(d)}"><div class="dband">${lab}</div><div class="drow">${inner}</div></div>${k.length ? "<ul>" + kidsHtml(k) + "</ul>" : ""}</li>`;
   };
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + kidsHtml(k) + "</ul>" : ""}</li>`; };
   function chart() {
@@ -245,7 +259,7 @@
     const section = (dp) => {
       const ds = shown(all.filter((d) => dDepts(d).includes(dp))), people = D.seats.filter((x) => (x.dept || "") === dp).length;
       if (S.dsort === "unchecked" && !ds.length) return "";
-      return `<div class="dsec"><div class="dsech"><b>${esc(dp)}</b><span class="sub">${people} seat${people === 1 ? "" : "s"} · ${all.filter((d) => dDepts(d).includes(dp)).length} designation${all.filter((d) => dDepts(d).includes(dp)).length === 1 ? "" : "s"}</span><div class="sp"></div>${ed() ? `<button class="btnt edit-only" data-dadd="${esc(dp)}">+ Designation</button><button class="link edit-only" data-deptren="${esc(dp)}">Rename</button>${people || all.some((d) => dDepts(d).includes(dp)) ? "" : `<button class="link edit-only" data-deptdel="${esc(dp)}">Delete</button>`}` : ""}</div>
+      return `<div class="dsec"><div class="dsech"><b>${esc(dp)}</b><span class="sub">${people} seat${people === 1 ? "" : "s"} · ${all.filter((d) => dDepts(d).includes(dp)).length} designation${all.filter((d) => dDepts(d).includes(dp)).length === 1 ? "" : "s"}</span><div class="sp"></div>${ed() ? `<button class="btnt edit-only" data-dadd="${esc(dp)}">+ Designation</button><button class="link edit-only" data-deptren="${esc(dp)}">Rename</button>${people ? `<button class="link edit-only off" disabled title="${people} seat${people === 1 ? "" : "s"} still here. Move them to another department first.">Delete</button>` : `<button class="link edit-only" data-deptdel="${esc(dp)}">Delete</button>`}` : ""}</div>
         ${ds.map((d) => row(d, dp)).join("") || '<div class="muted" style="padding:6px 0">No designations yet.</div>'}</div>`;
     };
     const loose = shown(all.filter((d) => !dDepts(d).length));
@@ -531,6 +545,14 @@
           const ce = document.getElementById("content"); if (ce) { if (ev.clientY < 90) ce.scrollTop -= step; else if (ev.clientY > innerHeight - 60) ce.scrollTop += step; }
         };
       }
+      // Department bands: sized to cover only the group's own boxes (their teams hang below, outside the band).
+      if (tree) tree.querySelectorAll(".dgroup").forEach((g) => {
+        const band = g.querySelector(":scope>.dband"), gr = g.getBoundingClientRect(), k = gr.width / (g.offsetWidth || 1);
+        const ns = [...g.querySelectorAll(":scope>ul>li>.node, :scope>.drow .node")].map((n) => n.getBoundingClientRect());
+        if (!band || !ns.length) return;
+        const L = Math.min(...ns.map((r) => r.left)), R = Math.max(...ns.map((r) => r.right)), T = Math.min(...ns.map((r) => r.top)), B = Math.max(...ns.map((r) => r.bottom));
+        Object.assign(band.style, { left: (L - gr.left) / k - 14 + "px", width: (R - L) / k + 28 + "px", top: (T - gr.top) / k - 14 + "px", height: (B - T) / k + 28 + "px" });
+      });
       const setZoom = (z) => { S.chartZoom = Math.max(0.3, Math.min(1.6, Math.round(z * 100) / 100)); if (tree) tree.style.zoom = S.chartZoom; const p = root.querySelector("#zpct"); if (p) p.textContent = Math.round(S.chartZoom * 100) + "%"; };
       on(root, "[data-zoom]", (e) => {
         const k = e.dataset.zoom, z = S.chartZoom || 1;
@@ -562,7 +584,13 @@
       const adp = root.querySelector("#adddept"); if (adp) adp.onclick = () => newDeptFor(null);
       const dim = root.querySelector("#deptimport"); if (dim) dim.onclick = () => { const add = D.seats.map((s) => (s.dept || "").trim()).filter(Boolean); saveDepts(Array.from(new Set(RB.deptList().concat(add))), "Added typed departments to the list").then(RB.render); };
       on(root, "[data-deptren]", (e) => renDept(e.dataset.deptren));
-      on(root, "[data-deptdel]", (e) => RB.confirm("Delete the department “" + esc(e.dataset.deptdel) + "”?", "Delete", () => saveDepts(RB.deptList().filter((d) => d !== e.dataset.deptdel), "Deleted department " + e.dataset.deptdel), true));
+      on(root, "[data-deptdel]", (e) => {
+        const dp = e.dataset.deptdel, under = RB.desigList().filter((d) => dDepts(d).includes(dp));
+        RB.confirm("Delete the department “" + esc(dp) + "”?" + (under.length ? (under.length === 1 ? " Its designation stays" : " Its " + under.length + " designations stay") + " and moves to “No department yet” unless under another department." : ""), "Delete", async () => {
+          if (under.length) await RB.Store.put("config", "designations", { list: RB.desigList().map((d) => (dDepts(d).includes(dp) ? Object.assign({}, d, { depts: dDepts(d).filter((x) => x !== dp) }) : d)), updatedAt: Date.now() }, true);
+          await saveDepts(RB.deptList().filter((d) => d !== dp), "Deleted department " + dp);
+        }, true);
+      });
       on(root, "[data-deptsort]", (e) => { S.deptSort = e.dataset.deptsort; RB.render(); });
       on(root, "[data-dadd]", (e) => addDesigTo(e.dataset.dadd));
       on(root, "[data-dunlink]", (e) => { const [n, dp] = e.dataset.dunlink.split("|"); saveDesig(RB.desigList().map((d) => (d.name === n ? Object.assign({}, d, { depts: dDepts(d).filter((x) => x !== dp) }) : d)), "Took designation " + n + " out of " + dp).then(RB.render); });
