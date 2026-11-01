@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.49.1", "1 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Joining the team again after being removed or after a waiting request now works",
+                "Signing out of the team shows you as offline straight away",
+            ),
+        ),
+        Entry(
             "0.49.0", "1 Nov",
             new = listOf(
                 "Join the team with your official Gmail: you are placed in your seat and get the access your designation gives",

@@ -536,6 +536,7 @@ object TeamRepo {
     }
 
     fun signOut() {
+        runCatching { TeamPresence.onForeground(false) }
         stopListening()
         runCatching { auth().signOut() }
         clearLocal()
