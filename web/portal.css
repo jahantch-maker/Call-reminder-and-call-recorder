@@ -162,3 +162,8 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 .zoom{display:flex;align-items:center;gap:6px}.zoom .sc{min-width:34px}
 #modal .back.pop{background:transparent}
 #modal .dlg.popc{position:fixed;width:320px;max-width:calc(100vw - 16px);box-shadow:0 12px 36px #0003}
+
+/* Department outline in the chart */
+.dgroup{position:relative;border:1.5px solid #D5D8DE;border-radius:18px;padding:16px 4px 10px;background:#FAFBFC}
+.dglab{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #D5D8DE;border-radius:10px;padding:1px 10px;font-size:11px;font-weight:700;color:var(--onv);white-space:nowrap}
+.dgroup>ul{padding-top:6px}

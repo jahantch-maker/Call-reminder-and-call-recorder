@@ -29,7 +29,7 @@
     }, 500);
   }
   const saveOverride = (s, label) => lazySave("seat:" + s.id, () => RB.Store.putField("seats", s.id, "override", RB.seat(s.id).override || {}), label);
-  const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }), label); };
+  const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
   // ------------------------------------------------------------------ people
   function people() {
@@ -79,14 +79,15 @@
     RB.form("Add seat", [
       { k: "gmail", label: "OFFICIAL GMAIL", value: (prefill && prefill.gmail) || "", ph: "name@gmail.com" },
       { k: "designation", label: "DESIGNATION", type: "select", value: (prefill && prefill.designation) || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
-      { k: "dept", label: "DEPARTMENT / SITE", value: (prefill && prefill.dept) || "", ph: "Site A" },
+      deptField("DEPARTMENT", prefill && prefill.dept),
       { k: "reportsTo", label: "REPORTS TO", type: "select", value: (prefill && prefill.reportsTo) || "", options: heads },
     ], "Add seat", async (v) => {
       const g = RB.gkey(v.gmail);
       if (!gmailOk(g)) return "Type a plain Gmail address (name@gmail.com).";
       if (RB.seat(g)) return "That Gmail already has a seat.";
-      await RB.Store.put("seats", g, { gmail: g, designation: v.designation, dept: v.dept.trim(), reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
+      await RB.Store.put("seats", g, { gmail: g, designation: v.designation, dept: v.dept === "__new" ? "" : v.dept, reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
       S.seatSel = g; await done("Added seat " + g + " (" + v.designation + ")");
+      if (v.dept === "__new") newDeptFor(g);
     }, "The person joins by signing in to the phone app with this Gmail.");
   }
   function fillSeat(id) {
@@ -97,10 +98,11 @@
   }
   function editSeat(id) {
     const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
-    const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, { k: "dept", label: "DEPARTMENT / SITE", value: s.dept || "" }, { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
+    const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, deptField("DEPARTMENT", s.dept), { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
     if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     RB.form("Edit seat", f, "Save", async (v) => {
-      const patch = { designation: v.designation, dept: v.dept.trim(), role: v.role || s.role };
+      const patch = { designation: v.designation, dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
+      if (v.dept === "__new") newDeptFor(id);
       await RB.Store.put("seats", id, patch, true);
       const hd = v.reportsTo !== (s.reportsTo || "");
       if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
@@ -143,13 +145,26 @@
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
     return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed()}" data-node="${esc(s.id)}"><b>${s.status === "filled" ? esc(first(s.name)) : s.invited && s.name ? esc(first(s.name)) + ' <span class="inv">invited</span>' : "Empty seat"}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
   }
-  const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + k.map(subtree).join("") + "</ul>" : ""}</li>`; };
+  // People under one head sit together by department; two or more of the same department share one labelled outline.
+  const kidsHtml = (arr) => {
+    const nm = (x) => RB.holderName(x).toLowerCase(), dp = (x) => (x.dept || "").trim();
+    const sorted = arr.slice().sort((a, b) => (dp(a) || "\uffff").localeCompare(dp(b) || "\uffff") || nm(a).localeCompare(nm(b)));
+    let out = "", i = 0;
+    while (i < sorted.length) {
+      const d = dp(sorted[i]); let j = i; while (j < sorted.length && dp(sorted[j]) === d) j++;
+      const grp = sorted.slice(i, j);
+      out += d && grp.length > 1 ? `<li class="dg"><div class="dgroup"><div class="dglab">${esc(d)}</div><ul>${grp.map(subtree).join("")}</ul></div></li>` : grp.map(subtree).join("");
+      i = j;
+    }
+    return out;
+  };
+  const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + kidsHtml(k) + "</ul>" : ""}</li>`; };
   function chart() {
     const tops = D.seats.filter((s) => !s.reportsTo || !RB.seat(s.reportsTo) || s.reportsTo === s.id);
     const z = S.chartZoom || 1;
     const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head. Click a box for details." : "Click a box for details."}</span><div class="sp"></div>
       <div class="zoom"><button class="sc" data-zoom="out" title="Zoom out">−</button><span class="sub" id="zpct">${Math.round(z * 100)}%</span><button class="sc" data-zoom="in" title="Zoom in">+</button><button class="sc" data-zoom="fit">Fit</button><button class="sc" data-zoom="100">100%</button></div></div>
-      <div class="chart" id="chartbox"><div class="tree" id="tree" style="zoom:${z}">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : ""}<ul>${tops.map(subtree).join("")}</ul></div></div></div>`;
+      <div class="chart" id="chartbox"><div class="tree" id="tree" style="zoom:${z}">${ed() ? '<div class="node toprow" data-node="" title="Drop a box here: nobody above him">TOP · drop here for no head</div>' : ""}<ul>${kidsHtml(tops)}</ul></div></div></div>`;
     return { html };
   }
   /** The details of one box (was the right-hand panel): opens as a small popup next to the box. */
@@ -183,6 +198,29 @@
     };
   }
 
+  // ------------------------------------------------------------------ departments
+  function depts() {
+    const all = RB.deptList(), seatsOf = (n) => D.seats.filter((s) => (s.dept || "").trim() === n).length;
+    S.deptSort = S.deptSort || "az";
+    const list = S.deptSort === "seats" ? all.slice().sort((a, b) => seatsOf(b) - seatsOf(a) || a.localeCompare(b)) : all;
+    const chips = [["az", "A–Z"], ["seats", "Most seats"]].map(([k, l]) => `<button class="sc ${S.deptSort === k ? "on" : ""}" data-deptsort="${k}">${l}</button>`).join("");
+    const stray = Array.from(new Set(D.seats.map((s) => (s.dept || "").trim()).filter((d) => d && !all.includes(d))));
+    const html = `<div class="card" style="max-width:760px"><div class="subhead"><h3>Departments · ${all.length}</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddept">+ New department</button>' : ""}</div>
+      <div class="hint">Seats pick their department from this list, so names are always spelled the same. Rename fixes it on every seat at once.</div>
+      ${stray.length && ed() ? `<div class="hint warn edit-only">Typed on seats but not in the list: ${stray.map(esc).join(", ")}. <button class="link" id="deptimport">Add them to the list</button></div>` : ""}
+      ${list.map((d) => { const n = seatsOf(d); return `<div class="docrow"><span class="ty" style="background:#EEF0F3">${esc(d)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"}</span></div>${ed() ? `<button class="btnt edit-only" data-deptren="${esc(d)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Rename it, or move those seats first.">Delete</button>` : `<button class="btnt edit-only" data-deptdel="${esc(d)}">Delete</button>`}` : ""}</div>`; }).join("") || '<div class="muted">No departments yet.</div>'}</div>`;
+    return { html };
+  }
+  function renDept(old) {
+    RB.form("Rename department", [{ k: "name", label: "NAME", value: old }], "Save", async (v) => {
+      const n = v.name.trim().replace(/\s+/g, " "); if (!n) return "Type a name.";
+      const hit = RB.deptList().find((d) => d.toLowerCase() === n.toLowerCase() && d !== old);
+      const name = hit || n; // renaming onto an existing name merges the two
+      for (const s of D.seats.filter((x) => (x.dept || "").trim() === old)) await RB.Store.put("seats", s.id, { dept: name }, true);
+      await saveDepts(Array.from(new Set(RB.deptList().map((d) => (d === old ? name : d)))), hit ? "Merged department " + old + " into " + name : "Renamed department " + old + " to " + name);
+    }, "Type an existing name to merge the two.");
+  }
+
   // ------------------------------------------------------------------ designations
   function desigs() {
     const all = RB.desigList(), seatsOf = (n) => D.seats.filter((s) => s.designation === n).length;
@@ -196,7 +234,19 @@
       ${list.map((d) => { const n = seatsOf(d.name); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Give those seats another designation first.">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
     return { html };
   }
-  const saveDesig = async (list, text) => { await RB.Store.put("config", "designations", { list, updatedAt: Date.now() }); await done(text); };
+  const saveDesig = async (list, text) => { await RB.Store.put("config", "designations", { list, updatedAt: Date.now() }, true); await done(text); };
+  const saveDepts = async (depts, text) => { D.desig = Object.assign({}, D.desig || {}, { depts }); await RB.Store.put("config", "designations", { depts, updatedAt: Date.now() }, true); await done(text); };
+  const deptField = (label, value) => ({ k: "dept", label, type: "select", value: value || "", options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])).concat(value && !RB.deptList().includes(value) ? [[value, value + " (not in list)"]] : []).concat([["__new", "+ New department…"]]) });
+  /** "+ New department…" picked in a seat form: ask the name once the form has closed, add it to the list, then put it on the seat. */
+  function newDeptFor(seatId) {
+    setTimeout(() => RB.form("New department", [{ k: "name", label: "NAME", ph: "Electrical" }], "Add", async (v) => {
+      const n = v.name.trim().replace(/\s+/g, " "); if (!n) return "Type a name.";
+      const hit = RB.deptList().find((d) => d.toLowerCase() === n.toLowerCase());
+      const name = hit || n;
+      if (!hit) await saveDepts(RB.deptList().concat(name), "Added department " + name);
+      if (seatId && RB.seat(seatId)) { await RB.Store.put("seats", seatId, { dept: name }, true); await done("Department of " + seatId + ": " + name); }
+    }), 60);
+  }
   function addDesig() {
     RB.form("New designation", [{ k: "name", label: "NAME", ph: "Site Engineer" }], "Add", async (v) => {
       const n = v.name.trim(); if (!n) return "Type a name."; if (RB.desigOf(n)) return "That designation exists.";
@@ -298,14 +348,14 @@
     RB.form("Approve " + (m.name || "request"), [
       { k: "seat", label: "SEAT", type: "select", value: "new", options: [["new", "New seat for " + (m.email || "this Gmail")]].concat(empties.map((s) => [s.id, s.gmail + " · " + s.designation])) },
       { k: "designation", label: "DESIGNATION (new seat)", type: "select", value: RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
-      { k: "dept", label: "DEPARTMENT / SITE (new seat)", value: "" },
+      Object.assign(deptField("DEPARTMENT (new seat)", ""), { options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])) }),
       { k: "reportsTo", label: "REPORTS TO (new seat)", type: "select", value: "", options: heads },
     ], "Approve", async (v) => {
       let id = v.seat;
       if (id === "new") {
         id = RB.gkey(m.email || ""); if (!gmailOk(id)) return "This request has no Gmail, so a new seat cannot be made.";
         if (RB.seat(id)) return "That Gmail already has a seat. Choose it from the list.";
-        await RB.Store.put("seats", id, { gmail: id, designation: v.designation, dept: v.dept.trim(), reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [] });
+        await RB.Store.put("seats", id, { gmail: id, designation: v.designation, dept: v.dept, reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [] });
       }
       await RB.Store.put("members", uid, { status: "active", seatId: id }, true);
       await fillFrom(RB.member(uid), RB.seat(id));
@@ -398,10 +448,10 @@
 
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Designations"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
+    tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Designations"], ["dept", "Departments"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
     render(tab) {
       RB.reconcile();
-      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "access" ? access() : tab === "waiting" ? waiting() : people();
+      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "waiting" ? waiting() : people();
       p.title = "Team"; p.sub = tab === "access" ? "Changes reach the phone in a few seconds · off buttons are hidden" : "Seats, chart, designations and access";
       return p;
     },
@@ -467,6 +517,11 @@
       const cpb = root.querySelector("#acccopy"); if (cpb) cpb.onclick = () => copyAccess(S.accDesig);
       const okb = root.querySelector("#accok"); if (okb) okb.onclick = () => saveDesig(RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { checkedAt: Date.now() }) : d)), "Access for " + S.accDesig + " looked over, no change").then(() => RB.render());
       both("[data-dsort]", (e) => { S.dsort = e.dataset.dsort; RB.render(); });
+      const adp = root.querySelector("#adddept"); if (adp) adp.onclick = () => newDeptFor(null);
+      const dim = root.querySelector("#deptimport"); if (dim) dim.onclick = () => { const add = D.seats.map((s) => (s.dept || "").trim()).filter(Boolean); saveDepts(Array.from(new Set(RB.deptList().concat(add))), "Added typed departments to the list").then(RB.render); };
+      on(root, "[data-deptren]", (e) => renDept(e.dataset.deptren));
+      on(root, "[data-deptdel]", (e) => RB.confirm("Delete the department “" + esc(e.dataset.deptdel) + "”?", "Delete", () => saveDepts(RB.deptList().filter((d) => d !== e.dataset.deptdel), "Deleted department " + e.dataset.deptdel), true));
+      on(root, "[data-deptsort]", (e) => { S.deptSort = e.dataset.deptsort; RB.render(); });
       both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
