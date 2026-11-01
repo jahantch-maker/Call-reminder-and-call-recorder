@@ -432,7 +432,8 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
         }
         msg?.let { Text(it, color = if (it.startsWith("Moved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
         if (user != null) {
-            TextButton(onClick = { TeamRepo.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this phone") }
+            TeamSignOut(inTeam = m != null && m.active && t != null)
+            if (m != null && m.active && t != null) TeamRestoreOffer()
         }
     }
 }

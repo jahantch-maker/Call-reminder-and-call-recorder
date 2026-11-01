@@ -537,11 +537,15 @@ object TeamRepo {
         if (!t.isNullOrEmpty()) setTeamId(t)
     }
 
-    fun signOut() {
+    fun signOut(onDone: () -> Unit = {}) {
         runCatching { TeamPresence.onForeground(false) }
         val u = uid
         val t = teamId
-        if (u == null || t == null) return finishSignOut()
+        if (u == null || t == null) {
+            finishSignOut()
+            onDone()
+            return
+        }
         // Tell his managers first (while he is still signed in); never wait more than a few seconds for it.
         scope.launch {
             runCatching {
@@ -550,6 +554,7 @@ object TeamRepo {
                 }
             }
             finishSignOut()
+            onDone()
         }
     }
 

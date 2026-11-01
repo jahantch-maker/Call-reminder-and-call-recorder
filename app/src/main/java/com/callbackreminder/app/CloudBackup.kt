@@ -12,6 +12,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -49,18 +50,23 @@ object CloudBackup {
     }
 
     /** Uploads tonight's backup, then removes nights older than the last 7. Returns null when it worked. */
-    suspend fun upload(ctx: Context): String? = try {
+    suspend fun upload(ctx: Context, dayName: String? = null): String? = try {
         val t = TeamRepo.teamId ?: return "Not in a team"
         val u = TeamRepo.uid ?: return "Not signed in"
         val raw = Backup.export(ctx).toString().toByteArray(Charsets.UTF_8)
         val zipped = ByteArrayOutputStream().also { o -> GZIPOutputStream(o).use { it.write(raw) } }.toByteArray()
         val text = Base64.encodeToString(zipped, Base64.NO_WRAP)
-        val day = LocalDate.now().toString()
+        val day = dayName ?: LocalDate.now().toString()
         val parts = text.chunked(CHUNK)
         val col = nights(t, u)
         parts.forEachIndexed { i, part -> col.document("$day-${i.toString().padStart(3, '0')}").set(mapOf("day" to day, "i" to i, "data" to part)).await() }
         // The index of the night goes last: a half-written night is never offered for restore.
         col.document(day).set(mapOf("day" to day, "parts" to parts.size, "at" to System.currentTimeMillis(), "bytes" to raw.size)).await()
+        if (dayName != null) {
+            // The sign-out save must be confirmed by the server before anything is erased from the phone.
+            val back = col.document(day).get(Source.SERVER).await()
+            if ((back.getLong("parts") ?: 0L).toInt() != parts.size) throw IllegalStateException("Couldn't confirm the save")
+        }
         val days = col.get().await().documents.mapNotNull { it.getString("day") }.distinct().sortedDescending()
         days.drop(KEEP).forEach { old ->
             col.get().await().documents.filter { it.getString("day") == old }.forEach { it.reference.delete().await() }
@@ -79,6 +85,26 @@ object CloudBackup {
             .mapNotNull { d -> d.getString("day")?.let { it to (d.getLong("at") ?: 0L) } }.maxByOrNull { it.first }
     } catch (e: Exception) {
         null
+    }
+
+    private const val OUT = "signout"
+
+    /** The save made when he signs out: null when it is safely online, else why not (then nothing is erased). */
+    suspend fun saveForSignOut(ctx: Context): String? = try {
+        kotlinx.coroutines.withTimeout(90_000L) { upload(ctx, OUT) }
+    } catch (e: Exception) {
+        "No internet, so nothing was saved. Try again when you are online."
+    }
+
+    /** Removes the sign-out save once it has been used (or turned down). */
+    suspend fun deleteSignOut() {
+        runCatching {
+            val t = TeamRepo.teamId ?: return
+            val u = TeamRepo.uid ?: return
+            kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                nights(t, u).get().await().documents.filter { it.getString("day") == OUT }.forEach { it.reference.delete().await() }
+            }
+        }
     }
 
     /** Downloads that night and puts everything back; the app then restarts. Returns null when it worked. */
@@ -105,7 +131,11 @@ object CloudBackup {
         val file = File(ctx.cacheDir, "cloud-restore.json").apply { writeBytes(json) }
         val err = Backup.restore(ctx, Uri.fromFile(file))
         file.delete()
-        if (err == null) Backup.restartApp(ctx)
+        if (err == null) {
+            if (day == OUT) deleteSignOut()
+            Backup.clearWiped(ctx)
+            Backup.restartApp(ctx)
+        }
         return err
     }
 }
