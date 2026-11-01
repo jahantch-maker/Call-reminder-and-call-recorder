@@ -168,8 +168,10 @@
   function desigs() {
     const all = RB.desigList(), seatsOf = (n) => D.seats.filter((s) => s.designation === n).length;
     S.dsort = S.dsort || "az";
-    const list = S.dsort === "az" ? all.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "seats" ? all.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : all.slice().reverse();
-    const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
+    const unchecked = all.filter((d) => !d.checkedAt);
+    if (S.dsort === "unchecked" && !unchecked.length) S.dsort = "az";
+    const list = S.dsort === "unchecked" ? unchecked.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "az" ? all.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "seats" ? all.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : all.slice().reverse();
+    const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].concat(unchecked.length ? [["unchecked", "Unchecked · " + unchecked.length]] : []).map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
     const html = `<div class="card" style="max-width:760px"><div class="subhead"><h3>Designations · ${all.length}</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
       <div class="hint">A designation is only a label. It carries the default access, which you can still change for any one person.</div>
       ${list.map((d) => { const n = seatsOf(d.name); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Give those seats another designation first.">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
@@ -202,21 +204,21 @@
     const stag = (key) => mode === "desig" || !e.changed[key] ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`;
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
-    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
+    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "desig" && ed() ? `${(RB.desigOf(S.accDesig) || {}).checkedAt ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
       <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
       <div class="mh2" style="margin-top:12px">IN THE APP</div>
       ${RB.APP_SW.map(([k, t, sub]) => `<div class="swrow"><div class="w"><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</div>${stag("app." + k)}${sw(k)}</div>`).join("")}</div>`;
     const lv = (k) => ["none", "view", "edit"].map((v) => `<button data-lvl="${k}:${v}" class="${e.portal[k] === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
     const mid = `<div class="card" style="flex:1"><div class="mh2">IN THE PORTAL</div>${RB.SECTIONS.map(([k, l]) => `<div class="swrow"><div class="w"><b>${l}</b></div>${stag("portal." + k)}<div class="lvl ${can ? "" : "dis"}" style="${can ? "" : "pointer-events:none;opacity:.6"}">${lv(k)}</div></div>`).join("")}
       <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Meetings “View” shows only the minutes he was in and the actions on him.</div></div>`;
-    const dl = RB.desigList().map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
+    const dl = RB.desigList().slice().sort((a, b) => a.name.localeCompare(b.name)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
     const side = `<div class="card"><h3>Designation defaults</h3>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, SMS, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
     return { html: `<div class="cols">${left}${mid}</div>`, side, sideCards: true };
   }
   async function setSwitch(k, val) {
     if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val;
+      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val; d.checkedAt = Date.now();
       saveDesigLazy(list, "Default for " + S.accDesig + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.app = ov.app || {}; ov.app[k] = val;
@@ -226,13 +228,42 @@
   }
   async function setLevel(k, v) {
     if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v;
+      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v; list.find((x) => x.name === S.accDesig).checkedAt = Date.now();
       saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + v);
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.portal = ov.portal || {}; ov.portal[k] = v;
       if (RB.defaultsOf(s.designation).portal[k] === v) delete ov.portal[k];
       s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + v);
     }
+  }
+
+  /** Copy one designation's access (app switches and portal levels) to several others at once. */
+  function copyAccess(from) {
+    const src = RB.desigOf(from); if (!src) return;
+    const m = document.getElementById("modal"), pick = new Set();
+    const others = RB.desigList().filter((d) => d.name !== from).sort((a, b) => a.name.localeCompare(b.name));
+    const draw = (q) => {
+      const vis = others.filter((d) => !q || d.name.toLowerCase().includes(q.toLowerCase()));
+      m.querySelector("#cplist").innerHTML = vis.map((d) => `<label class="swrow" style="cursor:pointer"><input type="checkbox" data-cp="${esc(d.name)}" ${pick.has(d.name) ? "checked" : ""} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9${d.checkedAt ? "" : " · unchecked"}</span></label>`).join("") || '<div class="muted">No designation matches.</div>';
+      m.querySelectorAll("[data-cp]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.cp) : pick.delete(c.dataset.cp); count(); }));
+      m.querySelector("#cpall").onclick = () => { const all = vis.every((d) => pick.has(d.name)); vis.forEach((d) => (all ? pick.delete(d.name) : pick.add(d.name))); draw(m.querySelector("#cpq").value); count(); };
+    };
+    const count = () => { const b = m.querySelector("#cpgo"); b.textContent = pick.size ? "Copy to " + pick.size : "Copy"; b.disabled = !pick.size; };
+    m.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Copy ${esc(from)}'s access to…</b><div class="foot">App switches and portal levels are copied together. People with their own changes keep them.</div>
+      <div style="display:flex;gap:10px;margin:10px 0"><input id="cpq" placeholder="Search designations" style="flex:1"><button class="btnt" id="cpall">Select all</button></div>
+      <div id="cplist" style="max-height:52vh;overflow:auto"></div>
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="cpc">Cancel</button><button class="btnp" id="cpgo" disabled>Copy</button></div></div></div>`;
+    m.querySelector("#cpc").onclick = () => (m.innerHTML = "");
+    m.querySelector("#cpq").oninput = (e) => draw(e.target.value);
+    m.querySelector("#cpgo").onclick = () => {
+      const names = Array.from(pick); if (!names.length) return;
+      RB.confirm(`Copy ${esc(from)}'s access to ${names.length} designation${names.length === 1 ? "" : "s"}?<div class="foot" style="margin-top:6px">${names.map(esc).join(", ")}</div>`, "Copy", async () => {
+        const now = Date.now();
+        const list = RB.desigList().map((d) => (pick.has(d.name) ? Object.assign({}, d, { app: Object.assign({}, src.app || {}), portal: Object.assign({}, src.portal || {}), checkedAt: now }) : d.name === from ? Object.assign({}, d, { checkedAt: d.checkedAt || now }) : d));
+        await saveDesig(list, "Copied " + from + "'s access to " + names.join(", "));
+      });
+    };
+    draw(""); count(); m.querySelector("#cpq").focus();
   }
 
   // ------------------------------------------------------------------ waiting
@@ -386,6 +417,8 @@
       const dd = root.querySelector("#adddes"); if (dd) dd.onclick = addDesig;
       const dd2 = side && side.querySelector("#adddes2"); if (dd2) dd2.onclick = addDesig;
       both("[data-dren]", (e) => renDesig(e.dataset.dren));
+      const cpb = root.querySelector("#acccopy"); if (cpb) cpb.onclick = () => copyAccess(S.accDesig);
+      const okb = root.querySelector("#accok"); if (okb) okb.onclick = () => saveDesig(RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { checkedAt: Date.now() }) : d)), "Access for " + S.accDesig + " looked over, no change").then(() => RB.render());
       both("[data-dsort]", (e) => { S.dsort = e.dataset.dsort; RB.render(); });
       both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
