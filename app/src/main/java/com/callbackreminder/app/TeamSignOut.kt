@@ -17,10 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * v0.49.1 "Sign out on this phone". Someone in the team: everything is saved online first, then cleared from this phone;
@@ -45,7 +41,7 @@ fun TeamSignOut(inTeam: Boolean) {
             title = { Text("Sign out?") },
             text = {
                 Column {
-                    Text("Your tasks (also Private ones), Dossier and settings are saved online first, then cleared from this phone. Sign in again, here or on a new phone, and everything comes back. Call recordings stay on this phone.")
+                    Text("Your tasks (also Private ones), Dossier and settings are saved online first, then cleared from this phone. Sign in again, here or on a new phone, and everything comes back by itself. Call recordings stay on this phone.")
                     problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth()) }
                     if (busy) Text("Saving online… keep the app open.")
                 }
@@ -73,53 +69,36 @@ fun TeamSignOut(inTeam: Boolean) {
     }
 }
 
-/** After signing in: "Bring your tasks back?" on a new phone or one that was cleared at sign-out. */
+/** After signing in on a new phone or one cleared at sign-out: the saved tasks come back by themselves. */
 @Composable
 fun TeamRestoreOffer() {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var offer by remember { mutableStateOf<Pair<String, Long>?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var day by remember { mutableStateOf<String?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
+    var tries by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        val fresh = !Backup.declined(ctx) && (Backup.wiped(ctx) || Backup.isEmpty(ctx))
-        if (fresh) offer = CloudBackup.latest()
+    LaunchedEffect(tries) {
+        val fresh = Backup.wiped(ctx) || Backup.isEmpty(ctx)
+        if (!fresh) return@LaunchedEffect
+        val latest = CloudBackup.latest() ?: return@LaunchedEffect
+        day = latest.first
+        problem = null
+        val err = CloudBackup.restore(ctx, latest.first)
+        if (err != null) problem = err
     }
 
-    val o = offer ?: return
-    val whenText = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault())
-        .format(Instant.ofEpochMilli(o.second).atZone(ZoneId.systemDefault()))
+    if (day == null) return
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Bring your tasks back?") },
+        title = { Text(if (problem == null) "Bringing your tasks back…" else "Couldn't bring your tasks back") },
         text = {
             Column {
-                Text("Your saved tasks, Dossier and settings from $whenText are online. This phone is empty. Restore them now?")
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (busy) Text("Restoring… the app will restart.")
+                if (problem == null) Text("Your saved tasks, Dossier and settings are coming back. The app will restart. Please keep it open.")
+                else Text(problem.orEmpty(), color = MaterialTheme.colorScheme.error)
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                scope.launch {
-                    val err = CloudBackup.restore(ctx, o.first)
-                    if (err != null) {
-                        problem = err
-                        busy = false
-                    }
-                }
-            }) { Text("Restore") }
-        },
-        dismissButton = {
-            TextButton(enabled = !busy, onClick = {
-                scope.launch {
-                    Backup.declineOffer(ctx)
-                    if (o.first == "signout") CloudBackup.deleteSignOut()
-                    offer = null
-                }
-            }) { Text("Start empty") }
+            if (problem != null) TextButton(onClick = { tries++ }) { Text("Try again") }
         },
     )
 }
