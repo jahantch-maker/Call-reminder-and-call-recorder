@@ -173,3 +173,7 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 .board .brow{display:flex;gap:10px;justify-content:center}
 .board.over{border-color:var(--grn);background:#F1FAF4}
 .board>.dglab{border-color:var(--on);color:var(--on)}
+
+.dsec{border:1.5px solid #E3E5EA;border-radius:16px;padding:10px 14px;margin-top:12px}
+.dsech{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid #EEF0F3}
+.dsech b{font-size:15.5px}
