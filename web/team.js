@@ -11,10 +11,11 @@
   const tag = (name) => `<span class="ty" style="background:${RB.desigColor(name)}">${esc(name || "No designation")}</span>`;
   const seatLine = (s) => {
     const h = RB.headOf(s);
-    return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "Owner" : ""].filter(Boolean).join(" · ");
+    return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "App owner" : ""].filter(Boolean).join(" · ");
   };
   const selSeat = () => RB.seat(S.seatSel) || D.seats.find((s) => s.status === "filled") || D.seats[0];
-  const done = async (text) => { await RB.log(text); await RB.sync(); };
+  // The change is already saved; the history line and the phone rows are extras that must never show as an error.
+  const done = async (text) => { try { await RB.log(text); } catch (e) { console.warn("log", e); } await RB.sync(); };
   // Access clicks show at once and are saved together half a second after the last click, so quick clicks never undo each other.
   const lazy = {};
   function lazySave(key, write, label) {
@@ -33,12 +34,16 @@
   // ------------------------------------------------------------------ people
   function people() {
     const q = (S.q || "").toLowerCase();
-    const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q));
+    S.psort = S.psort || "az";
+    const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
+    const by = { az: (a, b) => nm(a).localeCompare(nm(b)), desig: (a, b) => (a.designation || "~").localeCompare(b.designation || "~") || nm(a).localeCompare(nm(b)), dept: (a, b) => (a.dept || "~").localeCompare(b.dept || "~") || nm(a).localeCompare(nm(b)) }[S.psort];
+    const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q)).slice().sort(by);
+    const pchips = [["az", "A–Z"], ["desig", "Designation"], ["dept", "Department"]].map(([k, l]) => `<button class="sc ${S.psort === k ? "on" : ""}" data-psort="${k}">${l}</button>`).join("");
     const sel = selSeat();
     const row = (s) => s.status === "filled"
-      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">Owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
-      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">Fill seat</button>` : ""}</div>`;
-    const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
+      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
+      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() && s.invited ? `<button class="btnt edit-only" data-wainv="${esc(s.id)}" title="Send the invite on WhatsApp">🟢 Invite</button>` : ""}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">${s.invited ? "Edit" : "Fill seat"}</button>` : ""}</div>`;
+    const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${pchips}${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
       <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
     return { html, side: seatPanel(sel) };
@@ -64,7 +69,7 @@
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
     return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}</div>
-      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button><button style="background:var(--blu)" data-access="${esc(s.id)}">Access</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
+      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button><button style="background:var(--blu)" data-access="${esc(s.id)}">Access</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of 9 app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
@@ -93,7 +98,7 @@
   function editSeat(id) {
     const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
     const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, { k: "dept", label: "DEPARTMENT / SITE", value: s.dept || "" }, { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
-    if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "Owner (sees everyone, gives tasks to anyone)"]] });
+    if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     RB.form("Edit seat", f, "Save", async (v) => {
       const patch = { designation: v.designation, dept: v.dept.trim(), role: v.role || s.role };
       await RB.Store.put("seats", id, patch, true);
@@ -136,7 +141,7 @@
   function node(s) {
     const g = (s.extraGivers || []).length;
     const cls = s.status !== "filled" ? "emp" : s.role === "owner" ? "own" : "";
-    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed() && s.role !== "owner"}" data-node="${esc(s.id)}"><b>${esc(s.status === "filled" ? first(s.name) : "Empty seat")}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
+    return `<div class="node ${cls} ${S.seatSel === s.id ? "sel" : ""}" draggable="${ed() && s.role !== "owner"}" data-node="${esc(s.id)}"><b>${esc(s.status === "filled" ? first(s.name) : "Empty seat")}</b><span class="ty" style="background:${s.role === "owner" ? "#fff" : RB.desigColor(s.designation)}">${esc(s.designation || "")}${s.role === "owner" ? (s.designation ? " · " : "") + "App owner" : ""}</span>${g ? `<span class="gv">● ${g} extra giver${g > 1 ? "s" : ""}</span>` : ""}</div>`;
   }
   const subtree = (s) => { const k = RB.children(s.id); return `<li>${node(s)}${k.length ? "<ul>" + k.map(subtree).join("") + "</ul>" : ""}</li>`; };
   function chart() {
@@ -145,14 +150,14 @@
     const sel = RB.seat(S.seatSel) || D.seats.find((x) => x.role !== "owner" && x.status === "filled");
     if (sel) S.seatSel = sel.id;
     const html = `<div class="card"><div class="subhead"><h3>Chart</h3><span class="sub">${ed() ? "Drag a box onto its new head, or use “Reports to” on the right." : "View only"}</span></div>
-      <div class="chart"><div class="tree"><div class="mh2">OWNERS · see everyone, give tasks to anyone</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="ownrow">${owners.map(node).join("")}</div>
+      <div class="chart"><div class="tree"><div class="mh2">APP OWNER · sees everyone, gives tasks to anyone</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="ownrow">${owners.map(node).join("")}</div>
       <div class="drophead" style="height:22px;border-left:2px solid #C9CACD"></div><ul style="padding-top:0">${tops.map(subtree).join("")}</ul></div></div></div>`;
     let side = "";
     if (sel) {
       const heads = [["", "the owners"]].concat(D.seats.filter((x) => x.id !== sel.id && !RB.wouldLoop(sel.id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x)]));
       const gv = (sel.extraGivers || []).map((i) => RB.seat(i)).filter(Boolean);
       side = `<div class="ph"><div class="pav" style="background:${sel.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(sel)}</div><h2>${esc(RB.holderName(sel))}</h2><div class="s">${esc(sel.designation)}${sel.dept ? " · " + esc(sel.dept) : ""}</div></div>
-        ${sel.role === "owner" ? '<div class="hint">Owners see everyone and give tasks to anyone.</div>' : `<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+        ${sel.role === "owner" ? '<div class="hint">The app owner sees everyone and gives tasks to anyone. Designation and department are free to change; the app rights stay.</div>' : `<div class="sec"><h4>Reports to</h4><select id="rt" ${ed() ? "" : "disabled"} style="width:100%">${heads.map(([v, l]) => `<option value="${esc(v)}" ${v === (sel.reportsTo || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
         <div class="foot">One head per person. A change shows what it affects before it is saved.</div></div>
         <div class="sec"><h4>Can get tasks from</h4><div class="sub">By default: his head, his own branch's heads and colleagues with the same head.</div><div>${gv.map((g) => `<span class="chip">${esc(RB.holderName(g))}${ed() ? `<button data-rmgiver="${esc(g.id)}" title="Remove">✕</button>` : ""}</span>`).join("") || '<span class="sub">No extra givers.</span>'}${ed() ? ' <button class="btnt edit-only" id="addgiver">+ Add</button>' : ""}</div></div>`}`;
     }
@@ -161,10 +166,15 @@
 
   // ------------------------------------------------------------------ designations
   function desigs() {
-    const list = RB.desigList();
-    const html = `<div class="card" style="max-width:720px"><div class="subhead"><h3>Designations</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
+    const all = RB.desigList(), seatsOf = (n) => D.seats.filter((s) => s.designation === n).length;
+    S.dsort = S.dsort || "az";
+    const unchecked = all.filter((d) => !d.checkedAt);
+    if (S.dsort === "unchecked" && !unchecked.length) S.dsort = "az";
+    const list = S.dsort === "unchecked" ? unchecked.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "az" ? all.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "seats" ? all.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : all.slice().reverse();
+    const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].concat(unchecked.length ? [["unchecked", "Unchecked · " + unchecked.length]] : []).map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
+    const html = `<div class="card" style="max-width:760px"><div class="subhead"><h3>Designations · ${all.length}</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
       <div class="hint">A designation is only a label. It carries the default access, which you can still change for any one person.</div>
-      ${list.map((d, i) => { const n = D.seats.filter((s) => s.designation === d.name).length; return `<div class="docrow"><span class="ty" style="background:${RB.colorOf(i)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? "" : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
+      ${list.map((d) => { const n = seatsOf(d.name); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Give those seats another designation first.">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
     return { html };
   }
   const saveDesig = async (list, text) => { await RB.Store.put("config", "designations", { list, updatedAt: Date.now() }); await done(text); };
@@ -194,21 +204,21 @@
     const stag = (key) => mode === "desig" || !e.changed[key] ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`;
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
-    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
-      <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">Owners can do everything. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
+    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "desig" && ed() ? `${(RB.desigOf(S.accDesig) || {}).checkedAt ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
+      <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
       <div class="mh2" style="margin-top:12px">IN THE APP</div>
       ${RB.APP_SW.map(([k, t, sub]) => `<div class="swrow"><div class="w"><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</div>${stag("app." + k)}${sw(k)}</div>`).join("")}</div>`;
     const lv = (k) => ["none", "view", "edit"].map((v) => `<button data-lvl="${k}:${v}" class="${e.portal[k] === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
     const mid = `<div class="card" style="flex:1"><div class="mh2">IN THE PORTAL</div>${RB.SECTIONS.map(([k, l]) => `<div class="swrow"><div class="w"><b>${l}</b></div>${stag("portal." + k)}<div class="lvl ${can ? "" : "dis"}" style="${can ? "" : "pointer-events:none;opacity:.6"}">${lv(k)}</div></div>`).join("")}
       <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Meetings “View” shows only the minutes he was in and the actions on him.</div></div>`;
-    const dl = RB.desigList().map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
-    const side = `<div class="card"><h3>Designation defaults</h3><div class="swrow"><div class="w"><b>Owner</b></div><span class="sub">everything</span></div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
+    const dl = RB.desigList().slice().sort((a, b) => a.name.localeCompare(b.name)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
+    const side = `<div class="card"><h3>Designation defaults</h3>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, SMS, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
     return { html: `<div class="cols">${left}${mid}</div>`, side, sideCards: true };
   }
   async function setSwitch(k, val) {
     if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val;
+      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val; d.checkedAt = Date.now();
       saveDesigLazy(list, "Default for " + S.accDesig + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.app = ov.app || {}; ov.app[k] = val;
@@ -218,13 +228,42 @@
   }
   async function setLevel(k, v) {
     if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v;
+      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v; list.find((x) => x.name === S.accDesig).checkedAt = Date.now();
       saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + v);
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.portal = ov.portal || {}; ov.portal[k] = v;
       if (RB.defaultsOf(s.designation).portal[k] === v) delete ov.portal[k];
       s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + v);
     }
+  }
+
+  /** Copy one designation's access (app switches and portal levels) to several others at once. */
+  function copyAccess(from) {
+    const src = RB.desigOf(from); if (!src) return;
+    const m = document.getElementById("modal"), pick = new Set();
+    const others = RB.desigList().filter((d) => d.name !== from).sort((a, b) => a.name.localeCompare(b.name));
+    const draw = (q) => {
+      const vis = others.filter((d) => !q || d.name.toLowerCase().includes(q.toLowerCase()));
+      m.querySelector("#cplist").innerHTML = vis.map((d) => `<label class="swrow" style="cursor:pointer"><input type="checkbox" data-cp="${esc(d.name)}" ${pick.has(d.name) ? "checked" : ""} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9${d.checkedAt ? "" : " · unchecked"}</span></label>`).join("") || '<div class="muted">No designation matches.</div>';
+      m.querySelectorAll("[data-cp]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.cp) : pick.delete(c.dataset.cp); count(); }));
+      m.querySelector("#cpall").onclick = () => { const all = vis.every((d) => pick.has(d.name)); vis.forEach((d) => (all ? pick.delete(d.name) : pick.add(d.name))); draw(m.querySelector("#cpq").value); count(); };
+    };
+    const count = () => { const b = m.querySelector("#cpgo"); b.textContent = pick.size ? "Copy to " + pick.size : "Copy"; b.disabled = !pick.size; };
+    m.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Copy ${esc(from)}'s access to…</b><div class="foot">App switches and portal levels are copied together. People with their own changes keep them.</div>
+      <div style="display:flex;gap:10px;margin:10px 0"><input id="cpq" placeholder="Search designations" style="flex:1"><button class="btnt" id="cpall">Select all</button></div>
+      <div id="cplist" style="max-height:52vh;overflow:auto"></div>
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="cpc">Cancel</button><button class="btnp" id="cpgo" disabled>Copy</button></div></div></div>`;
+    m.querySelector("#cpc").onclick = () => (m.innerHTML = "");
+    m.querySelector("#cpq").oninput = (e) => draw(e.target.value);
+    m.querySelector("#cpgo").onclick = () => {
+      const names = Array.from(pick); if (!names.length) return;
+      RB.confirm(`Copy ${esc(from)}'s access to ${names.length} designation${names.length === 1 ? "" : "s"}?<div class="foot" style="margin-top:6px">${names.map(esc).join(", ")}</div>`, "Copy", async () => {
+        const now = Date.now();
+        const list = RB.desigList().map((d) => (pick.has(d.name) ? Object.assign({}, d, { app: Object.assign({}, src.app || {}), portal: Object.assign({}, src.portal || {}), checkedAt: now }) : d.name === from ? Object.assign({}, d, { checkedAt: d.checkedAt || now }) : d));
+        await saveDesig(list, "Copied " + from + "'s access to " + names.join(", "));
+      });
+    };
+    draw(""); count(); m.querySelector("#cpq").focus();
   }
 
   // ------------------------------------------------------------------ waiting
@@ -350,10 +389,20 @@
     bind(root, side) {
       const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); fn(e, ev); }));
       const both = (sel, fn) => { on(root, sel, fn); on(side, sel, fn); };
-      on(root, "[data-seat]", (e) => { S.seatSel = e.dataset.seat; RB.render(); });
+      on(root, "[data-seat]", (e) => {
+        S.seatSel = e.dataset.seat; RB.render();
+        // On a phone the person's panel (Edit, Access, Offboard) sits below the whole list: bring it into view.
+        if (window.innerWidth < 900) { const sd = document.getElementById("side"); if (sd) setTimeout(() => sd.scrollIntoView({ behavior: "smooth", block: "start" }), 30); }
+      });
       const ad = root.querySelector("#addseat"); if (ad) ad.onclick = () => addSeat();
       const mg = root.querySelector("#migrate"); if (mg) mg.onclick = () => { mg.disabled = true; migrate().then(RB.render); };
       both("[data-fill]", (e) => fillSeat(e.dataset.fill));
+      // WhatsApp invite: opens WhatsApp with a short ready message; he picks the person and sends it himself.
+      both("[data-wainv]", (e) => {
+        const st = RB.seat(e.dataset.wainv); if (!st) return;
+        const txt = `Rafiq Builders: your seat is ready${st.designation ? " (" + st.designation + ")" : ""}.\nOpen https://rafiqbuilders.web.app or the Callback Reminder app, sign in with ${st.gmail} and tap Join Rafiq Builders.`;
+        window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank", "noopener");
+      });
       both("[data-editseat]", (e) => editSeat(e.dataset.editseat));
       both("[data-access]", (e) => { S.accSeat = e.dataset.access; S.accMode = "person"; S.tab.team = "access"; RB.render(); });
       both("[data-offboard]", (e) => offboard(e.dataset.offboard));
@@ -378,6 +427,10 @@
       const dd = root.querySelector("#adddes"); if (dd) dd.onclick = addDesig;
       const dd2 = side && side.querySelector("#adddes2"); if (dd2) dd2.onclick = addDesig;
       both("[data-dren]", (e) => renDesig(e.dataset.dren));
+      const cpb = root.querySelector("#acccopy"); if (cpb) cpb.onclick = () => copyAccess(S.accDesig);
+      const okb = root.querySelector("#accok"); if (okb) okb.onclick = () => saveDesig(RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { checkedAt: Date.now() }) : d)), "Access for " + S.accDesig + " looked over, no change").then(() => RB.render());
+      both("[data-dsort]", (e) => { S.dsort = e.dataset.dsort; RB.render(); });
+      both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
       // access

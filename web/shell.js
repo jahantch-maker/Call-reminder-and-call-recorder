@@ -98,6 +98,26 @@
     document.getElementById("cn").onclick = () => (m.innerHTML = "");
     document.getElementById("cy").onclick = async () => { m.innerHTML = ""; await fn(); RB.render(); };
   };
+  // Enter saves: in any dialog it presses the main button (never a red Delete); on a page it presses the card's Save.
+  // Escape closes whatever popup is open (as its Cancel / Close / OK would), anywhere in the portal.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const m = document.getElementById("modal"); if (!m || !m.innerHTML.trim()) return;
+    e.preventDefault();
+    const btns = Array.from(m.querySelectorAll("button"));
+    const c = m.querySelector("#cn, #fc, #cpc, #ok") || btns.find((x) => /^\s*(cancel|close|ok|×|✕)\s*$/i.test(x.textContent));
+    if (c) c.click(); else m.innerHTML = "";
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    const el = e.target; if (!el || el.tagName === "TEXTAREA" || el.tagName === "BUTTON") return;
+    if (!/^(INPUT|SELECT)$/.test(el.tagName)) return;
+    const dlg = el.closest(".dlg");
+    if (dlg) { const b = Array.from(dlg.querySelectorAll("button.btnp")).pop(); if (b && !b.disabled) { e.preventDefault(); b.click(); } return; }
+    const card = el.closest(".card"); if (!card) return;
+    const b = Array.from(card.querySelectorAll("button")).find((x) => /^\s*save\b/i.test(x.textContent) && !x.disabled);
+    if (b) { e.preventDefault(); b.click(); }
+  });
   /** A small form dialog. fields: [{k, label, value, type, options}] → fn(values) */
   RB.form = (title, fields, yes, fn, note) => {
     const m = document.getElementById("modal");
