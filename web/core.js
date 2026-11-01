@@ -42,7 +42,7 @@
     ["setDossier", "Set Dossier for own people", "Fixed daily time blocks", false],
     ["editReasons", "Edit late-reason list", "Reasons shown on late tasks", false],
     ["approveExt", "Approve extension requests", "From own people", true],
-    ["seeNumbers", "See team numbers on phone", "Only people he gave tasks to", false],
+    ["seeNumbers", "See how my people are doing", "How many tasks are late or due today, for people he gave tasks to", false],
     ["seeDay", "See own people's day", "People below him in the chart", true],
     ["giveDown", "Give tasks down his branch", "", true],
     ["giveSide", "Give tasks sideways", "Colleagues with the same head", true],
