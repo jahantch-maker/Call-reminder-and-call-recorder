@@ -53,9 +53,10 @@ service cloud.firestore {
           (isAdmin(t) && uid == me()) ||
           (isOwner(t)) ||
           (portalEdit(t, 'team') && resource.data.role != 'owner' && request.resource.data.role != 'owner') ||
+          (appSw(t, 'approveJoins') && resource.data.status == 'pending' && request.resource.data.role == 'member') ||
           (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email'])));
         // Leaving (yourself) or declining a request (Owner/Admin). v0.49 members cannot leave an RB seat: only owners remove.
-        allow delete: if signedIn() && ((uid == me() && !('seatId' in resource.data)) || (isAdmin(t) && resource.data.role != 'owner') || isOwner(t) || (portalEdit(t, 'team') && resource.data.status == 'pending'));
+        allow delete: if signedIn() && ((uid == me() && !('seatId' in resource.data)) || (isAdmin(t) && resource.data.role != 'owner') || isOwner(t) || ((portalEdit(t, 'team') || appSw(t, 'approveJoins')) && resource.data.status == 'pending'));
       }
 
       // v0.49 Seats: one per official Gmail (the document id is the lowercase Gmail). Anyone signed in may look up the seat of

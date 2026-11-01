@@ -257,7 +257,7 @@ object CallRecorder {
     // ---- The work itself ----
 
     private fun enabled(ctx: Context, whatsApp: Boolean): Boolean =
-        AppSettings.get(ctx, if (whatsApp) AppSettings.REC_WHATSAPP else AppSettings.REC_PHONE)
+        TeamAccess.recordingAllowed() && AppSettings.get(ctx, if (whatsApp) AppSettings.REC_WHATSAPP else AppSettings.REC_PHONE)
 
     private fun startNow(
         app: Context,

@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.49.0", "1 Nov",
+            new = listOf(
+                "Join the team with your official Gmail: you are placed in your seat and get the access your designation gives",
+                "Buttons the owner switched off for you are hidden",
+                "Documents: your job description, SOPs and work rules, with Read and Need training",
+                "Nightly backup also goes to the team account when the phone is charging",
+            ),
+            fixed = listOf("Someone removed from the team is signed out of it on the phone"),
+        ),
+        Entry(
             "0.48.1", "1 Nov",
             new = listOf("A meeting task the owner gives himself closes as soon as he marks it Done"),
             fixed = emptyList(),

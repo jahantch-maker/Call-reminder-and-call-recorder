@@ -430,7 +430,7 @@ private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, Tea
                     "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isNotBlank()) " · “${t.moreReason}”" else "",
                 fontWeight = FontWeight.Bold, fontSize = 13.sp, color = purple.fg,
             )
-            if (t.fromUid == me) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (t.fromUid == me) { if (TeamAccess.ok("approveExt")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 BarSlot(Icons.Rounded.Check, "Approve", Tones.done.pair, {
                     val before = t
                     TeamRepo.answerMoreTime(t, true)
@@ -441,7 +441,7 @@ private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, Tea
                     TeamRepo.answerMoreTime(t, false)
                     onAnswered("Kept ${TeamUi.shortWhen(t.due)}", before)
                 }, true, Modifier.weight(1f))
-            } else Text(
+            } } else Text(
                 "Cancel request", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                 modifier = Modifier.clickable { TeamRepo.cancelMore(t) }.padding(vertical = 4.dp)
             )

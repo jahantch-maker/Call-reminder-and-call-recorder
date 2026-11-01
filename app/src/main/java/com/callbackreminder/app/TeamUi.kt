@@ -492,6 +492,9 @@ private fun TeamActive(
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val admin = me.role == Team.OWNER || me.role == Team.ADMIN
+    // v0.49 the portal's "Approve people waiting to join" switch lets a head approve too.
+    val canApprove = admin || me.can("approveJoins", false)
+    var showDocs by remember { mutableStateOf(false) }
     val active = members.filter { it.active }
     val waiting = members.filter { it.pending }
     val hasReports = active.any { me.uid in it.managers && it.uid != me.uid }
@@ -504,6 +507,11 @@ private fun TeamActive(
             Text(t.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TeamTag("You · ${me.roleLabel}")
         }
+        // v0.49 joined his seat straight away, or already has a designation from the portal.
+        (TeamRepo.welcome()?.let { d -> "Welcome to Rafiq Builders" + if (d.isNotBlank()) " · $d" else "" }
+            ?: me.designation.takeIf { it.isNotBlank() }?.let { "Rafiq Builders · $it" })?.let {
+            Text(it, fontWeight = FontWeight.SemiBold)
+        }
         val boss = active.firstOrNull { it.uid == me.reportsTo }
         Text(
             if (admin) "${active.size} member${if (active.size == 1) "" else "s"}. Nobody joins until ${if (me.role == Team.OWNER) "you approve" else "the owner approves"}."
@@ -512,7 +520,7 @@ private fun TeamActive(
         )
     }
 
-    if (admin && waiting.isNotEmpty()) {
+    if (canApprove && waiting.isNotEmpty()) {
         TeamHeading("Waiting for you · ${waiting.size}")
         waiting.forEach { w ->
             TeamCard {
@@ -535,7 +543,7 @@ private fun TeamActive(
 
     @Composable
     fun Node(m: TeamMember, depth: Int, byBoss: Map<String, List<TeamMember>>, only: Set<String>?) {
-        val canSee = me.uid in m.managers
+        val canSee = me.uid in m.managers && me.can("seeDay", true)
         val openFromMe = tasks.count { it.toUid == m.uid && it.fromUid == me.uid && it.open }
         Row(
             Modifier.fillMaxWidth().padding(start = (depth * 18).dp)
@@ -634,7 +642,12 @@ private fun TeamActive(
         }
     }
 
-    if (me.role != Team.OWNER) {
+    // v0.49 Documents: his job description, SOPs and tools (Google Drive links), with Read ✓.
+    TextButton(onClick = { showDocs = true }, modifier = Modifier.fillMaxWidth()) { Text("📄 Documents") }
+    if (showDocs) TeamDocsDialog(me, onDismiss = { showDocs = false })
+
+    // A person in a Rafiq Builders seat can only sign out: only an owner removes him (portal › Team › Offboard).
+    if (me.role != Team.OWNER && me.seatId.isBlank()) {
         TextButton(onClick = { go { TeamRepo.leave() } }, modifier = Modifier.fillMaxWidth()) { Text("Leave the team", color = cs.error) }
     }
 
