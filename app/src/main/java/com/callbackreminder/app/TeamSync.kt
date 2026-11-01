@@ -650,6 +650,8 @@ object TeamSync {
             .sortedWith(compareBy({ it.done }, { it.dueAt }))
             .take(60)
             .map { r -> mapOf("title" to r.note.ifBlank { "Call back" }, "name" to r.title, "due" to r.dueAt, "done" to r.done, "doneAt" to r.doneAt) }
+        // v0.49.2 Today's Google Calendar meetings (the calendars he switched on), for the website's Day view.
+        val google = GoogleCal.events(c, today).filter { !it.allDay }.take(30).map { e -> mapOf("title" to e.title, "start" to e.start, "end" to e.end) }
         val open = Dossier.openDay(System.currentTimeMillis())
         val dossier = DossierStore.todays().map { d ->
             val rec = DossierStore.record(d.id, open)
@@ -666,6 +668,7 @@ object TeamSync {
             "updatedAt" to System.currentTimeMillis(),
             "tasks" to tasks,
             "followUps" to fus,
+            "google" to google,
             "dossier" to dossier,
             // 📋 The last week's evening reviews, for "Review done 5 of 6 days this week" on his day.
             "reports" to DayClose.recentMaps(c),

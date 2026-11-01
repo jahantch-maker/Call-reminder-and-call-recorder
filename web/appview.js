@@ -99,7 +99,7 @@
 
   // ------------------------------------------------------------------ calendar
   // The same kinds and colours as the phone Calendar: Tasks (sky), Dossier (mint); done goes grey, late gets a red edge.
-  const legend = () => '<div class="legend"><span><i class="lk lt"></i>Tasks</span><span><i class="lk ld"></i>Dossier</span><span><i class="lk lg"></i>Done</span><span><i class="lk lr"></i>Late</span></div>';
+  const legend = () => '<div class="legend"><span><i class="lk lt"></i>Tasks</span><span><i class="lk ld"></i>Dossier</span><span><i class="lk lf"></i>Follow-ups</span><span><i class="lk lm"></i>Google meetings</span><span><i class="lk lg"></i>Done</span><span><i class="lk lr"></i>Late</span></div>';
   const hourLbl = (h) => (h === 0 ? "12 AM" : h < 12 ? h + " AM" : h === 12 ? "12 PM" : h - 12 + " PM");
   const clock = (t) => new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const minOf = (t) => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
@@ -112,16 +112,30 @@
     if (cl.length) flush();
     return out;
   }
+  const parseMin = (t) => { const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(String(t || "")); return m ? ((Number(m[1]) % 12) + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + Number(m[2]) : null; };
+  // His phone sends today's Dossier, follow-ups and Google meetings once a day summary; other days show tasks and team-set Dossier only.
+  const todaySummary = (uid) => { const d = D.days[uid]; return d && d.updatedAt && new Date(d.updatedAt).toDateString() === new Date().toDateString() ? d : null; };
   function dayView(uid, items) {
     const now = Date.now(), H = 52, d0 = C.startOfDay(now) + S.calDay * DAY;
     const dow = (new Date(d0 + 12 * 3600000).getDay() + 6) % 7; // Monday = 0, as the Dossier days mask
-    const list = [];
-    ((D.dossier[uid] || {}).blocks || []).filter((b) => b.days & (1 << dow)).forEach((b) => list.push({ k: "kd", s: b.minute, e: Math.max(b.endMinute, b.minute + 20), title: b.title, time: "" }));
+    const sum = S.calDay === 0 ? todaySummary(uid) : null;
+    const list = [], fus = [];
+    if (sum) {
+      (sum.dossier || []).forEach((b) => { const [a, z] = String(b.time || "").split(" - "), s0 = parseMin(a), e0 = parseMin(z); if (s0 != null) list.push({ k: "kd" + (b.doneAt ? " dn" : ""), s: s0, e: Math.max(e0 != null && e0 > s0 ? e0 : s0 + 30, s0 + 20), title: b.title, time: b.time }); });
+      (sum.google || []).forEach((g) => list.push({ k: "kg", s: minOf(g.start), e: Math.max(minOf(g.end) > minOf(g.start) ? minOf(g.end) : minOf(g.start) + 30, minOf(g.start) + 20), title: g.title, time: clock(g.start) + " – " + clock(g.end) }));
+      (sum.followUps || []).forEach((f) => fus.push({ due: f.due || 0, title: f.title || "Call back", name: f.name || "", done: !!f.done }));
+    } else {
+      ((D.dossier[uid] || {}).blocks || []).filter((b) => b.days & (1 << dow)).forEach((b) => list.push({ k: "kd", s: b.minute, e: Math.max(b.endMinute, b.minute + 20), title: b.title, time: "" }));
+    }
     items.filter((x) => x.uid === uid && x.due >= d0 && x.due < d0 + DAY).forEach((x) => { const m = minOf(x.due); list.push({ k: "kt " + (x.done ? "done" : isRed(x, now) ? "late" : ""), s: m, e: m + 30, title: x.title, time: clock(x.due) }); });
-    const blocks = lay(list).map((b) => `<div class="blk2 ${b.k}" style="top:${(b.s / 60) * H}px;height:${Math.max(((b.e - b.s) / 60) * H - 2, 22)}px;left:calc(58px + (100% - 66px) * ${b.c} / ${b.n});width:calc((100% - 66px) / ${b.n} - 3px)" title="${esc(b.title)}"><b>${esc(b.title)}</b>${b.time ? "<span>" + b.time + "</span>" : ""}</div>`).join("");
+    const withFu = fus.length > 0;
+    const blocks = lay(list).map((b) => `<div class="blk2 ${b.k}" style="top:${(b.s / 60) * H}px;height:${Math.max(((b.e - b.s) / 60) * H - 2, 22)}px;left:calc(100% * ${b.c} / ${b.n});width:calc(100% / ${b.n} - 3px)" title="${esc(b.title)}"><b>${esc(b.title)}</b>${b.time ? "<span>" + esc(b.time) + "</span>" : ""}</div>`).join("");
+    let y = 0, bottom = 24 * H;
+    const fuHtml = fus.filter((f) => f.due).sort((a, b) => a.due - b.due).map((f) => { y = Math.max((minOf(f.due) / 60) * H, y); const top = y; y += 40; bottom = Math.max(bottom, y + 20); return `<div class="blk2 kf ${f.done ? "done" : ""}" style="top:${top}px;height:38px;left:0;right:0" title="${esc(f.title)}"><b>${esc(f.title)}</b><span>${clock(f.due)} · ${esc(f.name)}</span></div>`; }).join("");
     const hours = Array.from({ length: 24 }, (_, h) => `<div class="hr ${h < 11 || h >= 21 ? "off" : ""}" style="top:${h * H}px;height:${H}px"><span>${hourLbl(h)}</span></div>`).join("");
     const nowLine = S.calDay === 0 ? `<div class="nowl" style="top:${(minOf(now) / 60) * H}px"><i></i></div>` : "";
-    return { html: `<div class="dayw"><div class="dayg" style="height:${24 * H}px">${hours}${blocks}${nowLine}</div></div>`, scroll: Math.max(0, ((S.calDay === 0 ? minOf(now) / 60 : 9) - 2) * H) };
+    const cols = withFu ? `<div class="lcol" style="left:58px;width:calc(55% - 62px)">${blocks}</div><div class="rcol" style="left:calc(55% + 4px);right:8px">${fuHtml}</div>` : `<div class="lcol" style="left:58px;width:calc(100% - 66px)">${blocks}</div>`;
+    return { html: `<div class="dayw"><div class="dayg" style="height:${bottom}px">${hours}${cols}${nowLine}</div></div>`, sum: !!sum, scroll: Math.max(0, ((S.calDay === 0 ? minOf(now) / 60 : 9) - 2) * H) };
   }
   // The Calendar body: Day | Week switch, the legend, then the day (phone look) or the week.
   function calendarBlock(items, uid, personMode) {
@@ -142,7 +156,12 @@
       body = `<div class="cal">${days.map((d0) => `<div class="d ${d0 === sod ? "today" : ""}"><h5>${new Date(d0).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}</h5>${cell(d0) || '<div class="sub">–</div>'}</div>`).join("")}</div>`;
     }
     const seg = uid ? `<div class="seg"><button data-cv="day" class="${view === "day" ? "on" : ""}">Day</button><button data-cv="week" class="${view === "week" ? "on" : ""}">Week</button></div>` : "";
-    return `<div class="subhead">${seg}${head}</div>${legend()}${body}`;
+    let note = "";
+    if (view === "day" && uid) {
+      const nm = esc(first((C.people().find((p) => p.uid === uid) || {}).name || "his"));
+      note = `<div class="foot" style="margin:-4px 0 8px">${S.calDay === 0 ? (todaySummary(uid) ? "Follow-ups, the Dossier and Google meetings come from " + nm + "'s phone and show for <b>today only</b>. " : "No update from " + nm + "'s phone yet today, so only tasks show. ") : "Follow-ups, the Dossier and Google meetings show for <b>today only</b>. "}They are also on ${nm}'s page: <a href="#" class="link" data-openp="${esc(uid)}" data-psub="day">Person › Day</a>.</div>`;
+    }
+    return `<div class="subhead">${seg}${head}</div>${legend()}${note}${body}`;
   }
   // Day view is for one person: the one picked on the Overview, else the one with most items around today.
   function defPerson() {
@@ -176,6 +195,7 @@
       if (dw) { if (S.calScroll) { dw.scrollTop = S.calScroll; S.calInner = S.calScroll; S.calScroll = 0; } else dw.scrollTop = S.calInner || 0; dw.onscroll = () => { S.calInner = dw.scrollTop; }; }
       on(root, "[data-cw]", (e) => { const v = Number(e.dataset.cw); S.calWeek = v === 0 ? 0 : S.calWeek + v; RB.render(); });
       on(root, "[data-psub2]", (e) => { S.psub = e.dataset.psub2; RB.render(); });
+      on(root, "[data-openp]", (e) => { S.person = e.dataset.openp; S.psub = e.dataset.psub || "tasks"; RB.go("app", "person"); });
       on(side, "[data-openp]", (e) => { S.person = e.dataset.openp; S.psub = e.dataset.psub || "tasks"; RB.go("app", "person"); });
       const pp = root.querySelector("#pperson"); if (pp) pp.onchange = () => { S.person = pp.value; S.sel = null; RB.render(); };
       const cp = root.querySelector("#calp"); if (cp) cp.onchange = () => { S.calPerson = cp.value; RB.render(); };
