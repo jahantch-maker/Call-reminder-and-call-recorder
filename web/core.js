@@ -20,6 +20,22 @@
   RB.uidOf = () => uid;
   RB.id = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+  /** v0.50 Light / Dark / Same as device. Remembered in this browser at once and saved on the person's own users row so it follows them. */
+  RB.theme = (() => {
+    const KEY = "rb_theme"; let pref = "auto";
+    try { pref = localStorage.getItem(KEY) || "auto"; } catch (e) {}
+    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const apply = () => { document.documentElement.dataset.theme = pref === "dark" || (pref === "auto" && mq && mq.matches) ? "dark" : "light"; };
+    if (mq && mq.addEventListener) mq.addEventListener("change", apply);
+    const keep = () => { try { localStorage.setItem(KEY, pref); } catch (e) {} };
+    apply();
+    return {
+      get: () => pref,
+      set(p) { pref = p; keep(); apply(); if (!RB.DEMO && db && uid) db.collection("users").doc(uid).set({ portalTheme: p }, { merge: true }).catch(() => {}); },
+      pull(v) { if (v && v !== pref && ["light", "dark", "auto"].includes(v)) { pref = v; keep(); apply(); } },
+    };
+  })();
+
   // ------------------------------------------------------------------ switches and access
   RB.APP_SW = [
     ["approveJoins", "Approve people waiting to join", "Join requests", false],
@@ -34,7 +50,14 @@
   ];
   RB.SECTIONS = [["app", "App view"], ["meetings", "Meetings"], ["team", "Team"], ["docs", "Documents"], ["settings", "Settings"]];
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
-  const DEF_PORTAL = { app: "none", meetings: "none", team: "none", docs: "view", settings: "none" };
+  /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
+  RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["waiting", "Waiting"]];
+  RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"]];
+  RB.SCOPES = [["own", "Own only"], ["team", "Own + team below"], ["all", "Whole RB"]];
+  const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", settingsTabs: [] };
+  /** Access checks made before this moment do not count: the new settings (how far, tab ticks) need one look from the owner. */
+  RB.CHECK_AFTER = Date.parse("2026-11-01T19:00:00Z");
+  RB.isChecked = (d) => !!d && (d.checkedAt || 0) > RB.CHECK_AFTER;
   const COLORS = ["lil", "blu", "yel", "peach"];
   RB.colorOf = (i) => "var(--" + COLORS[i % 4] + ")";
 
@@ -46,7 +69,7 @@
     { name: "Store Keeper", app: {}, portal: {} },
   ];
   /** "Owner" is a normal designation (for the company's owners); the app owner is a separate role on a seat. */
-  const OWNER_DESIG = (() => { const app = {}; RB.APP_SW.forEach((x) => (app[x[0]] = x[0] !== "callRec")); return { name: "Owner", app, portal: { app: "edit", meetings: "edit", team: "edit", docs: "edit", settings: "edit" } }; })();
+  const OWNER_DESIG = (() => { const app = {}; RB.APP_SW.forEach((x) => (app[x[0]] = x[0] !== "callRec")); return { name: "Owner", app, portal: { app: "view", appScope: "all", meetings: "edit", team: "edit", docs: "edit", settings: "edit", settingsTabs: RB.SET_TABS.map((t) => t[0]) } }; })();
   RB.desigList = () => { const l = D.desig && D.desig.list && D.desig.list.length ? D.desig.list : SEED_DESIG; return l.some((d) => d.name === "Owner") ? l : l.concat([OWNER_DESIG]); };
   /** v0.49.4 Departments come from one list (no typing per seat). Until it is saved, the ones already typed on seats. */
   RB.deptList = () => {
@@ -65,10 +88,10 @@
     const ov = seat.override || {};
     const app = Object.assign({}, DEF_APP, ds.app || {}, ov.app || {});
     const portal = Object.assign({}, DEF_PORTAL, ds.portal || {}, ov.portal || {});
-    if (owner) { Object.keys(app).forEach((k) => (app[k] = k === "callRec" ? false : true)); Object.keys(portal).forEach((k) => (portal[k] = "edit")); }
+    if (owner) { Object.keys(app).forEach((k) => (app[k] = k === "callRec" ? false : true)); RB.SECTIONS.forEach(([k]) => (portal[k] = k === "app" ? "view" : "edit")); portal.appScope = "all"; portal.teamTabs = RB.TEAM_TABS.map((t) => t[0]); portal.settingsTabs = RB.SET_TABS.map((t) => t[0]); }
     const changed = {};
     Object.keys(ov.app || {}).forEach((k) => { if ((ov.app[k]) !== (Object.assign({}, DEF_APP, ds.app || {})[k])) changed["app." + k] = 1; });
-    Object.keys(ov.portal || {}).forEach((k) => { if (ov.portal[k] !== Object.assign({}, DEF_PORTAL, ds.portal || {})[k]) changed["portal." + k] = 1; });
+    Object.keys(ov.portal || {}).forEach((k) => { if (JSON.stringify(ov.portal[k]) !== JSON.stringify(Object.assign({}, DEF_PORTAL, ds.portal || {})[k])) changed["portal." + k] = 1; });
     return { app, portal, changed, owner };
   };
   RB.defaultsOf = (name) => { const ds = RB.desigOf(name) || { app: {}, portal: {} }; return { app: Object.assign({}, DEF_APP, ds.app || {}), portal: Object.assign({}, DEF_PORTAL, ds.portal || {}) }; };
@@ -85,6 +108,13 @@
     return (D.me && D.me.perms && D.me.perms.portal && D.me.perms.portal[sec]) || "none";
   };
   RB.canEdit = (sec) => RB.level(sec) === "edit";
+  /** The signed-in person's resolved portal settings (owners: everything). */
+  RB.portalOf = () => { if (RB.isOwner()) return RB.effective({ role: "owner" }).portal; const s = seatOfUid(uid); return s ? RB.effective(s).portal : Object.assign({}, DEF_PORTAL, (D.me && D.me.perms && D.me.perms.portal) || {}); };
+  /** How far the person sees in App view and the People list: own | team | all. */
+  RB.scope = () => (RB.isOwner() ? "all" : RB.portalOf().appScope || "own");
+  /** Tabs of Team and Settings this person may open. Access is for owners only; Updates and Appearance are for everyone. */
+  RB.teamTabs = () => (RB.isOwner() ? RB.TEAM_TABS.map((t) => t[0]).concat("access") : RB.level("team") === "none" ? [] : (RB.portalOf().teamTabs || []));
+  RB.settingsTabs = () => (RB.isOwner() ? RB.SET_TABS.map((t) => t[0]) : RB.level("settings") === "none" ? [] : (RB.portalOf().settingsTabs || []));
   RB.anyAccess = () => RB.SECTIONS.some(([k]) => RB.level(k) !== "none");
 
   // ------------------------------------------------------------------ the chart
@@ -115,8 +145,10 @@
   /** Who can see a person's App view: owners, his heads, and anyone the chart lets give him tasks. */
   RB.visibleSeats = () => {
     if (RB.isOwner()) return D.seats.filter((s) => s.status === "filled");
+    const sc = RB.scope();
+    if (sc === "all") return D.seats.filter((s) => s.status === "filled");
     const me = seatOfUid(uid); if (!me) return [];
-    const out = [me].concat(RB.descendants(me.id));
+    const out = sc === "own" ? [me] : [me].concat(RB.descendants(me.id));
     return out.filter((s) => s.status === "filled");
   };
 
@@ -295,6 +327,7 @@
       try {
         const us = await db.collection("users").doc(uid).get();
         const t = us.exists && us.data().teamId;
+        if (us.exists) RB.theme.pull(us.data().portalTheme);
         if (!t) return joinPage(u);
         teamRef = db.collection("teams").doc(t);
         const ts = await teamRef.get();
@@ -303,7 +336,7 @@
         D.me = ms.exists ? Object.assign({ uid }, ms.data()) : null;
         if (!D.me) return joinPage(u, t);
         if (D.me.status === "pending") return RB.message("Your request is waiting.", "An owner will approve it. Come back after that.<br>Signed in as " + RB.esc(u.email) + ".", true);
-        if (!RB.isOwner() && !(D.me && D.me.status === "active" && D.me.perms && D.me.perms.portal && Object.values(D.me.perms.portal).some((v) => v !== "none"))) {
+        if (!RB.isOwner() && !(D.me && D.me.status === "active" && D.me.perms && D.me.perms.portal && RB.SECTIONS.some(([k]) => D.me.perms.portal[k] && D.me.perms.portal[k] !== "none"))) {
           return RB.message("You don't have access to the portal.", "Ask an owner. The phone app still works. Signed in as " + RB.esc(u.email) + ".", true);
         }
         listen(); RB.ready();

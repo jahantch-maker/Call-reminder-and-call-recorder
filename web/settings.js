@@ -2,12 +2,17 @@
 (function () {
   "use strict";
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
-  const TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Documents"]];
+  /** The five tabs the owner can tick per person (RB.SET_TABS); Change log is for owners, Updates and Appearance for everyone. */
+  const TABS = RB.SET_TABS;
   RB.sections.settings = {
-    tabs: () => TABS.concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"]]),
+    tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
     render(tab) {
       let html;
-      if (tab === "updates") {
+      if (tab === "look") {
+        const cur = RB.theme.get(), card = (k, n, bg, cd) => `<button class="thm ${cur === k ? "on" : ""}" data-theme-pick="${k}"><div class="thp" style="background:${bg}"><i style="background:${cd}"></i><i style="background:${cd};width:85%"></i></div><b>${n}${cur === k ? " ✓" : ""}</b></button>`;
+        html = `<div class="card" style="max-width:640px"><h3>Appearance</h3><div class="hint">Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting.</div>
+          <div class="thms">${card("light", "Light", "#F4F4F2", "#fff")}${card("dark", "Dark", "#17181B", "#2E3035")}${card("auto", "Same as device", "linear-gradient(90deg,#F4F4F2 50%,#17181B 50%)", "#8f9198")}</div></div>`;
+      } else if (tab === "updates") {
         const vi = RB.versionInfo ? RB.versionInfo() : {};
         html = `<div class="card" style="max-width:560px"><h3>Website updates</h3><div class="hint">A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it.</div>
           <div class="rrow"><span class="n">This page is running</span><b>${esc(vi.version || "—")}</b>${vi.at ? `<span class="sub" style="margin-left:8px">published ${esc(RB.fmtWhen(Date.parse(vi.at)))}</span>` : ""}</div>
@@ -24,6 +29,7 @@
       return { html, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root) {
+      root.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => { RB.theme.set(b.dataset.themePick); RB.render(); }));
       const sv = root.querySelector("#rsave");
       if (sv) sv.onclick = async () => { const n = Math.max(1, Math.min(60, Number(root.querySelector("#rdays").value) || 7)); await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { readingDays: n })); await RB.log("Reading deadline set to " + n + " days"); RB.alertBox("Saved."); };
       const uc = root.querySelector("#updchk");
@@ -33,7 +39,7 @@
         uc.disabled = false;
         out.textContent = r === "new" ? "A new version is ready. Press Update in the bar at the bottom." : r === "same" ? "You have the latest version." : "Couldn't check. Are you online?";
       };
-      if (S.tab.settings !== "log" && S.tab.settings !== "docs" && S.tab.settings !== "updates") RB.meet.bind(root);
+      if (!["log", "docs", "updates", "look"].includes(S.tab.settings)) RB.meet.bind(root);
     },
   };
 })();

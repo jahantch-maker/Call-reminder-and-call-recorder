@@ -194,3 +194,34 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 .tree li.dg{padding-left:20px;padding-right:20px}
 .dband{z-index:1}
 .dgroup .node{z-index:2}
+
+/* ---------- v0.50 Appearance: Light / Dark / Same as device (html[data-theme]) ---------- */
+.thms{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
+.thm{flex:1;min-width:150px;border:2px solid var(--ol);border-radius:18px;padding:10px;text-align:center;background:var(--sf);color:var(--on);transition:border-color .15s,transform .15s}
+.thm:hover{transform:translateY(-2px)}.thm.on{border-color:var(--on)}
+.thm b{display:block;margin-top:8px;font-size:14px}
+.thp{height:74px;border-radius:12px;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #8884}.thp i{display:block;height:12px;width:60%;border-radius:6px}
+html[data-theme="dark"]{color-scheme:dark;--bg:#1A1B1E;--sf:#25272B;--sv:#2E3035;--on:#F2F2F0;--onv:#9A9DA6;--ol:#383A40;--card:#25272B;--rail:#0F1012;--erc:#4A2523;--onerc:#F2B8B5;--sec:#1F3A2A;--onsec:#8FD9A8;--orbg:#4A3A12;--orfg:#F2CC72;--grey:#7A7D86}
+html[data-theme="dark"] .ri.on,html[data-theme="dark"] .ri-w:hover .ri.on{background:#F2F2F0;color:#1B1C1F}
+html[data-theme="dark"] .ri-w:hover .ri{background:#2A2C31}
+html[data-theme="dark"] .srch,html[data-theme="dark"] .bell,html[data-theme="dark"] .tabs button,html[data-theme="dark"] .seg,html[data-theme="dark"] .btnt,html[data-theme="dark"] .sc,html[data-theme="dark"] .pill,html[data-theme="dark"] input,html[data-theme="dark"] textarea,html[data-theme="dark"] select,html[data-theme="dark"] .tg,html[data-theme="dark"] .node,html[data-theme="dark"] .chip button,html[data-theme="dark"] .cal .d,html[data-theme="dark"] .dayw,html[data-theme="dark"] .dglab,html[data-theme="dark"] #modal .dlg,html[data-theme="dark"] .pin,html[data-theme="dark"] .stepbar,html[data-theme="dark"] .thm{background:#2E3035;color:#F2F2F0}
+html[data-theme="dark"] .btnt:hover{background:#383A40}
+html[data-theme="dark"] #modal .dlg{background:#25272B}
+html[data-theme="dark"] .tabs button.on,html[data-theme="dark"] .seg button.on,html[data-theme="dark"] .sc.on,html[data-theme="dark"] .lvl button.on,html[data-theme="dark"] .btnp,html[data-theme="dark"] .node.own{background:#F2F2F0;color:#1B1C1F}
+html[data-theme="dark"] .node.own .ty{background:#1B1C1F;color:#F2F2F0}
+html[data-theme="dark"] .lvl,html[data-theme="dark"] .hint{background:#1F2023}
+html[data-theme="dark"] .hint.warn{background:#4A3A12;color:#F2CC72}
+html[data-theme="dark"] .sw{background:#4A4C52}html[data-theme="dark"] .sw.on{background:#F2F2F0}html[data-theme="dark"] .sw:after{background:#1B1C1F}html[data-theme="dark"] .sw:not(.on):after{background:#C9CACD}
+html[data-theme="dark"] .tag{background:#383A40;color:#B5B8BF}html[data-theme="dark"] .tag.chg{background:var(--yel);color:#1B1C1F}
+html[data-theme="dark"] .tag.red{background:#4A2523;color:#F2B8B5}html[data-theme="dark"] .tag.grn{background:#1F3A2A;color:#8FD9A8}html[data-theme="dark"] .tag.yel{background:#4A3A12;color:#F2CC72}html[data-theme="dark"] .tag.blu{background:#1F3550;color:#A9C8EE}
+html[data-theme="dark"] .pside{background:#212226}
+html[data-theme="dark"] .pmain{background:#1A1B1E}
+html[data-theme="dark"] .swrow,html[data-theme="dark"] .seatcard,html[data-theme="dark"] .docrow,html[data-theme="dark"] td{border-color:#303236}
+html[data-theme="dark"] .seatcard:hover,html[data-theme="dark"] tr.click:hover td{background:#2A2C31}html[data-theme="dark"] tr.sel td{background:#2E3035}
+html[data-theme="dark"] .sec{border-color:#383A40}
+html[data-theme="dark"] .btnd:disabled,html[data-theme="dark"] .btnp:disabled{background:#383A40;color:#7A7D86}
+html[data-theme="dark"] .dayg .hr{border-color:#303236}html[data-theme="dark"] .dayg .hr.off{background:#212226}
+/* pastel panels keep dark writing whatever the theme */
+html[data-theme="dark"] .k,html[data-theme="dark"] .ty,html[data-theme="dark"] .avs,html[data-theme="dark"] .k .ck,html[data-theme="dark"] .ck{color:#1B1C1F}
+html[data-theme="dark"] .k .ck{background:#fff}
+.swrow .sub,.swrow .link{white-space:nowrap}
