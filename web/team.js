@@ -295,6 +295,7 @@
       <div class="lbl">TASKS FOR HIM · ${toHim.length}</div>${rows(toHim, "to") || '<div class="sub">None open.</div>'}
       <div class="lbl">TASKS HE GAVE · ${byHim.length} (follow-up by)</div>${rows(byHim, "by") || '<div class="sub">None open.</div>'}
       <div class="lbl">HR CHECKLIST</div>${checks.map((c, i) => `<label class="swrow" style="cursor:pointer"><input type="checkbox" class="hrc" data-i="${i}"><span class="w"><b style="font-size:14px">${c}</b></span></label>`).join("")}
+      <label class="swrow" style="cursor:pointer"><input type="checkbox" id="gone"><span class="w"><b style="font-size:14px">Remove this seat for good</b><span>Nobody will take it. The seat and its history disappear, his tasks stay with the caretakers, and the people under him move up to his head.</span></span></label>
       <div class="hint warn">His own private tasks stay on his phone and with his Gmail. After this he is signed out of Rafiq Builders in the app and cannot open the portal. His history stays under his name.</div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="cn">Cancel</button><button class="btnd" id="go" disabled>Offboard</button></div></div></div>`;
     const go = document.getElementById("go"), all = () => [...m.querySelectorAll(".hrc")].every((c) => c.checked);
@@ -303,7 +304,8 @@
     document.getElementById("cn").onclick = () => (m.innerHTML = "");
     go.onclick = async () => {
       go.disabled = true;
-      const keep = {}; m.querySelectorAll("[data-keep]").forEach((c) => (keep[c.dataset.keep] = c.checked));
+      const gone = document.getElementById("gone").checked;
+      const keep = {}; m.querySelectorAll("[data-keep]").forEach((c) => (keep[c.dataset.keep] = gone || c.checked));
       let n = 0;
       for (const sel of m.querySelectorAll("[data-ct]")) {
         const [tid, kind] = sel.dataset.ct.split(":"), t = D.tasks.find((x) => x.id === tid), cs = RB.seat(sel.value); if (!t || !cs || !cs.uid) continue;
@@ -315,6 +317,12 @@
       const holders = (s.holders || []).map((h, i, a) => (i === a.length - 1 && !h.to ? Object.assign({}, h, { to: now }) : h));
       await RB.Store.put("seats", id, { status: "empty", uid: "", holders, invited: false }, true);
       await RB.Store.put("members", s.uid, { status: "removed", perms: { app: {}, portal: { app: "none", meetings: "none", team: "none", docs: "none", settings: "none" } }, removedAt: now }, true);
+      if (gone) {
+        for (const x of D.seats.filter((y) => y.reportsTo === id)) await RB.Store.put("seats", x.id, { reportsTo: s.reportsTo || "" }, true);
+        await RB.Store.del("seats", id);
+        await done("Offboarded " + nm + " · seat " + id + " removed for good · " + n + " tasks to caretakers");
+        m.innerHTML = ""; S.seatSel = null; RB.render(); return;
+      }
       await done("Offboarded " + nm + " · seat " + id + " is empty · " + n + " tasks to caretakers");
       m.innerHTML = ""; S.seatSel = id; RB.render();
     };
