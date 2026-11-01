@@ -185,7 +185,7 @@
   RB.toast = (text) => {
     let t = document.getElementById("toast");
     if (!t) { t = document.createElement("div"); t.id = "toast"; document.body.appendChild(t); }
-    t.textContent = text || "Saved"; t.classList.add("on");
+    t.textContent = text || "Saved"; t.style.bottom = document.getElementById("updbar") ? "92px" : ""; t.classList.add("on");
     clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2000);
   };
   let savedT = null;
