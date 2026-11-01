@@ -89,6 +89,7 @@
       S.seatSel = g; await done("Added seat " + g + " (" + v.designation + ")");
       if (v.dept === "__new") newDeptFor(g);
     }, "The person joins by signing in to the phone app with this Gmail.");
+    wireDesigDept((prefill && prefill.dept) || "");
   }
   function fillSeat(id) {
     RB.form("Fill seat", [{ k: "name", label: "WHO WILL SIT HERE", value: (RB.seat(id) || {}).name || "", ph: "Name" }], "Save", async (v) => {
@@ -108,6 +109,7 @@
       if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
       await done("Edited seat " + id + (hd ? " · now reports to " + (v.reportsTo || "nobody") : "") + (v.role && v.role !== s.role ? " · role " + v.role : ""));
     });
+    wireDesigDept(s.dept || "");
   }
 
   // ------------------------------------------------------------------ chart
@@ -221,25 +223,59 @@
       const hit = RB.deptList().find((d) => d.toLowerCase() === n.toLowerCase() && d !== old);
       const name = hit || n; // renaming onto an existing name merges the two
       for (const s of D.seats.filter((x) => (x.dept || "").trim() === old)) await RB.Store.put("seats", s.id, { dept: name }, true);
+      const dl = RB.desigList().map((d) => (dDepts(d).includes(old) ? Object.assign({}, d, { depts: Array.from(new Set(dDepts(d).map((x) => (x === old ? name : x)))) }) : d));
+      await RB.Store.put("config", "designations", { list: dl }, true);
       await saveDepts(Array.from(new Set(RB.deptList().map((d) => (d === old ? name : d)))), hit ? "Merged department " + old + " into " + name : "Renamed department " + old + " to " + name);
     }, "Type an existing name to merge the two.");
   }
 
   // ------------------------------------------------------------------ designations
+  /** v0.49.4 One tab: departments, each with its designations under it. A designation can sit under several departments. */
+  const dDepts = (d) => (d && Array.isArray(d.depts) ? d.depts : []);
   function desigs() {
-    const all = RB.desigList(), seatsOf = (n) => D.seats.filter((s) => s.designation === n).length;
+    const all = RB.desigList(), depts = RB.deptList(), seatsOf = (n, dp) => D.seats.filter((s) => s.designation === n && (dp === undefined || (s.dept || "") === dp)).length;
     S.dsort = S.dsort || "az";
     const unchecked = all.filter((d) => !d.checkedAt);
     if (S.dsort === "unchecked" && !unchecked.length) S.dsort = "az";
-    const list = S.dsort === "unchecked" ? unchecked.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "az" ? all.slice().sort((a, b) => a.name.localeCompare(b.name)) : S.dsort === "seats" ? all.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : all.slice().reverse();
+    const order = (arr) => S.dsort === "seats" ? arr.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : S.dsort === "new" ? arr.slice().reverse() : arr.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const shown = (arr) => order(S.dsort === "unchecked" ? arr.filter((d) => !d.checkedAt) : arr);
     const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].concat(unchecked.length ? [["unchecked", "Unchecked · " + unchecked.length]] : []).map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
-    const html = `<div class="card" style="max-width:760px"><div class="subhead"><h3>Designations · ${all.length}</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddes">+ New designation</button>' : ""}</div>
-      <div class="hint">A designation is only a label. It carries the default access, which you can still change for any one person.</div>
-      ${list.map((d) => { const n = seatsOf(d.name); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${n} seat${n === 1 ? "" : "s"} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}. Give those seats another designation first.">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; }).join("")}</div>`;
+    const row = (d, dp) => { const n = seatsOf(d.name), here = dp ? seatsOf(d.name, dp) : n; const other = dDepts(d).filter((x) => x !== dp);
+      return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${here} seat${here === 1 ? "" : "s"}${dp && other.length ? " · also in " + other.map(esc).join(", ") : ""} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${dp ? (here ? `<button class="btnt edit-only off" disabled title="${here} seat${here === 1 ? "" : "s"} here. Move them first.">Remove</button>` : `<button class="btnt edit-only" data-dunlink="${esc(d.name)}|${esc(dp)}" title="Take it out of ${esc(dp)}">Remove</button>`) : n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; };
+    const section = (dp) => {
+      const ds = shown(all.filter((d) => dDepts(d).includes(dp))), people = D.seats.filter((x) => (x.dept || "") === dp).length;
+      if (S.dsort === "unchecked" && !ds.length) return "";
+      return `<div class="dsec"><div class="dsech"><b>${esc(dp)}</b><span class="sub">${people} seat${people === 1 ? "" : "s"} · ${all.filter((d) => dDepts(d).includes(dp)).length} designation${all.filter((d) => dDepts(d).includes(dp)).length === 1 ? "" : "s"}</span><div class="sp"></div>${ed() ? `<button class="btnt edit-only" data-dadd="${esc(dp)}">+ Designation</button><button class="link edit-only" data-deptren="${esc(dp)}">Rename</button>${people || all.some((d) => dDepts(d).includes(dp)) ? "" : `<button class="link edit-only" data-deptdel="${esc(dp)}">Delete</button>`}` : ""}</div>
+        ${ds.map((d) => row(d, dp)).join("") || '<div class="muted" style="padding:6px 0">No designations yet.</div>'}</div>`;
+    };
+    const loose = shown(all.filter((d) => !dDepts(d).length));
+    const canFill = all.some((d) => !dDepts(d).length && D.seats.some((s) => s.designation === d.name && (s.dept || "").trim()));
+    const html = `<div class="card" style="max-width:860px"><div class="subhead"><h3>Departments & designations</h3><div class="sp"></div>${chips}${ed() ? '<button class="btnp edit-only" id="adddept">+ New department</button>' : ""}</div>
+      <div class="hint">Add departments, then the designations under each one. A designation can sit under more than one department. When a seat gets a designation, its department fills in by itself (or you pick from that designation's departments).</div>
+      ${depts.map(section).join("")}
+      ${loose.length ? `<div class="dsec"><div class="dsech"><b>No department yet</b><span class="sub">${loose.length}</span><div class="sp"></div>${ed() && canFill ? '<button class="btnt edit-only" id="dfill" title="Put each designation under the departments its seats already have">Place them from current seats</button>' : ""}${ed() ? '<button class="btnt edit-only" id="adddes">+ Designation</button>' : ""}</div>${loose.map((d) => row(d, null)).join("")}</div>` : ed() ? '<div style="margin-top:10px"><button class="link edit-only" id="adddes">+ Designation without a department</button></div>' : ""}</div>`;
     return { html };
+  }
+  /** Add a designation under a department: an existing one, or a new name. */
+  function addDesigTo(dp) {
+    const others = RB.desigList().filter((d) => !dDepts(d).includes(dp)).map((d) => d.name).sort((a, b) => a.localeCompare(b));
+    RB.form("Designation in " + dp, [{ k: "pick", label: "EXISTING DESIGNATION", type: "select", value: "", options: [["", "— none, type a new one below —"]].concat(others.map((n) => [n, n])) }, { k: "name", label: "OR A NEW ONE", ph: "Site Engineer" }], "Add", async (v) => {
+      const n = (v.pick || v.name.trim()).replace(/\s+/g, " "); if (!n) return "Pick one or type a name.";
+      const hit = RB.desigList().find((d) => d.name.toLowerCase() === n.toLowerCase());
+      const list = hit ? RB.desigList().map((d) => (d === hit ? Object.assign({}, d, { depts: Array.from(new Set(dDepts(d).concat(dp))) }) : d)) : RB.desigList().concat({ name: n, app: {}, portal: {}, depts: [dp] });
+      await saveDesig(list, (hit ? "Put designation " + hit.name : "Added designation " + n) + " under " + dp);
+    });
   }
   const saveDesig = async (list, text) => { await RB.Store.put("config", "designations", { list, updatedAt: Date.now() }, true); await done(text); };
   const saveDepts = async (depts, text) => { D.desig = Object.assign({}, D.desig || {}, { depts }); await RB.Store.put("config", "designations", { depts, updatedAt: Date.now() }, true); await done(text); };
+  /** Department options for a designation: its own departments when it has any, else every department. */
+  const deptOpts = (desig, cur) => { const own = dDepts(RB.desigOf(desig)); const l = own.length ? own : RB.deptList(); return (own.length === 1 ? [] : [["", "— none —"]]).concat(l.map((d) => [d, d])).concat(cur && !l.includes(cur) ? [[cur, cur + (own.length ? " (not in this designation)" : " (not in list)")]] : []); };
+  /** In an open seat form: when the designation changes, the department list follows it (and fills in when there is only one). */
+  function wireDesigDept(keepCur) {
+    const m = document.getElementById("modal"), ds = m.querySelector('[data-k="designation"]'), dp = m.querySelector('[data-k="dept"]'); if (!ds || !dp) return;
+    const fill = (first) => { const cur = first ? keepCur : dp.value; const opts = deptOpts(ds.value, first ? cur : ""); dp.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""); const own = dDepts(RB.desigOf(ds.value)); dp.value = first && cur && opts.some((o) => o[0] === cur) ? cur : own.length === 1 ? own[0] : opts.some((o) => o[0] === cur) ? cur : opts[0][0]; };
+    ds.addEventListener("change", () => fill(false)); fill(true);
+  }
   const deptField = (label, value) => ({ k: "dept", label, type: "select", value: value || "", options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])).concat(value && !RB.deptList().includes(value) ? [[value, value + " (not in list)"]] : []).concat([["__new", "+ New department…"]]) });
   /** "+ New department…" picked in a seat form: ask the name once the form has closed, add it to the list, then put it on the seat. */
   function newDeptFor(seatId) {
@@ -365,6 +401,7 @@
       await fillFrom(RB.member(uid), RB.seat(id));
       await done("Approved " + (m.name || m.email) + " into seat " + id);
     });
+    wireDesigDept("");
   }
 
   /** A member whose Gmail has a seat takes the seat; caretaker tasks that belong to the seat go back to him (unless kept). */
@@ -452,7 +489,7 @@
 
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Designations"], ["dept", "Departments"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
+    tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
     render(tab) {
       RB.reconcile();
       const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "waiting" ? waiting() : people();
@@ -527,6 +564,13 @@
       on(root, "[data-deptren]", (e) => renDept(e.dataset.deptren));
       on(root, "[data-deptdel]", (e) => RB.confirm("Delete the department “" + esc(e.dataset.deptdel) + "”?", "Delete", () => saveDepts(RB.deptList().filter((d) => d !== e.dataset.deptdel), "Deleted department " + e.dataset.deptdel), true));
       on(root, "[data-deptsort]", (e) => { S.deptSort = e.dataset.deptsort; RB.render(); });
+      on(root, "[data-dadd]", (e) => addDesigTo(e.dataset.dadd));
+      on(root, "[data-dunlink]", (e) => { const [n, dp] = e.dataset.dunlink.split("|"); saveDesig(RB.desigList().map((d) => (d.name === n ? Object.assign({}, d, { depts: dDepts(d).filter((x) => x !== dp) }) : d)), "Took designation " + n + " out of " + dp).then(RB.render); });
+      const dfl = root.querySelector("#dfill"); if (dfl) dfl.onclick = () => {
+        const list = RB.desigList().map((d) => { if (dDepts(d).length) return d; const ds = Array.from(new Set(D.seats.filter((s) => s.designation === d.name).map((s) => (s.dept || "").trim()).filter(Boolean))); return ds.length ? Object.assign({}, d, { depts: ds }) : d; });
+        const add = Array.from(new Set(D.seats.map((s) => (s.dept || "").trim()).filter(Boolean))).filter((x) => !RB.deptList().includes(x));
+        (add.length ? saveDepts(RB.deptList().concat(add), "Added typed departments") : Promise.resolve()).then(() => saveDesig(list, "Placed designations under their seats' departments")).then(RB.render);
+      };
       both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
