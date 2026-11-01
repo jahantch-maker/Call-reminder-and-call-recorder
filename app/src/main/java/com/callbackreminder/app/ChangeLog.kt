@@ -29,6 +29,11 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.49.2", "1 Nov",
+            new = listOf("Your Google Calendar meetings for today are shared with the team account, for the website's Day calendar (only the calendars you switched on)"),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.49.1", "1 Nov",
             new = listOf(
                 "Signing out of the team saves everything online and clears the phone; signing in again, here or on a new phone, brings it all back (call recordings stay on the phone)",
