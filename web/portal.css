@@ -133,3 +133,15 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 }
 
 .still .k{animation:none}
+
+/* Calendar: the phone's kinds and colours (Tasks sky, Dossier mint), done grey, late red edge */
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--onv);margin:2px 0 10px}.legend span{display:flex;align-items:center;gap:6px}
+.lk{width:14px;height:14px;border-radius:4px;border-left:4px solid;display:inline-block}
+.lt,.kt{background:#D6EAFC;border-color:#1866AA}.ld,.kd{background:#D8F4E1;border-color:#2C964F}.lg,.kt.done{background:#ECECEA;border-color:#9A9A98}.lr,.kt.late{background:#FBE3E1;border-color:#D9534F}
+.cal .e.kt{border-left:4px solid #1866AA;background:#D6EAFC;color:#143757}.cal .e.kt.done{background:#ECECEA;border-color:#9A9A98;color:#777}.cal .e.kt.late{background:#FBE3E1;border-color:#D9534F;color:#7A1F1B}.cal .e .who{opacity:.7}
+.dayw{max-width:860px;height:calc(100dvh - 290px);min-height:360px;overflow-y:auto;background:#fff;border-radius:16px}.dayg{position:relative}
+.dayg .hr{position:absolute;left:0;right:0;border-top:1px solid #ECECEA}.dayg .hr.off{background:#F6F6F4}.dayg .hr span{position:absolute;left:8px;top:-8px;font-size:11px;color:var(--onv);background:inherit;padding:0 2px}.dayg .hr.off span{background:#F6F6F4}.dayg .hr:not(.off) span{background:#fff}
+.blk2{position:absolute;border-radius:9px;border-left:4px solid;padding:3px 7px;font-size:12px;line-height:1.3;overflow:hidden;box-sizing:border-box}
+.blk2 b{display:block;font-weight:600}.blk2 span{opacity:.75;font-size:11px}
+.blk2.kt{color:#143757}.blk2.kd{color:#1D4C2F}.blk2.kt.done{color:#777}.blk2.kt.late{color:#7A1F1B}
+.nowl{position:absolute;left:52px;right:0;border-top:2px solid #E53935;z-index:3}.nowl i{position:absolute;left:-5px;top:-6px;width:10px;height:10px;border-radius:50%;background:#E53935}
