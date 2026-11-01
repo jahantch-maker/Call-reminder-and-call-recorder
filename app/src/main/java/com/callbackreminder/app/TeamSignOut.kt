@@ -78,7 +78,7 @@ fun TeamRestoreOffer() {
     var tries by remember { mutableStateOf(0) }
 
     LaunchedEffect(tries) {
-        val fresh = Backup.wiped(ctx) || Backup.isEmpty(ctx)
+        val fresh = Backup.wiped(ctx) || (Backup.isEmpty(ctx) && !Backup.restoredOnce(ctx))
         if (!fresh) return@LaunchedEffect
         val latest = CloudBackup.latest() ?: return@LaunchedEffect
         day = latest.first
