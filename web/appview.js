@@ -9,7 +9,7 @@
   const pastel = (i) => RB.colorOf(i);
   const seatTag = (m) => { const s = RB.seatOfUid(m.uid); const d = s ? s.designation : (m.designation || ""); return d ? `<span class="ty" style="background:${RB.desigColor(d)}">${esc(d)}</span>` : '<span class="ty" style="background:#EFEFEC">Member</span>'; };
   const headName = (m) => { const s = RB.seatOfUid(m.uid), h = RB.headOf(s); return h && h.status === "filled" ? h.name : s && s.role === "owner" ? "" : h ? "" : ""; };
-  const periodSeg = () => `<div class="seg"><button data-period="week" class="${S.period === "week" ? "on" : ""}">Week</button><button data-period="month" class="${S.period === "month" ? "on" : ""}">Month</button></div>`;
+  const periodSeg = () => `<div class="seg"><button data-period="week" class="${S.period === "week" ? "on" : ""}">7 days</button><button data-period="month" class="${S.period === "month" ? "on" : ""}">30 days</button></div>`;
   const nextDeadline = (all, uid, now) => { const open = all.filter((x) => x.uid === uid && !x.done && x.due >= now - 3600000).sort((a, b) => a.due - b.due)[0]; return open ? open.due : 0; };
   const matches = (m) => !S.q || (m.name + " " + ((RB.seatOfUid(m.uid) || {}).designation || "")).toLowerCase().includes(S.q.toLowerCase());
 
@@ -35,10 +35,10 @@
     const chips = [["az", "A–Z"], ["overdue", "Overdue"], ["late", "Late"], ["moved", "Moved"], ["nodate", "No date"]].map(([k, l]) => `<button class="sc ${S.sort === k ? "on" : ""}" data-sort="${k}">${l}</button>`).join("");
     const html = `<div class="kp">
       <div class="k" style="background:var(--lil)"><div class="l">Team on time</div><div class="n">${f.pct == null ? "–" : f.pct + "%"}</div><button class="ck" data-kpi="reasons">Check</button></div>
-      <div class="k" style="background:var(--blu)"><div class="l">Tasks due this ${S.period}</div><div class="n">${f.due}</div><button class="ck" data-kpi="due">Check</button></div>
+      <div class="k" style="background:var(--blu)"><div class="l">Due · ${S.period === "month" ? "last 30 days" : "last 7 work days"}</div><div class="n">${f.due}</div><button class="ck" data-kpi="due">Check</button></div>
       <div class="k" style="background:var(--yel)"><div class="l">Still overdue</div><div class="n">${f.overdue}</div><button class="ck" data-kpi="overdue">Check</button></div>
       ${canApprove ? `<div class="k" style="background:var(--peach)"><div class="l">Waiting to join</div><div class="n">${wait}</div><button class="ck" data-kpi="waiting">Approve</button></div>` : `<div class="k" style="background:var(--peach)"><div class="l">No date</div><div class="n">${f.noDate}</div><button class="ck" data-kpi="nodate">Check</button></div>`}</div>
-      <div class="card"><div class="subhead" style="margin-bottom:6px"><h3>Team this ${S.period}</h3><div class="sp"></div>${chips}${periodSeg()}</div>
+      <div class="card"><div class="subhead" style="margin-bottom:6px"><h3>Team · ${S.period === "month" ? "last 30 days" : "last 7 work days"}</h3><div class="sp"></div>${chips}${periodSeg()}</div>
       <div class="tablewrap"><table id="ptable"><tr><th>Person</th><th>Seat</th><th class="c">Due</th><th class="c">On time</th><th class="c">Moved</th><th>Status</th><th>Next deadline</th></tr>
       ${rows.map(({ p, f }) => { const st = statusOf(f, R), nd = nextDeadline(all, p.uid, now); return `<tr class="click ${p.uid === sel ? "sel" : ""}" data-pick="${p.uid}"><td><b>${esc(first(p.name))}</b>${p.uid === (D.team && D.team.ownerUid) ? ' <span class="sub">· you</span>' : ""}</td><td>${seatTag(p)}</td><td class="c">${f.due}</td><td class="c">${f.onTime}</td><td class="c">${f.moved}×</td><td class="st" style="color:var(--${st[0]})"><i class="dot" style="background:var(--${st[0]})"></i>${st[1]}</td><td>${nd ? fmtWhen(nd).replace(/^(\w+) (\d+ \w+), /, "$1 $2, ") : "–"}</td></tr>`; }).join("")}</table></div>
       ${rows.length ? "" : '<div class="muted" style="padding:12px">No people to show.</div>'}</div>`;
@@ -150,9 +150,9 @@
       S.calKey = key;
     } else {
       const a = C.weekStart(now) + S.calWeek * 7 * DAY, sod = C.startOfDay(now);
-      const days = Array.from({ length: 7 }, (_, i) => a + i * DAY);
+      const days = Array.from({ length: 6 }, (_, i) => a + i * DAY); // Saturday to Thursday; Friday is off
       const cell = (d0) => items.filter((x) => x.due >= d0 && x.due < d0 + DAY).sort((x, y) => x.due - y.due).map((x) => `<div class="e kt ${x.done ? "done" : isRed(x, now) ? "late" : ""}" title="${esc(x.title)}">${clock(x.due)} · ${esc(x.title)}${personMode || uid ? "" : ` <span class="who">${esc(first((C.people().find((p) => p.uid === x.uid) || {}).name || ""))}</span>`}</div>`).join("");
-      head = `<button class="btnt" data-cw="-1">‹ Previous</button><b>${fmtShort(a)} – ${fmtShort(a + 6 * DAY)}</b><button class="btnt" data-cw="1">Next ›</button><button class="btnt" data-cw="0">Today</button>`;
+      head = `<button class="btnt" data-cw="-1">‹ Previous</button><b>${fmtShort(a)} – ${fmtShort(a + 5 * DAY)}</b><button class="btnt" data-cw="1">Next ›</button><button class="btnt" data-cw="0">Today</button>`;
       body = `<div class="cal">${days.map((d0) => `<div class="d ${d0 === sod ? "today" : ""}"><h5>${new Date(d0).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}</h5>${cell(d0) || '<div class="sub">–</div>'}</div>`).join("")}</div>`;
     }
     const seg = uid ? `<div class="seg"><button data-cv="day" class="${view === "day" ? "on" : ""}">Day</button><button data-cv="week" class="${view === "week" ? "on" : ""}">Week</button></div>` : "";

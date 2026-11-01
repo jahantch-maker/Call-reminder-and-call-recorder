@@ -60,10 +60,19 @@
   const daysLate = (x) => Math.max(1, Math.round((startOfDay(x.doneAt) - startOfDay(x.promise)) / DAY));
 
   function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
-  function weekStart(t) { const d = new Date(startOfDay(t)); const wd = (d.getDay() + 6) % 7; return d.getTime() - wd * DAY; }
+  /** RB's week runs Saturday to Thursday; Friday is the weekly off day. */
+  function weekStart(t) { const d = new Date(startOfDay(t)); const wd = (d.getDay() + 1) % 7; return d.getTime() - wd * DAY; }
+  const isOff = (t) => new Date(t).getDay() === 5;
+  /** Start of the rolling window: the last 7 work days (Fridays skipped) or the last 30 days, today included. */
+  function rollStart(period, now) {
+    const sod = startOfDay(now);
+    if (period === "month") return sod - 29 * DAY;
+    let d = sod, n = 0;
+    for (;;) { if (!isOff(d)) n++; if (n === 7) return d; d -= DAY; }
+  }
   function range(period, now) {
-    if (period === "month") { const d = new Date(now); const a = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); const b = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(); return [a, b]; }
-    const a = weekStart(now); return [a, a + 7 * DAY];
+    // v0.50 rolling: the numbers never go empty when a new week or month starts.
+    return [rollStart(period, now), startOfDay(now) + DAY];
   }
 
   /** The plain facts for one person (or everyone, uid null) in [a, b). */
@@ -77,8 +86,9 @@
       if (x.done) f.done++;
       if (x.done && !isLate(x)) f.onTime++;
       else if (isLate(x)) { if (isOutside(x)) f.lateOut++; else f.late++; lateDays += daysLate(x); lateN++; }
-      else if (isOverdue(x, now)) f.overdue++;
     });
+    // Still overdue: every open task past its deadline, whatever day it fell due.
+    f.overdue = mine.filter((x) => isOverdue(x, now)).length;
     f.noDate = mine.filter((x) => !x.done && !x.promise).length;
     f.avgLate = lateN ? Math.round(lateDays / lateN) : 0;
     f.pct = f.due ? Math.round((f.onTime / f.due) * 100) : null;
@@ -98,5 +108,5 @@
     });
     return Object.entries(c).sort((p, q) => q[1].n - p[1].n);
   }
-  RB.calc = { OWN_DEFAULT, OUT_DEFAULT, RED_DEFAULT, STEP_NAMES, STEPS_DEFAULT, reasonsCfg, outsideSet, red, stepsFor, people, team, items, isLate, isOverdue, lastReason, isOutside, daysLate, startOfDay, weekStart, range, facts, weeklyPct, reasonCounts, GRACE };
+  RB.calc = { OWN_DEFAULT, OUT_DEFAULT, RED_DEFAULT, STEP_NAMES, STEPS_DEFAULT, reasonsCfg, outsideSet, red, stepsFor, people, team, items, isLate, isOverdue, lastReason, isOutside, daysLate, startOfDay, weekStart, isOff, range, facts, weeklyPct, reasonCounts, GRACE };
 })();

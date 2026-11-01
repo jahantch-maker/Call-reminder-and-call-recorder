@@ -11,12 +11,12 @@
   let $app = document.getElementById("content");
   Object.assign(S, { view: "home", period: "week", sort: "az", person: null, pchip: "overdue", sel: null, settingsTab: "reasons", minutesId: null, reasonSel: null, tick: 0 }, S);
   let RUN = null; // running meeting: {id, type, steps, i, stepStart}
-  const rangeLabel = (a, b) => (S.period === "month" ? new Date(a).toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "This week · " + fmtShort(a) + " – " + fmtShort(b - DAY));
+  const rangeLabel = (a, b) => (S.period === "month" ? "Last 30 days · " + fmtShort(a) + " – " + fmtShort(b - DAY) : "Last 7 work days · " + fmtShort(a) + " – " + fmtShort(b - DAY));
   const render = () => RB.render();
 
   // ------------------------------------------------------------------ rendering helpers
   function tabs() { return ""; }
-  const periodSeg = () => `<div class="seg"><button data-period="week" class="${S.period === "week" ? "on" : ""}">Week</button><button data-period="month" class="${S.period === "month" ? "on" : ""}">Month</button></div>`;
+  const periodSeg = () => `<div class="seg"><button data-period="week" class="${S.period === "week" ? "on" : ""}">7 days</button><button data-period="month" class="${S.period === "month" ? "on" : ""}">30 days</button></div>`;
   function header(title, sub, right) {
     return `<div class="subhead"><div><h3>${title}</h3><div class="s">${sub || ""}</div></div><div class="sp"></div>${right || ""}${periodSeg()}</div>`;
   }
@@ -134,7 +134,7 @@
     const who = `<div class="who"><div class="big">${esc(first(p.name)[0])}</div><div><h2>${esc(first(p.name))}</h2><div class="s">${rangeLabel(a, b)} · ${RUN ? '<a class="link" data-go="people" href="#">All people</a> · ' : ""}<a class="link" data-person="${prev.uid}" href="#">‹ ${esc(first(prev.name))}</a> · <a class="link" data-person="${next.uid}" href="#">${esc(first(next.name))} ›</a></div></div></div>`;
     return `<div class="subhead">${who}<div class="sp"></div>${periodSeg()}</div>
       <div class="body"><div style="width:290px;display:flex;flex-direction:column;gap:12px">
-        <div class="card"><h3>His ${S.period}</h3><div class="mini"><div>Due<b>${f.due}</b></div><div>On time<b>${f.onTime}</b></div><div class="${bad(f.late, R.late)}">Late<b>${f.late}</b></div><div>Late (outside)<b style="color:#8a90a3">${f.lateOut}</b></div><div class="${bad(f.overdue, R.overdue)}">Still overdue<b>${f.overdue}</b></div><div class="${bad(f.moved, R.moved)}">Moved<b>${f.moved}×</b></div><div class="${bad(f.noDate, R.noDate)}">No date<b>${f.noDate}</b></div><div class="${bad(f.avgLate, R.avgLate)}">Avg days late<b>${f.avgLate || "–"}</b></div></div></div>
+        <div class="card"><h3>${S.period === "month" ? "Last 30 days" : "Last 7 work days"}</h3><div class="mini"><div>Due<b>${f.due}</b></div><div>On time<b>${f.onTime}</b></div><div class="${bad(f.late, R.late)}">Late<b>${f.late}</b></div><div>Late (outside)<b style="color:#8a90a3">${f.lateOut}</b></div><div class="${bad(f.overdue, R.overdue)}">Still overdue<b>${f.overdue}</b></div><div class="${bad(f.moved, R.moved)}">Moved<b>${f.moved}×</b></div><div class="${bad(f.noDate, R.noDate)}">No date<b>${f.noDate}</b></div><div class="${bad(f.avgLate, R.avgLate)}">Avg days late<b>${f.avgLate || "–"}</b></div></div></div>
         <div class="card"><h3>On time · last 8 weeks</h3>${trendSvg(trend, 260, 96, team)}</div>
         <div class="card"><h3>His late reasons · 8 weeks</h3>${reasonBars(reasons, 6)}</div>
         <div class="card"><h3>His open actions</h3>${acts.length ? acts.map((t) => `<div class="rs">${actionStatus(t, now).dot} ${esc(t.title)} · ${fmtDay(t.due)}</div>`).join("") : '<div class="muted" style="font-size:13px">None.</div>'}
@@ -303,9 +303,9 @@
     opts = opts || {};
     const ps = team(); let who = opts.person || null, when = null, title = "";
     const now = Date.now(), at6 = (d) => d + 18 * 3600000;
-    const fri = (() => { let d = startOfDay(now); for (let i = 1; i < 8; i++) { const x = d + i * DAY; if (new Date(x).getDay() === 5) return x; } return d + DAY; })();
+    const fri = (() => { let d = startOfDay(now); for (let i = 1; i < 8; i++) { const x = d + i * DAY; if (new Date(x).getDay() === 4) return x; } return d + DAY; })();
     const nextMeeting = nextWorkDay(now, 1) + 11 * 3600000;
-    const choices = [["Tmrw", at6(startOfDay(now) + DAY)], ["Fri", at6(fri)], ["Next meeting", nextMeeting]];
+    const choices = [["Tmrw", at6(startOfDay(now) + DAY)], ["Thu", at6(fri)], ["Next meeting", nextMeeting]];
     const draw = () => {
       $modal.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">New action</b><div class="foot" style="margin-top:2px">${esc(opts.from || "Agreed in the meeting")}</div>
         <div class="lbl">WHAT</div><input id="aw" style="width:100%" placeholder="What will be done" value="${esc(title)}">
