@@ -285,6 +285,37 @@ object Backup {
         return null
     }
 
+    /**
+     * v0.49.1 Sign-out from the team: everything of his (lists, settings, old backup files on the phone) is erased once it is
+     * safely online. Recordings are left alone. Sign-in offers to bring it all back. Google's and Android's own files are kept.
+     */
+    fun wipeAll(ctx: Context) {
+        prefsNames(ctx).filter { n -> listOf("google", "firebase", "androidx", "gms").none { n.lowercase().contains(it) } }.forEach {
+            ctx.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit()
+        }
+        Db.restore(ctx, null)
+        localDir(ctx).listFiles().orEmpty().filter { it.name.startsWith(PREFIX) }.forEach { it.delete() }
+        p(ctx).edit().putBoolean("rearm", true).putBoolean("wiped", true).putBoolean("declined", false).putBoolean("restored_once", false).commit()
+    }
+
+    /** True from the sign-out erase until he restores or turns the offer down. */
+    fun wiped(ctx: Context): Boolean = p(ctx).getBoolean("wiped", false)
+
+    fun declined(ctx: Context): Boolean = p(ctx).getBoolean("declined", false)
+
+    fun declineOffer(ctx: Context) {
+        p(ctx).edit().putBoolean("declined", true).putBoolean("wiped", false).apply()
+    }
+
+    fun clearWiped(ctx: Context) {
+        p(ctx).edit().putBoolean("wiped", false).putBoolean("restored_once", true).apply()
+    }
+
+    fun restoredOnce(ctx: Context): Boolean = p(ctx).getBoolean("restored_once", false)
+
+    /** True when no list has anything in it (a new phone). */
+    fun isEmpty(ctx: Context): Boolean = Db.export(ctx).optJSONArray("rows")?.length() == 0
+
     /** After a restore the app restarts; this sets every alarm again from the restored lists. */
     fun rearmIfRestored(ctx: Context) {
         if (!p(ctx).getBoolean("rearm", false)) return

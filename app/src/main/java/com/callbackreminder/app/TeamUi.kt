@@ -310,6 +310,7 @@ object TeamUi {
      * promises more than it knows. Shown on his person page, the Timeline top and the Team page; everyone sees everyone.
      */
     fun lastSeenLabel(m: TeamMember): String {
+        if (m.signedOut && !m.onlineNow()) return "Signed out"
         if (m.onlineNow()) return "🟢 Active now"
         if (m.lastSeen <= 0L) return "Not opened yet"
         val at = TeamPresence.lastAt(m.uid).takeIf { it > 0L } ?: m.lastSeen
@@ -431,7 +432,8 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
         }
         msg?.let { Text(it, color = if (it.startsWith("Moved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
         if (user != null) {
-            TextButton(onClick = { TeamRepo.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this phone") }
+            TeamSignOut(inTeam = m != null && m.active && t != null)
+            if (m != null && m.active && t != null) TeamRestoreOffer()
         }
     }
 }

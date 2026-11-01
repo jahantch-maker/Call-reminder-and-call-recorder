@@ -29,6 +29,17 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.49.1", "1 Nov",
+            new = listOf(
+                "Signing out of the team saves everything online and clears the phone; signing in again, here or on a new phone, brings it all back (call recordings stay on the phone)",
+                "Your manager sees \"Signed out\" when you sign out of the team, until you sign in again",
+            ),
+            fixed = listOf(
+                "Joining the team again after being removed or after a waiting request now works",
+                "Signing out of the team shows you as offline straight away",
+            ),
+        ),
+        Entry(
             "0.49.0", "1 Nov",
             new = listOf(
                 "Join the team with your official Gmail: you are placed in your seat and get the access your designation gives",
