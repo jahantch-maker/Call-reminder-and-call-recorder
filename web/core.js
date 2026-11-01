@@ -216,6 +216,35 @@
       <button class="btnp" id="gs">Sign in with Google</button></div>`;
     document.getElementById("gs").onclick = () => firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch((e) => RB.alertBox(RB.esc(e.message)));
   }
+  /** A signed-in Gmail with no place in the team yet: it asks to join from here, the same as the phone app does. */
+  function joinPage(u, knownTeam) {
+    $app().innerHTML = `<div class="center login"><div class="logo">RB</div><h2>Join Rafiq Builders</h2>
+      <div class="muted">Signed in as ${RB.esc(u.email)}.<br>If an owner already added this Gmail as a seat, you get in at once. Otherwise an owner approves you.</div>
+      <button class="btnp" id="jn">Join Rafiq Builders</button><div style="margin-top:10px"><button class="btnt" id="so">Sign out</button></div></div>`;
+    document.getElementById("so").onclick = () => firebase.auth().signOut().then(() => location.reload());
+    document.getElementById("jn").onclick = async (ev) => {
+      const b = ev.target; b.disabled = true; b.textContent = "Joining…";
+      try {
+        let t = knownTeam;
+        if (!t) {
+          const q = await db.collection("codes").where("teamName", "==", "Rafiq Builders").limit(1).get();
+          t = q.docs[0] && q.docs[0].data().teamId;
+          if (!t) throw new Error("Couldn't find the Rafiq Builders team.");
+        }
+        const mail = (u.email || "").trim().toLowerCase(), now = Date.now();
+        let seat = false;
+        try { seat = (await db.collection("teams").doc(t).collection("seats").doc(mail).get()).exists; } catch (e) { seat = false; }
+        const base = { name: u.displayName || "", email: u.email || "", phone: "", role: "member", reportsTo: "", managers: [], joinedAt: now, lastSeen: now };
+        const mref = db.collection("teams").doc(t).collection("members").doc(u.uid);
+        await mref.set(seat ? Object.assign(base, { status: "active", seatId: mail }) : Object.assign(base, { status: "pending" }));
+        await db.collection("users").doc(u.uid).set({ teamId: t });
+        location.reload();
+      } catch (e) {
+        b.disabled = false; b.textContent = "Join Rafiq Builders";
+        RB.alertBox(RB.esc((e.message || e) + "") + "<br>If it says permission denied, ask an owner to check your seat.");
+      }
+    };
+  }
   RB.alertBox = (t) => { const m = document.getElementById("modal"); m.innerHTML = `<div class="back"><div class="dlg"><div>${t}</div><div style="text-align:right;margin-top:12px"><button class="btnp" id="ok">OK</button></div></div></div>`; document.getElementById("ok").onclick = () => (m.innerHTML = ""); };
 
   RB.start = function () {
@@ -233,12 +262,14 @@
       try {
         const us = await db.collection("users").doc(uid).get();
         const t = us.exists && us.data().teamId;
-        if (!t) return RB.message("This Google account isn't in Rafiq Builders yet.", "Ask an owner to add your Gmail in the portal, then join from the phone app.<br>Signed in as " + RB.esc(u.email) + ".", true);
+        if (!t) return joinPage(u);
         teamRef = db.collection("teams").doc(t);
         const ts = await teamRef.get();
         D.team = Object.assign({ id: t }, ts.data());
         const ms = await teamRef.collection("members").doc(uid).get();
         D.me = ms.exists ? Object.assign({ uid }, ms.data()) : null;
+        if (!D.me) return joinPage(u, t);
+        if (D.me.status === "pending") return RB.message("Your request is waiting.", "An owner will approve it. Come back after that.<br>Signed in as " + RB.esc(u.email) + ".", true);
         if (!RB.isOwner() && !(D.me && D.me.status === "active" && D.me.perms && D.me.perms.portal && Object.values(D.me.perms.portal).some((v) => v !== "none"))) {
           return RB.message("You don't have access to the portal.", "Ask an owner. The phone app still works. Signed in as " + RB.esc(u.email) + ".", true);
         }
