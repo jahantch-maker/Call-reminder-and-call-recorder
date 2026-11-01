@@ -37,7 +37,8 @@
     S.psort = S.psort || "az";
     const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
     const by = { az: (a, b) => nm(a).localeCompare(nm(b)), desig: (a, b) => (a.designation || "~").localeCompare(b.designation || "~") || nm(a).localeCompare(nm(b)), dept: (a, b) => (a.dept || "~").localeCompare(b.dept || "~") || nm(a).localeCompare(nm(b)) }[S.psort];
-    const list = D.seats.filter((s) => !q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q)).slice().sort(by);
+    const inScope = RB.scope() === "all" ? null : new Set(RB.visibleSeats().map((x) => x.id));
+    const list = D.seats.filter((s) => (!inScope || inScope.has(s.id)) && (!q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q))).slice().sort(by);
     const pchips = [["az", "A–Z"], ["desig", "Designation"], ["dept", "Department"]].map(([k, l]) => `<button class="sc ${S.psort === k ? "on" : ""}" data-psort="${k}">${l}</button>`).join("");
     const sel = selSeat();
     const row = (s) => s.status === "filled"
@@ -69,7 +70,7 @@
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
     return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}</div>
-      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button><button style="background:var(--blu)" data-access="${esc(s.id)}">Access</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
+      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of 9 app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
@@ -249,13 +250,13 @@
   function desigs() {
     const all = RB.desigList(), depts = RB.deptList(), seatsOf = (n, dp) => D.seats.filter((s) => s.designation === n && (dp === undefined || (s.dept || "") === dp)).length;
     S.dsort = S.dsort || "az";
-    const unchecked = all.filter((d) => !d.checkedAt);
-    if (S.dsort === "unchecked" && !unchecked.length) S.dsort = "az";
+    if (S.dsort === "unchecked") S.dsort = "az";
+    const unchecked = [];
     const order = (arr) => S.dsort === "seats" ? arr.slice().sort((a, b) => seatsOf(b.name) - seatsOf(a.name) || a.name.localeCompare(b.name)) : S.dsort === "new" ? arr.slice().reverse() : arr.slice().sort((a, b) => a.name.localeCompare(b.name));
-    const shown = (arr) => order(S.dsort === "unchecked" ? arr.filter((d) => !d.checkedAt) : arr);
+    const shown = (arr) => order(arr);
     const chips = [["az", "A–Z"], ["seats", "Most seats"], ["new", "Newest"]].concat(unchecked.length ? [["unchecked", "Unchecked · " + unchecked.length]] : []).map(([k, l]) => `<button class="sc ${S.dsort === k ? "on" : ""}" data-dsort="${k}">${l}</button>`).join("");
     const row = (d, dp) => { const n = seatsOf(d.name), here = dp ? seatsOf(d.name, dp) : n; const other = dDepts(d).filter((x) => x !== dp);
-      return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${here} seat${here === 1 ? "" : "s"}${dp && other.length ? " · also in " + other.map(esc).join(", ") : ""} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dacc="${esc(d.name)}">Edit access</button><button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${dp ? (here ? `<button class="btnt edit-only off" disabled title="${here} seat${here === 1 ? "" : "s"} here. Move them first.">Remove</button>` : `<button class="btnt edit-only" data-dunlink="${esc(d.name)}|${esc(dp)}" title="Take it out of ${esc(dp)}">Remove</button>`) : n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; };
+      return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(d.name)}">${esc(d.name)}</span><div class="w"><span>${here} seat${here === 1 ? "" : "s"}${dp && other.length ? " · also in " + other.map(esc).join(", ") : ""} · ${RB.countOn(d.name)} of 9 app switches on</span></div>${ed() ? `<button class="btnt edit-only" data-dren="${esc(d.name)}">Rename</button>${dp ? (here ? `<button class="btnt edit-only off" disabled title="${here} seat${here === 1 ? "" : "s"} here. Move them first.">Remove</button>` : `<button class="btnt edit-only" data-dunlink="${esc(d.name)}|${esc(dp)}" title="Take it out of ${esc(dp)}">Remove</button>`) : n ? `<button class="btnt edit-only off" disabled title="Used by ${n} seat${n === 1 ? "" : "s"}">Delete</button>` : `<button class="btnt edit-only" data-ddel="${esc(d.name)}">Delete</button>`}` : ""}</div>`; };
     const section = (dp) => {
       const ds = shown(all.filter((d) => dDepts(d).includes(dp))), people = D.seats.filter((x) => (x.dept || "") === dp).length;
       if (S.dsort === "unchecked" && !ds.length) return "";
@@ -317,25 +318,44 @@
 
   // ------------------------------------------------------------------ access
   function access() {
-    const seats = D.seats.filter((s) => s.status === "filled");
+    const seats = D.seats.filter((s) => s.status === "filled"), desigs = RB.desigList().slice().sort((a, b) => a.name.localeCompare(b.name));
     if (!S.accSeat || !RB.seat(S.accSeat)) S.accSeat = (seats.find((s) => s.role !== "owner") || seats[0] || {}).id;
-    const s = RB.seat(S.accSeat), mode = S.accMode === "desig" && S.accDesig ? "desig" : "person";
+    if (!S.accDesig || !RB.desigOf(S.accDesig)) S.accDesig = (desigs.find((d) => !RB.isChecked(d)) || desigs[0] || {}).name;
+    const s = RB.seat(S.accSeat), mode = S.accMode === "person" && s ? "person" : "desig";
     const e = mode === "desig" ? { app: RB.defaultsOf(S.accDesig).app, portal: RB.defaultsOf(S.accDesig).portal, changed: {} } : RB.effective(s);
     const can = ed() && !(mode === "person" && s && s.role === "owner");
-    const def = mode === "person" && s ? RB.defaultsOf(s.designation) : null;
     const sw = (k) => `<div class="sw ${e.app[k] ? "on" : ""} ${can ? "" : "dis"}" data-sw="${k}" role="switch" aria-checked="${!!e.app[k]}"></div>`;
-    const stag = (key) => mode === "desig" || !e.changed[key] ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`;
+    const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
-    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap">${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : '<button class="btnt" id="accback">‹ Back to people</button>'}<div class="sp"></div>${mode === "desig" && ed() ? `${(RB.desigOf(S.accDesig) || {}).checkedAt ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
+    const cur = S.accDesig && RB.desigOf(S.accDesig);
+    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div><div class="sp"></div>${mode === "desig" && ed() ? `${cur && RB.isChecked(cur) ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
+      <div class="subhead">${mode === "person" ? `<select id="accp" style="flex:1">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd" style="flex:1">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}</div>
       <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
       <div class="mh2" style="margin-top:12px">IN THE APP</div>
       ${RB.APP_SW.map(([k, t, sub]) => `<div class="swrow"><div class="w"><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</div>${stag("app." + k)}${sw(k)}</div>`).join("")}</div>`;
-    const lv = (k) => ["none", "view", "edit"].map((v) => `<button data-lvl="${k}:${v}" class="${e.portal[k] === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
-    const mid = `<div class="card" style="flex:1"><div class="mh2">IN THE PORTAL</div>${RB.SECTIONS.map(([k, l]) => `<div class="swrow"><div class="w"><b>${l}</b></div>${stag("portal." + k)}<div class="lvl ${can ? "" : "dis"}" style="${can ? "" : "pointer-events:none;opacity:.6"}">${lv(k)}</div></div>`).join("")}
-      <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Meetings “View” shows only the minutes he was in and the actions on him.</div></div>`;
-    const dl = RB.desigList().slice().sort((a, b) => a.name.localeCompare(b.name)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9</span>${ed() ? `<button class="link" data-dacc="${esc(d.name)}">edit ›</button>` : ""}</div>`).join("");
-    const side = `<div class="card"><h3>Designation defaults</h3>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
+    const dis = can ? "" : "pointer-events:none;opacity:.6";
+    const lv = (k, opts) => `<div class="lvl" style="${dis}">${opts.map(([v, l]) => `<button data-lvl="${k}:${v}" class="${(k === "app" ? (e.portal.app !== "none" ? "view" : "none") : e.portal[k]) === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
+    const NVE = [["none", "None"], ["view", "View"], ["edit", "Edit"]];
+    const chip = (key, v, l, on) => `<button class="sc ${on ? "on" : ""}" style="${dis}" data-tick="${key}:${v}">${on ? "✓ " : ""}${l}</button>`;
+    const lock = (t) => `<button class="sc" style="opacity:.55;cursor:default" disabled>🔒 ${t}</button>`;
+    const extra = (label, html) => `<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding-top:8px"><span class="mh2" style="margin:0 4px 0 0">${label}</span>${html}</div>`;
+    const row = (name, help, tags, ctl, more) => `<div class="swrow" style="flex-wrap:wrap;align-items:flex-start"><div class="w" style="min-width:200px"><b>${name}</b><span>${help}</span></div>${tags}${ctl}${more || ""}</div>`;
+    const tabsOn = (key, all) => (Array.isArray(e.portal[key]) ? e.portal[key] : []).filter((t) => all.some((a) => a[0] === t));
+    const teamOn = tabsOn("teamTabs", RB.TEAM_TABS), setOn = tabsOn("settingsTabs", RB.SET_TABS);
+    const mid = `<div class="card" style="flex:1.25"><div class="mh2">IN THE PORTAL</div>
+      ${row("App view", 'See tasks, calendar and late reasons from phones. Read only. “How far” decides whose.', stag("portal.app", "portal.appScope"), lv("app", [["none", "Off"], ["view", "On"]]),
+        e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : "")}
+      ${row("Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", stag("portal.meetings"), lv("meetings", NVE))}
+      ${row("Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments, approving joins). The People list follows “How far”.", stag("portal.team", "portal.teamTabs"), lv("team", NVE),
+        e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, teamOn.includes(v))).join("") + lock("Access · Offboard (owners only)")) : "")}
+      ${row("Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", stag("portal.docs"), lv("docs", NVE))}
+      ${row("Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", stag("portal.settings", "portal.settingsTabs"), lv("settings", NVE),
+        e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, setOn.includes(v))).join("") + lock("Check for updates · Appearance (always on)")) : "")}
+      <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div></div>`;
+    const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length;
+    const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of 9</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
+    const side = `<div class="card"><div class="subhead" style="margin-bottom:6px"><h3 style="margin:0">Designation defaults</h3><div class="sp"></div>${unN ? `<button class="sc ${showUn ? "on" : ""}" data-accun="1">Unchecked · ${unN}</button>` : ""}</div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, SMS, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
     return { html: `<div class="cols">${left}${mid}</div>`, side, sideCards: true };
   }
@@ -352,11 +372,11 @@
   async function setLevel(k, v) {
     if (S.accMode === "desig" && S.accDesig) {
       const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v; list.find((x) => x.name === S.accDesig).checkedAt = Date.now();
-      saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + v);
+      saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
     } else {
       const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.portal = ov.portal || {}; ov.portal[k] = v;
-      if (RB.defaultsOf(s.designation).portal[k] === v) delete ov.portal[k];
-      s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + v);
+      if (JSON.stringify(RB.defaultsOf(s.designation).portal[k]) === JSON.stringify(v)) delete ov.portal[k];
+      s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
     }
   }
 
@@ -382,7 +402,7 @@
       const names = Array.from(pick); if (!names.length) return;
       RB.confirm(`Copy ${esc(from)}'s access to ${names.length} designation${names.length === 1 ? "" : "s"}?<div class="foot" style="margin-top:6px">${names.map(esc).join(", ")}</div>`, "Copy", async () => {
         const now = Date.now();
-        const list = RB.desigList().map((d) => (pick.has(d.name) ? Object.assign({}, d, { app: Object.assign({}, src.app || {}), portal: Object.assign({}, src.portal || {}), checkedAt: now }) : d.name === from ? Object.assign({}, d, { checkedAt: d.checkedAt || now }) : d));
+        const list = RB.desigList().map((d) => (pick.has(d.name) ? Object.assign({}, d, { app: Object.assign({}, src.app || {}), portal: Object.assign({}, src.portal || {}), checkedAt: now }) : d.name === from ? Object.assign({}, d, { checkedAt: now }) : d));
         await saveDesig(list, "Copied " + from + "'s access to " + names.join(", "));
       });
     };
@@ -503,7 +523,7 @@
 
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["access", "Access"], ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")]],
+    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.concat([["access", "Access"]]).filter((t) => ok.includes(t[0])).map((t) => (t[0] === "waiting" ? ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")] : t)); },
     render(tab) {
       RB.reconcile();
       const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "waiting" ? waiting() : people();
@@ -604,7 +624,15 @@
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
       // access
       const accp = root.querySelector("#accp"); if (accp) accp.onchange = () => { S.accSeat = accp.value; RB.render(); };
-      const ab = root.querySelector("#accback"); if (ab) ab.onclick = () => { S.accMode = "person"; RB.render(); };
+      const accd = root.querySelector("#accd"); if (accd) accd.onchange = () => { S.accDesig = accd.value; RB.render(); };
+      on(root, "[data-accmode]", (e) => { S.accMode = e.dataset.accmode; RB.render(); });
+      both("[data-accun]", () => { S.accUn = !S.accUn; RB.render(); });
+      on(root, "[data-tick]", (e) => {
+        if (!ed()) return; const [k, v] = e.dataset.tick.split(":");
+        const eff = S.accMode === "desig" && S.accDesig ? RB.defaultsOf(S.accDesig).portal : RB.effective(RB.seat(S.accSeat)).portal;
+        const cur = Array.isArray(eff[k]) ? eff[k] : [], next = cur.includes(v) ? cur.filter((x) => x !== v) : cur.concat(v);
+        setLevel(k, next).then(RB.render);
+      });
       on(root, "[data-sw]", (e) => { if (!ed() || e.classList.contains("dis")) return; setSwitch(e.dataset.sw, !e.classList.contains("on")).then(RB.render); });
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
