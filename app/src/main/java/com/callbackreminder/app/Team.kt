@@ -63,6 +63,8 @@ data class TeamMember(
     val appPerms: Map<String, Boolean>? = null,
     /** v0.49 Whom the chart lets him give tasks to (uids); null = everyone, as before. */
     val giveTo: List<String>? = null,
+    /** v0.49.1 He signed out of the team on his phone (shown to his managers until he signs in again). */
+    val signedOut: Boolean = false,
 ) {
     /** One app switch from the portal's Access page; [legacy] is what applies until the portal has set any. */
     fun can(key: String, legacy: Boolean): Boolean = if (role == Team.OWNER && key != "callRec") true else appPerms?.get(key) ?: legacy
@@ -500,7 +502,7 @@ object TeamRepo {
         val t = teamId ?: return
         val now = System.currentTimeMillis()
         if (!force && now - p().getLong("touched", 0L) < 10 * 60_000L) return
-        db().collection("teams").document(t).collection("members").document(u).update("lastSeen", now)
+        db().collection("teams").document(t).collection("members").document(u).update(mapOf("lastSeen" to now, "signedOut" to false))
             .addOnSuccessListener { p().edit().putLong("touched", now).apply() }
     }
 
@@ -537,6 +539,21 @@ object TeamRepo {
 
     fun signOut() {
         runCatching { TeamPresence.onForeground(false) }
+        val u = uid
+        val t = teamId
+        if (u == null || t == null) return finishSignOut()
+        // Tell his managers first (while he is still signed in); never wait more than a few seconds for it.
+        scope.launch {
+            runCatching {
+                kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                    db().collection("teams").document(t).collection("members").document(u).update("signedOut", true).await()
+                }
+            }
+            finishSignOut()
+        }
+    }
+
+    private fun finishSignOut() {
         stopListening()
         runCatching { auth().signOut() }
         clearLocal()
@@ -1438,6 +1455,7 @@ object TeamRepo {
         joinedAt = s.getLong("joinedAt") ?: 0L,
         lastSeen = s.getLong("lastSeen") ?: 0L,
         more = strings(s.get("more")),
+        signedOut = s.getBoolean("signedOut") == true,
         wa = s.getString("wa").orEmpty(),
         ownDossier = s.getBoolean("ownDossier") == true,
         setDossier = s.getBoolean("setDossier") == true,

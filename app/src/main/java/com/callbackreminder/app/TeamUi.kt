@@ -310,6 +310,7 @@ object TeamUi {
      * promises more than it knows. Shown on his person page, the Timeline top and the Team page; everyone sees everyone.
      */
     fun lastSeenLabel(m: TeamMember): String {
+        if (m.signedOut && !m.onlineNow()) return "Signed out"
         if (m.onlineNow()) return "🟢 Active now"
         if (m.lastSeen <= 0L) return "Not opened yet"
         val at = TeamPresence.lastAt(m.uid).takeIf { it > 0L } ?: m.lastSeen

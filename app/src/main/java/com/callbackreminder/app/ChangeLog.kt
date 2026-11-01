@@ -30,7 +30,7 @@ object ChangeLog {
     val entries = listOf(
         Entry(
             "0.49.1", "1 Nov",
-            new = emptyList(),
+            new = listOf("Your manager sees \"Signed out\" when you sign out of the team, until you sign in again"),
             fixed = listOf(
                 "Joining the team again after being removed or after a waiting request now works",
                 "Signing out of the team shows you as offline straight away",

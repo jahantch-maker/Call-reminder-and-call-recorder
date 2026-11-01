@@ -60,7 +60,7 @@ service cloud.firestore {
             (request.resource.data.status == 'active' && request.auth.token.email_verified == true
               && request.resource.data.seatId == request.auth.token.email.lower()
               && exists(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower()))))) ||
-          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email'])));
+          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email', 'signedOut'])));
         // Leaving (yourself) or declining a request (Owner/Admin). v0.49 members cannot leave an RB seat: only owners remove.
         allow delete: if signedIn() && ((uid == me() && !('seatId' in resource.data)) || (isAdmin(t) && resource.data.role != 'owner') || isOwner(t) || ((portalEdit(t, 'team') || appSw(t, 'approveJoins')) && resource.data.status == 'pending'));
       }
