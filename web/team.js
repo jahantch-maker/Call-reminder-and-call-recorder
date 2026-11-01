@@ -42,7 +42,7 @@
     const sel = selSeat();
     const row = (s) => s.status === "filled"
       ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
-      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">Fill seat</button>` : ""}</div>`;
+      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() && s.invited ? `<button class="btnt edit-only" data-wainv="${esc(s.id)}" title="Send the invite on WhatsApp">🟢 Invite</button>` : ""}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">${s.invited ? "Edit" : "Fill seat"}</button>` : ""}</div>`;
     const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${pchips}${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
       <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
@@ -397,6 +397,12 @@
       const ad = root.querySelector("#addseat"); if (ad) ad.onclick = () => addSeat();
       const mg = root.querySelector("#migrate"); if (mg) mg.onclick = () => { mg.disabled = true; migrate().then(RB.render); };
       both("[data-fill]", (e) => fillSeat(e.dataset.fill));
+      // WhatsApp invite: opens WhatsApp with a short ready message; he picks the person and sends it himself.
+      both("[data-wainv]", (e) => {
+        const st = RB.seat(e.dataset.wainv); if (!st) return;
+        const txt = `Rafiq Builders: your seat is ready${st.designation ? " (" + st.designation + ")" : ""}.\nOpen https://rafiqbuilders.web.app or the Callback Reminder app, sign in with ${st.gmail} and tap Join Rafiq Builders.`;
+        window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank", "noopener");
+      });
       both("[data-editseat]", (e) => editSeat(e.dataset.editseat));
       both("[data-access]", (e) => { S.accSeat = e.dataset.access; S.accMode = "person"; S.tab.team = "access"; RB.render(); });
       both("[data-offboard]", (e) => offboard(e.dataset.offboard));
