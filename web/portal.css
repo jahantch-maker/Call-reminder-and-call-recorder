@@ -155,6 +155,21 @@ tr.click:hover td{background:#FAFAF8}tr.sel td{background:#F4F4F2}
 #toast::before{content:"✓  "}
 .btnt.off{opacity:.45;cursor:not-allowed}
 
-.node.toprow{min-width:260px;background:transparent;border:2px dashed #C9CACD;color:var(--onv);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:default}
+.node.toprow{visibility:hidden;min-width:260px;background:transparent;border:2px dashed #C9CACD;color:var(--onv);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:default}
 .node.toprow:hover{transform:none;box-shadow:none}
 .node .inv{font-size:10.5px;font-weight:600;color:var(--onv)}
+.tree.dragging .node.toprow{visibility:visible}
+.zoom{display:flex;align-items:center;gap:6px}.zoom .sc{min-width:34px}
+#modal .back.pop{background:transparent}
+#modal .dlg.popc{position:fixed;width:320px;max-width:calc(100vw - 16px);box-shadow:0 12px 36px #0003}
+
+/* Department outline in the chart */
+.dgroup{position:relative;border:1.5px solid #D5D8DE;border-radius:18px;padding:16px 4px 10px;background:#FAFBFC}
+.dglab{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #D5D8DE;border-radius:10px;padding:1px 10px;font-size:11px;font-weight:700;color:var(--onv);white-space:nowrap}
+.dgroup>ul{padding-top:6px}
+
+/* Owners board at the top of the chart */
+.board{position:relative;border:2px solid var(--on);border-radius:20px;padding:18px 10px 10px;background:#F6F7F9;transition:border-color .15s,background .15s}
+.board .brow{display:flex;gap:10px;justify-content:center}
+.board.over{border-color:var(--grn);background:#F1FAF4}
+.board>.dglab{border-color:var(--on);color:var(--on)}
