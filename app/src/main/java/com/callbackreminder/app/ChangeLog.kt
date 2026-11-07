@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.50.1", "7 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "The \"why was it late?\" sheet now closes when you save, and Back closes it cleanly without freezing the app",
+                "If you close the sheet with Back it waits until the next time the app starts instead of coming back straight away; an unanswered one is dropped after a week",
+            ),
+        ),
+        Entry(
             "0.50.0", "1 Nov",
             new = listOf(
                 "\"See how my people are doing\": when the owner switches it on for you, your team page shows how many tasks are late and how many are due today for the people you gave tasks to",

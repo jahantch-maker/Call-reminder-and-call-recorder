@@ -17,7 +17,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -115,6 +114,11 @@ object ReasonAsk {
 
     private fun p() = appCtx.getSharedPreferences("reason_asks", Context.MODE_PRIVATE)
 
+    /** v0.50.1 Asks the person closed with Back or a tap outside: hidden until the app starts again (still saved). */
+    private val _later = MutableStateFlow<Set<String>>(emptySet())
+    val later: StateFlow<Set<String>> = _later.asStateFlow()
+    fun later(a: Ask) { _later.value = _later.value + "${a.key}|${a.kind}" }
+
     @Synchronized
     fun init(c: Context) {
         if (::appCtx.isInitialized) return
@@ -125,6 +129,9 @@ object ReasonAsk {
                 a.getJSONObject(i).let { o -> Ask(o.optString("k"), o.optString("kind"), o.optString("t"), o.optString("s"), o.optLong("at")) }
             }
         }.getOrElse { emptyList() }
+        // v0.50.1 A "why" nobody answered for a week is dropped, so one stuck ask can never come back for ever.
+        val fresh = _pending.value.filter { System.currentTimeMillis() - it.at < 7L * 24 * 3600 * 1000 }
+        if (fresh.size != _pending.value.size) save(fresh)
         LateReasons.load(appCtx)
     }
 
@@ -185,15 +192,17 @@ object ReasonAsk {
 @Composable
 fun ReasonAskHost() {
     val pending by ReasonAsk.pending.collectAsState()
-    val a = pending.firstOrNull() ?: return
+    val later by ReasonAsk.later.collectAsState()
+    val a = pending.firstOrNull { "${it.key}|${it.kind}" !in later } ?: return
     val own by LateReasons.own.collectAsState()
     val outside by LateReasons.outside.collectAsState()
     val cs = MaterialTheme.colorScheme
     var why by remember(a.key, a.kind) { mutableStateOf<String?>(null) }
     var note by remember(a.key, a.kind) { mutableStateOf("") }
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden })
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val ready = why != null && (why != LateReasons.OTHER || note.isNotBlank())
-    ModalBottomSheet(onDismissRequest = {}, sheetState = state) {
+    // Back or a tap outside closes the sheet for now (v0.50.1); the "why" stays saved and asks again at the next app start.
+    ModalBottomSheet(onDismissRequest = { ReasonAsk.later(a) }, sheetState = state) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp + navBarMissing()),
             verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -214,7 +223,11 @@ fun ReasonAskHost() {
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
             )
             Button(
-                onClick = { why?.let { ReasonAsk.answer(a, it, note) } },
+                onClick = {
+                    val r = why ?: return@Button
+                    // Save first so the answer is never lost, then slide the sheet away.
+                    ReasonAsk.answer(a, r, note)
+                },
                 enabled = ready,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) { Text(if (ready) "Save" else "Pick a reason to save") }
