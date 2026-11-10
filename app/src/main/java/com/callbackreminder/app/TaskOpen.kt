@@ -233,3 +233,22 @@ suspend fun LazyListState.revealKey(vararg keys: Any) {
     }
     layoutInfo.visibleItemsInfo.firstOrNull { it.key in keys }?.let { animateScrollToItem(maxOf(0, it.index - 1)) }
 }
+
+/**
+ * v0.51 The one way every "show this task" jumps (search, Show in list, notifications, widgets, Review, People,
+ * calendar…): waits until the list has built the item that holds the task ([keyOf], null until then), finds that
+ * item, puts it at the top exactly, then [bring] lets the task's own row bring all of itself into view.
+ */
+suspend fun LazyListState.showItem(keyOf: () -> Any?, bring: () -> Unit) {
+    var key: Any? = null
+    repeat(60) {
+        key = keyOf()
+        if (key != null) return@repeat
+        delay(40L)
+    }
+    val k = key ?: run { bring(); return }
+    revealUntil { layoutInfo.visibleItemsInfo.any { it.key == k } }
+    layoutInfo.visibleItemsInfo.firstOrNull { it.key == k }?.let { scrollToItem(it.index) }
+    delay(80L)
+    bring()
+}
