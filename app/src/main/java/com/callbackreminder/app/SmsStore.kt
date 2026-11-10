@@ -237,7 +237,8 @@ object SmsStore {
             repeat
         )
         replace(r)
-        SmsScheduler.schedule(appCtx, r)
+        // v0.51 Same as calls: an edit never sends a text whose time already passed.
+        if (r.alarmAt > System.currentTimeMillis()) SmsScheduler.schedule(appCtx, r) else SmsScheduler.cancel(appCtx, r.id)
     }
 
     /** Move the current message (or burst) to a new time; also brings a finished one back to Scheduled. */

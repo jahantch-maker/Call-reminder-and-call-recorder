@@ -179,10 +179,17 @@ fun TaskEditorDialog(task: OpenTask, onDismiss: () -> Unit, onShowInList: ((mine
                 LaunchedEffect(Unit) { onDismiss() }
                 return
             }
+            // v0.51 Move to Follow-ups from the task's own window, wherever it opens (Review session, Home, People…).
+            var moveFor by remember { mutableStateOf<MyTask?>(null) }
+            moveFor?.let { m ->
+                FollowUpDialog(onDismiss = { moveFor = null; onDismiss() }, fromMyTask = m)
+                return
+            }
             MyTaskDialog(
                 existing = t,
                 onDismiss = onDismiss,
                 onSwitchKind = null,
+                onMoveToFollowUps = { moveFor = it },
                 extras = TaskExtras(
                     listName = "My tasks",
                     onShowInList = onShowInList?.let { go -> { MyTasksUi.showTask.value = t.id; go(true) } },

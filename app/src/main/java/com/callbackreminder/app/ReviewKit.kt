@@ -214,13 +214,8 @@ object ReviewData {
             ReviewItem("t:${t.id}", ReviewSection.OVERDUE, ReviewItem.Kind.TEXT, t.id, t.message, t.title, t.number, at,
                 listOf(lateLabel(at, now), if (t.review == SmsReminder.Review.NOT_SENT) "Text not sent" else "💬 No reply"), code = t.code)
         }
-        // Ones you keep snoozing (3× and more) need a decision too, even before they are late.
-        val snoozedCalls = calls.filter { !it.done && it.dueAt > now && "c:${it.id}" !in noteKeys }.mapNotNull {
-            val n = it.delays.size + Held.countCall(ctx, it.id)
-            if (n < 3) return@mapNotNull null
-            ReviewItem("c:${it.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, it.id,
-                it.note.ifBlank { "Call back" }, it.title, it.number, it.dueAt, listOf("💤 Snoozed ${n}×"), code = it.code)
-        }
+        // v0.51 Only tasks that are really late come in: a task snoozed many times waits until its time passes
+        // (it then shows "💤 Snoozed N×" on its card).
 
         val schedFu = ToScheduleStore.items.value.sortedBy { it.createdAt }.map {
             ReviewItem("s:${it.id}", ReviewSection.SCHED_FU, ReviewItem.Kind.SCHED_FU, it.id,
@@ -232,10 +227,10 @@ object ReviewData {
             ReviewItem("ms:${it.id}", ReviewSection.SCHED_MY, ReviewItem.Kind.SCHED_MY, it.id,
                 it.title, if (it.hasPerson) it.personTitle else "", it.number, 0L, listOf("☑ My task"), lengthMin = it.durationMin)
         }
-        val myLate = my.filter { it.timed && (it.dueAt <= now || Held.countMine(ctx, it.id) >= 3) }.sortedBy { it.dueAt }.map {
+        val myLate = my.filter { it.timed && it.dueAt <= now }.sortedBy { it.dueAt }.map {
             ReviewItem("ml:${it.id}", ReviewSection.MY_LATE, ReviewItem.Kind.MY_TASK, it.id,
                 it.title, if (it.hasPerson) it.personTitle else "", it.number, it.dueAt,
-                listOf(if (it.dueAt <= now) lateLabel(it.dueAt, now) else "💤 Snoozed ${Held.countMine(ctx, it.id)}×", "☑ My task"),
+                listOfNotNull(lateLabel(it.dueAt, now), Held.countMine(ctx, it.id).takeIf { n -> n > 0 }?.let { n -> "💤 Snoozed ${n}×" }, "☑ My task"),
                 lengthMin = it.durationMin)
         }
         val dueToday = calls.filter { !it.done && it.dueAt in (now + 1)..endOfDay }.sortedBy { it.dueAt }.map {
@@ -245,7 +240,7 @@ object ReviewData {
 
         return mapOf(
             ReviewSection.REPLIED to (replied + notes).sortedBy { it.at },
-            ReviewSection.OVERDUE to (overdueCalls + overdueTexts).sortedBy { it.at } + snoozedCalls.sortedBy { it.at },
+            ReviewSection.OVERDUE to (overdueCalls + overdueTexts).sortedBy { it.at },
             ReviewSection.SCHED_FU to schedFu,
             ReviewSection.SCHED_MY to schedMy,
             ReviewSection.MY_LATE to myLate,

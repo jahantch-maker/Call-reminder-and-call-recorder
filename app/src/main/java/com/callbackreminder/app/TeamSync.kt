@@ -408,6 +408,27 @@ object TeamSync {
         }
     }
 
+    /** When the task was last sent back with "Not done yet" (0 if never). */
+    private fun reopenedAt(t: TeamTask): Long =
+        if (t.status != Team.REOPENED) 0L else t.events.filter { it.text.contains("Not done yet") }.maxOfOrNull { it.at } ?: 0L
+
+    /** v0.51 A Done (or finished call) from before the latest "Not done yet": it must never close the task again. */
+    private fun staleDone(t: TeamTask, doneAt: Long): Boolean {
+        val back = reopenedAt(t)
+        return back > 0L && doneAt in 1..back
+    }
+
+    /** When this phone last sent Done for a task: a second Done within a few minutes, without a new tap, is dropped. */
+    private val donePushed = HashMap<String, Long>()
+
+    private fun markDoneOnce(t: TeamTask) {
+        val now = System.currentTimeMillis()
+        val last = donePushed[t.id] ?: 0L
+        if (now - last < 3 * 60_000L && reopenedAt(t) < last) return
+        donePushed[t.id] = now
+        TeamRepo.markDone(t)
+    }
+
     /** Your own lists changed: send his Done / his date up, and your check of a Done follow-up. */
     fun pushLocal(c: Context) {
         val me = TeamRepo.uid ?: return
@@ -427,14 +448,17 @@ object TeamSync {
                     val calls = ReminderStore.items.value.filter { it.linkId == passed }
                     val last = calls.maxByOrNull { it.id }
                     if (t.open && calls.isNotEmpty() && calls.all { it.done }) {
-                        if (FollowUps.wasMoved(last, null)) {
+                        if (last != null && staleDone(t, last.doneAt)) {
+                            // v0.51 His call was finished before "Not done yet": open it again, never send the old Done back.
+                            ReminderStore.reopen(last.id)
+                        } else if (FollowUps.wasMoved(last, null)) {
                             // Moved back to My tasks: the link follows it there.
                             MyTaskStore.items.value.filter { !it.done && it.title == FollowUps.taskOf(last, null) }.maxByOrNull { it.id }?.let {
                                 recv[t.id] = it.id.toString()
                                 recvFu.remove(t.id)
                                 changed = true
                             }
-                        } else TeamRepo.markDone(t)
+                        } else markDoneOnce(t)
                     }
                     continue
                 }
@@ -445,7 +469,9 @@ object TeamSync {
                         MyTaskStore.setDone(local.id, false)
                         notify(c, "proof:${t.id}", "📷 ${t.fromFirst} asked for a photo", "${t.title}\nOpen the task and tap ✅ Done with photo.", mine = local.id)
                     }
-                    local.done && t.open -> TeamRepo.markDone(t)
+                    // v0.51 A Done ticked before the latest "Not done yet" is old: reopen his copy instead of sending it again.
+                    local.done && t.open && staleDone(t, local.doneAt) -> MyTaskStore.setDone(local.id, false)
+                    local.done && t.open -> markDoneOnce(t)
                     // His reminder is his own (a line on the Timeline); it never moves the deadline.
                     t.open && t.due > 0L -> TeamRepo.setReminder(t, if (local.dueAt == t.due) 0L else local.dueAt)
                 }
@@ -457,7 +483,8 @@ object TeamSync {
                     // You gave his Done a new time in review: it goes back to him as not done yet.
                     TeamRepo.notDoneYet(t, "")
                 } else if ((t.open || t.status == Team.DONE) && calls.isNotEmpty() && calls.all { it.done && !it.review } &&
-                    !FollowUps.wasMoved(calls.maxByOrNull { it.id }, null)
+                    !FollowUps.wasMoved(calls.maxByOrNull { it.id }, null) &&
+                    !staleDone(t, calls.maxOf { it.doneAt })
                 ) TeamRepo.check(t)
             }
         }

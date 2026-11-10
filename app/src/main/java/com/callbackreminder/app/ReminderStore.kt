@@ -238,7 +238,10 @@ object ReminderStore {
         if (!updated.done) {
             Notifier.cancel(appCtx, id)
             RingController.dismiss(id)
-            Scheduler.schedule(appCtx, updated)
+            // v0.51 An overdue task stays quiet after an edit (e.g. a new person in Review): its alarm is set again
+            // only for a time still ahead (or its next repeat); a time in the past would ring at once.
+            if (updated.dueAt > System.currentTimeMillis() || updated.repeat != null) Scheduler.schedule(appCtx, updated)
+            else Scheduler.cancel(appCtx, id)
         }
         RecentPeople.record(appCtx, updated.name, updated.number)
     }
