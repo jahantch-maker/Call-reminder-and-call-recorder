@@ -240,11 +240,12 @@ suspend fun LazyListState.revealKey(vararg keys: Any) {
  * item, puts it at the top exactly, then [bring] lets the task's own row bring all of itself into view.
  */
 suspend fun LazyListState.showItem(keyOf: () -> Any?, bring: () -> Unit) {
-    var key: Any? = null
-    repeat(60) {
-        key = keyOf()
-        if (key != null) return@repeat
+    var key: Any? = keyOf()
+    var tries = 0
+    while (key == null && tries < 60) {
         delay(40L)
+        key = keyOf()
+        tries++
     }
     val k = key ?: run { bring(); return }
     revealUntil { layoutInfo.visibleItemsInfo.any { it.key == k } }
