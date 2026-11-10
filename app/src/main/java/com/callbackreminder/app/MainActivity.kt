@@ -144,6 +144,8 @@ class MainActivity : ComponentActivity() {
         CrashLog.guard(this, "Voice notes") { if (!TeamMedia.recording) RingerSilence.end(this) }
         CrashLog.guard(this, "Team") { TeamRepo.start(this) }
         // Setting alarms must never stop the app from opening.
+        // v0.51 a follow-up with two open calls (an older bug) becomes one again.
+        CrashLog.guard(this, "Joining double calls") { ReminderStore.mergeDuplicates() }
         CrashLog.guard(this, "Setting reminders at start") {
             ReviewReminder.schedule(this)
             TaskAlarms.rescheduleAll(this)
