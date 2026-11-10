@@ -227,12 +227,14 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
         } else null
         val who = callerName ?: typedName
         val on = callOn && number.isNotBlank()
+        val mark = SavedChip.mark()
         val timed = if (same != null && same.sched == null) {
             FollowUps.update(ctx, same.linkId, who, number, task, due, on, autopilot = false, text = plan, starred = false)
         } else {
             FollowUps.create(ctx, who, number, task, due, callOn = on, autopilot = false, text = plan, starred = false, from = same?.sched)
         }
-        Toast.makeText(
+        // v0.51 the popup shrinks into "✓ Saved · View · Edit" (an update shows the old toast).
+        if (same != null && same.sched == null || !SavedChip.showSince(mark, outside = true)) Toast.makeText(
             ctx,
             if (timed && due != null) "Follow-up set · ${Fmt.dueLabel(due)}" else "Saved to Follow-ups · no time yet (To schedule)",
             Toast.LENGTH_SHORT
@@ -245,7 +247,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             Toast.makeText(ctx, "Pick how long first", Toast.LENGTH_SHORT).show()
             return
         }
-        MyTaskStore.add(
+        val made = MyTaskStore.add(
             title = taskText(),
             note = "",
             dueAt = due,
@@ -254,11 +256,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
             listId = list,
             durationMin = myLength,
         )
-        Toast.makeText(
-            ctx,
-            if (due > 0L) "Added to My tasks · ${Fmt.dueLabel(due)}" else "Added to My tasks · no time yet",
-            Toast.LENGTH_SHORT
-        ).show()
+        SavedChip.showMine(made, outside = true)
         onNext()
     }
 

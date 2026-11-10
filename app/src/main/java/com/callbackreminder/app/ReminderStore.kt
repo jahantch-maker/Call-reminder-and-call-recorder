@@ -238,7 +238,10 @@ object ReminderStore {
         if (!updated.done) {
             Notifier.cancel(appCtx, id)
             RingController.dismiss(id)
-            Scheduler.schedule(appCtx, updated)
+            // v0.51 An overdue task stays quiet after an edit (e.g. a new person in Review): its alarm is set again
+            // only for a time still ahead (or its next repeat); a time in the past would ring at once.
+            if (updated.dueAt > System.currentTimeMillis() || updated.repeat != null) Scheduler.schedule(appCtx, updated)
+            else Scheduler.cancel(appCtx, id)
         }
         RecentPeople.record(appCtx, updated.name, updated.number)
     }
@@ -341,6 +344,40 @@ object ReminderStore {
     @Synchronized
     fun setLink(id: Long, linkId: Long, autopilot: Boolean) {
         save(_items.value.map { if (it.id == id) it.copy(linkId = linkId, autopilot = autopilot) else it })
+        if (linkId != 0L) mergeDuplicates()
+    }
+
+    /**
+     * v0.51 One follow-up never has two open calls: two open ones with the same link are joined into one, at the
+     * later time, with both histories. Run when a call gets its link and at every start. Returns how many went.
+     */
+    @Synchronized
+    fun mergeDuplicates(): Int {
+        val groups = _items.value.filter { !it.done && it.linkId != 0L }.groupBy { it.linkId }.values.filter { it.size > 1 }
+        if (groups.isEmpty()) return 0
+        val drop = HashSet<Long>()
+        val merged = HashMap<Long, Reminder>()
+        groups.forEach { g ->
+            val keep = g.maxWith(compareBy<Reminder>({ it.dueAt }, { it.id }))
+            val others = g.filter { it.id != keep.id }
+            merged[keep.id] = keep.copy(
+                events = g.flatMap { it.events }.distinct().sortedBy { it.at } +
+                    CallEvent(System.currentTimeMillis(), "Two open calls for this follow-up joined into one"),
+                delays = g.flatMap { it.delays }.distinct().sortedBy { it.at },
+                starred = g.any { it.starred },
+                autopilot = g.any { it.autopilot },
+                code = keep.code.ifEmpty { others.firstOrNull { it.code.isNotEmpty() }?.code.orEmpty() },
+            )
+            drop += others.map { it.id }
+        }
+        drop.forEach { id ->
+            Scheduler.cancel(appCtx, id)
+            Notifier.cancel(appCtx, id)
+            RingController.dismiss(id)
+        }
+        save(_items.value.filter { it.id !in drop }.map { merged[it.id] ?: it })
+        merged.values.forEach { r -> if (r.dueAt > System.currentTimeMillis() || r.repeat != null) Scheduler.schedule(appCtx, r) }
+        return drop.size
     }
 
     /** "Review later": hidden from To review until [until]. */

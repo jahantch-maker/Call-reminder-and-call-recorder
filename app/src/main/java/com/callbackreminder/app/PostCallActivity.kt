@@ -7,6 +7,7 @@ import android.provider.CallLog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateListOf
 
 /**
@@ -42,7 +43,13 @@ class PostCallActivity : ComponentActivity() {
         }
         setContent {
             CallbackTheme {
-                PostCallScreen(queue = queue, onFinished = { done() })
+                androidx.compose.runtime.CompositionLocalProvider(LocalSavedOutside provides true) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                        PostCallScreen(queue = queue, onFinished = { done() })
+                        // v0.51 the popup shrinks into "✓ Saved · View · Edit", then closes.
+                        SavedChipHost(outside = true, onGone = { if (waitingForChip || queue.isEmpty()) finish() })
+                    }
+                }
             }
         }
     }
@@ -51,6 +58,8 @@ class PostCallActivity : ComponentActivity() {
      * Closing the popup: a call made from the running review session takes you back to its Next card.
      * Any other call (your dialer, an incoming one) just closes the popup; a paused session waits on Home.
      */
+    private var waitingForChip = false
+
     private fun done() {
         val s = ReviewSession.init(this)
         if (fromSession && s.status == ReviewSession.Status.RUNNING && s.awaiting.isNotEmpty()) {
@@ -64,6 +73,12 @@ class PostCallActivity : ComponentActivity() {
             } catch (e: Exception) {
                 // The session waits on Home.
             }
+            finish()
+            return
+        }
+        if (holdForSavedChip()) {
+            waitingForChip = true
+            return
         }
         finish()
     }

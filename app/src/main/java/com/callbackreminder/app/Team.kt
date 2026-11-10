@@ -1058,6 +1058,8 @@ object TeamRepo {
     }
 
     fun answerMoreTime(t: TeamTask, ok: Boolean) {
+        // v0.51 Answering a request (yes or no) settles "Extended N×" in Needs you › Team until he extends again.
+        if (::appCtx.isInitialized) TeamUi.extensionSeen(appCtx, t.id, if (ok) t.extCount + 1 else t.extCount)
         if (ok) update(t, mapOf("due" to t.moreDue, "deadline" to maxOf(t.deadline, t.moreDue), "status" to Team.DATED, "moreAt" to 0L, "extCount" to t.extCount + 1),
             "📅 ${t.fromFirst} approved · Deadline ${change(t.due, t.moreDue)}")
         else update(t, mapOf("moreAt" to 0L), "📅 ${t.fromFirst} kept the deadline · ${TeamUi.shortWhen(t.due)}")

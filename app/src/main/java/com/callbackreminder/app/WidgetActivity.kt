@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -104,7 +105,12 @@ class WidgetActivity : ComponentActivity() {
         }
         setContent {
             CallbackTheme {
-                Popups()
+                androidx.compose.runtime.CompositionLocalProvider(LocalSavedOutside provides true) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                        Popups()
+                        SavedChipHost(outside = true, onGone = { finish() })
+                    }
+                }
             }
         }
     }
@@ -225,6 +231,11 @@ class WidgetActivity : ComponentActivity() {
 
     private fun close() {
         WidgetSync.refresh(this)
+        // v0.51 a new task or follow-up: the window shrinks into "✓ Saved · View · Edit" first.
+        if (holdForSavedChip()) {
+            screen = Screen.None
+            return
+        }
         finish()
     }
 

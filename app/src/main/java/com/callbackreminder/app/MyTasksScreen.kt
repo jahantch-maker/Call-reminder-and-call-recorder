@@ -236,7 +236,12 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         else -> tasks.filter { it.listId == listSel }
     }
     val newOnTop = listSel == ASSIGNED_LIST
-    val newIds = remember(teamOf, teamV) { teamOf.filterValues { it.open && TeamSync.isNew(ctx, it.id) }.keys }
+    val liveNew = remember(teamOf, teamV) { teamOf.filterValues { it.open && TeamSync.isNew(ctx, it.id) }.keys }
+    // v0.51 A new task stays in "New" while you are here, even after tapping it clears its banner, so the card never
+    // jumps away under your finger. The list sorts again when you leave and come back.
+    var stickyNew by remember(listSel) { mutableStateOf(setOf<Long>()) }
+    LaunchedEffect(liveNew, listSel) { if (!liveNew.all { it in stickyNew }) stickyNew = stickyNew + liveNew }
+    val newIds = liveNew + stickyNew.filter { id -> teamOf[id]?.open == true }
     val viewPending = inView.filter { !it.done && (!starredOnly || it.starred) }
     val viewDone = inView.filter { it.done && (!starredOnly || it.starred) }.sortedByDescending { it.doneAt }
 
@@ -357,14 +362,15 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     ) { padding ->
         PullRefresh(Modifier.fillMaxSize()) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        // Which list item holds each task, filled as the list is built (for the exact jump to an outlined task).
+        val groupOf = remember { HashMap<Long, String>() }
         // An outlined task further down: scroll until its row shows, then it brings itself fully into view (asked
         // again after the scroll, which starts from the top and would undo an earlier one). Outlined 3 s after that.
         LaunchedEffect(highlightId) {
             val id = highlightId ?: return@LaunchedEffect
             if (id > 0L) {
-                MyTasksUi.seen.value = 0L
-                listState.revealUntil { MyTasksUi.seen.value == id }
-                MyTasksUi.bring.value++
+                // The exact item that holds it (Overdue, a day, No time yet, New, a list, Completed), then the row.
+                listState.showItem({ groupOf[id] }) { MyTasksUi.bring.value++ }
             } else {
                 listState.revealKey("d${-id}", "n${-id}")
             }
@@ -381,6 +387,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            groupOf.clear()
             item(key = "header") {
                 PageTitleRow(
                     "My tasks",
@@ -466,6 +473,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 }
                 val freshOnTop = if (newOnTop) viewPending.filter { it.id in newIds }.sortedByDescending { it.id } else emptyList()
                 if (freshOnTop.isNotEmpty()) {
+                    freshOnTop.forEach { groupOf[it.id] = "g-new" }
                     item(key = "g-new") {
                         Column {
                             DayHeader("New", "${freshOnTop.size}", MaterialTheme.colorScheme.primary)
@@ -497,6 +505,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 if (current == null || current.byDate) {
                     // By date: Overdue / Today / Tomorrow / dates, like Follow-ups (All lists and By date lists).
                     allGroups(viewPending.filter { it !in freshOnTop }, now).forEach { (title, group) ->
+                        group.forEach { groupOf[it.id] = "g-$title" }
                         item(key = "g-$title") {
                             Column {
                                 DayHeader(
@@ -518,6 +527,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         }
                     }
                 } else if (viewPending.isNotEmpty()) {
+                    viewPending.forEach { groupOf[it.id] = "list-${current.id}" }
                     item(key = "list-${current.id}") {
                         TaskGroup {
                             ReorderableTasks(
@@ -534,6 +544,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                 if (viewDone.isNotEmpty()) {
                     item(key = "completed") { CompletedHeader(viewDone.size, completedOpen) { completedOpen = !completedOpen } }
                     if (completedOpen) {
+                        viewDone.forEach { groupOf[it.id] = "completed-list" }
                         item(key = "completed-list") {
                             TaskGroup {
                                 viewDone.forEachIndexed { i, t ->

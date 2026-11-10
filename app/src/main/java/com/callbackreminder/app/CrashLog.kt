@@ -39,7 +39,36 @@ object CrashLog {
         }
     }
 
+    /**
+     * v0.51 No signal or the server out of reach (Firestore "client is offline", no internet, a timeout): not a
+     * crash. It tries again by itself, so it is never saved or shown.
+     */
+    fun isOffline(error: Throwable): Boolean {
+        var e: Throwable? = error
+        var depth = 0
+        while (e != null && depth < 8) {
+            when (e) {
+                is java.net.UnknownHostException, is java.net.SocketTimeoutException, is java.net.ConnectException,
+                is java.net.NoRouteToHostException, is javax.net.ssl.SSLException -> return true
+                is com.google.firebase.FirebaseNetworkException -> return true
+                is com.google.firebase.firestore.FirebaseFirestoreException ->
+                    if (e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE ||
+                        e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.DEADLINE_EXCEEDED) return true
+                else -> {}
+            }
+            val m = e.message.orEmpty().lowercase(Locale.US)
+            if ("client is offline" in m || "unable to resolve host" in m || "network is unreachable" in m) return true
+            e = e.cause
+            depth++
+        }
+        return false
+    }
+
     fun record(ctx: Context, error: Throwable, what: String) {
+        if (isOffline(error)) {
+            android.util.Log.i("CrashLog", "$what · offline, not a crash: ${error.message}")
+            return
+        }
         runCatching {
             val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
             val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
@@ -59,6 +88,13 @@ object CrashLog {
         val f = file(activity)
         val text = runCatching { f.takeIf { it.exists() }?.readText() }.getOrNull() ?: return
         f.delete()
+        // v0.51 the same problem is offered at most once a day (what failed + the error's first line).
+        val sign = text.lineSequence().first().substringBefore(" · ") + "|" +
+            text.lineSequence().drop(4).firstOrNull { it.isNotBlank() }.orEmpty().take(200)
+        val prefs = activity.getSharedPreferences("crash_log", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (prefs.getString("last_sign", null) == sign && now - prefs.getLong("last_at", 0L) < 24 * 60 * 60_000L) return
+        prefs.edit().putString("last_sign", sign).putLong("last_at", now).apply()
         AlertDialog.Builder(activity)
             .setTitle("Something went wrong last time")
             .setMessage("The app ran into a problem. Share the details so it can be fixed?")

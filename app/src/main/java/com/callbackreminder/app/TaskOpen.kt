@@ -179,10 +179,17 @@ fun TaskEditorDialog(task: OpenTask, onDismiss: () -> Unit, onShowInList: ((mine
                 LaunchedEffect(Unit) { onDismiss() }
                 return
             }
+            // v0.51 Move to Follow-ups from the task's own window, wherever it opens (Review session, Home, People…).
+            var moveFor by remember { mutableStateOf<MyTask?>(null) }
+            moveFor?.let { m ->
+                FollowUpDialog(onDismiss = { moveFor = null; onDismiss() }, fromMyTask = m)
+                return
+            }
             MyTaskDialog(
                 existing = t,
                 onDismiss = onDismiss,
                 onSwitchKind = null,
+                onMoveToFollowUps = { moveFor = it },
                 extras = TaskExtras(
                     listName = "My tasks",
                     onShowInList = onShowInList?.let { go -> { MyTasksUi.showTask.value = t.id; go(true) } },
@@ -225,4 +232,24 @@ suspend fun LazyListState.revealKey(vararg keys: Any) {
         hit != null && hit.offset + hit.size <= layoutInfo.viewportEndOffset
     }
     layoutInfo.visibleItemsInfo.firstOrNull { it.key in keys }?.let { animateScrollToItem(maxOf(0, it.index - 1)) }
+}
+
+/**
+ * v0.51 The one way every "show this task" jumps (search, Show in list, notifications, widgets, Review, People,
+ * calendar…): waits until the list has built the item that holds the task ([keyOf], null until then), finds that
+ * item, puts it at the top exactly, then [bring] lets the task's own row bring all of itself into view.
+ */
+suspend fun LazyListState.showItem(keyOf: () -> Any?, bring: () -> Unit) {
+    var key: Any? = keyOf()
+    var tries = 0
+    while (key == null && tries < 60) {
+        delay(40L)
+        key = keyOf()
+        tries++
+    }
+    val k = key ?: run { bring(); return }
+    revealUntil { layoutInfo.visibleItemsInfo.any { it.key == k } }
+    layoutInfo.visibleItemsInfo.firstOrNull { it.key == k }?.let { scrollToItem(it.index) }
+    delay(80L)
+    bring()
 }

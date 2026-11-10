@@ -29,6 +29,26 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.51.0", "10 Nov",
+            new = listOf(
+                "After saving a new task or follow-up, its window shrinks into a slim \"✓ Saved · View · Edit\" bar, also over other apps after a call or from a widget",
+                "Review session: ◀ Prev and Next ▶ beside Skip, to go back to tasks you already handled (done ones can be reopened)",
+                "Review session: the card on top is now the real task card, with its banner, urgent colour, chips and ticks; tap it to open its Timeline",
+                "Review session: Move to Follow-ups and Remove time on the card",
+                "Review session: one person's tasks come together inside each part, with \"1 of 3\" on the card",
+            ),
+            fixed = listOf(
+                "Editing an overdue task no longer makes it ring straight away",
+                "A task sent back as \"Not done yet\" is no longer marked Done again by itself",
+                "Only tasks that are really late come into Review",
+                "No signal no longer shows \"Something went wrong\"; a real problem shows at most once a day",
+                "Answering a deadline request clears \"Extended N×\" from Needs you",
+                "A follow-up can no longer have two open calls; old doubles are joined into one",
+                "A new task you tap no longer jumps away in the list",
+                "Search and Show in list now scroll to the task and outline it, also tasks with no time",
+            ),
+        ),
+        Entry(
             "0.50.1", "7 Nov",
             new = emptyList(),
             fixed = listOf(

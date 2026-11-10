@@ -539,6 +539,7 @@ internal fun MyTaskDialog(
     extras: TaskExtras? = null,
 ) {
     val ctx = LocalContext.current
+    val savedOutside = LocalSavedOutside.current
     val lists by MyTaskStore.lists.collectAsState()
     var title by remember { mutableStateOf(existing?.title ?: initialTitle) }
     var note by remember { mutableStateOf(existing?.note ?: initialNote) }
@@ -605,8 +606,9 @@ internal fun MyTaskDialog(
     fun save() {
         if (needLength) return
         val t = if (existing == null) {
+            // v0.51 the window shrinks into "✓ Saved · View · Edit".
             MyTaskStore.add(title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
-                .also { if (due <= 0L) android.widget.Toast.makeText(ctx, "Saved · no time yet, in To schedule", android.widget.Toast.LENGTH_SHORT).show() }
+                .also { SavedChip.showMine(it, savedOutside) }
         } else {
             MyTaskStore.edit(existing.id, title, note, due, name, number, listId = list, starred = starred, remindBefore = before, durationMin = length)
             MyTaskStore.get(existing.id) ?: return

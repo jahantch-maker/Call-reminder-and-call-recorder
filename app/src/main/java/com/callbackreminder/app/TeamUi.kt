@@ -233,9 +233,16 @@ object TeamUi {
             val m = TeamRules.minutesSince(c, t.createdAt, now)
             if (m >= if (t.urgent) 120L else TeamRules.dayMin(c)) return "👁 Not seen by ${t.toFirst} · ${m / 60} h"
         }
-        if (t.extCount >= if (t.urgent) 2 else 3) return "📅 Extended ${t.extCount}× by ${t.toFirst}"
+        if (t.extCount >= (if (t.urgent) 2 else 3) && t.extCount > extensionSeenAt(c, t.id)) return "📅 Extended ${t.extCount}× by ${t.toFirst}"
         return null
     }
+
+    private fun ewPrefs(c: Context) = c.applicationContext.getSharedPreferences("team_ext_seen", Context.MODE_PRIVATE)
+
+    /** v0.51 You answered his extension request at [count] extensions: the warning waits for the next one. */
+    fun extensionSeen(c: Context, taskId: String, count: Int) = ewPrefs(c).edit().putInt(taskId, count).apply()
+
+    private fun extensionSeenAt(c: Context, taskId: String): Int = ewPrefs(c).getInt(taskId, 0)
 
     /** "Timeline · 📷 2 · 🎤 1": the link with what it holds. */
     fun timelineLabel(t: TeamTask): String =
