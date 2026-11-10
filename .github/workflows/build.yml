@@ -45,21 +45,28 @@ jobs:
           git commit -qm "Screens for ${{ github.event.pull_request.head.sha }}"
           git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-screenshots
 
+      # Spare copies are kept 3 days only (storage is small), and a full storage never fails the build.
       - uses: actions/upload-artifact@v4
         if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
         with:
+          retention-days: 3
           name: display-size-screenshots
           path: |
             app/build/screenshots
             app/build/reports/tests
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: callback-reminder-apk
           path: app/build/outputs/apk/full/release/app-full-release.apk
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: cr-test-apk
           path: app/build/outputs/apk/cr/release/app-cr-release.apk
 
