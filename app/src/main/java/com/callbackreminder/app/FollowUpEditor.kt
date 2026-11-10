@@ -553,6 +553,7 @@ fun FollowUpDialog(
     onNextPartDone: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val savedOutside = LocalSavedOutside.current
     val editCall = remember { FollowUps.call(linkId) }
     val editText = remember { FollowUps.text(linkId) }
     val editing = linkId != 0L
@@ -678,6 +679,8 @@ fun FollowUpDialog(
 
     /** Saves the window; with [same], onto that open follow-up instead of a new copy (the copy it was opened from goes). */
     fun save(same: FollowUps.Same?) {
+        // v0.51 what this save makes new shows on "✓ Saved · View · Edit" (not when editing one).
+        val mark = SavedChip.mark()
         if (nextPartOf != null) {
             if (teamMember != null) {
                 TeamNext.toMember(ctx, nextPartOf, teamMember, nextPartLeft)
@@ -709,7 +712,8 @@ fun FollowUpDialog(
                 TeamSync.onMovedToFollowUps(ctx, it.id, link, teamMember.name, inTeam = true)
                 MyTaskStore.delete(it.id)
             }
-            Toast.makeText(ctx, "Sent to ${teamMember.first}'s app", Toast.LENGTH_SHORT).show()
+            if (editing || !SavedChip.showSince(mark, savedOutside, "Sent to ${teamMember.first}"))
+                Toast.makeText(ctx, "Sent to ${teamMember.first}'s app", Toast.LENGTH_SHORT).show()
             onDismiss()
             return
         }
@@ -729,10 +733,11 @@ fun FollowUpDialog(
             if (TeamLinks.teamTaskOfMyTask(ctx, it.id) != null) TeamSync.onMovedToFollowUps(ctx, it.id, TeamSync.linkForNew(ctx, number, task), name, inTeam = TeamRepo.memberByNumber(number) != null)
             MyTaskStore.delete(it.id)
         }
+        val chip = !editing && SavedChip.showSince(mark, savedOutside, if (fromMyTask != null) "Moved to Follow-ups" else "Saved")
         if (!timed) {
             val needs = !hasPerson || (!callEff && !textEff)
-            Toast.makeText(ctx, if (needs) "Saved to To schedule · add a person or alert" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
-        } else if (fromMyTask != null) {
+            if (needs || !chip) Toast.makeText(ctx, if (needs) "Saved to To schedule · add a person or alert" else "Saved to To schedule", Toast.LENGTH_SHORT).show()
+        } else if (fromMyTask != null && !chip) {
             Toast.makeText(ctx, "Moved to Follow-ups", Toast.LENGTH_SHORT).show()
         }
         onDismiss()

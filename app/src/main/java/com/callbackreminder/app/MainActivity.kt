@@ -106,6 +106,8 @@ class MainActivity : ComponentActivity() {
         const val OPEN_FOLLOW_UPS = "follow_ups"
         const val OPEN_TO_SCHEDULE = "to_schedule"
         const val OPEN_CALENDAR = "calendar"
+        /** With [OPEN_FOLLOW_UPS]: a text follow-up to show (outlined for a moment). */
+        const val EXTRA_SHOW_TEXT = "show_text"
         /** With [OPEN_MY_TASKS]: the task to show (outlined for a moment). */
         const val EXTRA_TASK = "task_id"
         /** A team notification: the Team inbox. */
@@ -168,6 +170,8 @@ class MainActivity : ComponentActivity() {
                 // v0.48 the one-tap "why" after a slip, and the one-time team meeting notice.
                 ReasonAskHost()
                 MeetingShareNotice()
+                // v0.51 "✓ Saved · View · Edit" after a new task or follow-up.
+                SavedChipHost()
               }
             }
         }
@@ -277,6 +281,9 @@ class MainActivity : ComponentActivity() {
                 val call = intent?.getLongExtra(EXTRA_TASK, -1L) ?: -1L
                 intent?.removeExtra(EXTRA_TASK)
                 if (call >= 0) CallsUi.showRequest.value = call
+                val text = intent?.getLongExtra(EXTRA_SHOW_TEXT, -1L) ?: -1L
+                intent?.removeExtra(EXTRA_SHOW_TEXT)
+                if (text >= 0) SmsUi.showRequest.value = text
                 showTab(Tab.FOLLOW_UPS)
                 return
             }
