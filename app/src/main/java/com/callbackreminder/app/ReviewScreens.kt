@@ -865,6 +865,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onNotDone = { t -> notDoneFor = item to t },
                         onNextPart = { t -> nextPartFor = item to t },
                         pastDone = pastDone,
+                        place = s.viewing?.let { k -> ReviewSession.personPlace(s, k) },
                         onReopen = { reopen(item); tick++ },
                         onPrev = if (ReviewSession.canPrev(s)) ({ ReviewSession.prev(ctx); tick++ }) else null,
                         onNext = if (s.back > 0) ({ ReviewSession.next(ctx); tick++ }) else null,
@@ -1098,6 +1099,8 @@ private fun SessionCard(
     onReopen: (() -> Unit)? = null,
     onPrev: (() -> Unit)? = null,
     onNext: (() -> Unit)? = null,
+    /** "1 of 3" among the same person's tasks in this part. */
+    place: Pair<Int, Int>? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1131,6 +1134,7 @@ private fun SessionCard(
                     onEdit = onEdit, onHistory = onHistory,
                     onMove = if (pastDone) null else onMove, onRemoveTime = if (pastDone) null else onRemoveTime,
                     struck = pastDone,
+                    place = place,
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -1216,12 +1220,11 @@ private fun CardTop(
     onMove: (() -> Unit)? = null,
     onRemoveTime: (() -> Unit)? = null,
     struck: Boolean = false,
+    place: Pair<Int, Int>? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val now = remember(item.key) { System.currentTimeMillis() }
-    var more by remember(item.key) { mutableStateOf(false) }
-    var long by remember(item.key) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             when (item.kind) {
@@ -1234,32 +1237,50 @@ private fun CardTop(
             style = MaterialTheme.typography.labelMedium,
             color = cs.onSurfaceVariant,
         )
-        Text(
-            item.title,
-            fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold,
-            textDecoration = if (struck) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-            color = if (struck) cs.onSurfaceVariant else androidx.compose.ui.graphics.Color.Unspecified,
-            maxLines = if (more) Int.MAX_VALUE else 4,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { if (!more) long = it.hasVisualOverflow },
-            modifier = Modifier.animateContentSize(androidx.compose.animation.core.tween(200)),
-        )
-        if (long || more) {
-            Text(
-                if (more) "less" else "more",
-                color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.clickable { more = !more }
-            )
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            TimeBox(if (item.at > 0L) whenLabel(item.at, now) else null, item.at in 1..now && !item.isReplied, timeIconsOf(item))
-            if (item.person.isNotBlank()) {
-                TaskChip(Names.first(item.person) ?: item.person, CHIP_PLAIN,
-                    icon = { Icon(androidx.compose.material.icons.Icons.Rounded.Person, null, Modifier.size(14.dp).padding(end = 2.dp)) })
+        // v0.51 THE task card on top (banner, red when urgent, ⭐, all its chips, sent/seen ticks), no tick circle:
+        // the ✓ Done button below does that. Tapping anywhere on it (banner too) opens its Timeline.
+        val teamTasks by TeamRepo.tasks.collectAsState()
+        val teamV by TeamSync.version.collectAsState()
+        val tt = remember(item.key, teamTasks, teamV) { if (TeamRepo.activeNow) reviewTeamTask(ctx, item, teamTasks) else null }
+        val giver = tt != null && tt.fromUid == TeamRepo.uid
+        val banner = remember(tt, teamV) {
+            tt?.let { t ->
+                TeamUi.banner(ctx, t, TeamRepo.uid)
+                    ?: TeamUi.earlyWarning(ctx, t)?.takeIf { item.section == ReviewSection.TEAM }?.let { CardBanner(it, ChipTone.MUTED) }
             }
-            taskChips(ctx, item).forEach { SmallChip(it) }
-            item.chips.filter { !it.endsWith("late") }.forEach { ReviewChip(it) }
         }
+        val mineNow = if (item.isMine) MyTaskStore.get(item.id) else null
+        val starred = when (item.kind) {
+            ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(item.id)?.starred == true
+            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> mineNow?.starred == true
+            else -> false
+        }
+        val openTimeline: () -> Unit = { if (tt != null) TeamUi.openTimeline(tt.id) else onHistory?.invoke() }
+        TaskCard(
+            title = item.title,
+            done = struck,
+            onTick = {},
+            showTick = false,
+            time = if (item.at > 0L) whenLabel(item.at, now) else null,
+            late = item.at in 1..now && !item.isReplied && !struck,
+            timeIcons = timeIconsOf(item),
+            person = item.person.takeIf { it.isNotBlank() }?.let { (Names.first(it) ?: it) + (place?.let { (i, n) -> " · $i of $n" } ?: "") },
+            chips = run {
+                val team = tt?.let { if (giver) TeamUi.giverChips(it) else TeamUi.receiverChips(it) } ?: emptyList()
+                taskChips(ctx, item) +
+                    item.chips.filterNot { c -> c.endsWith("late") || team.any { it.text == c } }
+                        .map { RowChip(it, ChipTone.MUTED) } + team
+            },
+            note = mineNow?.note?.takeIf { it.isNotBlank() },
+            starred = starred,
+            expanded = false,
+            onClick = openTimeline,
+            pos = RowPos.SINGLE,
+            corner = tt?.takeIf { giver }?.let { t -> { TeamTicks(t) } },
+            banner = banner,
+            urgent = tt?.let { it.urgent && it.open } == true,
+            noTimeChip = tt == null || giver,
+        )
         if (awaiting) {
             Text("Back from the call? Your after-call popup saves how it went. Tap Next.", fontSize = 13.sp, color = cs.onSurfaceVariant)
         }
@@ -1280,7 +1301,7 @@ private fun CardTop(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (onHistory != null) {
                 Text("Timeline", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                    modifier = Modifier.clickable(onClick = onHistory).padding(vertical = 2.dp))
+                    modifier = Modifier.clickable(onClick = openTimeline).padding(vertical = 2.dp))
             }
             Text("Edit", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                 modifier = Modifier.clickable(onClick = onEdit).padding(vertical = 2.dp))

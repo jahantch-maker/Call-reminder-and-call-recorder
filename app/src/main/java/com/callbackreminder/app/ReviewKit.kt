@@ -375,6 +375,8 @@ object ReviewSession {
         val back: Int = 0,
         /** The follow-up (link) behind each queued follow-up, so a task replaced meanwhile opens its new follow-up. */
         val links: Map<String, Long> = emptyMap(),
+        /** v0.51 the person of each queued task (Parts order keeps one person's tasks together). */
+        val who: Map<String, String> = emptyMap(),
     ) {
         val byPerson: Boolean get() = groups.isNotEmpty()
         val current: String? get() = queue.getOrNull(pos)
@@ -426,6 +428,7 @@ object ReviewSession {
                     val k = e.substringBeforeLast('=', "")
                     e.substringAfterLast('=').toLongOrNull()?.let { n -> k to n }
                 }.filter { it.first.isNotBlank() }.toMap(),
+                who = list("who").mapNotNull { e -> e.substringBeforeLast('=', "").takeIf { it.isNotBlank() }?.let { it to e.substringAfterLast('=') } }.toMap(),
             )
         }
         // A new day: what was left goes first into the next review (never dropped), then a fresh start.
@@ -460,6 +463,7 @@ object ReviewSession {
             .putString("groups", s.groups.joinToString("\n"))
             .putInt("back", s.back)
             .putString("links", s.links.entries.joinToString(",") { "${it.key}=${it.value}" })
+            .putString("who", s.who.entries.joinToString(",") { "${it.key}=${it.value}" })
             .commit()
     }
 
@@ -506,14 +510,44 @@ object ReviewSession {
         val fresh = items.toSet()
         val left = (carry(ctx) + leftovers(init(ctx))).distinct().filter { it in fresh }
         // Part by part (left-overs first inside each part), so each part's bar fills in one go.
-        val queue = (left + items.filter { it !in left }).sortedBy { parts[it] ?: 0 }
+        val who = found.associate { it.key to personOf(it).replace(",", "").replace("=", "") }
+        val sorted = (left + items.filter { it !in left }).sortedBy { parts[it] ?: 0 }
+        val queue = if (groups.isEmpty()) together(sorted, parts, who) else sorted
         if (queue.isEmpty()) return false
         cancelReminder(ctx)
         ReviewReminder.cancelSnooze(ctx)
         setCarry(ctx, emptyList())
         set(ctx, State(status = Status.RUNNING, mode = mode, queue = queue, startedAt = System.currentTimeMillis(), day = today(), parts = parts,
-            groups = groups))
+            groups = groups, who = who))
         return true
+    }
+
+    /**
+     * v0.51 Parts order: inside each part one person's tasks come together, placed where that person's first (most
+     * overdue) task was. Tasks with no person keep their date order.
+     */
+    private fun together(keys: List<String>, parts: Map<String, Int>, who: Map<String, String>): List<String> {
+        val out = ArrayList<String>(keys.size)
+        val placed = HashSet<String>()
+        for (k in keys) {
+            if (k in placed) continue
+            val p = who[k].orEmpty()
+            val part = parts[k] ?: 0
+            val group = if (p.isEmpty()) listOf(k) else keys.filter { it !in placed && who[it] == p && (parts[it] ?: 0) == part }
+            out += group
+            placed += group
+        }
+        return out
+    }
+
+    /** "1 of 3": where a task is among the same person's tasks in its part (null when the person has just one). */
+    fun personPlace(s: State, key: String): Pair<Int, Int>? {
+        if (s.byPerson) return null
+        val p = s.who[key].orEmpty().ifEmpty { return null }
+        val part = s.parts[key] ?: 0
+        val same = s.queue.filter { s.who[it] == p && (s.parts[it] ?: 0) == part }
+        if (same.size < 2) return null
+        return same.indexOf(key) + 1 to same.size
     }
 
     /** Review order: the 4 parts (false) or 👤 By person (true). Kept until changed. */
@@ -530,8 +564,10 @@ object ReviewSession {
         val left = s.queue.drop(s.pos).mapNotNull { ReviewData.find(ctx, it) }
         if (left.isEmpty()) return
         val (parts, groups) = if (byPerson) arrangeByPerson(left) else left.associate { it.key to partOf(it.section) } to emptyList()
-        val queue = left.map { it.key }.sortedBy { parts[it] ?: 0 }
-        set(ctx, s.copy(queue = queue, pos = 0, back = 0, parts = parts, groups = groups))
+        val who = s.who + left.associate { it.key to personOf(it).replace(",", "").replace("=", "") }
+        val sorted = left.map { it.key }.sortedBy { parts[it] ?: 0 }
+        val queue = if (byPerson) sorted else together(sorted, parts, who)
+        set(ctx, s.copy(queue = queue, pos = 0, back = 0, parts = parts, groups = groups, who = who))
     }
 
     /** 👤 By person: this person's name and number. */
@@ -803,6 +839,7 @@ object ReviewSession {
         set(ctx, s.copy(
             status = Status.RUNNING, queue = s.queue + added.map { it.key }, pausedAt = 0L, remindAt = 0L,
             parts = s.parts + added.associate { it.key to partOf(it.section) },
+            who = s.who + added.associate { it.key to personOf(it).replace(",", "").replace("=", "") },
         ))
     }
 
