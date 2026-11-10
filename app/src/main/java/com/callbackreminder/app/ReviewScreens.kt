@@ -617,11 +617,14 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
         tick++
     }
     val item = remember(s, calls, texts, sched, mine, tick) { if (s.status == ReviewSession.Status.RUNNING) ReviewSession.current(ctx) else null }
+    // ◀ Prev on a task you already finished: struck through, with ↩ Reopen.
+    val pastDone = remember(item, s, calls, texts, mine) { item != null && s.back > 0 && ReviewSession.isDone(item) }
     val upNext = remember(s, calls, texts, sched, mine, tick) { if (item != null && !s.byPerson) ReviewSession.upNext(ctx, 3) else emptyList() }
     // 👤 By person: everything still open for this person, on one screen.
     val left = remember(s, calls, texts, sched, mine, tick) { if (item != null && s.byPerson) ReviewSession.groupLeft(ctx) else emptyList() }
     var newTimeFor by remember { mutableStateOf<ReviewItem?>(null) }
     var editFor by remember { mutableStateOf<ReviewItem?>(null) }
+    var moveFor by remember { mutableStateOf<MyTask?>(null) }
     var historyFor by remember { mutableStateOf<ReviewItem?>(null) }
     var notDoneFor by remember { mutableStateOf<Pair<ReviewItem, TeamTask>?>(null) }
     var nextPartFor by remember { mutableStateOf<Pair<ReviewItem, TeamTask>?>(null) }
@@ -650,6 +653,43 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
             val held = if (item.isCall || item.isReplied || item.kind == ReviewItem.Kind.MY_TASK) Held.push(ctx, item) else null
             ReviewSession.markNewTime(ctx)
             held
+        }
+    }
+
+    /** ↩ Reopen on a finished task behind you: open again right here (it keeps its time; set a new one on the card). */
+    fun reopen(item: ReviewItem) {
+        val undo = ReviewActions.snapshot(item)
+        when (item.kind) {
+            ReviewItem.Kind.CALL -> Reopen.call(ctx, item.id, null)
+            ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> Reopen.text(item.id)
+            ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> Reopen.myTask(ctx, item.id, null)
+            else -> return
+        }
+        scope.offerUndo(snack, "Reopened · ${item.title}", undo)
+    }
+
+    /** ⊘ Remove time: to To schedule (a follow-up's call and texts stop), with Undo, and on to the next task. */
+    fun removeTime(item: ReviewItem) {
+        handled(item, "Time removed · in To schedule · ${item.title}") {
+            val extra: (() -> Unit)? = when (item.kind) {
+                ReviewItem.Kind.MY_TASK -> {
+                    MyTaskStore.get(item.id)?.let { t -> MyTaskStore.edit(t.id, t.title, t.note, 0L, t.name, t.number, remindBefore = emptyList()) }
+                    null
+                }
+                ReviewItem.Kind.CALL, ReviewItem.Kind.TEXT -> {
+                    val call = if (item.kind == ReviewItem.Kind.CALL) ReminderStore.get(item.id) else null
+                    val text = if (item.kind == ReviewItem.Kind.TEXT) SmsStore.get(item.id) else null
+                    val link = call?.linkId ?: text?.linkId ?: 0L
+                    val c = call ?: link.takeIf { it != 0L }?.let { FollowUps.call(it) }
+                    val t = text ?: link.takeIf { it != 0L }?.let { FollowUps.text(it) }
+                    val parked = FollowUps.removeTime(ctx, c, t)
+                    val f: () -> Unit = { ToScheduleStore.remove(parked.id) }
+                    f
+                }
+                else -> null
+            }
+            ReviewSession.markNewTime(ctx)
+            extra
         }
     }
 
@@ -820,8 +860,14 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                         onPerson = { n, num -> ReviewActions.setPerson(item, n, num); tick++ },
                         onEdit = { editFor = item },
                         onHistory = { historyFor = item },
+                        onMove = if (item.isMine) ({ moveFor = MyTaskStore.get(item.id) }) else null,
+                        onRemoveTime = if (canRemoveTime(ctx, item)) ({ removeTime(item) }) else null,
                         onNotDone = { t -> notDoneFor = item to t },
                         onNextPart = { t -> nextPartFor = item to t },
+                        pastDone = pastDone,
+                        onReopen = { reopen(item); tick++ },
+                        onPrev = if (ReviewSession.canPrev(s)) ({ ReviewSession.prev(ctx); tick++ }) else null,
+                        onNext = if (s.back > 0) ({ ReviewSession.next(ctx); tick++ }) else null,
                         onSkip = {
                             if (item.isReplied) {
                                 handled(item, "Skipped · back ${Fmt.dueLabel(ReviewData.nextReviewAt(ctx))}") {
@@ -859,6 +905,9 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     // ✏️ Edit: the task's own editor; the session carries on from the same card after it closes.
     editFor?.let { e -> TaskEditorDialog(task = OpenTask.of(e), onDismiss = { editFor = null; tick++ }) }
     historyFor?.let { h -> ReviewItemTimeline(h) { historyFor = null } }
+    // v0.51 Move to Follow-ups: the follow-up window (to a team member too); once saved the My task is gone and
+    // the session goes on to the next task.
+    moveFor?.let { m -> FollowUpDialog(onDismiss = { moveFor = null; tick++ }, fromMyTask = m) }
     // ↩ Not done yet: back to him with the reason, and the session moves on.
     notDoneFor?.let { (it0, t) ->
         TeamNotDoneSheet(t, onSent = {
@@ -1004,6 +1053,14 @@ private fun timeIconsOf(n: ReviewItem) = when (n.kind) {
     else -> TimeIcons.NONE
 }
 
+/** ⊘ Remove time on the session card: a timed My task, or a late follow-up of your own (not a team task). */
+private fun canRemoveTime(ctx: android.content.Context, item: ReviewItem): Boolean = when (item.kind) {
+    ReviewItem.Kind.MY_TASK -> true
+    ReviewItem.Kind.CALL, ReviewItem.Kind.TEXT ->
+        !(TeamRepo.activeNow && reviewTeamTask(ctx, item, TeamRepo.tasks.value) != null)
+    else -> false
+}
+
 /** The small chips after the time and person: #number, Held N×. */
 private fun taskChips(ctx: android.content.Context, n: ReviewItem): List<RowChip> = listOfNotNull(
     n.code.takeIf { it.isNotBlank() }?.let { RowChip("#$it", ChipTone.BLUE) },
@@ -1031,9 +1088,16 @@ private fun SessionCard(
     onPerson: (String, String) -> Unit,
     onEdit: () -> Unit,
     onHistory: (() -> Unit)?,
+    onMove: (() -> Unit)? = null,
+    onRemoveTime: (() -> Unit)? = null,
     onSkip: () -> Unit,
     onNotDone: (TeamTask) -> Unit = {},
     onNextPart: (TeamTask) -> Unit = {},
+    /** v0.51 a task behind you that is finished: struck through, with ↩ Reopen instead of the buttons. */
+    pastDone: Boolean = false,
+    onReopen: (() -> Unit)? = null,
+    onPrev: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1065,9 +1129,22 @@ private fun SessionCard(
                     addingPerson = addingPerson && it0.key == item.key,
                     onPerson = { n, num -> addingPerson = false; onPerson(n, num) },
                     onEdit = onEdit, onHistory = onHistory,
+                    onMove = if (pastDone) null else onMove, onRemoveTime = if (pastDone) null else onRemoveTime,
+                    struck = pastDone,
                 )
             }
             Spacer(Modifier.height(10.dp))
+            if (pastDone) {
+                // ✓ Done already: ↩ Reopen brings it back here with all its buttons.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("✓ Done", color = DoneInk, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    if (onReopen != null) {
+                        OutlinedButton(onClick = onReopen, shape = RoundedCornerShape(14.dp)) {
+                            Text("↩ Reopen", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
             QuickRow(item, enabled = !needsPerson, onTime = onTime, onPickTime = onPickTime)
             Spacer(Modifier.height(8.dp))
             TaskActionBar(
@@ -1080,6 +1157,7 @@ private fun SessionCard(
                 onNotDone = check?.let { t -> { onNotDone(t) } },
                 onNextPart = check?.let { t -> { onNextPart(t) } },
             )
+            }
             Spacer(Modifier.height(6.dp))
             if (awaiting) {
                 Button(
@@ -1089,16 +1167,34 @@ private fun SessionCard(
                 ) { Text("Next ›", fontWeight = FontWeight.Bold) }
             } else {
                 val back = remember(item.key) { if (item.isReplied) ReviewData.nextReviewAt(ctx) else 0L }
-                OutlinedButton(
-                    onClick = onSkip,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Text(
-                        if (item.isReplied) "⏭ Skip · back " + (if (dayWord(back) == "Today") "at " else "${dayWord(back)} ") + Fmt.timeOnly(back)
-                        else "⏭ Skip",
-                        fontWeight = FontWeight.SemiBold, maxLines = 1
-                    )
+                // v0.51 ◀ Prev (small) | ⏭ Skip (big) | Next ▶ (small, greyed at the furthest task you reached).
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { onPrev?.invoke() },
+                        enabled = onPrev != null,
+                        modifier = Modifier.weight(0.75f).height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                    ) { Text("◀ Prev", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1) }
+                    OutlinedButton(
+                        onClick = if (onNext != null) onNext else onSkip,
+                        modifier = Modifier.weight(1.5f).height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            if (item.isReplied && onNext == null) "⏭ Skip · back " + (if (dayWord(back) == "Today") "" else "${dayWord(back)} ") + Fmt.timeOnly(back)
+                            else "⏭ Skip",
+                            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onNext?.invoke() },
+                        enabled = onNext != null,
+                        modifier = Modifier.weight(0.75f).height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                    ) { Text("Next ▶", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1) }
                 }
             }
         }
@@ -1117,6 +1213,9 @@ private fun CardTop(
     onPerson: (String, String) -> Unit,
     onEdit: () -> Unit,
     onHistory: (() -> Unit)?,
+    onMove: (() -> Unit)? = null,
+    onRemoveTime: (() -> Unit)? = null,
+    struck: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -1138,6 +1237,8 @@ private fun CardTop(
         Text(
             item.title,
             fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold,
+            textDecoration = if (struck) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+            color = if (struck) cs.onSurfaceVariant else androidx.compose.ui.graphics.Color.Unspecified,
             maxLines = if (more) Int.MAX_VALUE else 4,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { if (!more) long = it.hasVisualOverflow },
@@ -1162,7 +1263,7 @@ private fun CardTop(
         if (awaiting) {
             Text("Back from the call? Your after-call popup saves how it went. Tap Next.", fontSize = 13.sp, color = cs.onSurfaceVariant)
         }
-        if (item.isCall || item.isReplied || item.kind == ReviewItem.Kind.MY_TASK) {
+        if (!struck && (item.isCall || item.isReplied || item.kind == ReviewItem.Kind.MY_TASK)) {
             OutlinedTextField(
                 value = reason,
                 onValueChange = onReason,
@@ -1176,13 +1277,22 @@ private fun CardTop(
         androidx.compose.animation.AnimatedVisibility(visible = addingPerson) {
             PersonPicker(prompt = "Pick the person first") { n, num -> onPerson(n, num) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (onHistory != null) {
                 Text("Timeline", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                     modifier = Modifier.clickable(onClick = onHistory).padding(vertical = 2.dp))
             }
             Text("Edit", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                 modifier = Modifier.clickable(onClick = onEdit).padding(vertical = 2.dp))
+            // v0.51 the same order as the My tasks card: Timeline · Edit · Remove time · Move to Follow-ups.
+            if (onRemoveTime != null) {
+                Text("Remove time", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
+                    modifier = Modifier.clickable(onClick = onRemoveTime).padding(vertical = 2.dp))
+            }
+            if (onMove != null) {
+                Text("Move to Follow-ups", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
+                    modifier = Modifier.clickable(onClick = onMove).padding(vertical = 2.dp))
+            }
         }
     }
 }

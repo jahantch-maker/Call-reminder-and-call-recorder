@@ -371,9 +371,16 @@ object ReviewSession {
         val parts: Map<String, Int> = emptyMap(),
         /** 👤 By person: one bar per person ("name" with "number" after a tab); empty = the 4 parts. */
         val groups: List<String> = emptyList(),
+        /** v0.51 ◀ Prev: how many tasks back from the live one you are looking (0 = the live one). */
+        val back: Int = 0,
+        /** The follow-up (link) behind each queued follow-up, so a task replaced meanwhile opens its new follow-up. */
+        val links: Map<String, Long> = emptyMap(),
     ) {
         val byPerson: Boolean get() = groups.isNotEmpty()
         val current: String? get() = queue.getOrNull(pos)
+        /** The queue place shown: the live task, or one behind it after ◀ Prev. */
+        val view: Int get() = (pos - back).coerceAtLeast(0)
+        val viewing: String? get() = queue.getOrNull(view)
         val total: Int get() = queue.size
         val handled: Int get() = pos.coerceAtMost(queue.size)
         val active: Boolean get() = status == Status.RUNNING || status == Status.PAUSED
@@ -414,6 +421,11 @@ object ReviewSession {
                     e.substringAfterLast('=').toIntOrNull()?.let { n -> k to n }
                 }.filter { it.first.isNotBlank() }.toMap(),
                 groups = s.getString("groups", "").orEmpty().split('\n').filter { it.isNotBlank() },
+                back = s.getInt("back", 0),
+                links = list("links").mapNotNull { e ->
+                    val k = e.substringBeforeLast('=', "")
+                    e.substringAfterLast('=').toLongOrNull()?.let { n -> k to n }
+                }.filter { it.first.isNotBlank() }.toMap(),
             )
         }
         // A new day: what was left goes first into the next review (never dropped), then a fresh start.
@@ -446,6 +458,8 @@ object ReviewSession {
             .putString("day", s.day)
             .putString("parts", s.parts.entries.joinToString(",") { "${it.key}=${it.value}" })
             .putString("groups", s.groups.joinToString("\n"))
+            .putInt("back", s.back)
+            .putString("links", s.links.entries.joinToString(",") { "${it.key}=${it.value}" })
             .commit()
     }
 
@@ -517,7 +531,7 @@ object ReviewSession {
         if (left.isEmpty()) return
         val (parts, groups) = if (byPerson) arrangeByPerson(left) else left.associate { it.key to partOf(it.section) } to emptyList()
         val queue = left.map { it.key }.sortedBy { parts[it] ?: 0 }
-        set(ctx, s.copy(queue = queue, pos = 0, parts = parts, groups = groups))
+        set(ctx, s.copy(queue = queue, pos = 0, back = 0, parts = parts, groups = groups))
     }
 
     /** 👤 By person: this person's name and number. */
@@ -573,10 +587,21 @@ object ReviewSession {
     /** Moves past items that were finished elsewhere meanwhile. Ends when nothing is left. */
     fun current(ctx: Context): ReviewItem? {
         var s = init(ctx)
+        // ◀ Prev: a task already behind you, as it is now (done ones too, shown struck through).
+        while (s.back > 0) {
+            val key = s.viewing ?: break
+            past(ctx, s, key)?.let { return it }
+            s = s.copy(back = s.back - 1)
+            set(ctx, s)
+        }
         while (true) {
             val key = s.current ?: break
             val item = ReviewData.find(ctx, key)
-            if (item != null) return item
+            if (item != null) {
+                val link = linkOf(item)
+                if (link != 0L && s.links[key] != link) set(ctx, s.copy(links = s.links + (key to link)))
+                return item
+            }
             s = s.copy(pos = s.pos + 1)
             set(ctx, s)
         }
@@ -584,20 +609,106 @@ object ReviewSession {
         return null
     }
 
+    /** The follow-up an item belongs to (0 = none). */
+    private fun linkOf(item: ReviewItem): Long = when (item.kind) {
+        ReviewItem.Kind.CALL, ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(item.id)?.linkId ?: 0L
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(item.id)?.linkId ?: 0L
+        ReviewItem.Kind.SCHED_FU -> ToScheduleStore.get(item.id)?.linkId ?: 0L
+        else -> 0L
+    }
+
+    private fun callItem(r: Reminder, review: Boolean = false) = if (review)
+        ReviewItem("cr:${r.id}", ReviewSection.REPLIED, ReviewItem.Kind.CALL_REVIEW, r.id, r.note.ifBlank { "Call back" }, r.title, r.number, r.doneAt, code = r.code)
+    else ReviewItem("c:${r.id}", ReviewSection.OVERDUE, ReviewItem.Kind.CALL, r.id, r.note.ifBlank { "Call back" }, r.title, r.number, r.dueAt, code = r.code)
+
+    private fun textItem(t: SmsReminder, review: Boolean = false) = ReviewItem(
+        (if (review) "tr:" else "t:") + t.id, if (review) ReviewSection.REPLIED else ReviewSection.OVERDUE,
+        if (review) ReviewItem.Kind.TEXT_REVIEW else ReviewItem.Kind.TEXT, t.id, t.message, t.title, t.number,
+        t.taskDue.takeIf { it > 0L } ?: t.dueAt, code = t.code,
+    )
+
+    /**
+     * A task behind you in this session, as it is now: still waiting (as in Review), handled (done, moved), or the
+     * new follow-up that replaced it. Null when it is gone.
+     */
+    private fun past(ctx: Context, s: State, key: String): ReviewItem? {
+        ReviewData.find(ctx, key)?.let { return it }
+        val id = key.substringAfter(':').toLongOrNull() ?: return null
+        val link = s.links[key] ?: 0L
+        fun byLink(): ReviewItem? = FollowUps.call(link)?.let { callItem(it) } ?: FollowUps.text(link)?.let { textItem(it) }
+        return when (key.substringBefore(':')) {
+            "c" -> ReminderStore.get(id)?.let { callItem(it) } ?: byLink()
+            "cr" -> ReminderStore.get(id)?.let { callItem(it, review = true) }
+            "t" -> SmsStore.get(id)?.let { textItem(it) } ?: byLink()
+            "tr" -> SmsStore.get(id)?.let { textItem(it, review = true) }
+            "ml", "ms" -> MyTaskStore.get(id)?.let { t ->
+                ReviewItem(key, if (t.timed) ReviewSection.MY_LATE else ReviewSection.SCHED_MY,
+                    if (t.timed) ReviewItem.Kind.MY_TASK else ReviewItem.Kind.SCHED_MY, t.id, t.title,
+                    if (t.hasPerson) t.personTitle else "", t.number, if (t.timed) t.dueAt else 0L, listOf("☑ My task"), lengthMin = t.durationMin)
+            }
+            "s" -> byLink()
+            else -> null
+        }
+    }
+
+    /** A task behind you that is finished: shown struck through with ↩ Reopen. */
+    fun isDone(item: ReviewItem): Boolean = when (item.kind) {
+        ReviewItem.Kind.CALL -> ReminderStore.get(item.id)?.done == true
+        ReviewItem.Kind.CALL_REVIEW -> ReminderStore.get(item.id)?.let { it.done && !it.review } == true
+        ReviewItem.Kind.TEXT, ReviewItem.Kind.TEXT_REVIEW -> SmsStore.get(item.id)?.done == true
+        ReviewItem.Kind.MY_TASK, ReviewItem.Kind.SCHED_MY -> MyTaskStore.get(item.id)?.done == true
+        ReviewItem.Kind.SCHED_FU -> false
+    }
+
+    /** ◀ Prev: one task back (past ones that are gone are passed over). */
+    fun prev(ctx: Context) {
+        var s = init(ctx)
+        var b = s.back
+        while (s.pos - b > 0) {
+            b++
+            if (past(ctx, s, s.queue[s.pos - b]) != null) {
+                s = s.copy(back = b, awaiting = "", awaitingAt = 0L)
+                set(ctx, s)
+                return
+            }
+        }
+    }
+
+    /** Next ▶: one task forward, up to the live one (greyed there). */
+    fun next(ctx: Context) {
+        val s = init(ctx)
+        if (s.back > 0) set(ctx, s.copy(back = s.back - 1, awaiting = "", awaitingAt = 0L))
+    }
+
+    fun canPrev(s: State): Boolean = s.view > 0
+
     fun upNext(ctx: Context, n: Int = 4): List<ReviewItem> {
         val s = init(ctx)
-        return s.queue.drop(s.pos + 1).asSequence().mapNotNull { ReviewData.find(ctx, it) }.take(n).toList()
+        return s.queue.drop(s.view + 1).asSequence().mapNotNull { ReviewData.find(ctx, it) }.take(n).toList()
     }
 
     private fun advance(ctx: Context, s: State) {
+        // A task behind you handled again: it stays where it was in the queue, and you step forward one.
+        if (s.back > 0) {
+            set(ctx, s.copy(back = s.back - 1, awaiting = "", awaitingAt = 0L))
+            return
+        }
         val next = s.copy(pos = s.pos + 1, awaiting = "", awaitingAt = 0L)
         set(ctx, next)
         if (next.pos >= next.queue.size) finish(ctx)
     }
 
-    fun markDone(ctx: Context) = init(ctx).let { advance(ctx, it.copy(done = it.done + 1)) }
-    fun markNewTime(ctx: Context) = init(ctx).let { advance(ctx, it.copy(newTime = it.newTime + 1)) }
-    fun skip(ctx: Context) = init(ctx).let { s -> advance(ctx, s.copy(skipped = s.skipped + listOfNotNull(s.current))) }
+    fun markDone(ctx: Context) = init(ctx).let { advance(ctx, unskip(it).copy(done = it.done + 1)) }
+    fun markNewTime(ctx: Context) = init(ctx).let { advance(ctx, unskip(it).copy(newTime = it.newTime + 1)) }
+
+    /** A task behind you, skipped before, handled now: no longer counted as skipped. */
+    private fun unskip(s: State): State {
+        val k = s.viewing ?: return s
+        return if (s.back > 0) s.copy(skipped = s.skipped - k, noAnswer = s.noAnswer - k, later = s.later - k) else s
+    }
+    fun skip(ctx: Context) = init(ctx).let { s ->
+        if (s.back > 0) next(ctx) else advance(ctx, s.copy(skipped = s.skipped + listOfNotNull(s.current)))
+    }
 
     /** Skip on a replied task: hidden from Review and sessions until the next review time, then back in Replied. */
     fun reviewLater(ctx: Context, item: ReviewItem) {
@@ -647,7 +758,7 @@ object ReviewSession {
         when (outcome) {
             1 -> advance(ctx, s.copy(done = s.done + 1))
             2 -> advance(ctx, s.copy(newTime = s.newTime + 1))
-            else -> if (key !in s.tried) {
+            else -> if (key !in s.tried && s.back == 0) {
                 // No answer: once more at the end.
                 val q = s.queue.toMutableList().apply { removeAt(s.pos); add(key) }
                 set(ctx, s.copy(queue = q, tried = s.tried + key, awaiting = "", awaitingAt = 0L))
