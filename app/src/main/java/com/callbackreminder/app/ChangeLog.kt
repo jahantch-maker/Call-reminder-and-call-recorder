@@ -29,6 +29,18 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.52.0", "11 Nov",
+            new = listOf(
+                "Photo editor: every photo you take or pick opens in a WhatsApp-style editor before it is used",
+                "Draw with Pen, Arrow, Line, Circle, Box and Mark (highlighter), add a measurement with Size, or type text (Bold, Box)",
+                "Colour slider on the right, thickness slider on the left; tap a mark to select it, drag the dots to resize, drag it to move, drag it to the bin to delete",
+                "Hold an end dot of an arrow, line or measurement and a magnifier shows the exact spot under your finger",
+                "Crop and rotate with Free, Square, 4:3 and 16:9",
+                "Pick several photos from the gallery at once where photos are added to a task or note",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.51.0", "10 Nov",
             new = listOf(
                 "After saving a new task or follow-up, its window shrinks into a slim \"✓ Saved · View · Edit\" bar, also over other apps after a call or from a widget",
