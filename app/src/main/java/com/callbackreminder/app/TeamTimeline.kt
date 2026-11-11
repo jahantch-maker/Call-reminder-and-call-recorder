@@ -602,24 +602,37 @@ private fun TeamTagButton(label: String, color: Color, on: Boolean, enabled: Boo
 }
 
 
-/** Camera or gallery; the photo comes back shrunk to about 150 KB. Returns what opens the choice. */
+/**
+ * Camera or gallery, then the markup editor; each photo comes back shrunk to about 150 KB with its marks on it.
+ * With [multi] the gallery lets several photos be picked at once. Returns what opens the choice.
+ */
 @Composable
-internal fun rememberTeamPhotoPicker(onPhoto: (ByteArray) -> Unit): () -> Unit {
+internal fun rememberTeamPhotoPicker(multi: Boolean = false, onPhoto: (ByteArray) -> Unit): () -> Unit {
     val ctx = LocalContext.current
     var choose by remember { mutableStateOf(false) }
     var camUri by remember { mutableStateOf<Uri?>(null) }
-    var busy by remember { mutableStateOf<Uri?>(null) }
+    var busy by remember { mutableStateOf<List<Uri>?>(null) }
+    var toEdit by remember { mutableStateOf<List<ByteArray>?>(null) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok) busy = camUri
+        if (ok) busy = listOfNotNull(camUri)
     }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) busy = uri
+        if (uri != null) busy = listOf(uri)
     }
-    busy?.let { uri ->
-        LaunchedEffect(uri) {
-            val bytes = withContext(Dispatchers.IO) { TeamMedia.shrink(ctx, uri) }
+    val galleryMany = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        if (uris.isNotEmpty()) busy = uris
+    }
+    busy?.let { uris ->
+        LaunchedEffect(uris) {
+            val all = withContext(Dispatchers.IO) { uris.mapNotNull { TeamMedia.shrink(ctx, it) } }
             busy = null
-            if (bytes != null) onPhoto(bytes) else Toast.makeText(ctx, "Couldn't read that photo", Toast.LENGTH_SHORT).show()
+            if (all.isNotEmpty()) toEdit = all else Toast.makeText(ctx, "Couldn't read that photo", Toast.LENGTH_SHORT).show()
+        }
+    }
+    toEdit?.let { list ->
+        PhotoMarkupEditor(list, onCancel = { toEdit = null }) { done ->
+            toEdit = null
+            done.forEach(onPhoto)
         }
     }
     if (choose) {
@@ -643,7 +656,8 @@ internal fun rememberTeamPhotoPicker(onPhoto: (ByteArray) -> Unit): () -> Unit {
                     }
                     OutlinedButton(onClick = {
                         choose = false
-                        gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        val only = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        if (multi) galleryMany.launch(only) else gallery.launch(only)
                     }, modifier = Modifier.weight(1f).height(72.dp)) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Rounded.Image, contentDescription = null)
@@ -725,7 +739,9 @@ data class TeamAttach(val kind: String, val data: ByteArray, val durMs: Long = 0
 internal fun TeamAttachRow(attach: List<TeamAttach>, onAttach: (List<TeamAttach>) -> Unit) {
     val cs = MaterialTheme.colorScheme
     var recording by remember { mutableStateOf(false) }
-    val pick = rememberTeamPhotoPicker { onAttach(attach + TeamAttach(Team.PHOTO, it)) }
+    val latest = remember { arrayOf(attach) }
+    latest[0] = attach
+    val pick = rememberTeamPhotoPicker(multi = true) { latest[0] = latest[0] + TeamAttach(Team.PHOTO, it); onAttach(latest[0]) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ChipHeading("ATTACH", modifier = Modifier.align(Alignment.CenterVertically))
         TextButton(onClick = pick, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("📷 Photo") }

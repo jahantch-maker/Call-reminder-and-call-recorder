@@ -144,8 +144,11 @@ fun TaskTimelineWindow(
         tick++
         scope.offerUndo(snack, "Added") { TaskNotes.remove(ctx, noteKey, n.at); tick++ }
     }
-    val pickPhoto = rememberTeamPhotoPicker { b ->
-        val n = TaskNote(System.currentTimeMillis(), TaskNotes.PHOTO)
+    val lastAt = remember { longArrayOf(0L) }
+    val pickPhoto = rememberTeamPhotoPicker(multi = true) { b ->
+        // Several photos can arrive in the same millisecond; each note needs its own time.
+        lastAt[0] = maxOf(System.currentTimeMillis(), lastAt[0] + 1)
+        val n = TaskNote(lastAt[0], TaskNotes.PHOTO)
         TaskNotes.add(ctx, noteKey, n, b)
         added(n)
     }
