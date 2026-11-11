@@ -319,7 +319,7 @@ private fun AlertCard(
                 ) else timeline = true
             }.padding(horizontal = 10.dp, vertical = 6.dp),
         )
-        if (timeline) FollowUpTimeline(ReminderStore.get(r.id) ?: r, null, allowHelp = false) { timeline = false }
+        if (timeline) FollowUpTimeline(ReminderStore.get(r.id) ?: r, null) { timeline = false }
 
         Spacer(Modifier.height(24.dp))
         Button(

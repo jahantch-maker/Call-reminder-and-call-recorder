@@ -322,7 +322,10 @@ class HelpLauncher(val ref: HelpRef, var history: () -> List<Pair<Long, String>>
 @Composable
 fun rememberHelpLauncher(ref: HelpRef?, history: () -> List<Pair<Long, String>>): HelpLauncher? {
     val active = TeamRepo.activeNow
-    if (ref == null || !active) return null
+    // The help thread opens in the main screen, so a Timeline shown over other apps (the ring screen) has no @.
+    var host: Context? = LocalContext.current
+    while (host is android.content.ContextWrapper && host !is MainActivity) host = host.baseContext
+    if (ref == null || !active || host !is MainActivity) return null
     return remember(ref.key) { HelpLauncher(ref, history) }.also { it.history = history }
 }
 

@@ -327,7 +327,7 @@ private fun NoteRow(n: TaskNote, selected: Boolean, selecting: Boolean, onToggle
 
 /** The Timeline of a follow-up (its call and its texts together), or the team Timeline when it is a team task. */
 @Composable
-fun FollowUpTimeline(call: Reminder?, text: SmsReminder?, allowHelp: Boolean = true, onDismiss: () -> Unit) {
+fun FollowUpTimeline(call: Reminder?, text: SmsReminder?, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val link = call?.linkId?.takeIf { it != 0L } ?: text?.linkId?.takeIf { it != 0L } ?: 0L
     val tasks by TeamRepo.tasks.collectAsState()
@@ -352,7 +352,7 @@ fun FollowUpTimeline(call: Reminder?, text: SmsReminder?, allowHelp: Boolean = t
     )
     val title = c?.note?.takeIf { it.isNotBlank() } ?: t?.message?.takeIf { it.isNotBlank() } ?: c?.headline() ?: person
     val key = if (link != 0L) "l:$link" else c?.let { "c:${it.id}" } ?: "t:${t?.id}"
-    TaskTimelineWindow(key, title, chips, lines, onDismiss, help = if (allowHelp && (link != 0L || c != null)) HelpRef(key, title) else null)
+    TaskTimelineWindow(key, title, chips, lines, onDismiss, help = if (link != 0L || c != null) HelpRef(key, title) else null)
 }
 
 /** A My task's Timeline, or the team Timeline when it came from the team. */
