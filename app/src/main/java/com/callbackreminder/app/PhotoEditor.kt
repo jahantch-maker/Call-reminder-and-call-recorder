@@ -100,7 +100,7 @@ private fun colorAt(f: Float): Int = when {
     else -> Color.hsv(((f - 0.07f) / 0.86f) * 300f, 1f, 1f).toArgb()
 }
 
-private val sliderBrush = Brush.verticalGradient(
+private val sliderBrush = Brush.horizontalGradient(
     listOf(Color.White, Color.hsv(0f, 1f, 1f), Color.hsv(60f, 1f, 1f), Color.hsv(120f, 1f, 1f),
         Color.hsv(180f, 1f, 1f), Color.hsv(240f, 1f, 1f), Color.hsv(300f, 1f, 1f), Color.Black),
 )
@@ -281,7 +281,8 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
         onDismissRequest = { if (crop) crop = false else onCancel() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // fitBetweenBars: the tool bar and Done can never sit under the phone's own navigation buttons.
+        Box(Modifier.fillMaxSize().background(Color.Black).fitBetweenBars()) {
             Column(Modifier.fillMaxSize()) {
                 // Top bar
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -451,24 +452,6 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
                         }
                     }
 
-                    if (pen || selId != null) {
-                        // Thickness (left) and colour (right) sliders
-                        Box(Modifier.align(Alignment.CenterStart).padding(start = 8.dp).width(36.dp).fillMaxHeight(0.6f)) {
-                            VSlider(thickF, Brush.verticalGradient(listOf(Color(0xFF777777), Color(0xFF777777))), "Thick", "Thin") { f ->
-                                thickF = f
-                                marks.firstOrNull { it.id == selId }?.let { m ->
-                                    if (m.kind == K_TEXT) replace(m.copy(w = bmp.width * (0.03f + 0.05f * f)))
-                                    else replace(m.copy(w = bmp.width * (0.004f + 0.026f * f)))
-                                }
-                            }
-                        }
-                        Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).width(36.dp).fillMaxHeight(0.6f)) {
-                            VSlider(colorF, sliderBrush, null, null) { f ->
-                                colorF = f
-                                marks.firstOrNull { it.id == selId }?.let { replace(it.copy(color = colorAt(f))) }
-                            }
-                        }
-                    }
                     if (bin) {
                         Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).size(52.dp).clip(CircleShape)
                             .background(Color(0xFF222222)).border(2.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {
@@ -484,6 +467,27 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
                             Modifier.align(Alignment.TopCenter).padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF222222))
                                 .clickable { marks.removeAll { it.id == m.id }; selId = null }.padding(horizontal = 12.dp, vertical = 6.dp),
                         ) { Text("🗑 Delete", color = Color.White, fontSize = 13.sp) }
+                    }
+                }
+                // Thin ◁▷ Thick and colour: two slim sliders under the picture, so nothing covers the drawing area.
+                if (pen || selId != null) Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f).height(34.dp)) {
+                        HSlider(thickF, null, wedge = true) { f ->
+                            thickF = f
+                            marks.firstOrNull { it.id == selId }?.let { m ->
+                                if (m.kind == K_TEXT) replace(m.copy(w = bmp.width * (0.03f + 0.05f * f)))
+                                else replace(m.copy(w = bmp.width * (0.004f + 0.026f * f)))
+                            }
+                        }
+                    }
+                    Box(Modifier.weight(1f).height(34.dp)) {
+                        HSlider(colorF, sliderBrush, wedge = false) { f ->
+                            colorF = f
+                            marks.firstOrNull { it.id == selId }?.let { replace(it.copy(color = colorAt(f))) }
+                        }
                     }
                 }
                 // Photo strip when several
@@ -576,31 +580,43 @@ private fun Chip(label: String, on: Boolean = false, onClick: () -> Unit) {
     ) { Text(label, color = if (on) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
 }
 
-/** Vertical slider: top = 0, bottom = 1 for the colour; for thickness top = thick. */
+/**
+ * Horizontal slider, left = 0, right = 1. The thickness one is drawn as a wedge, thin on the left and thick on the right,
+ * so the picture on the track says which way is thicker (the line width grows from left to right).
+ */
 @Composable
-private fun VSlider(value: Float, brush: Brush, top: String?, bottom: String?, onChange: (Float) -> Unit) {
-    var h by remember { mutableStateOf(1f) }
-    Box(Modifier.fillMaxSize()) {
-        Canvas(
-            Modifier.align(Alignment.Center).width(14.dp).fillMaxHeight().clip(RoundedCornerShape(7.dp))
-                .onSizeChanged { h = it.height.toFloat() }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { o -> onChange((o.y / h).coerceIn(0f, 1f)) },
-                        onDrag = { c, _ -> c.consume(); onChange((c.position.y / h).coerceIn(0f, 1f)) },
-                    )
-                }
-                .pointerInput(Unit) { detectTapGestures { o -> onChange((o.y / h).coerceIn(0f, 1f)) } },
-        ) {
-            drawRect(brush, size = Size(size.width, size.height))
+private fun HSlider(value: Float, brush: Brush?, wedge: Boolean, onChange: (Float) -> Unit) {
+    var w by remember { mutableStateOf(1f) }
+    Canvas(
+        Modifier.fillMaxSize()
+            .onSizeChanged { w = it.width.toFloat() }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { o -> onChange((o.x / w).coerceIn(0f, 1f)) },
+                    onDrag = { c, _ -> c.consume(); onChange((c.position.x / w).coerceIn(0f, 1f)) },
+                )
+            }
+            .pointerInput(Unit) { detectTapGestures { o -> onChange((o.x / w).coerceIn(0f, 1f)) } },
+    ) {
+        val r = 11.dp.toPx()
+        val x0 = r
+        val x1 = size.width - r
+        val cy = size.height / 2f
+        if (wedge) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(x0, cy - 1.5.dp.toPx())
+                lineTo(x1, cy - 9.dp.toPx())
+                lineTo(x1, cy + 9.dp.toPx())
+                lineTo(x0, cy + 1.5.dp.toPx())
+                close()
+            }
+            drawPath(path, Color(0xFF9A9A9A))
+        } else if (brush != null) {
+            drawRoundRect(brush, topLeft = Offset(x0, cy - 7.dp.toPx()), size = Size(x1 - x0, 14.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx()))
         }
-        Canvas(Modifier.fillMaxSize()) {
-            val y = value * size.height
-            drawCircle(Color.White, 11.dp.toPx(), Offset(size.width / 2, y))
-            drawCircle(Color(0xFF888888), 11.dp.toPx(), Offset(size.width / 2, y), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-        }
-        top?.let { Text(it, color = Color(0xCCFFFFFF), fontSize = 10.sp, modifier = Modifier.align(Alignment.TopCenter)) }
-        bottom?.let { Text(it, color = Color(0xCCFFFFFF), fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter)) }
+        val x = x0 + value * (x1 - x0)
+        drawCircle(Color.White, r, Offset(x, cy))
+        drawCircle(Color(0xFF888888), r, Offset(x, cy), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
     }
 }
 
