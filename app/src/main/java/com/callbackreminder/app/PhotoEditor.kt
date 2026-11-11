@@ -1,5 +1,13 @@
 package com.callbackreminder.app
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChanged
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -304,13 +312,35 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     var viewW by remember { mutableStateOf(1f) }
                     var viewH by remember { mutableStateOf(1f) }
-                    val scale = min(viewW / bmp.width, viewH / bmp.height)
-                    val left = (viewW - bmp.width * scale) / 2f
-                    val top = (viewH - bmp.height * scale) / 2f
-                    fun sc() = min(viewW / item.bmp.width, viewH / item.bmp.height)
+                    // v0.54 Zoom: two fingers pinch and move, double-tap fits again. Marks live in photo pixels, so they stay put.
+                    var zoom by remember(cur, bmp) { mutableStateOf(1f) }
+                    var panX by remember(cur, bmp) { mutableStateOf(0f) }
+                    var panY by remember(cur, bmp) { mutableStateOf(0f) }
+                    val scale = min(viewW / bmp.width, viewH / bmp.height) * zoom
+                    val left = (viewW - bmp.width * scale) / 2f + panX
+                    val top = (viewH - bmp.height * scale) / 2f + panY
+                    fun fitBase() = min(viewW / item.bmp.width, viewH / item.bmp.height)
+                    fun sc() = fitBase() * zoom
                     fun toImg(o: Offset): Offset {
                         val s = sc()
-                        return Offset((o.x - (viewW - item.bmp.width * s) / 2f) / s, (o.y - (viewH - item.bmp.height * s) / 2f) / s)
+                        return Offset((o.x - (viewW - item.bmp.width * s) / 2f - panX) / s, (o.y - (viewH - item.bmp.height * s) / 2f - panY) / s)
+                    }
+                    /** Zoom by [factor] around [c] (a point on the view) and move by [pan]; keeps the photo point under [c] in place. */
+                    fun zoomBy(factor: Float, c: Offset, pan: Offset) {
+                        val s0 = sc()
+                        val ix = (c.x - (viewW - item.bmp.width * s0) / 2f - panX) / s0
+                        val iy = (c.y - (viewH - item.bmp.height * s0) / 2f - panY) / s0
+                        val z = (zoom * factor).coerceIn(1f, 8f)
+                        val s1 = fitBase() * z
+                        var nx = c.x + pan.x - ix * s1 - (viewW - item.bmp.width * s1) / 2f
+                        var ny = c.y + pan.y - iy * s1 - (viewH - item.bmp.height * s1) / 2f
+                        if (z <= 1.001f) { nx = 0f; ny = 0f }
+                        else {
+                            val mx = max(0f, (item.bmp.width * s1 - viewW) / 2f) + 120f
+                            val my = max(0f, (item.bmp.height * s1 - viewH) / 2f) + 120f
+                            nx = nx.coerceIn(-mx, mx); ny = ny.coerceIn(-my, my)
+                        }
+                        zoom = z; panX = nx; panY = ny
                     }
                     fun tolNow() = with(dens) { 22.dp.toPx() } / max(sc(), 0.01f)
                     var drag by remember { mutableStateOf<DragState?>(null) }
@@ -318,9 +348,23 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
 
                     Canvas(
                         Modifier.fillMaxSize()
+                            .clipToBounds()
                             .onSizeChanged { viewW = it.width.toFloat(); viewH = it.height.toFloat() }
+                            // Two fingers: pinch to zoom and move. Seen first (Initial pass) and consumed, so drawing never starts under them.
                             .pointerInput(cur) {
-                                detectTapGestures { pos ->
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    do {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        if (event.changes.count { it.pressed } >= 2) {
+                                            zoomBy(event.calculateZoom(), event.calculateCentroid(useCurrent = false), event.calculatePan())
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }
+                            .pointerInput(cur) {
+                                detectTapGestures(onDoubleTap = { zoom = 1f; panX = 0f; panY = 0f }) { pos ->
                                     val p = toImg(pos)
                                     val hitM = marks.lastOrNull { hit(it, p, tolNow()) }
                                     if (hitM != null && hitM.id == selId && (hitM.kind == K_TEXT)) textEdit = hitM
@@ -406,7 +450,11 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
                                         }
                                         drag = null; loupe = null; bin = false
                                     },
-                                    onDragCancel = { drag = null; loupe = null; bin = false },
+                                    onDragCancel = {
+                                        // A second finger came down (zoom): a mark that was just started is dropped.
+                                        drag?.let { d -> if (d.mode == 0) marks.removeAll { it.id == d.id } }
+                                        drag = null; loupe = null; bin = false
+                                    },
                                 )
                             },
                     ) {
@@ -452,6 +500,20 @@ fun PhotoMarkupEditor(photos: List<ByteArray>, onDone: (List<ByteArray>) -> Unit
                         }
                     }
 
+                    // Zoom buttons (and the level) for when pinching is awkward; double-tap fits the photo again.
+                    Column(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("+" to 1.4f, "−" to 1f / 1.4f).forEach { (g, f) ->
+                            Box(
+                                Modifier.size(36.dp).clip(CircleShape).background(Color(0xCC222222))
+                                    .clickable { zoomBy(f, Offset(viewW / 2f, viewH / 2f), Offset.Zero) },
+                                contentAlignment = Alignment.Center,
+                            ) { Text(g, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                    if (zoom > 1.01f) Box(
+                        Modifier.align(Alignment.TopStart).padding(top = 12.dp, start = 10.dp).clip(RoundedCornerShape(10.dp))
+                            .background(Color(0x88000000)).clickable { zoom = 1f; panX = 0f; panY = 0f }.padding(horizontal = 8.dp, vertical = 3.dp),
+                    ) { Text("${(zoom * 100).toInt()}% · Fit", color = Color.White, fontSize = 11.sp) }
                     if (bin) {
                         Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).size(52.dp).clip(CircleShape)
                             .background(Color(0xFF222222)).border(2.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {

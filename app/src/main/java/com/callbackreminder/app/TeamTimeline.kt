@@ -125,7 +125,6 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     val launcher = rememberHelpLauncher(taskId?.let { HelpRef("t:$it", t?.title.orEmpty()) }) {
         t?.events.orEmpty().map { it.at to it.text }
     }
-    HelpLauncherHost(launcher)
     DisposableEffect(taskId) {
         val reg = taskId?.let { id -> TeamRepo.watchMsgs(id) { msgs = it } }
         onDispose { reg?.remove(); TeamMedia.stopPlaying() }
@@ -483,11 +482,14 @@ private fun TeamComposer(
 
     fun sendText() {
         if (text.isBlank()) return
+        // v0.54 Tagged people are asked to help and get the message; it also goes on this Timeline as usual.
+        help?.sendTagged(ctx, text.trim())
         if (TeamRepo.send(t, Team.TEXT, quote() + text, tag)) { text = ""; tag = ""; onReplyDone(); onSent(TeamRepo.lastSentId) }
         else Toast.makeText(ctx, "Couldn't send: check Settings › Team", Toast.LENGTH_SHORT).show()
     }
 
     Column(Modifier.fillMaxWidth().background(cs.surface)) {
+        MentionPanel(help, text) { text = it }
         replyTo?.let { r ->
             Row(Modifier.fillMaxWidth().background(cs.surfaceVariant).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -528,12 +530,12 @@ private fun TeamComposer(
                 TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
             }
             Spacer(Modifier.weight(1f))
-            HelpAtButton(help)
+            HelpAtButton(help) { text = addAt(text) }
             IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
-                value = text, onValueChange = { v -> if (help != null && typedAt(text, v)) help.ask() else text = v },
+                value = text, onValueChange = { text = it },
                 placeholder = { Text("Message $other… (@ to ask for help)") },
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 shape = RoundedCornerShape(24.dp),

@@ -135,7 +135,6 @@ fun TaskTimelineWindow(
     val cs = MaterialTheme.colorScheme
     // v0.53 @mention: type @ (or tap the @ button) to ask a team member to help; null for 🔒 Private tasks.
     val launcher = rememberHelpLauncher(help) { lines.map { it.at to it.text } }
-    HelpLauncherHost(launcher)
     var tick by remember { mutableIntStateOf(0) }
     val notes = remember(noteKey, tick) { TaskNotes.list(ctx, noteKey) }
     var draft by remember { mutableStateOf("") }
@@ -250,16 +249,18 @@ fun TaskTimelineWindow(
                 androidx.compose.material3.SnackbarHost(snack, Modifier.padding(horizontal = 12.dp))
                 // Same composer as the team Timeline: what you can do on top (the photo), then the message box and the mic / send.
                 Column(Modifier.fillMaxWidth().background(cs.surface)) {
+                    // v0.54 @: the team members above the message box.
+                    MentionPanel(launcher, draft) { draft = it }
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
                             fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        HelpAtButton(launcher)
+                        HelpAtButton(launcher) { draft = addAt(draft) }
                         IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.onSurfaceVariant) }
                     }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextField(
                             value = draft,
-                            onValueChange = { v -> if (launcher != null && typedAt(draft, v)) launcher.ask() else draft = v },
+                            onValueChange = { draft = it },
                             placeholder = { Text(if (launcher != null) "Add a note… (@ to ask for help)" else "Add a note…") },
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(24.dp), maxLines = 4,
                             trailingIcon = voiceMic(draft) { draft = it },
@@ -270,6 +271,8 @@ fun TaskTimelineWindow(
                         )
                         Spacer(Modifier.width(6.dp))
                         if (draft.isNotBlank()) IconButton(onClick = {
+                            // Tagged people are asked to help and get the message; it stays in this Timeline too.
+                            launcher?.sendTagged(ctx, draft.trim())
                             val n = TaskNote(System.currentTimeMillis(), TaskNotes.TEXT, draft.trim())
                             TaskNotes.add(ctx, noteKey, n)
                             draft = ""
