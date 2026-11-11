@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.53.1", "11 Nov",
+            new = listOf(
+                "Photo editor: line thickness and colour are now two slim sliders under the picture, so they no longer cover the drawing area",
+            ),
+            fixed = listOf(
+                "Photo editor: the tool bar and Done no longer hide under the phone's navigation buttons",
+                "Photo editor: the thickness slider now makes the line thicker when you move it towards Thick",
+            ),
+        ),
+        Entry(
             "0.53.0", "11 Nov",
             new = listOf(
                 "Ask a team member for help on any task: in its Timeline type @ (or tap the @ button) and pick a person",
