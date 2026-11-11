@@ -630,10 +630,10 @@ internal fun rememberTeamPhotoPicker(multi: Boolean = false, onPhoto: (ByteArray
         }
     }
     toEdit?.let { list ->
-        PhotoMarkupEditor(list, onCancel = { toEdit = null }) { done ->
+        PhotoMarkupEditor(list, onCancel = { toEdit = null }, onDone = { done ->
             toEdit = null
             done.forEach(onPhoto)
-        }
+        })
     }
     if (choose) {
         AlertDialog(
