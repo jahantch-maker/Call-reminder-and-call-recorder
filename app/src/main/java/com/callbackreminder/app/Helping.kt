@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -252,6 +254,39 @@ object HelpRepo {
         return id
     }
 
+    /** One message that tags several people: all become helpers (asked again if they had left) and the message goes to the thread. */
+    fun mentionAll(ref: HelpRef, who: List<TeamMember>, history: List<Pair<Long, String>>, text: String): String? {
+        val col = TeamRepo.helpsRef() ?: return null
+        val me = TeamRepo.me.value ?: return null
+        if (who.isEmpty()) return null
+        val id = idFor(me.uid, ref.key)
+        val now = System.currentTimeMillis()
+        val cur = _threads.value.firstOrNull { it.id == id }
+        val ids = who.map { it.uid }.toSet()
+        val helpers = cur?.helpers.orEmpty().filter { it.uid !in ids } + who.map { HelpHelper(it.uid, it.name, 0L) }
+        val viewers = (listOf(me.uid) + helpers.map { it.uid }).distinct()
+        val asked = who.joinToString(", ") { it.first }
+        val again = who.any { w -> cur?.helper(w.uid)?.let { it.solvedAt > 0L } == true }
+        val line = (if (again) "🔁 " else "🤝 ") + asked + (if (who.size > 1) " were" else " was") + (if (again) " asked again" else " asked to help")
+        val body = text.trim()
+        val b = db().batch()
+        b.set(
+            col.document(id),
+            mapOf(
+                "ownerUid" to me.uid, "ownerName" to me.name, "key" to ref.key, "title" to ref.title,
+                "helpers" to helperMaps(helpers), "viewers" to viewers,
+                "history" to history.takeLast(60).map { mapOf("at" to it.first, "text" to it.second.take(300)) },
+                "createdAt" to (cur?.createdAt ?: now), "updatedAt" to now, "ownerDone" to false,
+                "lastMsgAt" to now + 1, "lastMsgBy" to me.uid, "lastMsgText" to body.take(120),
+            ),
+            SetOptions.merge(),
+        )
+        b.set(col.document(id).collection("msgs").document(), mapOf("at" to now, "fromUid" to me.uid, "fromName" to me.name, "text" to line, "line" to true))
+        b.set(col.document(id).collection("msgs").document(), mapOf("at" to now + 1, "fromUid" to me.uid, "fromName" to me.name, "text" to body, "line" to false))
+        b.commit()
+        return id
+    }
+
     fun send(t: HelpThread, text: String): Boolean {
         val col = TeamRepo.helpsRef() ?: return false
         val me = TeamRepo.me.value ?: return false
@@ -311,12 +346,37 @@ object HelpRepo {
     }
 }
 
-// ---------------------------------------------------------------- the @ picker and the Timeline hook
+// ---------------------------------------------------------------- the @ list and the Timeline hook
 
-/** What a Timeline needs for @mentions: pick a person, then the help thread opens. */
+/**
+ * What a Timeline needs for @mentions. Typing @ in the message box shows a small list of team members above the box
+ * ([MentionPanel]); tapping a name puts "@Name " in the message; more people can follow. Sending asks all tagged people.
+ */
 class HelpLauncher(val ref: HelpRef, var history: () -> List<Pair<Long, String>>) {
-    var picking by mutableStateOf(false)
-    fun ask() { picking = true }
+    /** The @word a member is called by: the first name, or the whole name without spaces when two share a first name. */
+    fun tagOf(m: TeamMember, all: List<TeamMember>): String {
+        val dup = all.count { it.active && it.first.equals(m.first, ignoreCase = true) } > 1
+        return (if (dup) m.name.filter { !it.isWhitespace() } else m.first).ifBlank { "Member" }
+    }
+
+    fun taggedIn(text: String, all: List<TeamMember>): List<TeamMember> {
+        val me = TeamRepo.uid
+        val words = Regex("(?:^|\\s)@(\\S+)").findAll(text).map { it.groupValues[1].trimEnd(',', '.', '!', '?', ';', ':') }.toList()
+        return all.filter { it.active && it.uid != me && words.any { w -> w.equals(tagOf(it, all), ignoreCase = true) } }
+    }
+
+    fun hasTags(text: String): Boolean = taggedIn(text, TeamRepo.members.value).isNotEmpty()
+
+    /** Asks every tagged person (they see the whole history) and sends [body] to the help thread. False when nobody is tagged. */
+    fun sendTagged(ctx: Context, body: String): Boolean {
+        val who = taggedIn(body, TeamRepo.members.value)
+        if (who.isEmpty()) return false
+        val id = HelpRepo.mentionAll(ref, who, history(), body)
+        Toast.makeText(
+            ctx, if (id == null) "Couldn't ask: check Settings › Team" else "Asked " + who.joinToString(", ") { it.first } + " to help", Toast.LENGTH_SHORT,
+        ).show()
+        return id != null
+    }
 }
 
 @Composable
@@ -329,23 +389,55 @@ fun rememberHelpLauncher(ref: HelpRef?, history: () -> List<Pair<Long, String>>)
     return remember(ref.key) { HelpLauncher(ref, history) }.also { it.history = history }
 }
 
-/** Whether typing this much in the box means a new "@": at the start or after a space. */
-fun typedAt(old: String, now: String): Boolean =
-    now.length == old.length + 1 && now.endsWith("@") && (now.length == 1 || now[now.length - 2].isWhitespace())
+/** The word being typed after an @ at the end of the message ("" right after the @), or null when there is none. */
+fun mentionToken(text: String): String? = Regex("(?:^|\\s)@(\\S*)$").find(text)?.groupValues?.get(1)
 
-/** The picker (when [HelpLauncher.ask] was called). Put once in the Timeline. */
+/** The @ button: adds an @ to the message, which opens the list. */
+fun addAt(text: String): String = if (text.isEmpty() || text.last().isWhitespace()) "$text@" else "$text @"
+
+/** The small list of team members above the message box (WhatsApp style). Narrows as you type after the @. */
 @Composable
-fun HelpLauncherHost(l: HelpLauncher?) {
-    if (l == null || !l.picking) return
-    val ctx = LocalContext.current
-    val me = TeamRepo.uid
-    val mine = HelpRepo.forKey(me, l.ref.key)
-    val open = mine?.helpers.orEmpty().filter { it.solvedAt == 0L }.map { it.uid }.toSet()
-    MemberPickDialog(exclude = open, onDismiss = { l.picking = false }) { m ->
-        l.picking = false
-        val id = HelpRepo.mention(l.ref, m, l.history())
-        if (id == null) Toast.makeText(ctx, "Couldn't ask: check Settings › Team", Toast.LENGTH_SHORT).show()
-        else HelpUi.openThread.value = id
+fun MentionPanel(l: HelpLauncher?, text: String, onText: (String) -> Unit) {
+    if (l == null) return
+    val members by TeamRepo.members.collectAsState()
+    val threads by HelpRepo.threads.collectAsState()
+    val q = mentionToken(text) ?: return
+    val me = TeamRepo.uid ?: return
+    val open = threads.firstOrNull { it.id == HelpRepo.idFor(me, l.ref.key) }?.helpers.orEmpty().filter { it.solvedAt == 0L }.map { it.uid }.toSet()
+    val taggedUids = l.taggedIn(text, members).map { it.uid }.toSet()
+    val list = members.filter {
+        it.active && it.uid != me && it.uid !in open && it.uid !in taggedUids && l.tagOf(it, members).startsWith(q, ignoreCase = true)
+    }
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        color = cs.surfaceVariant, shape = RoundedCornerShape(16.dp), shadowElevation = 6.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+            Text(
+                "ASK WHO TO HELP?", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = cs.onSurfaceVariant,
+                modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 4.dp),
+            )
+            if (list.isEmpty()) Text("Nobody matches @$q", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+            list.forEach { m ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onText(text.replace(Regex("@\\S*$")) { "@" + l.tagOf(m, members) + " " }) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(shape = CircleShape, color = cs.primary, modifier = Modifier.size(30.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(m.first.take(1).uppercase(), color = cs.onPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(m.name, fontSize = 15.sp)
+                        if (m.designation.isNotBlank()) Text(m.designation, fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -369,11 +461,11 @@ fun HelpStrip(l: HelpLauncher?) {
     }
 }
 
-/** A small "@" button for the composer. */
+/** A small "@" button for the composer: [onAt] adds the @ to the message. */
 @Composable
-fun HelpAtButton(l: HelpLauncher?) {
+fun HelpAtButton(l: HelpLauncher?, onAt: () -> Unit) {
     if (l == null) return
-    IconButton(onClick = { l.ask() }) {
+    IconButton(onClick = onAt) {
         Text("@", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -510,6 +602,7 @@ fun HelpThreadWindow(id: String, onDismiss: () -> Unit) {
     var msgs by remember(id) { mutableStateOf<List<HelpMsg>>(emptyList()) }
     var draft by remember(id) { mutableStateOf("") }
     var picking by remember(id) { mutableStateOf(false) }
+    val launcher = remember(t.key) { HelpLauncher(HelpRef(t.key, t.title)) { t.history } }
     DisposableEffect(id) {
         val reg = HelpRepo.listenMsgs(id) { msgs = it }
         onDispose { reg?.remove() }
@@ -575,10 +668,12 @@ fun HelpThreadWindow(id: String, onDismiss: () -> Unit) {
                     }
                     FloatingDayChip(list, rows, Modifier.align(Alignment.TopCenter))
                 }
-                if (canWrite) Row(Modifier.fillMaxWidth().background(cs.surface).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (canWrite) Column(Modifier.fillMaxWidth().background(cs.surface)) {
+                  if (isOwner) MentionPanel(launcher, draft) { draft = it }
+                  Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextField(
                         value = draft,
-                        onValueChange = { v -> if (isOwner && typedAt(draft, v)) picking = true else draft = v },
+                        onValueChange = { draft = it },
                         placeholder = { Text(if (isOwner) "Message… (@ to ask someone else)" else "Reply…") },
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(24.dp), maxLines = 4,
                         colors = TextFieldDefaults.colors(
@@ -588,10 +683,14 @@ fun HelpThreadWindow(id: String, onDismiss: () -> Unit) {
                     )
                     Spacer(Modifier.width(6.dp))
                     IconButton(
-                        onClick = { if (HelpRepo.send(t, draft)) draft = "" },
+                        onClick = {
+                            if (isOwner && launcher.hasTags(draft)) { launcher.sendTagged(ctx, draft.trim()); draft = "" }
+                            else if (HelpRepo.send(t, draft)) draft = ""
+                        },
                         enabled = draft.isNotBlank(),
                         modifier = Modifier.size(48.dp).clip(CircleShape).background(if (draft.isNotBlank()) Color(0xFF3DD6B5) else cs.surfaceVariant),
                     ) { Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = Color(0xFF053D2E)) }
+                  }
                 } else Text(
                     when {
                         t.ownerDone -> "The task is done. Helping has ended."

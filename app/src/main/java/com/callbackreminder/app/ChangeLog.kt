@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.54.0", "11 Nov",
+            new = listOf(
+                "@ in a Timeline now works like WhatsApp: a small list of team members slides up above the message box and the chat stays visible",
+                "The list narrows as you type after the @; tap a name to put it in your message, then type @ again to add more people",
+                "Sending the message asks everyone tagged to help; they see the task's whole history and can reply",
+                "Photo editor: pinch with two fingers to zoom in and move around, double-tap to fit the photo again, or use the + and − buttons; your marks stay in place",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.53.1", "11 Nov",
             new = listOf(
                 "Photo editor: line thickness and colour are now two slim sliders under the picture, so they no longer cover the drawing area",
