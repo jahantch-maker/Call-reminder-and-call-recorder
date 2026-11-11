@@ -253,12 +253,18 @@ object TeamUi {
         val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false, val first: TeamTask? = null,
         /** [FollowUpsUi.STUCK], [FollowUpsUi.EXTEND] or [FollowUpsUi.ASK]: opens WAITING ON YOU with only these. */
         val kind: Int? = null,
+        /** v0.53 🤝 Helping: opens the thread (one) or the Helping list. */
+        val help: Boolean = false, val helpId: String? = null,
     )
 
     /** A Needs you line: only one waiting opens its Timeline, more open Follow-ups with only that kind. */
     fun openNeed(c: Context, n: Need) {
         val first = n.first
         when {
+            n.help -> {
+                if (n.helpId != null) HelpUi.openThread.value = n.helpId
+                else { HelpUi.showList.value = true; request.value = MY_TASKS }
+            }
             n.mine -> request.value = MY_TASKS
             n.kind != null && n.count == 1 && first != null -> openTimeline(first.id)
             n.kind != null -> {
@@ -297,6 +303,15 @@ object TeamUi {
             }
             tasks.filter { it.toUid == me && it.status == Team.REOPENED }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("↩ ${it.size} sent back: not done yet", it.size, ChipTone.RED, mine = true))
+            }
+            // v0.53 🤝 Someone asked you to help and wrote last: red like Ask and Stuck, until you answer.
+            HelpRepo.waitingForMe(me).takeIf { it.isNotEmpty() }?.let {
+                add(Need("🤝 ${it.size} waiting for your help · " + it.map { t -> t.ownerFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED,
+                    help = true, helpId = it.singleOrNull()?.id))
+            }
+            // 💬 A helper answered a task you asked help for.
+            HelpRepo.newForOwner(me).takeIf { it.isNotEmpty() }?.let {
+                add(Need("💬 ${it.size} new in Helping", it.size, ChipTone.ORANGE, help = true, helpId = it.singleOrNull()?.id))
             }
         }
     }
@@ -1644,7 +1659,9 @@ fun TeamNeedsLines(mineOnly: Boolean = false) {
     val tasks by TeamRepo.tasks.collectAsState()
     val me by TeamRepo.me.collectAsState()
     if (me?.active != true) return
-    val needs = remember(tasks, me) { TeamUi.needs(ctx, tasks, me?.uid).filter { !mineOnly || it.mine } }
+    val helps by HelpRepo.threads.collectAsState()
+    val helpSeen by HelpRepo.seen.collectAsState()
+    val needs = remember(tasks, me, helps, helpSeen) { TeamUi.needs(ctx, tasks, me?.uid).filter { !mineOnly || it.mine } }
     needs.forEach { n ->
         val fg = when (n.tone) {
             ChipTone.RED -> MaterialTheme.colorScheme.error

@@ -29,6 +29,18 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.53.0", "11 Nov",
+            new = listOf(
+                "Ask a team member for help on any task: in its Timeline type @ (or tap the @ button) and pick a person",
+                "The helper sees the task's whole history (private notes stay on your phone) and can reply, but not change the task",
+                "New 🤝 Helping list in My tasks: tasks you were asked to help with and tasks you asked help for",
+                "When the owner wrote last and you have not answered, it shows red on Home like Ask and Stuck",
+                "The helper presses ✓ Solved and leaves with a line on the thread; an @mention brings them back",
+                "Marking the task Done ends the help for everyone",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.52.0", "11 Nov",
             new = listOf(
                 "Photo editor: every photo you take or pick opens in a WhatsApp-style editor before it is used",

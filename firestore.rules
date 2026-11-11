@@ -132,6 +132,26 @@ service cloud.firestore {
         }
       }
 
+      // v0.53 Help threads (@mentions on a Timeline): the person who asked and the people he asked, nobody else.
+      // The owner (who asked) writes the whole document; a helper may only change the helpers list (Solved) and the
+      // "last message" fields. The talk (msgs) is written by whoever is in the thread, as himself.
+      match /helps/{h} {
+        allow read: if signedIn() && isActive(t) && me() in resource.data.viewers;
+        allow create: if signedIn() && isActive(t) && request.resource.data.ownerUid == me() && me() in request.resource.data.viewers;
+        allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && (resource.data.ownerUid == me()
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpers', 'lastMsgAt', 'lastMsgBy', 'lastMsgText', 'updatedAt']));
+        allow delete: if signedIn() && isActive(t) && resource.data.ownerUid == me();
+
+        match /msgs/{m} {
+          allow read: if signedIn() && isActive(t) && me() in get(/databases/$(database)/documents/teams/$(t)/helps/$(h)).data.viewers;
+          // getAfter: the first message is written in the same batch that creates or updates the thread.
+          allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me()
+            && me() in getAfter(/databases/$(database)/documents/teams/$(t)/helps/$(h)).data.viewers;
+        }
+      }
+
       // Each member's Dossier: he and the people above him read it. The Owner sets it; so do a senior with
       // "Sets Dossier of people under him" and the member himself with "Adds his own Dossier", but they can only
       // add blocks (never remove one): only the Owner deletes.
