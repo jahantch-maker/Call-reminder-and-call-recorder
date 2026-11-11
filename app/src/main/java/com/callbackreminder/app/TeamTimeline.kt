@@ -121,6 +121,11 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
     var replyTo by remember(taskId) { mutableStateOf<TeamMsg?>(null) }
     var infoOf by remember(taskId) { mutableStateOf<TeamMsg?>(null) }
     var taskFrom by remember(taskId) { mutableStateOf<String?>(null) }
+    // v0.53 @mention: ask a team member to help on this task; the helper reads its history and replies in a Help thread.
+    val launcher = rememberHelpLauncher(taskId?.let { HelpRef("t:$it", t?.title.orEmpty()) }) {
+        t?.events.orEmpty().map { it.at to it.text }
+    }
+    HelpLauncherHost(launcher)
     DisposableEffect(taskId) {
         val reg = taskId?.let { id -> TeamRepo.watchMsgs(id) { msgs = it } }
         onDispose { reg?.remove(); TeamMedia.stopPlaying() }
@@ -183,6 +188,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
                     OnTime.chip(t)?.let { add(it) }
                 }
             )
+            HelpStrip(launcher)
             // v0.44: the other person's 🟢 Active now / Last active, like WhatsApp's line under the name.
             val members by TeamRepo.members.collectAsState()
             members.firstOrNull { it.uid == (if (t.toUid == me) t.fromUid else t.toUid) }?.let { m ->
@@ -240,7 +246,7 @@ fun TeamTimelineScreen(onBack: () -> Unit) {
             scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
         })
         val canTalk = me == t.fromUid || me == t.toUid
-        if (canTalk) TeamComposer(t, isDoer = me == t.toUid, replyTo = replyTo, onReplyDone = { replyTo = null },
+        if (canTalk) TeamComposer(t, isDoer = me == t.toUid, replyTo = replyTo, onReplyDone = { replyTo = null }, help = launcher,
             onSent = { id -> id?.let { mid -> scope.offerUndoFor(snack, "Sent", 5L) { TeamRepo.deleteMsgId(t, mid) } } },
             onExtended = { msg, before ->
                 scope.offerUndoFor(snack, msg, 10L) { TeamRepo.undoDeadline(before) }
@@ -456,7 +462,7 @@ private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, Tea
 @Composable
 private fun TeamComposer(
     t: TeamTask, isDoer: Boolean, replyTo: TeamMsg?, onReplyDone: () -> Unit, onSent: (String?) -> Unit,
-    onExtended: (String, TeamTask) -> Unit,
+    onExtended: (String, TeamTask) -> Unit, help: HelpLauncher? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -522,12 +528,13 @@ private fun TeamComposer(
                 TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
             }
             Spacer(Modifier.weight(1f))
+            HelpAtButton(help)
             IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
-                value = text, onValueChange = { text = it },
-                placeholder = { Text("Message $other…") },
+                value = text, onValueChange = { v -> if (help != null && typedAt(text, v)) help.ask() else text = v },
+                placeholder = { Text("Message $other… (@ to ask for help)") },
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 shape = RoundedCornerShape(24.dp),
                 maxLines = 4,

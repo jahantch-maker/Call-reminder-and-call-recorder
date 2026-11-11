@@ -303,7 +303,10 @@ class MainActivity : ComponentActivity() {
                 intent?.removeExtra(EXTRA_TEAM_TASK)
                 val where = intent?.getStringExtra(EXTRA_TEAM_WHERE)
                 intent?.removeExtra(EXTRA_TEAM_WHERE)
-                if (task != null) openTeamTask(task, where) else showTab(Tab.FOLLOW_UPS)
+                if (task != null && task.startsWith("help:")) {
+                    HelpUi.openThread.value = task.removePrefix("help:")
+                    showTab(Tab.MY_TASKS)
+                } else if (task != null) openTeamTask(task, where) else showTab(Tab.FOLLOW_UPS)
                 return
             }
             OPEN_MY_DAY -> {
@@ -544,6 +547,8 @@ private fun AppRoot(
     TeamDossierProofHost()
     // Deleting a task you gave, from any screen: "Delete for you and Basharat?"
     TeamDeleteHost()
+    // 🤝 A help thread asked for from a notification, Needs you or the Helping list.
+    HelpHost()
 
     // "Review now" on the review reminder.
     LaunchedEffect(openTabKey) {

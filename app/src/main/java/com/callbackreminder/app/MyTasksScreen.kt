@@ -195,8 +195,18 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         highlightId = -id
     }
     val inTeam = TeamRepo.activeNow
-    if (listSel == MyTaskStore.UNSORTED || (listSel == ASSIGNED_LIST && !inTeam) ||
-        (listSel != ALL_LISTS && listSel != ASSIGNED_LIST && lists.none { it.id == listSel })) listSel = ALL_LISTS
+    if (listSel == MyTaskStore.UNSORTED || (listSel == ASSIGNED_LIST && !inTeam) || (listSel == HELPING_LIST && !inTeam) ||
+        (listSel != ALL_LISTS && listSel != ASSIGNED_LIST && listSel != HELPING_LIST && lists.none { it.id == listSel })) listSel = ALL_LISTS
+    // v0.53 🤝 Helping: tasks you were asked to help with, and the ones you asked help for.
+    val helpThreads by HelpRepo.threads.collectAsState()
+    val helpSeen by HelpRepo.seen.collectAsState()
+    val meUid = TeamRepo.uid.orEmpty()
+    val helpingNew = remember(helpThreads, helpSeen) { HelpRepo.waitingForMe(meUid).size + HelpRepo.newForOwner(meUid).size }
+    val helpJump by HelpUi.showList.collectAsState()
+    LaunchedEffect(helpJump) {
+        if (helpJump) { HelpUi.showList.value = false; sub = MyTasksUi.ONE_TIME; listSel = HELPING_LIST; completedOpen = false }
+    }
+    var helpDoneOpen by remember { mutableStateOf(false) }
     val current = lists.firstOrNull { it.id == listSel }
 
     var newKind by remember { mutableStateOf<Int?>(null) }
@@ -233,6 +243,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     val inView = when (listSel) {
         ALL_LISTS -> tasks
         ASSIGNED_LIST -> tasks.filter { t -> teamOf[t.id]?.let { fromSel == null || it.fromFirst == fromSel } == true }
+        HELPING_LIST -> emptyList()
         else -> tasks.filter { it.listId == listSel }
     }
     val newOnTop = listSel == ASSIGNED_LIST
@@ -419,6 +430,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                             ListTabs(
                                 lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true },
                                 assigned = inTeam, assignedNew = assignedNew,
+                                helping = inTeam, helpingNew = helpingNew,
                             )
                         }
                         StarToggle(starredOnly) { starredOnly = it }
@@ -471,6 +483,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         }
                     }
                 }
+                if (listSel == HELPING_LIST) helpingItems(meUid, helpThreads, helpSeen, helpDoneOpen) { helpDoneOpen = !helpDoneOpen }
                 val freshOnTop = if (newOnTop) viewPending.filter { it.id in newIds }.sortedByDescending { it.id } else emptyList()
                 if (freshOnTop.isNotEmpty()) {
                     freshOnTop.forEach { groupOf[it.id] = "g-new" }
@@ -486,7 +499,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         }
                     }
                 }
-                if (viewPending.isEmpty()) {
+                if (viewPending.isEmpty() && listSel != HELPING_LIST) {
                     item(key = "empty-one") {
                         when {
                             starredOnly -> HintText("No starred tasks here.")

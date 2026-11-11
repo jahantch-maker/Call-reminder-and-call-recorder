@@ -109,6 +109,7 @@ internal val NoTimeFg: Color @Composable get() = Tones.amber.fg
 internal fun ListTabs(
     lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit,
     assigned: Boolean = false, assignedNew: Int = 0,
+    helping: Boolean = false, helpingNew: Int = 0,
 ) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -117,6 +118,7 @@ internal fun ListTabs(
     ) {
         ListTab("All", selected == ALL_LISTS) { onSelect(ALL_LISTS) }
         if (assigned) ListTab("Assigned to me", selected == ASSIGNED_LIST, dot = assignedNew) { onSelect(ASSIGNED_LIST) }
+        if (helping) ListTab("🤝 Helping", selected == HELPING_LIST, dot = helpingNew) { onSelect(HELPING_LIST) }
         lists.filter { it.id != MyTaskStore.UNSORTED }.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
         TextButton(onClick = onNewList) { Text("＋ New list", fontWeight = FontWeight.SemiBold) }
     }
@@ -124,6 +126,7 @@ internal fun ListTabs(
 
 const val ALL_LISTS = -1L
 const val ASSIGNED_LIST = -2L
+const val HELPING_LIST = -3L
 
 @Composable
 private fun ListTab(text: String, on: Boolean, dot: Int = 0, onClick: () -> Unit) {

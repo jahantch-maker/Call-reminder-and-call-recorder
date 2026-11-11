@@ -449,6 +449,11 @@ object TeamRepo {
                 val fromServer = !s.metadata.isFromCache
                 scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground, complete = fromServer) } }
             },
+            // v0.53 Tasks he asks help for or helps with. An error (rules not updated yet) is ignored: it must never restart the rest.
+            team.collection("helps").whereArrayContains("viewers", me).addSnapshotListener { s, e ->
+                if (e != null || s == null) return@addSnapshotListener
+                scope.launch { CrashLog.guard(appCtx, "Help sync") { HelpRepo.onSnapshot(appCtx, s.documents) } }
+            },
             // His Dossier, as the Owner set it.
             team.collection("dossier").document(me).addSnapshotListener { s, _ ->
                 if (s == null || !s.exists()) return@addSnapshotListener
@@ -713,6 +718,9 @@ object TeamRepo {
 
     private fun members() = db().collection("teams").document(teamId!!).collection("members")
     private fun tasksRef() = db().collection("teams").document(teamId!!).collection("tasks")
+
+    /** v0.53 The help threads (@mentions): teams/{team}/helps. */
+    internal fun helpsRef() = teamId?.let { db().collection("teams").document(it).collection("helps") }
 
     /** Everyone above [reportsTo] including them, nearest first (stops at loops). */
     fun chainFrom(reportsTo: String): List<String> {

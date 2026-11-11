@@ -129,9 +129,13 @@ fun TaskTimelineWindow(
     chips: List<RowChip>,
     lines: List<TimelineLine>,
     onDismiss: () -> Unit,
+    help: HelpRef? = null,
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
+    // v0.53 @mention: type @ (or tap the @ button) to ask a team member to help; null for 🔒 Private tasks.
+    val launcher = rememberHelpLauncher(help) { lines.map { it.at to it.text } }
+    HelpLauncherHost(launcher)
     var tick by remember { mutableIntStateOf(0) }
     val notes = remember(noteKey, tick) { TaskNotes.list(ctx, noteKey) }
     var draft by remember { mutableStateOf("") }
@@ -201,6 +205,7 @@ fun TaskTimelineWindow(
                     if (chips.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         chips.forEach { SmallChip(it) }
                     }
+                    HelpStrip(launcher)
                 }
                 // History and notes together, oldest first, with a day chip before each day.
                 val rows = remember(lines, notes) {
@@ -248,11 +253,14 @@ fun TaskTimelineWindow(
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
                             fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        HelpAtButton(launcher)
                         IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.onSurfaceVariant) }
                     }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextField(
-                            value = draft, onValueChange = { draft = it }, placeholder = { Text("Add a note…") },
+                            value = draft,
+                            onValueChange = { v -> if (launcher != null && typedAt(draft, v)) launcher.ask() else draft = v },
+                            placeholder = { Text(if (launcher != null) "Add a note… (@ to ask for help)" else "Add a note…") },
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(24.dp), maxLines = 4,
                             trailingIcon = voiceMic(draft) { draft = it },
                             colors = TextFieldDefaults.colors(
@@ -344,7 +352,7 @@ fun FollowUpTimeline(call: Reminder?, text: SmsReminder?, onDismiss: () -> Unit)
     )
     val title = c?.note?.takeIf { it.isNotBlank() } ?: t?.message?.takeIf { it.isNotBlank() } ?: c?.headline() ?: person
     val key = if (link != 0L) "l:$link" else c?.let { "c:${it.id}" } ?: "t:${t?.id}"
-    TaskTimelineWindow(key, title, chips, lines, onDismiss)
+    TaskTimelineWindow(key, title, chips, lines, onDismiss, help = if (link != 0L || c != null) HelpRef(key, title) else null)
 }
 
 /** A My task's Timeline, or the team Timeline when it came from the team. */
@@ -363,7 +371,8 @@ fun MyTaskTimeline(t: MyTask, onDismiss: () -> Unit) {
         RowChip(if (t.done) "Done " + Fmt.dueLabel(t.doneAt) else if (t.timed) "☑ " + Fmt.dueLabel(t.dueAt) else "⏱ No time yet", ChipTone.MUTED),
         t.personTitle.takeIf { t.hasPerson }?.let { RowChip("👤 " + (Names.first(it) ?: it), ChipTone.BLUE) },
     )
-    TaskTimelineWindow("m:${t.id}", t.title, chips, lines, onDismiss)
+    val hidden = TeamRepo.activeNow && TeamLinks.isPrivate(ctx, t.id)
+    TaskTimelineWindow("m:${t.id}", t.title, chips, lines, onDismiss, help = if (hidden) null else HelpRef("m:${t.id}", t.title))
 }
 
 /** A follow-up waiting in To schedule: its history so far (kept from its call and texts), or the team Timeline. */
@@ -383,5 +392,6 @@ fun ScheduledTimeline(s: ToScheduleItem, onDismiss: () -> Unit) {
         RowChip("⏱ No time yet", ChipTone.MUTED),
         s.title.takeIf { s.number.isNotBlank() || s.name.isNotBlank() }?.let { RowChip("👤 " + (Names.first(it) ?: it), ChipTone.BLUE) },
     )
-    TaskTimelineWindow(if (s.linkId != 0L) "l:${s.linkId}" else "s:${s.id}", s.headline, chips, lines, onDismiss)
+    val sKey = if (s.linkId != 0L) "l:${s.linkId}" else "s:${s.id}"
+    TaskTimelineWindow(sKey, s.headline, chips, lines, onDismiss, help = HelpRef(sKey, s.headline))
 }
