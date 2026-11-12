@@ -3,7 +3,7 @@
  */
 (function () {
   "use strict";
-  const RB = (window.RB = { D: { me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
+  const RB = (window.RB = { D: { plot: [], plotMoney: {}, plotCfg: null, me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
   const D = RB.D;
   const DAY = 86400000;
   RB.DAY = DAY;
@@ -47,14 +47,15 @@
     ["giveDown", "Give tasks down his branch", "", true],
     ["giveSide", "Give tasks sideways", "Colleagues with the same head", true],
     ["callRec", "Call recording", "Stays on his phone", false],
+    ["seeMoney", "See money details", "Plot files: cheques, amounts, discounts and PCC dues. Only you can turn it on", false],
   ];
-  RB.SECTIONS = [["app", "App view"], ["meetings", "Meetings"], ["team", "Team"], ["docs", "Documents"], ["settings", "Settings"]];
+  RB.SECTIONS = [["app", "App view"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
   /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
   RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["waiting", "Waiting"]];
   RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"]];
   RB.SCOPES = [["own", "Own only"], ["team", "Own + team below"], ["all", "Whole RB"]];
-  const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", settingsTabs: [] };
+  const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", plot: "none", settingsTabs: [] };
   /** Access checks made before this moment do not count: the new settings (how far, tab ticks) need one look from the owner. */
   RB.CHECK_AFTER = Date.parse("2026-11-01T19:00:00Z");
   RB.isChecked = (d) => !!d && (d.checkedAt || 0) > RB.CHECK_AFTER;
@@ -153,15 +154,16 @@
   };
 
   // ------------------------------------------------------------------ store (Firebase or demo)
-  const COLL = { members: "members", seats: "seats", docs: "docs", changelog: "changelog", tasks: "tasks", meetings: "meetings" };
+  const COLL = { members: "members", seats: "seats", docs: "docs", changelog: "changelog", tasks: "tasks", meetings: "meetings", plotfiles: "plot" };
   RB.Store = {
     async put(coll, id, data, merge) {
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
-        if (coll === "config") { if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
+        if (coll === "config") { if (id === "plotsteps") D.plotCfg = merge ? Object.assign({}, D.plotCfg || {}, data) : data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
+        if (coll === "plotmoney") { D.plotMoney[id] = merge ? Object.assign({}, D.plotMoney[id] || {}, data) : data; return id; }
         const arr = D[COLL[coll]]; const i = arr.findIndex((x) => x.id === id || x.uid === id && coll === "members");
         const key = coll === "members" ? "uid" : "id";
         if (i >= 0) arr[i] = merge ? Object.assign({}, arr[i], data) : Object.assign({ [key]: id }, data);
@@ -379,7 +381,10 @@
     teamRef.collection("changelog").orderBy("at", "desc").limit(200).onSnapshot((s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     const tq = RB.isOwner() ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     tq.onSnapshot((s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    teamRef.collection("config").onSnapshot((s) => { s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); }); RB.soft(); }, onErr);
+    teamRef.collection("config").onSnapshot((s) => { s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsteps") D.plotCfg = d.data(); }); RB.soft(); }, onErr);
+    // Plot files: the files themselves, and (only for the owner and people with "See money details") the cheques and amounts.
+    if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
+    if (RB.level("plot") !== "none" && RB.canMoney()) snap("plotmoney", (s) => { D.plotMoney = {}; s.docs.forEach((d) => (D.plotMoney[d.id] = d.data())); });
     if (RB.level("meetings") !== "none") teamRef.collection("meetings").orderBy("startedAt", "desc").limit(100).onSnapshot((s) => { D.meetings = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
   }
 })();

@@ -76,7 +76,7 @@ service cloud.firestore {
       match /changelog/{c} {
         allow read: if signedIn() && isActive(t) && isOwner(t);
         allow create: if signedIn() && isActive(t) && request.resource.data.by == me()
-          && (isOwner(t) || lvl(t, 'team') == 'edit' || lvl(t, 'docs') == 'edit' || lvl(t, 'settings') == 'edit');
+          && (isOwner(t) || lvl(t, 'team') == 'edit' || lvl(t, 'docs') == 'edit' || lvl(t, 'settings') == 'edit' || lvl(t, 'plot') == 'edit');
         allow update, delete: if false;
       }
 
@@ -94,6 +94,17 @@ service cloud.firestore {
           || member(t).get('designation', '') in resource.data.get('shareWith', []));
         allow list: if signedIn() && isActive(t) && (isOwner(t) || lvl(t, 'docs') == 'edit');
         allow write: if signedIn() && isActive(t) && isOwner(t);
+      }
+
+      // Plot files (Plot files project): the file of each plot (steps, items, notes) is read by everyone with Plot files access
+      // and written by Plot files editors. Cheques and amounts sit in a separate record that only the owner and people the owner
+      // ticked "See money details" for can read or write, so hiding money is real, not just on screen.
+      match /plotfiles/{p} {
+        allow read: if signedIn() && portalSee(t, 'plot');
+        allow write: if signedIn() && portalEdit(t, 'plot');
+      }
+      match /plotmoney/{p} {
+        allow read, write: if signedIn() && isActive(t) && (isOwner(t) || (lvl(t, 'plot') in ['view', 'edit'] && appSw(t, 'seeMoney')));
       }
 
       // v0.49 Reading progress: he marks his own; the owner, Documents editors and his heads read it.
@@ -186,6 +197,7 @@ service cloud.firestore {
           || (doc == 'designations' && lvl(t, 'team') == 'edit')
           || (doc == 'reasons' && (lvl(t, 'settings') == 'edit' || appSw(t, 'editReasons')))
           || (doc == 'meeting' && lvl(t, 'settings') == 'edit'));
+        // config/plotsteps (Plot files rules and timing) is written by the owner only (isOwner above).
       }
 
       // v0.48 Team meetings (attendance, decisions, notes, actions). v0.49 Meetings "Edit" runs them, "View" reads the minutes.

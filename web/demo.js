@@ -68,6 +68,21 @@ window.DEMO_DATA = {
     ];
     const reading = { m0: { done: { "jd-sur": { at: at(-3), version: 2 }, "sop-site": { at: at(-1), version: 3 } } }, m1: {} };
     const changelog = [{ id: "c1", at: at(-1, 15), by: "owner", byName: "Jahanzaib", text: "Moved Imran under Kamran" }, { id: "c2", at: at(-2, 10), by: "owner", byName: "Jahanzaib", text: "Site Manager default: Set Dossier ON" }];
-    return { team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, reasons: null, cfg: null, meetings };
+    // Plot files (sample): four files at different places, so every list chip has something in it.
+    const wd = (n) => at(-n, 10);
+    const dsteps = (cur, doneIds, extra) => { const o = {}; doneIds.forEach((id, i) => (o[id] = { status: "done", startedAt: wd(Math.max(2, 12 - i)), doneAt: wd(Math.max(1, 11 - i)), days: null })); o[cur.id] = Object.assign({ status: "doing", startedAt: cur.at, days: cur.days, role: cur.role }, extra || {}); return o; };
+    const items = (st) => ["Site Plan Requisition form", "CNIC copy of plot owner", "Possession form", "Registry photocopy", "100 stamp paper · Undertaking", "1200 stamp paper with discount cheque", "Director waiver / discount approval"].map((n, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", name: n, status: st[i] || "none", at: st[i] ? wd(5) : 0 }));
+    const plot = [
+      { id: "pf1", plot: "245", owner: "Mr Tahir Mehmood", phone1: "0300 1234567", phone2: "0321 7654321", cnic: "35202-1234567-1", size: "10 marla", address: "House 12, Street 4, Lahore", driveInternal: "https://drive.google.com/drive/folders/demo-int", driveArchitect: "https://drive.google.com/drive/folders/demo-arch", openedAt: wd(8), stage: 1, closed: false, waiting: null,
+        steps: dsteps({ id: "1.16", at: wd(6), days: 2, role: "Draftsman" }, ["1.01", "1.02", "1.03", "1.04", "1.05", "1.05c", "1.06", "1.07", "1.08", "1.09", "1.10", "1.10d", "1.11", "1.12", "1.13", "1.14", "1.15"]), items: items(["verified", "verified", "verified", "received", "none", "none", "waived"]),
+        events: [{ at: wd(8), by: "m1", text: "Plot file opened" }, { at: wd(6), by: "owner", text: "1.15 · Plot Drive folder made done" }] },
+      { id: "pf2", plot: "118", owner: "Mrs Saima Akhtar", phone1: "0333 5551122", phone2: "", cnic: "35202-7654321-2", size: "5 marla", address: "Block C, Lahore", openedAt: wd(20), stage: 4, closed: false, waiting: { stepId: "4.02", since: wd(2) },
+        steps: dsteps({ id: "4.02", at: wd(3), days: null, role: "Draftsman" }, ["4.01"], { status: "waiting", waitingSince: wd(2), waitedMs: 0 }), items: items(["verified", "verified", "verified", "verified", "received", "none", "none"]), events: [{ at: wd(2), by: "m3", text: "Waiting for plot owner · 4.02" }] },
+      { id: "pf3", plot: "302", owner: "Mr Naveed Iqbal", phone1: "0345 9988776", phone2: "", cnic: "35201-1112223-3", size: "1 kanal", address: "Phase 2, Lahore", openedAt: wd(15), stage: 2, closed: false, waiting: null,
+        steps: dsteps({ id: "2.05", at: wd(7), days: 1, role: "Document Officer" }, ["2.01", "2.02", "2.02c", "2.03", "2.04"]), items: items(["verified", "received", "received", "none", "none", "none", "none"]), events: [] },
+      { id: "pf4", plot: "77", owner: "Mr Rashid Ali", phone1: "0301 4443322", phone2: "", cnic: "35202-9998887-1", size: "10 marla", address: "Block A, Lahore", openedAt: wd(90), stage: 8, closed: true, waiting: null, steps: { "8.08": { status: "done", startedAt: wd(30), doneAt: wd(28) } }, items: items(["verified", "verified", "verified", "verified", "verified", "verified", "waived"]), events: [{ at: wd(28), by: "owner", text: "Plot file closed" }] },
+    ];
+    const plotMoney = { pf1: { cheques: [{ id: "c1", milestone: "Construction started", deadline: at(40), bank: "HBL", no: "00123456", amount: 100000, status: "held" }], pccDue: 0 }, pf2: { cheques: [], pccDue: 45000 } };
+    return { plot, plotMoney, plotCfg: { enabled: true, steps: {}, holidays: [] }, team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, reasons: null, cfg: null, meetings };
   },
 };

@@ -7,6 +7,7 @@ Sections (each person sees only what his access allows; `None / View / Edit` per
 - **App view**: Overview, Person (Day · Tasks · Calendar · Dossier · Late reasons · Timeline), Calendar, Late reasons.
 - **Meetings**: start a daily or weekly meeting, Actions, Minutes. Access *View* = only the minutes he was in and the actions on him.
 - **Team**: People (one list, each official Gmail is a seat), Chart (drag to change the head, impact check first), Designations, Access, Waiting to join, Offboarding.
+- **Plot files** (own module: `plotfiles.js`, `plotsteps.js`, `plotfiles.css`): one file per plot from opening to possession and discount cheques. Files list (Open files, Late, Waiting for plot owner), one file page (Steps, Items, Cheques, Timeline), Rules and timing (owners). Cheques and amounts live in `plotmoney`, readable only by owners and people with the "See money details" switch.
 - **Documents**: My reading list, Work documents, Policies; owners also get SOPs, Job descriptions and Reading progress. Every file is a Google Drive link.
 - **Settings**: late-reason list, red lines, meeting steps, ranking, reading deadline, Change log (owners).
 
