@@ -3,12 +3,12 @@
   "use strict";
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   RB.sections = {};
-  const ICONS = { app: "▦", meetings: "◷", team: "♙", docs: "▤", settings: "⚙" };
-  const NAMES = { app: "App view", meetings: "Meetings", team: "Team", docs: "Docs", settings: "Settings" };
-  S.sec = null; S.tab = { team: "people", docs: "reading", settings: "reasons" }; S.views = { app: "people", meetings: "home" }; S.q = "";
+  const ICONS = { app: "▦", meetings: "◷", team: "♙", plot: "▣", docs: "▤", settings: "⚙" };
+  const NAMES = { app: "App view", meetings: "Meetings", team: "Team", plot: "Plot files", docs: "Docs", settings: "Settings" };
+  S.sec = null; S.tab = { team: "people", plot: "files", docs: "reading", settings: "reasons" }; S.views = { app: "people", meetings: "home" }; S.q = "";
 
   /** Sections this person may open. Docs is open to everyone with access; staff see their reading list. */
-  RB.allowed = () => ["app", "meetings", "team", "docs", "settings"].filter((k) => RB.level(k) !== "none" || (k === "settings" && RB.anyAccess()));
+  RB.allowed = () => ["app", "meetings", "team", "plot", "docs", "settings"].filter((k) => (k !== "plot" || (RB.plotOn && RB.plotOn())) && (RB.level(k) !== "none" || (k === "settings" && RB.anyAccess())));
   RB.go = (sec, tab) => {
     if (S.sec && S.sec !== sec && (S.sec === "app" || S.sec === "meetings")) S.views[S.sec] = S.view;
     S.sec = sec;
