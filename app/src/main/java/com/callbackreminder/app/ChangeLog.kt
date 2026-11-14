@@ -29,6 +29,19 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.55.0", "14 Nov",
+            new = listOf(
+                "Person page: tasks with no time yet now show under their person, in a No time yet group. Pending is ordered Late, No time yet, Scheduled, with small chips to show one group",
+                "Follow-ups filtered to one person: that person's No time yet tasks show on top",
+                "Urgent task with no deadline: a reminder to both people every 2 working hours until a deadline is set (change it in Settings > Team). If it was opened, one text goes after 2 reminders",
+                "The message bar in every Timeline and the Help chat now looks the same as WhatsApp: one slim row with @ and the camera inside the box",
+            ),
+            fixed = listOf(
+                "Pick a name after @: the cursor now goes after the name, the name shows in blue, and one delete key press removes all of it",
+                "The message bar no longer disappears or leaves a gap above the keyboard when the @ list opens",
+            ),
+        ),
+        Entry(
             "0.54.0", "11 Nov",
             new = listOf(
                 "@ in a Timeline now works like WhatsApp: a small list of team members slides up above the message box and the chat stays visible",

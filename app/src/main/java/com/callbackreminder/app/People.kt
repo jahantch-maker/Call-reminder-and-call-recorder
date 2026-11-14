@@ -169,30 +169,33 @@ object Work {
         texts: List<SmsReminder>,
         myTasks: List<MyTask>,
         all: Boolean = false,
+        /** Follow-ups waiting in To schedule (no time yet): they count as pending for their person. */
+        sched: List<ToScheduleItem> = emptyList(),
     ): List<PersonSummary> {
         val open = open(now, calls, texts, myTasks, emptyList(), emptyMap(), includeDossier = false)
             .filter { it.personKey.isNotEmpty() }
         val keys = (calls.map { personKey(it.number) } + texts.map { personKey(it.number) } +
-            myTasks.filter { it.hasPerson }.map { personKey(it.number) }).filter { it.isNotEmpty() }.toSet()
+            myTasks.filter { it.hasPerson }.map { personKey(it.number) } + sched.map { personKey(it.number) }).filter { it.isNotEmpty() }.toSet()
         return keys.mapNotNull { k ->
             val mine = open.filter { it.personKey == k }
-            if (mine.isEmpty() && !all) return@mapNotNull null
+            val waiting = sched.filter { personKey(it.number) == k }
+            if (mine.isEmpty() && waiting.isEmpty() && !all) return@mapNotNull null
             val pc = calls.filter { personKey(it.number) == k }
             val pt = texts.filter { personKey(it.number) == k }
             val pm = myTasks.filter { it.hasPerson && personKey(it.number) == k }
             val latest = (pc.map { Triple(it.createdAt, it.name, it.number) } + pt.map { Triple(it.createdAt, it.name, it.number) } +
-                pm.map { Triple(it.createdAt, it.name, it.number) }).maxByOrNull { it.first }
-            val name = (pc.map { it.name } + pt.map { it.name } + pm.map { it.name }).firstOrNull { it.isNotBlank() }.orEmpty()
+                pm.map { Triple(it.createdAt, it.name, it.number) } + waiting.map { Triple(it.createdAt, it.name, it.number) }).maxByOrNull { it.first }
+            val name = (pc.map { it.name } + pt.map { it.name } + pm.map { it.name } + waiting.map { it.name }).firstOrNull { it.isNotBlank() }.orEmpty()
             val member = TeamRepo.memberByKey(k)
             PersonSummary(
                 key = k,
                 name = member?.name ?: PersonNames.of(latest?.third.orEmpty(), latest?.second?.takeIf { it.isNotBlank() } ?: name),
                 number = member?.phone ?: latest?.third.orEmpty(),
-                pending = mine.size,
+                pending = mine.size + waiting.size,
                 overdue = mine.count { it.overdue },
                 delayed = delays(pc, pt),
                 done = pc.count { it.done && !it.review } + pt.count { it.done } + pm.count { it.done },
-                oldestAt = mine.minOfOrNull { it.createdAt } ?: 0L,
+                oldestAt = (mine.map { it.createdAt } + waiting.map { it.createdAt }).minOrNull() ?: 0L,
                 noReply = pt.count { !it.done && it.review == SmsReminder.Review.NO_REPLY },
             )
         }

@@ -169,12 +169,9 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
     val fus = items.sortedByDescending { it.createdAt }
     // From the Follow-ups or My tasks tab it shows only that kind, without the box.
     var tab by rememberSaveable { mutableIntStateOf(only ?: if (fus.isEmpty() && mine.isNotEmpty()) 1 else 0) }
-    var setFor by remember { mutableStateOf<ToScheduleItem?>(null) }
-    var editFor by remember { mutableStateOf<ToScheduleItem?>(null) }
-    var openKey by remember { mutableStateOf<Long?>(null) }
-    var ticking by remember { mutableStateOf(setOf<Long>()) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val sched = remember(snack) { SchedActions(scope, snack) }
     val my = remember { MyCardActions(scope, snack) }
     val now = rememberNow(0)
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -214,83 +211,7 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
                     EmptyPicture(Icons.Rounded.DoneAll, "Nothing waiting", "A follow-up saved with No time shows here until it gets a time.")
                 }
                 itemsIndexed(fus, key = { _, t -> "fu-${t.id}" }) { i, t ->
-                    Box(Modifier.animateItem()) {
-                        val hasNumber = t.number.isNotBlank()
-                        // A task you gave waiting for his deadline: its chips, ticks, banner and Timeline.
-                        val teamTasks by TeamRepo.tasks.collectAsState()
-                        val teamV by TeamSync.version.collectAsState()
-                        val tt = remember(t.linkId, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, t.linkId, teamTasks) else null }
-                        TaskCard(
-                            title = t.headline,
-                            done = t.id in ticking,
-                            onTick = {
-                                if (t.id !in ticking) {
-                                    ticking = ticking + t.id
-                                    scope.launch {
-                                        kotlinx.coroutines.delay(380L)
-                                        TeamDelete.closeGiven(ctx, t.linkId)
-                                        ToScheduleStore.remove(t.id)
-                                        ticking = ticking - t.id
-                                        scope.offerUndo(snack, "Done · ${t.headline}") { ToScheduleStore.put(t) }
-                                    }
-                                }
-                            },
-                            time = null,
-                            timeIcons = when {
-                                t.callOn && t.textOn -> TimeIcons.BOTH
-                                t.textOn -> TimeIcons.TEXT
-                                t.callOn -> TimeIcons.CALL
-                                else -> TimeIcons.NONE
-                            },
-                            person = if (hasNumber || t.name.isNotBlank()) Names.first(t.title) ?: t.title else null,
-                            chips = listOfNotNull(
-                                    RowChip("👤 No person", ChipTone.ORANGE) { editFor = t }.takeIf { !hasNumber },
-                                    RowChip("🔕 No alert", ChipTone.ORANGE) { editFor = t }.takeIf { !t.callOn && !t.textOn },
-                                ) +
-                                (tt?.let { TeamUi.giverChips(it) } ?: emptyList()),
-                            noTimeChip = tt == null && !t.needsDetails,
-                            corner = tt?.takeIf { it.fromUid == TeamRepo.uid }?.let { x -> { TeamTicks(x) } },
-                            banner = tt?.let { TeamUi.banner(ctx, it, TeamRepo.uid) },
-                            urgent = tt?.let { it.urgent && it.open } == true,
-                            starred = t.starred,
-                            onStar = { ToScheduleStore.put(t.copy(starred = !t.starred)) },
-                            onCall = if (hasNumber && t.callOn) ({ dial(ctx, t.number) }) else null,
-                            onWhatsApp = if (hasNumber) ({ WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, t.code, t.headline, 0L, t.name)) }) else null,
-                            expanded = openKey == t.id,
-                            onClick = { openKey = if (openKey == t.id) null else t.id },
-                            pos = rowPos(i, fus.size),
-                            highlighted = outlined == t.id,
-                        ) {
-                            CardPanel(
-                                details = listOf(
-                                    listOfNotNull(
-                                        "Saved ${Fmt.dueLabel(t.createdAt)}",
-                                        "📞 call".takeIf { t.callOn },
-                                        "💬 texts paused".takeIf { t.textOn },
-                                    ).joinToString(" · ")
-                                ) + listOfNotNull(t.number.takeIf { hasNumber && t.name.isNotBlank() }?.let { "${t.name} · $it" }),
-                                onNewTime = { if (t.needsDetails) editFor = t else setFor = t },
-                                buttonLabel = if (t.needsDetails) "Add details" else "Set time",
-                                links = listOfNotNull(
-                                    tt?.let { x -> RowLink(TeamUi.timelineLabel(x)) { TeamUi.openTimeline(x.id) } },
-                                    RowLink("Edit") { editFor = t },
-                                    if (tt != null) null else RowLink("Move to My tasks") {
-                                        openKey = null
-                                        val task = FollowUps.moveToMyTasks(ctx, t)
-                                        scope.offerUndo(snack, "Moved to My tasks") { MyTaskStore.delete(task.id); ToScheduleStore.put(t) }
-                                    },
-                                    RowLink("Delete", danger = true) {
-                                        openKey = null
-                                        if (TeamDelete.givenOpen(ctx, t.linkId) != null) TeamDelete.guard(ctx, t.linkId) { ToScheduleStore.remove(t.id) }
-                                        else {
-                                            ToScheduleStore.remove(t.id)
-                                            scope.offerUndo(snack, "Deleted · ${t.headline}") { ToScheduleStore.put(t) }
-                                        }
-                                    },
-                                )
-                            )
-                        }
-                    }
+                    Box(Modifier.animateItem()) { sched.Card(t, rowPos(i, fus.size), highlighted = outlined == t.id) }
                 }
             } else {
                 if (mine.isEmpty()) item(key = "empty-my") {
@@ -309,22 +230,7 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
         }
     }
 
-    setFor?.let { t ->
-        SetTimeSheet(
-            heading = "Set time",
-            about = t.headline,
-            onPick = { ms ->
-                setFor = null
-                openKey = null
-                FollowUps.setTime(ctx, t, ms)
-                // A task you gave with no deadline yet: your time becomes his deadline (I pick).
-                TeamDelete.givenOpen(ctx, t.linkId)?.takeIf { it.due == 0L }?.let { TeamRepo.setGiverDate(it, ms) }
-                android.widget.Toast.makeText(ctx, "Set · ${Fmt.dueLabel(ms)}", android.widget.Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = { setFor = null },
-        )
-    }
-    editFor?.let { t -> FollowUpDialog(onDismiss = { editFor = null }, item = t) }
+    sched.Sheets()
     my.Sheets()
 }
 
@@ -386,4 +292,116 @@ fun OverdueScreen(resumeKey: Int, onBack: () -> Unit) {
     }
     fu.Sheets()
     my.Sheets()
+}
+
+/**
+ * The card of a follow-up waiting in To schedule (no time yet), with its Set time and Edit windows. One place, so the
+ * To schedule page, the person page and Follow-ups (filtered to a person) all show the very same card.
+ */
+class SchedActions(private val scope: kotlinx.coroutines.CoroutineScope, private val snack: SnackbarHostState) {
+    var openKey by mutableStateOf<Long?>(null)
+    var ticking by mutableStateOf(setOf<Long>())
+    var setFor by mutableStateOf<ToScheduleItem?>(null)
+    var editFor by mutableStateOf<ToScheduleItem?>(null)
+
+    @Composable
+    fun Card(t: ToScheduleItem, pos: RowPos, highlighted: Boolean = false) {
+        val ctx = LocalContext.current
+        val hasNumber = t.number.isNotBlank()
+        // A task you gave waiting for his deadline: its chips, ticks, banner and Timeline.
+        val teamTasks by TeamRepo.tasks.collectAsState()
+        val teamV by TeamSync.version.collectAsState()
+        val tt = remember(t.linkId, teamTasks, teamV) { if (TeamRepo.activeNow) TeamUi.taskOfLink(ctx, t.linkId, teamTasks) else null }
+        TaskCard(
+            title = t.headline,
+            done = t.id in ticking,
+            onTick = {
+                if (t.id !in ticking) {
+                    ticking = ticking + t.id
+                    scope.launch {
+                        kotlinx.coroutines.delay(380L)
+                        TeamDelete.closeGiven(ctx, t.linkId)
+                        ToScheduleStore.remove(t.id)
+                        ticking = ticking - t.id
+                        scope.offerUndo(snack, "Done · ${t.headline}") { ToScheduleStore.put(t) }
+                    }
+                }
+            },
+            time = null,
+            timeIcons = when {
+                t.callOn && t.textOn -> TimeIcons.BOTH
+                t.textOn -> TimeIcons.TEXT
+                t.callOn -> TimeIcons.CALL
+                else -> TimeIcons.NONE
+            },
+            person = if (hasNumber || t.name.isNotBlank()) Names.first(t.title) ?: t.title else null,
+            chips = listOfNotNull(
+                    RowChip("👤 No person", ChipTone.ORANGE) { editFor = t }.takeIf { !hasNumber },
+                    RowChip("🔕 No alert", ChipTone.ORANGE) { editFor = t }.takeIf { !t.callOn && !t.textOn },
+                ) +
+                (tt?.let { TeamUi.giverChips(it) } ?: emptyList()),
+            noTimeChip = tt == null && !t.needsDetails,
+            corner = tt?.takeIf { it.fromUid == TeamRepo.uid }?.let { x -> { TeamTicks(x) } },
+            banner = tt?.let { TeamUi.banner(ctx, it, TeamRepo.uid) },
+            urgent = tt?.let { it.urgent && it.open } == true,
+            starred = t.starred,
+            onStar = { ToScheduleStore.put(t.copy(starred = !t.starred)) },
+            onCall = if (hasNumber && t.callOn) ({ dial(ctx, t.number) }) else null,
+            onWhatsApp = if (hasNumber) ({ WhatsApp.open(ctx, t.number, WhatsApp.message(ctx, t.code, t.headline, 0L, t.name)) }) else null,
+            expanded = openKey == t.id,
+            onClick = { openKey = if (openKey == t.id) null else t.id },
+            pos = pos,
+            highlighted = highlighted,
+        ) {
+            CardPanel(
+                details = listOf(
+                    listOfNotNull(
+                        "Saved ${Fmt.dueLabel(t.createdAt)}",
+                        "📞 call".takeIf { t.callOn },
+                        "💬 texts paused".takeIf { t.textOn },
+                    ).joinToString(" · ")
+                ) + listOfNotNull(t.number.takeIf { hasNumber && t.name.isNotBlank() }?.let { "${t.name} · $it" }),
+                onNewTime = { if (t.needsDetails) editFor = t else setFor = t },
+                buttonLabel = if (t.needsDetails) "Add details" else "Set time",
+                links = listOfNotNull(
+                    tt?.let { x -> RowLink(TeamUi.timelineLabel(x)) { TeamUi.openTimeline(x.id) } },
+                    RowLink("Edit") { editFor = t },
+                    if (tt != null) null else RowLink("Move to My tasks") {
+                        openKey = null
+                        val task = FollowUps.moveToMyTasks(ctx, t)
+                        scope.offerUndo(snack, "Moved to My tasks") { MyTaskStore.delete(task.id); ToScheduleStore.put(t) }
+                    },
+                    RowLink("Delete", danger = true) {
+                        openKey = null
+                        if (TeamDelete.givenOpen(ctx, t.linkId) != null) TeamDelete.guard(ctx, t.linkId) { ToScheduleStore.remove(t.id) }
+                        else {
+                            ToScheduleStore.remove(t.id)
+                            scope.offerUndo(snack, "Deleted · ${t.headline}") { ToScheduleStore.put(t) }
+                        }
+                    },
+                )
+            )
+        }
+    }
+
+    @Composable
+    fun Sheets() {
+        val ctx = LocalContext.current
+        setFor?.let { t ->
+            SetTimeSheet(
+                heading = "Set time",
+                about = t.headline,
+                onPick = { ms ->
+                    setFor = null
+                    openKey = null
+                    FollowUps.setTime(ctx, t, ms)
+                    // A task you gave with no deadline yet: your time becomes his deadline (I pick).
+                    TeamDelete.givenOpen(ctx, t.linkId)?.takeIf { it.due == 0L }?.let { TeamRepo.setGiverDate(it, ms) }
+                    android.widget.Toast.makeText(ctx, "Set · ${Fmt.dueLabel(ms)}", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { setFor = null },
+            )
+        }
+        editFor?.let { t -> FollowUpDialog(onDismiss = { editFor = null }, item = t) }
+    }
 }

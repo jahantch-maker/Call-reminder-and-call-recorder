@@ -100,19 +100,34 @@ fun Modifier.fitBetweenBars(): Modifier {
     var topPx by remember { mutableIntStateOf(0) }
     var bottomPx by remember { mutableIntStateOf(0) }
     val imePx = WindowInsets.ime.getBottom(density)
+    val held = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    // Where this window's content really is on the screen, against the phone's bars and the keyboard. Measured, not
+    // assumed: when the system already shrank the window for the keyboard nothing is added (no gap above the keyboard),
+    // when it did not, the keyboard's height is added.
+    fun measure() {
+        val c = held[0] ?: return
+        decor ?: return
+        if (!c.isAttached) return
+        val root = ViewCompat.getRootWindowInsets(decor) ?: return
+        val bars = root.getInsets(WindowInsetsCompat.Type.systemBars())
+        val imeRoot = root.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        val keyboard = if (imeRoot > 0) imeRoot else imePx
+        val mine = IntArray(2).also { view.getLocationOnScreen(it) }
+        val screen = IntArray(2).also { decor.getLocationOnScreen(it) }
+        val top = mine[1] + c.positionInRoot().y.toInt()
+        val bottom = top + c.size.height
+        val newTop = (screen[1] + bars.top - top).coerceAtLeast(0)
+        val newBottom = (bottom - (screen[1] + decor.height - maxOf(bars.bottom, keyboard))).coerceAtLeast(0)
+        // A coarse step so a one-pixel wobble never starts a loop.
+        if (kotlin.math.abs(newTop - topPx) > 1) topPx = newTop
+        if (kotlin.math.abs(newBottom - bottomPx) > 1) bottomPx = newBottom
+    }
+    androidx.compose.runtime.LaunchedEffect(imePx) {
+        // The window may resize a moment after the keyboard starts moving: measure again once it settled.
+        kotlinx.coroutines.delay(150)
+        measure()
+    }
     return this
-        .onGloballyPositioned { c ->
-            decor ?: return@onGloballyPositioned
-            val bars = ViewCompat.getRootWindowInsets(decor)?.getInsets(WindowInsetsCompat.Type.systemBars()) ?: return@onGloballyPositioned
-            val mine = IntArray(2).also { view.getLocationOnScreen(it) }
-            val screen = IntArray(2).also { decor.getLocationOnScreen(it) }
-            val top = mine[1] + c.positionInRoot().y.toInt()
-            val bottom = top + c.size.height
-            val newTop = (screen[1] + bars.top - top).coerceAtLeast(0)
-            val newBottom = (bottom - (screen[1] + decor.height - bars.bottom)).coerceAtLeast(0)
-            // A coarse step so a one-pixel wobble never starts a loop.
-            if (kotlin.math.abs(newTop - topPx) > 1) topPx = newTop
-            if (kotlin.math.abs(newBottom - bottomPx) > 1) bottomPx = newBottom
-        }
-        .padding(top = with(density) { topPx.toDp() }, bottom = with(density) { maxOf(bottomPx, imePx).toDp() })
+        .onGloballyPositioned { c -> held[0] = c; measure() }
+        .padding(top = with(density) { topPx.toDp() }, bottom = with(density) { bottomPx.toDp() })
 }

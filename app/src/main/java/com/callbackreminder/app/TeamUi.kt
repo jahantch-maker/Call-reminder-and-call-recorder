@@ -658,6 +658,7 @@ private fun TeamActive(
         var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
         var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
         var sms by remember { mutableIntStateOf(TeamRules.smsMin(ctx)) }
+        var repeat by remember { mutableIntStateOf(TeamRules.repeatMin(ctx)) }
         var working by remember { mutableStateOf(TeamRules.workingOnly(ctx)) }
         var locked by remember { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
         var freeExt by remember { mutableIntStateOf(TeamRules.freeExt(ctx)) }
@@ -667,6 +668,7 @@ private fun TeamActive(
         TeamCard {
             RuleRow("No deadline picked · remind me", TeamRules.label(noDate)) { rule = 0 }
             RuleRow("Urgent, no deadline · notify me", TeamRules.label(urgent)) { rule = 1 }
+            RuleRow("Urgent, no deadline · repeat every", TeamRules.label(repeat)) { rule = 4 }
             RuleRow("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms)) { rule = 2 }
             RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
             RuleRow("Deadline locked", if (locked) "On" else "Off") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
@@ -685,6 +687,7 @@ private fun TeamActive(
                 0 -> Triple("No deadline picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
                 1 -> Triple("Urgent, no deadline · notify me after", TeamRules.URGENT_CHOICES, urgent)
                 2 -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
+                4 -> Triple("Urgent, no deadline · remind both of you every", TeamRules.REPEAT_CHOICES, repeat)
                 else -> Triple("Extend without asking", TeamRules.FREE_EXT_CHOICES, freeExt)
             }
             AlertDialog(
@@ -696,6 +699,7 @@ private fun TeamActive(
                             0 -> { noDate = m; TeamRules.setNoDateMin(ctx, m) }
                             1 -> { urgent = m; TeamRules.setUrgentMin(ctx, m) }
                             2 -> { sms = m; TeamRules.setSmsMin(ctx, m) }
+                            4 -> { repeat = m; TeamRules.setRepeatMin(ctx, m) }
                             else -> { freeExt = m; TeamRules.setFreeExt(ctx, m) }
                         }
                         rule = -1
