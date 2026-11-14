@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -185,7 +186,8 @@ fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -
     var noReplyOnly by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
 
-    val all = Work.people(now, calls, texts, myTasks)
+    val waitingFus by ToScheduleStore.items.collectAsState()
+    val all = Work.people(now, calls, texts, myTasks, sched = waitingFus)
     val shown = all
         .filter { (!delayedOnly || it.delayed > 0) && (!overdueOnly || it.overdue > 0) && (!noReplyOnly || it.noReply > 0) }
         .let { list ->
@@ -289,6 +291,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     val calls by ReminderStore.items.collectAsState()
     val texts by SmsStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
+    val toSchedule by ToScheduleStore.items.collectAsState()
     val recordings by RecordingStore.items.collectAsState()
     val teamMembers by TeamRepo.members.collectAsState()
     val now = rememberTicker(resumeKey)
@@ -307,11 +310,21 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     val pt = texts.filter { mine(it.number) }
     val pm = myTasks.filter { it.hasPerson && mine(it.number) }
     val pr = recordings.filter { it.number.isNotBlank() && mine(it.number) }
-    val person = Work.people(now, calls, texts, myTasks, all = true).firstOrNull { it.key == k }
+    // Follow-ups with no time yet (To schedule) are this person's work too: they never showed here before.
+    val waiting = toSchedule.filter { mine(it.number) }.sortedBy { it.createdAt }
+    val person = Work.people(now, calls, texts, myTasks, all = true, sched = toSchedule).firstOrNull { it.key == k }
     val name = person?.title ?: pr.firstOrNull()?.let { it.name.ifBlank { it.number } } ?: "Unknown"
     val number = person?.number ?: pr.firstOrNull()?.number.orEmpty()
 
     val pending = Work.open(now, pc, pt, pm, emptyList(), emptyMap(), includeDossier = false).sortedBy { it.at }
+    // Pending in the order you talk about it: Late (oldest first), No time yet (oldest first), Scheduled (soonest first).
+    val noTimeTasks = pending.filter { it.kind == WorkItem.Kind.MY_TASK && it.inReview }
+    val late = pending.filter { it !in noTimeTasks && (it.overdue || it.inReview) }
+    val scheduled = pending.filter { it !in noTimeTasks && it !in late }
+    val noTimeCount = waiting.size + noTimeTasks.size
+    val pendingTotal = late.size + noTimeCount + scheduled.size
+    var pendFilter by rememberSaveable { mutableIntStateOf(0) }
+    val personScope = androidx.compose.runtime.rememberCoroutineScope()
     val done: List<Triple<Long, WorkItem.Kind, String>> = (
         pc.filter { it.done && !it.review }.map { Triple(it.doneAt, WorkItem.Kind.CALL, it.note.ifBlank { "Call back" }) } +
             pt.filter { it.done }.map { Triple(it.doneAt, WorkItem.Kind.TEXT, (if (it.code.isNotEmpty()) "${it.code} " else "") + it.message) } +
@@ -347,6 +360,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
         out.sortedByDescending { it.at }.take(300)
     }
     val personSnack = remember { androidx.compose.material3.SnackbarHostState() }
+    val schedActions = remember(personSnack) { SchedActions(personScope, personSnack) }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { androidx.compose.material3.SnackbarHost(personSnack) }) { padding ->
         LazyColumn(
@@ -408,7 +422,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
             }
             item(key = "counts") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiniTile("${pending.size}", "Pending", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, Modifier.weight(1f))
+                    MiniTile("$pendingTotal", "Pending", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, Modifier.weight(1f))
                     MiniTile("${pending.count { it.overdue }}", "Overdue", Tones.red.bg, Tones.red.fg, Modifier.weight(1f))
                     MiniTile("${person?.delayed ?: 0}×", "Delayed", Tones.amber.bg, Tones.amber.fg, Modifier.weight(1f))
                     MiniTile("${done.size}", "Done", Tones.green.bg, Tones.green.fg, Modifier.weight(1f))
@@ -469,12 +483,41 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                 }
             }
             item(key = "tabs") {
-                BoxTabs(listOf("Pending · ${pending.size}", "Done · ${done.size}", "History"), tab, { tab = it })
+                BoxTabs(listOf("Pending · $pendingTotal", "Done · ${done.size}", "History"), tab, { tab = it })
             }
             when (tab) {
                 0 -> {
-                    if (pending.isEmpty()) item(key = "none-p") { Hint("Nothing pending with $name.") }
-                    if (pending.isNotEmpty()) item(key = "pending") { WorkBlock(pending, now, showPerson = false, onOpen = onOpenItem, snack = personSnack) }
+                    if (pendingTotal == 0) item(key = "none-p") { Hint("Nothing pending with $name.") }
+                    else {
+                        // The same small chips as the Follow-ups bar: one tap shows only that group.
+                        item(key = "pfilter") {
+                            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(
+                                    Triple(0, "All", pendingTotal), Triple(1, "Late", late.size),
+                                    Triple(2, "No time", noTimeCount), Triple(3, "Scheduled", scheduled.size),
+                                ).forEach { (v, label, n) ->
+                                    if (v == 0 || n > 0 || pendFilter == v) SmallChip(
+                                        RowChip("$label $n", if (pendFilter == v) ChipTone.BLUE else ChipTone.MUTED, onClick = { pendFilter = v })
+                                    )
+                                }
+                            }
+                        }
+                        if ((pendFilter == 0 || pendFilter == 1) && late.isNotEmpty()) {
+                            item(key = "p-late-h") { DayHeader("Late", "${late.size}", MaterialTheme.colorScheme.error) }
+                            item(key = "p-late") { WorkBlock(late, now, showPerson = false, onOpen = onOpenItem, snack = personSnack) }
+                        }
+                        if ((pendFilter == 0 || pendFilter == 2) && noTimeCount > 0) {
+                            item(key = "p-none-h") { DayHeader("No time yet", "$noTimeCount", Tones.amber.fg) }
+                            itemsIndexed(waiting, key = { _, t -> "fu-${t.id}" }) { i, t ->
+                                schedActions.Card(t, rowPos(i, waiting.size))
+                            }
+                            if (noTimeTasks.isNotEmpty()) item(key = "p-none") { WorkBlock(noTimeTasks, now, showPerson = false, onOpen = onOpenItem, snack = personSnack) }
+                        }
+                        if ((pendFilter == 0 || pendFilter == 3) && scheduled.isNotEmpty()) {
+                            item(key = "p-sched-h") { DayHeader("Scheduled", "${scheduled.size}", MaterialTheme.colorScheme.onSurfaceVariant) }
+                            item(key = "p-sched") { WorkBlock(scheduled, now, showPerson = false, onOpen = onOpenItem, snack = personSnack) }
+                        }
+                    }
                 }
                 1 -> {
                     if (done.isEmpty()) item(key = "none-d") { Hint("Nothing done yet.") }
@@ -491,6 +534,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
         }
     }
 
+    schedActions.Sheets()
     preview?.let { text ->
         AlertDialog(
             onDismissRequest = { preview = null },

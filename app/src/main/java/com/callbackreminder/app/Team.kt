@@ -261,6 +261,10 @@ object TeamRules {
     fun setNoDateMin(c: Context, m: Int) = p(c).edit().putInt("no_date", m).apply()
     fun urgentMin(c: Context) = p(c).getInt("urgent", 60)
     fun setUrgentMin(c: Context, m: Int) = p(c).edit().putInt("urgent", m).apply()
+    /** v0.55 An urgent task with no deadline: a reminder to both of you every N working hours until he picks one. */
+    val REPEAT_CHOICES = listOf(60, 120, 240)
+    fun repeatMin(c: Context) = p(c).getInt("repeat", 120)
+    fun setRepeatMin(c: Context, m: Int) = p(c).edit().putInt("repeat", m).apply()
     fun smsMin(c: Context) = p(c).getInt("sms", 120)
     fun setSmsMin(c: Context, m: Int) = p(c).edit().putInt("sms", m).apply()
     fun workingOnly(c: Context) = p(c).getBoolean("working_only", true)

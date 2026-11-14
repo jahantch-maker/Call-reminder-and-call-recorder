@@ -353,17 +353,71 @@ object TeamSync {
         // Not opened: "sent texts|time of the last step" per task (1 = first SMS, 2 = second, 3 = you were told).
         val stage = TeamLinks.map(c, "smsStage")
         val now = System.currentTimeMillis()
+        // v0.55 Last reminder per task for "no deadline yet": "g:<id>" on your phone (you gave it), "h:<id>" on his.
+        val chase = TeamLinks.map(c, "chaseAt")
+        val chaseOnce = TeamLinks.set(c, "chaseOnce")
+        val repeatMin = TeamRules.repeatMin(c)
+        // Only inside working hours: a popup or an SMS never goes out at night.
+        val inHours = TeamRules.minutesSince(c, now - 60_000L, now) > 0L
         for (t in tasks.filter { it.fromUid == me && it.open }) {
             val waited = TeamRules.minutesSince(c, t.createdAt, now)
-            if (t.urgent && t.due == 0L && t.id !in urgentDone && waited >= TeamRules.urgentMin(c)) {
-                urgentDone += t.id
-                notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team", mine = null, taskId = t.id, open = Open.CARD)
+            if (t.urgent && t.due == 0L) {
+                val k = "g:${t.id}"
+                val last = chase[k]?.toLongOrNull() ?: if (t.id in urgentDone) t.createdAt else null
+                val first = t.id !in urgentDone && waited >= TeamRules.urgentMin(c)
+                val again = last != null && inHours && repeatMin > 0 && TeamRules.minutesSince(c, last, now) >= repeatMin
+                if (first || again) {
+                    urgentDone += t.id
+                    chase[k] = now.toString()
+                    notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team", mine = null, taskId = t.id, open = Open.CARD)
+                }
             }
             smsRule(c, t, waited, now, smsDone, stage)
+            deadlineSms(c, t, waited, now, inHours, smsDone)
         }
+        // His phone: an urgent task waiting for his deadline reminds him every N working hours; a normal one once, the next morning.
+        for (t in tasks.filter { it.toUid == me && it.open && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
+            if (t.urgent) {
+                val k = "h:${t.id}"
+                val last = chase[k]?.toLongOrNull() ?: t.createdAt
+                if (inHours && repeatMin > 0 && TeamRules.minutesSince(c, last, now) >= repeatMin) {
+                    chase[k] = now.toString()
+                    notify(c, "pick:${t.id}", "🔴 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}. It is urgent: set your deadline now.",
+                        mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+                }
+            } else if ("pick:${t.id}" !in chaseOnce && inHours && now >= ReviewData.nextWorkStart(c, t.createdAt)) {
+                chaseOnce += "pick:${t.id}"
+                notify(c, "pick:${t.id}", "📅 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}",
+                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+            }
+        }
+        val live = tasks.filter { it.open }.map { it.id }.toSet()
+        TeamLinks.putMap(c, "chaseAt", chase.filterKeys { k -> k.substringAfter(':') in live })
+        TeamLinks.putSet(c, "chaseOnce", chaseOnce.filter { k -> k.substringAfter(':') in live }.toSet())
         TeamLinks.putSet(c, "urgent", urgentDone)
         TeamLinks.putSet(c, "sms", smsDone)
         TeamLinks.putMap(c, "smsStage", stage.filterKeys { k -> tasks.any { it.id == k && it.open } })
+    }
+
+    /**
+     * v0.55 He opened the task but still has no deadline: one SMS to him, after the second reminder went unanswered
+     * (urgent: two reminder gaps, normal: a working day). Inside working hours only. The reminders themselves carry on.
+     */
+    private fun deadlineSms(c: Context, t: TeamTask, waited: Long, now: Long, inHours: Boolean, smsDone: MutableSet<String>) {
+        if (!t.hisDate || t.due != 0L || t.asks || t.stuck || t.toPhone.isBlank() || "dl:${t.id}" in smsDone) return
+        val seen = t.seenAt > 0L || Ticks.seen(t)
+        if (!seen || !inHours || TeamRules.smsMin(c) <= 0) return
+        val after = if (t.urgent) 2L * TeamRules.repeatMin(c) else TeamRules.dayMin(c)
+        if (waited < after || !SmsSender.hasPermission(c)) return
+        val ok = runCatching {
+            SmsSender.managerForDefaultSim(c).first.sendTextMessage(
+                t.toPhone, null, "Reminder from ${t.fromFirst}: please set your deadline for: ${t.title.take(90)}. Open Callback Reminder.", null, null
+            )
+        }.isSuccess
+        if (ok) {
+            smsDone += "dl:${t.id}"
+            TeamRepo.note(t, "No deadline yet: text sent to ${t.toFirst}")
+        }
     }
 
     /**

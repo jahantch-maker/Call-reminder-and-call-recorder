@@ -137,7 +137,7 @@ fun TaskTimelineWindow(
     val launcher = rememberHelpLauncher(help) { lines.map { it.at to it.text } }
     var tick by remember { mutableIntStateOf(0) }
     val notes = remember(noteKey, tick) { TaskNotes.list(ctx, noteKey) }
-    var draft by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue()) }
     var recording by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<ByteArray?>(null) }
     var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -247,43 +247,30 @@ fun TaskTimelineWindow(
                     FloatingDayChip(list, rows, Modifier.align(Alignment.TopCenter))
                 }
                 androidx.compose.material3.SnackbarHost(snack, Modifier.padding(horizontal = 12.dp))
-                // Same composer as the team Timeline: what you can do on top (the photo), then the message box and the mic / send.
+                // The same message bar as the team Timeline and the Help chat (WhatsApp style, one slim row).
                 Column(Modifier.fillMaxWidth().background(cs.surface)) {
-                    // v0.54 @: the team members above the message box.
                     MentionPanel(launcher, draft) { draft = it }
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (recording) "🔴 Recording…" else "🔒 Notes stay on this phone only",
-                            fontSize = 12.sp, color = if (recording) cs.error else cs.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        HelpAtButton(launcher) { draft = addAt(draft) }
-                        IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.onSurfaceVariant) }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextField(
-                            value = draft,
-                            onValueChange = { draft = it },
-                            placeholder = { Text(if (launcher != null) "Add a note… (@ to ask for help)" else "Add a note…") },
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(24.dp), maxLines = 4,
-                            trailingIcon = voiceMic(draft) { draft = it },
-                            colors = TextFieldDefaults.colors(
-                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                                focusedContainerColor = cs.surfaceVariant, unfocusedContainerColor = cs.surfaceVariant,
-                            ),
-                        )
+                    if (recording) Text("🔴 Recording…", fontSize = 12.sp, color = cs.error, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ChatPill(draft, { draft = it }, "🔒 Note · only on this phone", Modifier.weight(1f)) {
+                            voiceMic(draft.text) { draft = androidx.compose.ui.text.input.TextFieldValue(it, androidx.compose.ui.text.TextRange(it.length)) }?.invoke()
+                            HelpAtButton(launcher) { draft = insertAtSign(draft) }
+                            ChatIconButton(pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Add a photo", tint = cs.onSurfaceVariant) }
+                        }
                         Spacer(Modifier.width(6.dp))
-                        if (draft.isNotBlank()) IconButton(onClick = {
+                        if (draft.text.isNotBlank()) ChatSendButton(onClick = {
                             // Tagged people are asked to help and get the message; it stays in this Timeline too.
-                            launcher?.sendTagged(ctx, draft.trim())
-                            val n = TaskNote(System.currentTimeMillis(), TaskNotes.TEXT, draft.trim())
+                            val body = draft.text.trim()
+                            launcher?.sendTagged(ctx, body)
+                            val n = TaskNote(System.currentTimeMillis(), TaskNotes.TEXT, body)
                             TaskNotes.add(ctx, noteKey, n)
-                            draft = ""
+                            draft = androidx.compose.ui.text.input.TextFieldValue()
                             added(n)
-                        }, modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF3DD6B5))) {
-                            Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Add note", tint = Color(0xFF053D2E))
-                        } else TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
+                        }) else TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d ->
                             val n = TaskNote(System.currentTimeMillis(), TaskNotes.VOICE, durMs = d, wave = TeamMedia.waveFor(d))
                             TaskNotes.add(ctx, noteKey, n, b)
                             added(n)
-                        })
+                        }, size = 44.dp)
                     }
                 }
             }
@@ -318,7 +305,7 @@ private fun NoteRow(n: TaskNote, selected: Boolean, selecting: Boolean, onToggle
                             modifier = Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = if (selecting) onToggle else onPhoto))
                         else Text("📷 Photo", modifier = Modifier.padding(4.dp))
                     }
-                    else -> Text(n.text, fontSize = 15.sp, color = cs.onPrimaryContainer)
+                    else -> Text(mentionStyled(n.text, rememberMentionTags(), mentionBlue()), fontSize = 15.sp, color = cs.onPrimaryContainer)
                 }
                 if (n.kind != TaskNotes.VOICE) Text(Fmt.timeOnly(n.at), fontSize = 11.sp, color = cs.onPrimaryContainer.copy(alpha = 0.7f),
                     modifier = Modifier.align(Alignment.End))

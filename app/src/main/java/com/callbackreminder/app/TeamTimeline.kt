@@ -371,7 +371,7 @@ private fun TeamBubble(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(fg.copy(alpha = 0.10f)).padding(6.dp),
                         )
                     }
-                    Text(if (quoted) m.text.substringAfter('\n') else m.text, color = fg, fontSize = 15.sp)
+                    Text(mentionStyled(if (quoted) m.text.substringAfter('\n') else m.text, rememberMentionTags(), mentionBlue()), color = fg, fontSize = 15.sp)
                 }
                 if (!(m.kind == Team.VOICE && m.data != null)) Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
@@ -465,7 +465,7 @@ private fun TeamComposer(
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    var text by remember(t.id) { mutableStateOf("") }
+    var text by remember(t.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue()) }
     var tag by remember(t.id) { mutableStateOf("") }
     var recording by remember { mutableStateOf(false) }
     var photo by remember { mutableStateOf<ByteArray?>(null) }
@@ -481,10 +481,10 @@ private fun TeamComposer(
     }.orEmpty()
 
     fun sendText() {
-        if (text.isBlank()) return
+        if (text.text.isBlank()) return
         // v0.54 Tagged people are asked to help and get the message; it also goes on this Timeline as usual.
-        help?.sendTagged(ctx, text.trim())
-        if (TeamRepo.send(t, Team.TEXT, quote() + text, tag)) { text = ""; tag = ""; onReplyDone(); onSent(TeamRepo.lastSentId) }
+        help?.sendTagged(ctx, text.text.trim())
+        if (TeamRepo.send(t, Team.TEXT, quote() + text.text, tag)) { text = androidx.compose.ui.text.input.TextFieldValue(); tag = ""; onReplyDone(); onSent(TeamRepo.lastSentId) }
         else Toast.makeText(ctx, "Couldn't send: check Settings › Team", Toast.LENGTH_SHORT).show()
     }
 
@@ -519,37 +519,24 @@ private fun TeamComposer(
                 if (!recording) TextButton(onClick = { tag = "" }) { Text("✕ cancel", color = cs.onSurface) }
             }
         }
-        // Top row: what you can do with it.
-        Row(
+        // Top row (the person doing it): ❓ Ask · ⚠ Stuck · 📅 Extend deadline.
+        if (isDoer && t.open) Row(
             Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isDoer && t.open) {
-                TeamTagButton("❓ Ask", AskFg, tag == Team.ASK) { tag = if (tag == Team.ASK) "" else Team.ASK }
-                TeamTagButton("⚠ Stuck", StuckFg, tag == Team.STUCK) { tag = if (tag == Team.STUCK) "" else Team.STUCK }
-                TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
-            }
-            Spacer(Modifier.weight(1f))
-            HelpAtButton(help) { text = addAt(text) }
-            IconButton(onClick = pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
+            TeamTagButton("❓ Ask", AskFg, tag == Team.ASK) { tag = if (tag == Team.ASK) "" else Team.ASK }
+            TeamTagButton("⚠ Stuck", StuckFg, tag == Team.STUCK) { tag = if (tag == Team.STUCK) "" else Team.STUCK }
+            TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextField(
-                value = text, onValueChange = { text = it },
-                placeholder = { Text("Message $other… (@ to ask for help)") },
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 4,
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                    focusedContainerColor = cs.surfaceVariant, unfocusedContainerColor = cs.surfaceVariant,
-                ),
-            )
+        // The same message bar as the task Timeline and the Help chat (WhatsApp style, one slim row).
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChatPill(text, { text = it }, "Message $other…", Modifier.weight(1f)) {
+                HelpAtButton(help) { text = insertAtSign(text) }
+                ChatIconButton(pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
+            }
             Spacer(Modifier.width(6.dp))
-            if (text.isNotBlank()) {
-                IconButton(onClick = { sendText() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF3DD6B5))) {
-                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = Color(0xFF053D2E))
-                }
+            if (text.text.isNotBlank()) {
+                ChatSendButton(onClick = { sendText() })
             } else {
                 TeamHoldToRecord(
                     onState = { recording = it },
@@ -557,6 +544,7 @@ private fun TeamComposer(
                         if (TeamRepo.send(t, Team.VOICE, "", tag, bytes, dur)) onSent(TeamRepo.lastSentId)
                         tag = ""
                     },
+                    size = 44.dp,
                 )
             }
         }

@@ -302,6 +302,11 @@ internal fun matches(e: FuEntry, numbers: List<String>, name: String): Boolean =
     if (numbers.isNotEmpty()) e.number.isNotBlank() && numbers.any { SmsStore.sameNumber(it, e.number) }
     else e.number.isBlank() && e.person.equals(name, ignoreCase = true)
 
+/** The same for a follow-up waiting in To schedule. */
+internal fun matchesSched(t: ToScheduleItem, numbers: List<String>, name: String): Boolean =
+    if (numbers.isNotEmpty()) t.number.isNotBlank() && numbers.any { SmsStore.sameNumber(it, t.number) }
+    else t.number.isBlank() && t.name.equals(name, ignoreCase = true)
+
 @Composable
 private fun MenuHeading(text: String) =
     ChipHeading(text.uppercase(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
@@ -392,6 +397,8 @@ private fun FollowUpsAll(
     var pickPerson by remember { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
     val fu = rememberFuController(snack)
+    val schedScope = androidx.compose.runtime.rememberCoroutineScope()
+    val sched = remember(snack) { SchedActions(schedScope, snack) }
     // A text notification's "Not done, text again" opens its follow-up in the editor.
     LaunchedEffect(editLink) {
         val link = editLink ?: return@LaunchedEffect
@@ -438,6 +445,9 @@ private fun FollowUpsAll(
     val ahead = open.filter { !(it.callPending && it.at <= now) }
     val finished = shown.filter { !it.open }.sortedByDescending { it.finishedAt }
     val waiting = toSchedule.size
+    // Filtered to one person: that person's follow-ups with no time yet show on top (they have no place on the time list).
+    val noTimeHere = if (personName == null || showDone) emptyList() else
+        toSchedule.filter { (!starredOnly || it.starred) && matchesSched(it, personNumbers, personName) }.sortedBy { it.createdAt }
     val today = LocalDate.now(ZoneId.systemDefault())
     val cs = MaterialTheme.colorScheme
 
@@ -531,8 +541,14 @@ private fun FollowUpsAll(
                         }
                     }
                 }
+                if (noTimeHere.isNotEmpty()) {
+                    item(key = "group-notime") { Box(Modifier.animateItem()) { DayHeader("No time yet", "${noTimeHere.size}", Tones.amber.fg) } }
+                    itemsIndexed(noTimeHere, key = { _, t -> "fu-${t.id}" }) { i, t ->
+                        Box(Modifier.animateItem()) { sched.Card(t, rowPos(i, noTimeHere.size)) }
+                    }
+                }
                 block("waiting", "WAITING ON YOU", "${pinned.size}", cs.error, pinned)
-                if (all.isEmpty()) {
+                if (all.isEmpty() && noTimeHere.isEmpty()) {
                     item(key = "empty") {
                         EmptyPicture(
                             Icons.Rounded.PhoneCallback,
@@ -574,6 +590,7 @@ private fun FollowUpsAll(
     if (showNew) FollowUpDialog(onDismiss = { showNew = false })
     if (pickPerson) PersonFilterSheet(every, onPick = { pickPerson = false; onPerson(it) }, onDismiss = { pickPerson = false })
     fu.Sheets()
+    sched.Sheets()
 }
 
 /** The time picker in a sheet for a follow-up waiting with no time: one tap sets it. */
