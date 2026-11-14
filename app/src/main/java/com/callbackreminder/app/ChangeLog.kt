@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.55.1", "14 Nov",
+            new = listOf(
+                "Person page: the four counts at the top (Pending, Overdue, Delayed, Done) are gone; that report is on the web app",
+            ),
+            fixed = listOf(
+                "Send list now and the automatic daily lists now include every pending task of the person: late ones first, then tasks with no time yet, then the scheduled ones",
+                "A team member's daily list now covers all of their numbers, like their person page",
+            ),
+        ),
+        Entry(
             "0.55.0", "14 Nov",
             new = listOf(
                 "Person page: tasks with no time yet now show under their person, in a No time yet group. Pending is ordered Late, No time yet, Scheduled, with small chips to show one group",

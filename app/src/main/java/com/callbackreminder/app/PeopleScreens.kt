@@ -281,7 +281,7 @@ private data class PersonEvent(val at: Long, val kind: WorkItem.Kind?, val title
 private val histFmt = DateTimeFormatter.ofPattern("EEE d MMM, h:mm a", Locale.getDefault())
 
 /**
- * One person: Call / Text / + Task, counts (pending, overdue, delayed, done), and their Pending, Done
+ * One person: Call / Text / + Task, and their Pending, Done
  * and History (calls, texts, My tasks with them, recordings and their notes).
  */
 @Composable
@@ -418,14 +418,6 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                             }
                         }
                     }
-                }
-            }
-            item(key = "counts") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiniTile("$pendingTotal", "Pending", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, Modifier.weight(1f))
-                    MiniTile("${pending.count { it.overdue }}", "Overdue", Tones.red.bg, Tones.red.fg, Modifier.weight(1f))
-                    MiniTile("${person?.delayed ?: 0}×", "Delayed", Tones.amber.bg, Tones.amber.fg, Modifier.weight(1f))
-                    MiniTile("${done.size}", "Done", Tones.green.bg, Tones.green.fg, Modifier.weight(1f))
                 }
             }
             item(key = "daily") {
