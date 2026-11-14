@@ -17,8 +17,9 @@ import java.util.Locale
 /**
  * The daily list: at each send time (the same for everyone, 9 AM, 1 PM and 6 PM to start with) each person
  * switched on (on their person page) gets every follow-up they still owe you, calls and texts alike, each with
- * its task number, overdue ones first. It is only a reminder: no reply is asked for. Nobody with nothing open
- * gets one. My tasks and dossier are never sent.
+ * its task number: late ones first, then ones with no time yet, then the rest by date (the person page's Pending
+ * order). It is only a reminder: no reply is asked for. Nobody with nothing open gets one. My tasks and dossier are
+ * never sent.
  * By SMS it goes out by itself and you get a quiet "Sent the list to Ali" (or an alert if it failed).
  * By WhatsApp the app can't send (no auto-send, so no ban risk): you get one "Daily lists ready" notification
  * and a send page that opens each chat with the list typed, and you press Send.
@@ -98,13 +99,19 @@ object DailyList {
     fun build(ctx: Context, key: String, now: Long = System.currentTimeMillis(), whatsApp: Boolean = false): String? {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
+        ToScheduleStore.init(ctx)
         val zone = ZoneId.systemDefault()
-        val calls = ReminderStore.items.value.filter { !it.done && RecentPeople.key(it.number) == key }
+        // The same person as on the person page: all their numbers (a team member's too).
+        fun mine(number: String) = RecentPeople.key(number) == key || Work.personKey(number) == key
+        val calls = ReminderStore.items.value.filter { !it.done && mine(it.number) }
         // A text they already answered with its number is with you now; one with no reply is still theirs.
         val texts = SmsStore.items.value.filter {
-            !it.done && RecentPeople.key(it.number) == key && it.review != SmsReminder.Review.REPLIED
+            !it.done && mine(it.number) && it.review != SmsReminder.Review.REPLIED
         }
-        data class Line(val due: Long, val text: String, val code: String)
+        // Follow-ups still waiting in To schedule (no time yet) are theirs too: they are in the person's Pending list.
+        val waiting = ToScheduleStore.items.value.filter { mine(it.number) }
+        /** [noTime]: no date; [due] then holds when it was saved, only to order them. */
+        data class Line(val due: Long, val text: String, val code: String, val noTime: Boolean = false)
         val lines = mutableListOf<Line>()
         val links = mutableSetOf<Long>()
         calls.forEach { r ->
@@ -119,14 +126,21 @@ object DailyList {
             val due = t.taskDue.takeIf { it > 0L } ?: if (t.review != null) t.reviewAt else t.nextTextAt
             lines += Line(due, t.message, code)
         }
+        waiting.forEach { w ->
+            val code = w.code.ifEmpty { TaskCodes.next(ctx).first().also { ToScheduleStore.put(w.copy(code = it)) } }
+            lines += Line(w.createdAt, w.headline, code, noTime = true)
+        }
         if (lines.isEmpty()) return null
-        val name = (calls.map { it.createdAt to it.name } + texts.map { it.createdAt to it.name })
+        val name = (calls.map { it.createdAt to it.name } + texts.map { it.createdAt to it.name } + waiting.map { it.createdAt to it.name })
             .filter { it.second.isNotBlank() }.maxByOrNull { it.first }?.second
-        // Overdue first (oldest first), then the rest by due time.
-        val sorted = lines.sortedWith(compareBy<Line>({ if (it.due < now) 0 else 1 }, { it.due }))
+        // Late first (oldest first), then No time yet (oldest first), then the rest by due time: like the person page.
+        val sorted = lines.sortedWith(compareBy<Line>({ if (it.noTime) 1 else if (it.due < now) 0 else 2 }, { it.due }))
         val body = sorted.mapIndexed { i, l ->
-            val day = Instant.ofEpochMilli(l.due).atZone(zone)
-            "${i + 1}) ${l.code} | ${l.text} | Due ${day.format(dueFmt)}" + if (l.due < now) " (late)" else ""
+            if (l.noTime) "${i + 1}) ${l.code} | ${l.text} | No time yet"
+            else {
+                val day = Instant.ofEpochMilli(l.due).atZone(zone)
+                "${i + 1}) ${l.code} | ${l.text} | Due ${day.format(dueFmt)}" + if (l.due < now) " (late)" else ""
+            }
         }
         val head = (name?.let { "$it, your" } ?: "Your") + " open tasks (" + LocalDate.now(zone).format(dayFmt) + "):"
         return buildString {
