@@ -110,7 +110,8 @@
       <div class="card pfhead"><h2>Plot ${esc(f.plot)} · ${esc(f.owner || "")}</h2><div class="sub">${f.closed ? "Closed" : "Stage " + stageOf(f) + " · " + esc(STAGES[stageOf(f)] || "")} · opened ${fmtShort(f.openedAt)}</div>
         <div class="pfflds"><div><span>Phone 1</span><b>${esc(f.phone1 || "—")}</b></div><div><span>Phone 2</span><b>${esc(f.phone2 || "—")}</b></div><div><span>CNIC</span><b>${esc(f.cnic || "—")}</b></div><div><span>Size</span><b>${esc(f.size || "—")}</b></div><div class="wide"><span>Address</span><b>${esc(f.address || "—")}</b></div></div>
         <div class="pfdrive">${f.driveInternal ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(f.driveInternal)}">Google Drive: Internal</a>` : ""}${f.driveArchitect ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(f.driveArchitect)}">Google Drive: For architect</a>` : ""}${ed() ? '<button class="btnt edit-only" id="pf-edit">Edit details</button>' : ""}</div></div>
-      <div class="tabs pftabs">${tabs.map(([k, l]) => `<button data-pft="${k}" class="${S.pfTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+      <div class="pfbar"><div class="pfbt"><b>Plot ${esc(f.plot)} · ${esc(f.owner || "")}</b><span>${f.closed ? "Closed" : "Stage " + stageOf(f) + " · " + esc(STAGES[stageOf(f)] || "")}</span></div>
+        <div class="tabs pftabs">${tabs.map(([k, l]) => `<button data-pft="${k}" class="${S.pfTab === k ? "on" : ""}">${l}</button>`).join("")}</div></div>`;
     let body = "";
     if (S.pfTab === "steps") body = stepsTab(f, now); else if (S.pfTab === "items") body = itemsTab(f); else if (S.pfTab === "cheques") body = chequesTab(f); else body = timelineTab(f);
     return { html: hd + `<div class="card pfcard">${body}</div>` };
@@ -122,7 +123,7 @@
       const ss = STEPS.filter((s) => s.stage === g);
       const done = ss.filter((s) => stepSt(f, s.id).status === "done").length, started = ss.some((s) => stepSt(f, s.id).status);
       if (!started) { out += `<div class="pfstage later"><span class="pfn">${g}</span><b>${esc(STAGES[g])}</b><span class="sub">${ss.length} steps</span></div>`; continue; }
-      out += `<div class="mh2" style="margin-top:10px">STAGE ${g} · ${esc((STAGES[g] || "").toUpperCase())} · ${done} of ${ss.length} done</div>`;
+      out += `<div class="pfgrp"><div class="mh2 pfsh">STAGE ${g} · ${esc((STAGES[g] || "").toUpperCase())} · ${done} of ${ss.length} done</div>`;
       out += ss.map((s) => {
         const st = stepSt(f, s.id), y = st.days || daysOf(s.id), open = S.pfOpen === f.id + s.id, status = st.status || "next";
         const ic = status === "done" ? '<span class="pfic done">✓</span>' : status === "doing" ? '<span class="pfic cur">▶</span>' : status === "waiting" ? '<span class="pfic wait">⏳</span>' : '<span class="pfic">·</span>';
@@ -132,6 +133,7 @@
           ${ed() && (status === "doing" || status === "waiting") ? `<div class="pfact"><button class="btnp" data-done="${esc(s.id)}">Done</button>${status === "waiting" ? `<button class="btnt" data-back="${esc(s.id)}">Plot owner is back</button>` : WAIT_STEPS.includes(s.id) ? `<button class="btnt" data-wait="${esc(s.id)}">Waiting for plot owner</button>` : ""}</div><div class="foot">Done is a backup here. Staff do it on their phone.</div>` : ""}</div>` : "";
         return `<div class="pfstep ${status}"><div class="pfsr" data-open="${esc(s.id)}">${ic}<div class="w"><b>${esc(s.title)}</b><span>${esc(s.id)} · ${esc(s.role)}${status === "done" ? " · done " + fmtShort(st.doneAt) : st.startedAt ? " · started " + fmtShort(st.startedAt) : ""}</span></div><span class="pfrt">${right}</span></div>${detail}</div>`;
       }).join("");
+      out += "</div>";
     }
     return out || '<div class="muted">No steps yet.</div>';
   }
@@ -158,10 +160,10 @@
   function rulesPage() {
     const rows = STEPS.map((s) => {
       const c = cfgStep(s.id), ch = c.days !== undefined || c.ask !== undefined;
-      return `<div class="pfrule"><div class="w"><b>${esc(s.id)} · ${esc(s.title)}</b><span>${esc(s.role)} · ${esc(STAGES[s.stage] || "")}</span></div><span class="pfk">${daysOf(s.id) ? daysOf(s.id) + " days" : esc(s.limit || "—")}</span><span class="pfk">${esc(askOf(s.id) || "—")}</span>${ch ? '<span class="tag chg" data-rst="' + esc(s.id) + '" title="Back to the SOP default">✎ changed</span>' : '<span class="tag">default</span>'}${RB.isOwner() ? `<button class="btnt edit-only" data-rule="${esc(s.id)}">Change</button>` : ""}</div>`;
+      return `<div class="pfrule"><div class="w"><b>${esc(s.id)} · ${esc(s.title)}</b><span>${esc(s.role)} · ${esc(STAGES[s.stage] || "")}</span></div><span class="pfk pfkd">${daysOf(s.id) ? daysOf(s.id) + " days" : esc(s.limit || "—")}</span><span class="pfk pfka">${esc(askOf(s.id) || "—")}</span>${ch ? '<span class="tag chg" data-rst="' + esc(s.id) + '" title="Back to the SOP default">✎ changed</span>' : '<span class="tag">default</span>'}${RB.isOwner() ? `<button class="btnt edit-only" data-rule="${esc(s.id)}">Change</button>` : ""}</div>`;
     }).join("");
     return { html: `<div class="card pfcard"><div class="subhead"><h3>Rules and timing</h3></div><div class="hint">Days and “Who to ask” come from the SOP register. Change one here only for an exception. A change applies to files that have not reached the step yet; steps already open keep their old limit. Fridays and holidays are skipped.</div>
-      <div class="pfrule head"><span class="w">STEP</span><span class="pfk">DAYS</span><span class="pfk">WHO TO ASK</span><span></span><span></span></div>${rows}</div>` };
+      <div class="pfrule head"><span class="w">STEP</span><span class="pfk">DAYS</span><span class="pfk">WHO TO ASK</span><span class="pf3"></span><span class="pf4"></span></div>${rows}</div>` };
   }
   function ruleDialog(id) {
     const s = stepDef(id);
@@ -200,6 +202,21 @@
     });
   }
 
+  // ------------------------------------------------------------------ fixed bars
+  /** File page: the slim "Plot · owner · stage" line joins the tabs bar only once the big header has scrolled away.
+   * --pfbar tells the stage headings how far below the bar they stop. */
+  let pfObs = null;
+  function stickyBar(root) {
+    if (pfObs) { pfObs.disconnect(); pfObs = null; }
+    const bar = root.querySelector(".pfbar"), head = root.querySelector(".pfhead");
+    if (!bar) return;
+    const fit = () => root.style.setProperty("--pfbar", bar.offsetHeight + "px");
+    fit();
+    if (!head || !window.IntersectionObserver) return;
+    pfObs = new IntersectionObserver(([e]) => { bar.classList.toggle("stuck", !e.isIntersecting); fit(); });
+    pfObs.observe(head);
+  }
+
   // ------------------------------------------------------------------ section
   RB.sections.plot = {
     tabs() { return [["files", "Files"]].concat(RB.isOwner() ? [["rules", "Rules and timing"]] : []); },
@@ -227,6 +244,7 @@
       on("[data-rule]", (e) => ruleDialog(e.dataset.rule));
       on("[data-rst]", (e) => RB.confirm("Go back to the SOP default for " + esc(e.dataset.rst) + "?", "Go back", async () => { const steps = Object.assign({}, (D.plotCfg || {}).steps || {}); delete steps[e.dataset.rst]; await RB.Store.putField("config", "plotsteps", "steps", steps); await RB.log("Plot files rule " + e.dataset.rst + " back to the SOP default"); }));
       root.querySelectorAll("[data-item]").forEach((sel) => (sel.onchange = async () => { const f = cur(), items = (f.items || []).map((i) => (i.id === sel.dataset.item ? Object.assign({}, i, { status: sel.value, at: Date.now(), by: RB.uidOf() }) : i)); await save(f, { items }, (items.find((i) => i.id === sel.dataset.item) || {}).name + ": " + ITEM_ST[sel.value][0]); }));
+      stickyBar(root);
       on("#pf-addnote", async () => { const v = document.getElementById("pf-note").value.trim(); if (!v) return; const f = cur(); await save(f, {}, v); });
     },
   };

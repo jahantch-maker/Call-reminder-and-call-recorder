@@ -10,13 +10,19 @@
 .pfback{margin:0 0 8px}.pfhead{background:#fff;margin-bottom:12px}.pfhead h2{font-size:24px;font-weight:700}
 .pfflds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px;margin:12px 0}.pfflds span{display:block;font-size:12px;color:var(--onv)}.pfflds b{display:block;font-size:14.5px;overflow-wrap:anywhere}.pfflds .wide{grid-column:1/-1}
 .pfdrive{display:flex;gap:8px;flex-wrap:wrap}.pfdrive a{text-decoration:none}
-.pftabs{margin:0 0 12px}
+.pftabs{margin:0}
+/* Fixed bars: file tabs (plus a slim plot line once the header has scrolled away), the open stage heading, the Rules header row. */
+.pfbar{position:sticky;top:0;z-index:6;background:var(--bg);padding:6px 0 10px}
+.pfbt{display:none;align-items:baseline;gap:8px;min-width:0;margin:0 0 6px;white-space:nowrap;overflow:hidden}.pfbar.stuck .pfbt{display:flex}
+.pfbt b{font-size:15px;overflow:hidden;text-overflow:ellipsis;min-width:0}.pfbt span{flex:none;font-size:12.5px;color:var(--onv)}
+.pfgrp>.pfsh{position:sticky;top:var(--pfbar,52px);z-index:5;background:var(--sf);margin:0;padding:12px 4px 10px;border-bottom:1px solid #F0F0EE}
+.pfrule.head{position:sticky;top:0;z-index:5;background:var(--sf)}
 .pfstage{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #F0F0EE}.pfstage.later b{font-weight:600}.pfn{display:inline-flex;width:26px;height:26px;border-radius:50%;background:#ECECEA;align-items:center;justify-content:center;font-size:12px;font-weight:700}
 .pfstep{border-bottom:1px solid #F0F0EE}.pfsr{display:flex;align-items:center;gap:12px;padding:12px 4px;cursor:pointer}.pfsr .w{flex:1;min-width:0}.pfsr .w b{display:block;font-size:15px}.pfsr .w span{font-size:12.5px;color:var(--onv)}.pfrt{flex:none;font-size:12.5px;color:var(--onv);text-align:right;white-space:nowrap}
 .pfic{display:inline-flex;flex:none;width:28px;height:28px;border-radius:50%;background:#ECECEA;align-items:center;justify-content:center;font-size:13px;color:var(--onv)}.pfic.done{background:var(--grn);color:#fff}.pfic.cur{background:var(--on);color:#fff}.pfic.wait{background:#FBEBC8;color:#8A5A00}
 .pfdet{margin:0 0 12px 40px;background:#F7F7F5;border-radius:14px;padding:12px 14px;font-size:13.5px;line-height:1.5;color:#33353A;white-space:normal}.pfact{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .pfitem{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid #F0F0EE}.pfitem .w{flex:1;min-width:0}.pfitem .w b{display:block;font-size:15px}.pfitem .w span{font-size:12.5px;color:var(--onv)}
 .pfev{padding:10px 4px;border-bottom:1px solid #F0F0EE}.pfnote{display:flex;gap:8px;margin-bottom:10px}.pfnote input{flex:1;min-width:0}
-.pfrule{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #F0F0EE;flex-wrap:wrap}.pfrule .w{flex:1;min-width:220px}.pfrule .w b{display:block;font-size:14px}.pfrule .w span{font-size:12.5px;color:var(--onv)}.pfk{width:120px;font-size:13px}.pfrule.head{font-size:11.5px;font-weight:800;letter-spacing:.6px;color:var(--onv)}
+.pfrule{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #F0F0EE;flex-wrap:wrap}.pfrule .w{flex:1;min-width:220px}.pfrule .w b{display:block;font-size:14px}.pfrule .w span{font-size:12.5px;color:var(--onv)}.pfk{width:140px;font-size:13px}.pfrule>.tag{width:76px;text-align:center;flex:none}.pfrule>.btnt,.pfrule>.pf4{width:80px;flex:none}.pfrule>.pf3{width:76px;flex:none}.pfrule.head{font-size:11.5px;font-weight:800;letter-spacing:.6px;color:var(--onv)}
 .content{scrollbar-gutter:stable}
-@media(max-width:700px){.pfflds{grid-template-columns:repeat(2,minmax(0,1fr))}.pfdet{margin-left:0}.pfk{width:auto}}
+@media(max-width:700px){.pfrule{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 10px}.pfrule .w{grid-column:1/-1;min-width:0}.pfrule>.pfk{width:auto}.pfrule>.pfkd{grid-column:1/-1}.pfrule>.pfkd::before{content:'Days: ';color:var(--onv)}.pfrule>.pfka::before{content:'Ask: ';color:var(--onv)}.pfrule.head{display:none}.pfrule>.btnt{width:auto}.pfflds{grid-template-columns:repeat(2,minmax(0,1fr))}.pfdet{margin-left:0}.pfk{width:auto}}
