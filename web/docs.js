@@ -31,7 +31,7 @@
     const uid = RB.uidOf(), desig = myDesig(), items = listFor(desig), now = Date.now();
     const st = items.map((d) => [d, itemState(uid, d)]), n = st.filter((x) => x[1].done).length, dl = deadlineOf(uid);
     const row = ([d, s]) => `<div class="docrow"><span class="ty" style="background:${d.type === "jd" ? "var(--lil)" : "var(--blu)"}">${d.type === "jd" ? "Job description" : "SOP"}</span><div class="w"><b>${esc(d.title)}</b><span>${d.section ? esc(d.section) + " · " : ""}Version ${d.version || 1}${s.again ? " · <b style='color:var(--org)'>new version, read again</b>" : ""}</span>
-      ${(d.parts || {})[desig] ? `<span class="part">Your part: ${esc(d.parts[desig])}</span>` : ""}</div>${link(d.url, "Open ›")}
+      ${(d.parts || {})[desig] ? `<span class="part">Your part: ${esc(d.parts[desig])}</span>` : ""}</div>${d.built ? `<a class="link" href="#" data-sxread="1">Open ›</a>` : link(d.url, "Open ›")}
       ${s.done ? `<span class="tag grn">✓ ${s.trained ? "trained by " + esc(s.by) : "read"}</span>` : `<button class="btnt" data-train="${esc(d.id)}">${s.training ? "Training asked" : "Need training"}</button><button class="btnp" data-read="${esc(d.id)}">Read ✓</button>`}</div>`;
     const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>My reading list</h3><div class="sp"></div><span class="tag ${n === st.length ? "grn" : dl < now ? "red" : "yel"}">${n < st.length ? (dl < now ? "Overdue since " + fmtDay(dl) : "Finish by " + fmtDay(dl)) : "All done"}</span></div>
       <div style="display:flex;align-items:center;gap:12px"><b>${n} of ${st.length}</b><div class="prog" style="flex:1"><i style="width:${st.length ? Math.round((n / st.length) * 100) : 0}%"></i></div></div>
@@ -81,16 +81,22 @@
   }
 
   // ------------------------------------------------------------------ owner pages
+  /** Docs > SOPs (locked design, SOP builder mockup v10): one list of built SOPs (open inside the app, read only) and Drive link SOPs. */
   function sops() {
-    const ps = (RB.plotSop ? RB.plotSop.docs() : "") + (RB.isOwner() && RB.plotSync && !S.sopPage ? '<div style="height:12px"></div>' + RB.plotSync.render().html : "");   // the SOP import (owner) and the built Plot files SOP (written live from the Google Sheet)
-    if (!isEd() || S.sopPage) return { html: ps || '<div class="card"><div class="muted">No SOPs here yet.</div></div>' };
-    const secs = SECTIONS(), now = Date.now();
-    const list = ofType("sop").filter((d) => (S.sopSection === "all" || d.section === S.sopSection) && (!S.q || d.title.toLowerCase().includes(S.q.toLowerCase())));
-    const chips = ["all"].concat(secs).map((x) => `<button class="sc ${S.sopSection === x ? "on" : ""}" data-sec2="${esc(x)}">${x === "all" ? "All" : esc(x)}</button>`).join("");
-    const html = ps + `<div class="card"><div class="subhead"><h3>SOPs</h3><div class="sp"></div>${chips}<button class="btnp edit-only" data-add="sop">+ Add SOP</button></div>${driveHint}
-      ${list.map((d) => `<div class="docrow"><div class="w"><b>${esc(d.title)}</b><span>${esc(d.section || "")} · owner ${esc(d.owner || "—")} · version ${d.version || 1}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}${d.reviewBy && d.reviewBy < now ? ' <b style="color:var(--er)">review overdue</b>' : ""}</span><span>Must read: ${(d.designations || []).map((x) => `<span class="ty" style="background:${RB.desigColor(x)};font-size:11px;padding:2px 8px;margin-right:4px">${esc(x)}</span>`).join("") || "nobody yet"}</span></div>${link(d.url)}<button class="btnt edit-only" data-newver="${esc(d.id)}">Upload new version</button><button class="btnt edit-only" data-edit="${esc(d.id)}">Edit</button><button class="btnt edit-only" data-del="${esc(d.id)}">Delete</button></div>`).join("") || '<div class="muted" style="padding:12px 0">No SOPs here yet.</div>'}</div>`;
+    const P = RB.plotSop;
+    if (P && S.sopOpen) return { html: P.page() };
+    if (P && S.sopNew && RB.isOwner()) return { html: P.newSop() };
+    const secs = Array.from(new Set(SECTIONS().concat(P && P.section() ? [P.section()] : []))), now = Date.now(), ed = isEd();
+    const list = ofType("sop").filter((d) => !d.built).filter((d) => (S.sopSection === "all" || d.section === S.sopSection) && (!S.q || d.title.toLowerCase().includes(S.q.toLowerCase())));
+    const chips = ["all"].concat(secs).map((x) => `<button class="sc sxfilt ${S.sopSection === x ? "on" : ""}" data-sec2="${esc(x)}">${S.sopSection === x ? "✓ " : ""}${x === "all" ? "All" : esc(x)}</button>`).join("");
+    const built = P && (!S.q || "plot files".includes(S.q.toLowerCase())) ? P.listRow(S.sopSection) : "";
+    const html = `<div class="card sxlist"><div class="subhead"><h3>SOPs</h3><div class="sp"></div>${chips}${ed ? '<button class="btnp sxblue edit-only" data-newsop="1">+ New SOP</button>' : ""}</div>
+      ${built}${list.map((d) => `<div class="docrow"><div class="w${ed ? " sxtap" : ""}"${ed ? ` data-drvopen="${esc(d.id)}" title="Open to edit or delete"` : ""}><b>${esc(d.title)}</b><span class="sxtag drive">Drive link</span><span>${esc(d.section || "")} · version ${d.version || 1} · owner ${esc(d.owner || "—")}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}${d.reviewBy && d.reviewBy < now ? ' <b style="color:var(--er)">review overdue</b>' : ""}</span><span>Must read: ${esc((d.designations || []).join(", ")) || "nobody yet"}</span></div>${link(d.url)}${ed ? `<button class="btnt edit-only" data-newver="${esc(d.id)}">Upload new version</button>` : ""}</div>`).join("")}
+      ${!built && !list.length ? '<div class="muted" style="padding:12px 0">No SOPs here yet.</div>' : ""}</div>
+      <div class="hint sxfoot">A built SOP opens inside the app in English and Urdu. A Drive link SOP works as today.${ed ? " Share each Drive file only with Rafiq Builders Gmails, never “anyone with the link”." : ""}</div>`;
     return { html };
   }
+
   function jds() {
     const html = `<div class="card" style="max-width:820px"><div class="subhead"><h3>Job descriptions</h3><div class="sp"></div><button class="btnp edit-only" data-add="jd">+ Add JD</button></div>${driveHint}
       ${RB.desigList().map((x) => { const j = ofType("jd").find((d) => forDesig(d, x.name)); return `<div class="docrow"><span class="ty" style="background:${RB.desigColor(x.name)}">${esc(x.name)}</span><div class="w">${j ? `<b>${esc(j.title)}</b><span>Version ${j.version || 1}</span>` : '<span>No job description yet</span>'}</div>${j ? link(j.url) : ""}${j ? `<button class="btnt edit-only" data-edit="${esc(j.id)}">Edit</button>` : `<button class="btnt edit-only" data-add="jd:${esc(x.name)}">Add</button>`}</div>`; }).join("")}</div>`;
@@ -160,7 +166,7 @@
       const t = [["reading", "My reading list"], ["work", "Work documents"]];
       if (visiblePolicies().length || RB.isOwner()) t.push(["policies", "Policies"]);
       if (isEd()) t.push(["sops", "SOPs"], ["jds", "Job descriptions"], ["progress", "Reading progress"]);
-      else if (RB.plotSop && RB.plotSop.has()) t.push(["sops", "SOPs"]);
+      else if ((RB.plotSop && RB.plotSop.has()) || ofType("sop").some((d) => !d.built)) t.push(["sops", "SOPs"]);
       return t;
     },
     render(tab) {
@@ -181,9 +187,28 @@
       on("[data-add]", (e) => { const [k, pre] = e.dataset.add.split(":"); docDialog(k, null, pre); });
       on("[data-edit]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.edit); docDialog(d.type, d); });
       on("[data-del]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.del); RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); });
+      // A Drive link SOP row: Open and Upload new version stay on the row; Edit and Delete live in the window the row opens.
+      on("[data-drvopen]", (e) => {
+        const d = D.docs.find((x) => x.id === e.dataset.drvopen); if (!d) return;
+        const m = document.getElementById("modal");
+        m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:18px">${esc(d.title)}</b> <span class="sxtag drive">Drive link</span>
+          <div class="sub" style="margin-top:10px">${esc(d.section || "")} · version ${d.version || 1} · owner ${esc(d.owner || "—")}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}</div>
+          <div class="sub">Must read: ${esc((d.designations || []).join(", ")) || "nobody yet"}</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px"><button class="btnt" id="dv-del" style="color:var(--er)">Delete</button><div style="flex:1"></div><button class="btnt" id="dv-x">Close</button><button class="btnp" id="dv-edit">Edit</button></div></div></div>`;
+        m.querySelector("#dv-x").onclick = () => (m.innerHTML = "");
+        m.querySelector("#dv-edit").onclick = () => { m.innerHTML = ""; docDialog(d.type, d); };
+        m.querySelector("#dv-del").onclick = () => { m.innerHTML = ""; RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); };
+      });
       on("[data-newver]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.newver); RB.form("New version of " + d.title, [{ k: "url", label: "GOOGLE DRIVE LINK (leave as is if the same file)", value: d.url || "" }], "Publish version " + ((d.version || 1) + 1), async (v) => { if (v.url && !/^https:\/\//.test(v.url)) return "The link must start with https://"; await RB.Store.put("docs", d.id, { version: (d.version || 1) + 1, url: v.url.trim(), updatedAt: Date.now() }, true); await RB.log("New version " + ((d.version || 1) + 1) + " of " + d.title + ": " + (d.designations || []).join(", ") + " read again"); }, "Only the designations that must read it will read it again."); });
       if (RB.plotSop) RB.plotSop.bind(root);
-      if (RB.isOwner() && RB.plotSync && (S.tab || {}).docs === "sops") RB.plotSync.bind(root);
+      on("[data-sxread]", () => { RB.plotSop.openRole(myDesig()); S.tab.docs = "sops"; RB.render(); });
+      on("[data-newsop]", () => {
+        const m = document.getElementById("modal");
+        m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:18px">New SOP</b><div class="sxchoice"><button class="btnt" id="ns-sheet"><b>From a Google Sheet</b><span>Built in the app: read only here, written in its master sheet</span></button><button class="btnt" id="ns-drive"><b>A Google Drive link</b><span>A file in Drive, as today</span></button></div><div style="text-align:right;margin-top:12px"><button class="btnt" id="ns-x">Cancel</button></div></div></div>`;
+        m.querySelector("#ns-x").onclick = () => (m.innerHTML = "");
+        m.querySelector("#ns-drive").onclick = () => { m.innerHTML = ""; docDialog("sop"); };
+        m.querySelector("#ns-sheet").onclick = () => { m.innerHTML = ""; if (RB.plotSop && RB.plotSop.has()) return RB.alertBox("The Plot files SOP is already built in the app. To change it, change its Google Sheet, then open it and use Versions › Get changes from Google Sheet."); S.sopNew = true; RB.render(); };
+      });
       on("[data-sec2]", (e) => { S.sopSection = e.dataset.sec2; RB.render(); });
       on("[data-pol]", (e) => { S.policySel = e.dataset.pol; RB.render(); });
       on("[data-tpl]", (e) => { const [p, t] = e.dataset.tpl.split(":"); tplDialog(p, t); });

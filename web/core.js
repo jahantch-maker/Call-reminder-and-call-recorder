@@ -3,7 +3,7 @@
  */
 (function () {
   "use strict";
-  const RB = (window.RB = { D: { plot: [], plotMoney: {}, plotCfg: null, plotSop: null, plotSopX: null, plotSopV: [], me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
+  const RB = (window.RB = { D: { plot: [], plotMoney: {}, plotCfg: null, plotSop: null, plotSopX: null, plotSopV: [], holidays: null, me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
   const D = RB.D;
   const DAY = 86400000;
   RB.DAY = DAY;
@@ -160,7 +160,7 @@
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
-        if (coll === "config") { if (id === "plotsteps") D.plotCfg = merge ? Object.assign({}, D.plotCfg || {}, data) : data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
+        if (coll === "config") { if (id === "holidays") D.holidays = data; else if (id === "plotsteps") D.plotCfg = merge ? Object.assign({}, D.plotCfg || {}, data) : data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
         if (coll === "plotmoney") { D.plotMoney[id] = merge ? Object.assign({}, D.plotMoney[id] || {}, data) : data; return id; }
@@ -381,7 +381,7 @@
     teamRef.collection("changelog").orderBy("at", "desc").limit(200).onSnapshot((s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     const tq = RB.isOwner() ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     tq.onSnapshot((s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    teamRef.collection("config").onSnapshot((s) => { D.plotSop = null; D.plotSopX = null; s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsteps") D.plotCfg = d.data(); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    teamRef.collection("config").onSnapshot((s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsteps") D.plotCfg = d.data(); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves, and (only for the owner and people with "See money details") the cheques and amounts.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     if (RB.isOwner()) snap("plotsopv", (s) => (D.plotSopV = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));

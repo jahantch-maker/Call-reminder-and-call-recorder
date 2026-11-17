@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # A PR that changes only the website (web/) does not build the phone app.
+    paths-ignore: ["web/**"]
   workflow_dispatch:
 
 permissions:

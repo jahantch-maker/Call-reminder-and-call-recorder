@@ -7,3 +7,38 @@
 .sxr{display:flex;gap:10px;margin:3px 0}.sxr>b{width:120px;flex:none;font-size:12.5px;color:var(--onv)}.sxr>div{flex:1;min-width:0;overflow-wrap:anywhere}.sxr p,.sxr ol{margin:0}
 .sxt{width:100%;border-collapse:collapse;font-size:13px}.sxt th,.sxt td{border-bottom:1px solid #F0F0EE;padding:5px 6px;text-align:start;vertical-align:top;overflow-wrap:anywhere}
 @media(max-width:700px){.sxr{flex-direction:column;gap:0}.sxr>b{width:auto}.sxpage{overflow-x:hidden}.sxt{display:block;overflow-x:auto}}
+/* Docs > SOPs list and the built SOP page (locked design: SOP builder mockup v10) */
+.sxfilt.on{background:#DCE7F5;color:#25507F;border-color:#BBD0EA;font-weight:700}
+.btnp.sxblue{background:#2F4FD8;color:#fff}
+.sxrow{cursor:pointer}.sxrow:hover{background:#FAFAF8}
+.sxtag{display:block;background:#DCE7F5;color:#25507F;border-radius:8px;padding:2px 8px;font-size:12.5px;font-weight:700;margin:3px 0}.sxtag.drive{background:#E3E3DF;color:#55585F}
+.sxgo{font-size:18px;color:var(--onv);padding:0 6px}
+.sxfoot{display:inline-block;margin-top:10px;background:#FBEBC8;color:#8A5A00}
+.sxhead{position:sticky;top:0;z-index:5;background:var(--bg,#F2F2F0);padding:4px 0 10px}.sxtitle{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px}.sxtitle h2{margin:0;font-size:21px}
+.sxdraft{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FBEBC8;color:#8A5A00;border-radius:12px;padding:8px 12px;margin-top:10px}
+.sxro{margin-bottom:10px}
+.sxgrp{margin-bottom:8px}.sxband2{display:flex;align-items:center;gap:12px;background:#E9EEF8;border:1px solid #D6DFEF;border-radius:12px;padding:10px 14px;cursor:pointer}.sxband2 .w{flex:1;min-width:0}.sxband2 .w b{display:block;font-size:15px}.sxband2 .w span{font-size:12.5px;color:var(--onv)}
+.sxn2{width:30px;height:30px;border-radius:50%;background:#1F3A93;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none}.sxcnt{background:#fff;color:#1F3A93;border-radius:10px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}.sxchev{color:#1F3A93;width:14px}
+.sxbody{padding:4px 0 4px 18px}
+.sxsrow{display:flex;align-items:center;gap:12px;padding:9px 6px;border-bottom:1px solid #F0F0EE;cursor:pointer}.sxsrow>b{width:52px;flex:none;color:#1F3A93}.sxsrow .w{flex:1;min-width:0}.sxsrow .w .t{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}.sxsrow .w span{font-size:12.5px;color:var(--onv)}.sxval{font-size:15px}
+.sxstepbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 10px}.sxsel{display:flex;align-items:center;gap:8px;flex:1;min-width:0;flex-wrap:wrap}.sxsel>b{color:#1F3A93;font-size:18px}.sxsel>span{font-size:18px;font-weight:700}.sxsel select{flex:1;min-width:200px;max-width:100%}
+.sxsec{margin-bottom:12px}.sxf{display:flex;gap:14px;padding:8px 0;border-bottom:1px solid #F0F0EE}.sxf>b{width:170px;flex:none;font-size:13px;color:var(--onv);font-weight:600}.sxf>div{flex:1;min-width:0;overflow-wrap:anywhere}.sxf p,.sxf ol,.sxf ul{margin:0}.sxf .tag{margin:0 4px 4px 0;display:inline-block}
+.sxchoice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.sxchoice .btnt{text-align:left;padding:10px 14px;height:auto;border-radius:12px}.sxchoice .btnt b{display:block}.sxchoice .btnt span{font-size:12.5px;color:var(--onv)}
+@media(max-width:700px){.sxf{flex-direction:column;gap:2px}.sxf>b{width:auto}.sxbody{padding-left:0}.sxsrow>b{width:44px}}
+.sxlist .docrow .w>span{display:block}.sxsrow .w .t{color:var(--on)}
+.sxlist .docrow .w.sxtap{cursor:pointer}.sxlist .docrow .w.sxtap:hover b{text-decoration:underline}
+.sxfsec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}.sxfsec>.card{margin:0;min-width:0}
+.sxpv{width:100%;border:1px solid var(--line,#ddd);border-radius:10px;background:#fff;display:block}
+@media (max-width:1000px){.sxfsec{grid-template-columns:minmax(0,1fr)}}
+/* Locked fixed bars (mockup v8): SOP tabs + draft bar at top; below them the step picker, the open stage band of its own group,
+   the role SOP title; print preview beside the item list on wide screens. On phone only the one-line draft bar stays. --sxh = header height. */
+.sxgrp>.sxband2{position:sticky;top:var(--sxh,120px);z-index:4}
+.sxstepbar{position:sticky;top:var(--sxh,120px);z-index:4;background:var(--sf,#fff);padding:8px 0;margin-top:-8px}
+.sxpage>h1{position:sticky;top:var(--sxh,120px);z-index:4;background:var(--sf,#fff);margin-top:0;padding:4px 0}
+.sxpage>.sxband{position:sticky;top:calc(var(--sxh,120px) + var(--sxrt,0px));z-index:3}
+.sxfsec .sxband{position:sticky;top:var(--sxh,120px);z-index:3}
+@media (min-width:1001px){.sxfsec>.card:nth-child(2){position:sticky;top:var(--sxh,120px)}.sxfsec .sxpv{max-height:calc(100vh - var(--sxh,120px) - 140px)}}
+@media (max-width:700px){.sxhead{display:contents}.sxdraft{position:sticky;top:0;z-index:5}.sxdraft .link{white-space:nowrap}
+  .sxgrp>.sxband2,.sxstepbar,.sxpage>h1,.sxfsec .sxband{top:var(--sxd,0px)}.sxpage>.sxband{top:calc(var(--sxd,0px) + var(--sxrt,0px))}}
+.sxshort{display:none}
+@media (max-width:700px){.sxdraft{flex-wrap:nowrap;white-space:nowrap}.sxdraft>b{overflow:hidden;text-overflow:ellipsis;min-width:0}.sxlong{display:none}.sxshort{display:inline}}

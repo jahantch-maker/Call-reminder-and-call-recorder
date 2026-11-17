@@ -1,8 +1,8 @@
-/* Plot files: one file per plot, from opening it to possession and discount cheques (Phase 1 = stages 1-8 of the SOP register).
- * Own module: this file, plotsteps.js (the SOP register as defaults) and plotfiles.css. Data lives in teams/{t}/plotfiles (the file),
- * teams/{t}/plotmoney (cheques and amounts: only the owner and people with "See money details") and config/plotsteps (exceptions to
- * the register: days, who to ask). Switch the whole section off with config/plotsteps.enabled = false.
- * The register itself comes from plotsync.js: the published version of the Google Sheet, or the built-in plotsteps.js until the first publish.
+/* Plot files: the daily work on plot files (Files list, file page Steps / Items / Cheques / Timeline).
+ * Own module: this file and plotfiles.css. Data: teams/{t}/plotfiles (the file), teams/{t}/plotmoney (cheques and amounts: only the owner
+ * and people with "See money details"), config/plotsteps (only the on/off switch; holidays are in Settings > Holidays).
+ * Every rule (steps, roles, days, who to ask, pause, extend, forms, RG-03 items) comes ONLY from the SOP imported in Docs > SOPs (plotsync.js).
+ * Nothing of the SOP is in the code: with no SOP imported there are no steps and no new file can be opened.
  */
 (function () {
   "use strict";
@@ -21,15 +21,16 @@
     const s = RB.seatOfUid(RB.uidOf());
     return !!(s ? RB.effective(s).app.seeMoney : D.me && D.me.perms && D.me.perms.app && D.me.perms.app.seeMoney);
   };
-  const cfgStep = (id) => ((D.plotCfg || {}).steps || {})[id] || {};
   const stepDef = (id) => STEPS.find((s) => s.id === id);
-  const daysOf = (id) => { const c = cfgStep(id), d = stepDef(id); return c.days !== undefined && c.days !== "" ? c.days : d ? d.days : null; };
-  const askOf = (id) => { const c = cfgStep(id), d = stepDef(id); return c.ask !== undefined ? c.ask : d ? d.ask : ""; };
-  const holidays = () => (D.plotCfg && D.plotCfg.holidays) || [];
+  const daysOf = (id) => { const d = stepDef(id); return d ? d.days : null; };   // rules come only from the imported SOP
+  const askOf = (id) => { const d = stepDef(id); return d ? d.ask : ""; };
+  // Holidays live in Settings > Holidays (config/holidays) and every SOP reads them. Old dates in config/plotsteps still count.
+  const holidays = () => ((D.holidays && D.holidays.dates) || []).map((h) => h.d).concat((D.plotCfg && D.plotCfg.holidays) || []);
+  const offDays = () => (D.holidays && Array.isArray(D.holidays.offDays) ? D.holidays.offDays : [5]);
 
-  // ------------------------------------------------------------------ working days: Fridays and listed holidays are skipped
+  // ------------------------------------------------------------------ working days: the weekly off day (Friday) and listed holidays are skipped
   const dkey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
-  const isWork = (t) => new Date(t).getDay() !== 5 && !holidays().includes(dkey(t));
+  const isWork = (t) => !offDays().includes(new Date(t).getDay()) && !holidays().includes(dkey(t));
   /** Whole working days from a to b (not counting the day it started). Time spent Waiting for plot owner is taken off first. */
   function workDays(a, b) {
     let n = 0; const d = new Date(a); d.setHours(12, 0, 0, 0);
@@ -49,7 +50,6 @@
   const stageOf = (f) => { const c = curSteps(f)[0]; return c ? c.stage : f.stage || 1; };
   const sortKey = (f, now) => (isLate(f, now) ? 0 : isWaiting(f) ? 1 : 2);
   const ITEM_ST = { none: ["Not received", ""], received: ["Received", "blu"], verified: ["Verified", "grn"], rejected: ["Rejected", "red"], waived: ["Waived", "yel"] };
-  const DEFAULT_ITEMS = [["Documents checklist (RG-03)", "Site Plan Requisition form"], ["Documents checklist (RG-03)", "CNIC copy of plot owner"], ["Documents checklist (RG-03)", "Possession form"], ["Documents checklist (RG-03)", "Registry photocopy"], ["Documents checklist (RG-03)", "100 stamp paper · Undertaking"], ["Documents checklist (RG-03)", "1200 stamp paper with discount cheque"], ["Documents checklist (RG-03)", "Director waiver / discount approval"]];
 
   async function save(f, patch, line) {
     const data = Object.assign({}, patch);
@@ -144,7 +144,7 @@
         const ic = status === "done" ? '<span class="pfic done">✓</span>' : status === "doing" ? '<span class="pfic cur">▶</span>' : status === "waiting" ? '<span class="pfic wait">⏳</span>' : '<span class="pfic">·</span>';
         const right = status === "done" ? fmtShort(st.doneAt) : status === "doing" && y ? `<span class="pfday ${dayNo(st, now) > y ? "late" : ""}">Day ${dayNo(st, now)} of ${y}</span>` : status === "waiting" ? '<span class="pfday">Paused</span>' : status === "next" ? "Next" : "";
         const fl = sopOf(s.id).forms || [], forms = fl.map((x) => (RB.plotSop && RB.plotSop.has() ? RB.plotSop.chip(x) : `<span class="tag blu">${esc(x)}</span>`)).join(" ");
-        const detail = open ? `<div class="pfdet">${RB.plotSop && RB.plotSop.has() ? `<button class="btnt" data-how="${esc(s.id)}">How to do this</button>` : esc((s.what || []).join(" "))}<div class="sub" style="margin-top:6px">${s.limit ? "Time limit: " + esc(s.limit) + ". " : ""}Who to ask: ${esc(askOf(s.id) || "—")}.${s.cc ? " Notice to: " + esc(s.cc) + "." : ""}</div>${forms ? `<div style="margin-top:6px">${forms}</div>` : ""}
+        const detail = open ? `<div class="pfdet">${RB.plotSop && RB.plotSop.has() ? `<button class="btnt" data-how="${esc(s.id)}">How to do this</button>` : esc((s.what || []).join(" "))}<div class="sub" style="margin-top:6px">${s.limit ? "Time limit: " + esc(s.limit) + ". " : ""}Who to ask: ${esc(askOf(s.id) || "—")}.${s.cc ? " Notice to: " + esc(s.cc) + "." : ""}</div>${forms ? `<div style="margin-top:6px">${forms}</div>` : ""}${fl.includes("RG-14") ? `<div class="pfact"><button class="btnt" data-rg14="${esc(s.id)}">Print Still pending slip</button></div>` : ""}
           ${ed() && (status === "doing" || status === "waiting") && (!f.test || (S.pfAs && s.role === S.pfAs)) ? `<div class="pfact"><button class="btnp" data-done="${esc(s.id)}">Done</button>${status === "doing" && y && mayExtend(s) ? `<button class="btnt" data-ext="${esc(s.id)}">Extend time</button>` : ""}${status === "waiting" ? `<button class="btnt" data-back="${esc(s.id)}">Plot owner is back</button>` : canWait(s.id) ? `<button class="btnt" data-wait="${esc(s.id)}">Waiting for plot owner</button>` : ""}</div><div class="foot">${f.test ? "Test file: acting as " + esc(S.pfAs) + "." : "Done is a backup here. Staff do it on their phone."}</div>` : ed() && f.test && (status === "doing" || status === "waiting") ? `<div class="foot">Test file: pick \"${esc(s.role)}\" in Act as to do this step.</div>` : ""}</div>` : "";
         return `<div class="pfstep ${status}"><div class="pfsr" data-open="${esc(s.id)}">${ic}<div class="w"><b>${esc(s.title)}</b><span>${esc(s.id)} · ${esc(s.role)}${status === "done" ? " · done " + fmtShort(st.doneAt) : st.startedAt ? " · started " + fmtShort(st.startedAt) : ""}</span></div><span class="pfrt">${right}</span></div>${detail}</div>`;
       }).join("");
@@ -154,21 +154,145 @@
   }
   function itemsTab(f) {
     const items = f.items || [], pr = `<div class="subhead"><h3>Items</h3><div class="sp"></div><button class="btnt" id="pf-print">Print RG-03</button></div>`;
-    if (!items.length) return pr + '<div class="muted">No items yet.</div>';
-    return pr + itemsList(f, items);
+    const r3 = items.filter((i) => i.group !== R5), r5 = items.filter((i) => i.group === R5), ok = approved(f) || r5.length;
+    const p5 = RB.canMoney() ? `<button class="btnt" id="pf-print5" ${approved(f) ? "" : 'disabled title="Print opens after the Accounts Head approves" style="opacity:.45"'}>Print RG-05</button>` : "";
+    const pend = r5.filter((i) => !["verified", "waived"].includes(i.status || "none")).length;
+    const g5 = rg05Items().length ? `<div class="subhead" style="margin-top:16px"><div class="mh2" style="margin:0">${esc(R5.toUpperCase())}</div><div class="sp"></div>${p5}</div>
+      ${ok ? itemsList(f, r5, true) + (pend ? `<div class="hint">Items the plot owner has not brought yet: ${pend}. Tap “Still pending slip” in step 2.07 to print it.</div>` : "") : '<div class="hint">The RG-05 rows appear here after the Accounts Officer adds the cheque lines (Cheques tab) and the Accounts Head approves them.</div>'}` : "";
+    if (!r3.length && !g5) return pr + '<div class="muted">No items yet.</div>';
+    return pr + itemsList(f, r3) + g5;
   }
-  function itemsList(f, items) {
+  function itemsList(f, items, noHead) {
     const groups = Array.from(new Set(items.map((i) => i.stage || i.group || "Items")));
-    return groups.map((g) => `<div class="mh2">${esc(g.toUpperCase())}</div>${items.filter((i) => (i.stage || i.group || "Items") === g).map((i) => {
-      const t = ITEM_ST[i.status || "none"];
-      return `<div class="pfitem"><div class="w"><b>${esc(i.name)}</b><span>${esc(i.note || (i.at ? fmtShort(i.at) : "Plot owner to bring"))}</span></div>${ed() ? `<select data-item="${esc(i.id)}">${Object.keys(ITEM_ST).map((k) => `<option value="${k}" ${k === (i.status || "none") ? "selected" : ""}>${ITEM_ST[k][0]}</option>`).join("")}</select>` : `<span class="tag ${t[1]}">${t[0]}</span>`}</div>`;
+    return groups.map((g) => `${noHead ? "" : `<div class="mh2">${esc(g.toUpperCase())}</div>`}${items.filter((i) => (i.stage || i.group || "Items") === g).map((i) => {
+      const t = ITEM_ST[i.status || "none"], l = i.lineId ? linesOf(f).find((y) => y.id === i.lineId) : null;
+      const sub = (l && RB.canMoney() ? money(lineAmt(l)) + " · see Cheques tab · " : "") + (i.note || (i.at ? fmtShort(i.at) : "Plot owner to bring"));
+      return `<div class="pfitem"><div class="w"><b>${esc(i.name)}</b><span>${esc(sub)}</span></div>${ed() ? `<select data-item="${esc(i.id)}">${Object.keys(ITEM_ST).map((k) => `<option value="${k}" ${k === (i.status || "none") ? "selected" : ""}>${ITEM_ST[k][0]}</option>`).join("")}</select>` : `<span class="tag ${t[1]}">${t[0]}</span>`}</div>`;
     }).join("")}`).join("") || '<div class="muted">No items yet.</div>';
   }
+  // ------------------------------------------------------------------ RG-05 cheque lines (locked 17 Nov, option A of the cheque-lines mockup)
+  // The Accounts Officer adds this plot's cheque lines on the Cheques tab. The kinds of lines and their columns come ONLY from the SOP's
+  // RG-05 "Repeating" form items (sheet Form items tab). The Accounts Head approves (phone task later; owner/manager backup on web now).
+  // Approved lines become RG-05 rows on the Items tab; Front Desk records each cheque against its line. Amounts live in plotmoney only.
+  const R5 = "Required attachments (RG-05)";
+  const sopX = () => (RB.plotSop && RB.plotSop.x ? RB.plotSop.x() : null);
+  const rg05Items = () => { const x = sopX(); return ((x && x.formItems) || []).filter((i) => /^RG-05/.test(i.form || "")); };
+  const kinds = () => rg05Items().filter((i) => /^repeat/i.test(i.type || ""));
+  /** "Cheque date (date) · Discount condition (text) · Amount (amount)" -> [{name, kind}] */
+  const colsOf = (k) => String((k && k.cols) || "").split("·").map((c) => c.trim()).filter(Boolean).map((c) => { const m = c.match(/^(.*?)\s*\((\w+)\)\s*$/); return m ? { name: m[1], kind: m[2].toLowerCase() } : { name: c, kind: "text" }; });
+  const money = (n) => "Rs " + Number(n || 0).toLocaleString("en-US");
+  const isManager = () => RB.isOwner() || /\b(GM|manager)\b/i.test((D.me && D.me.designation) || "") || /accounts head/i.test((D.me && D.me.designation) || "");
+  const linesOf = (f) => ((D.plotMoney[f.id] || {}).lines || []);
+  const approved = (f) => !!(D.plotMoney[f.id] || {}).linesOk;
+  const lineDate = (l) => { const k = colsOf(kinds()[l.kind]).find((c) => c.kind === "date"); return k ? l.v[k.name] : ""; };
+  const lineAmt = (l) => { const k = colsOf(kinds()[l.kind]).find((c) => c.kind === "amount"); return k ? Number(l.v[k.name] || 0) : 0; };
+  const lineText = (l) => { const k = colsOf(kinds()[l.kind]).find((c) => c.kind === "text"); return k ? l.v[k.name] : ""; };
+  const dshow = (d) => (d ? new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
+  const lineTitle = (l, n) => lineText(l) || "Cheque " + n + (lineDate(l) ? " · dated " + dshow(lineDate(l)) : "");
   function chequesTab(f) {
-    const m = D.plotMoney[f.id] || {}, ch = m.cheques || [];
-    return `<div class="subhead"><h3>Cheques</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="pf-chq">+ Add cheque</button>' : ""}</div>
-      ${ch.map((c) => `<div class="pfitem"><div class="w"><b>${esc(c.milestone)}</b><span>${esc(c.bank || "")} ${esc(c.no || "")}${c.deadline ? " · deadline " + fmtShort(c.deadline) : ""}</span></div><b>Rs ${Number(c.amount || 0).toLocaleString("en-US")}</b><span class="tag ${c.status === "returned" ? "grn" : c.status === "deposited" ? "red" : "blu"}">${esc(c.status === "returned" ? "Returned" : c.status === "deposited" ? "Deposited" : "Held")}</span></div>`).join("") || '<div class="muted">No cheques yet.</div>'}
-      ${m.pccDue ? `<div class="hint">Payment Clearance Certificate dues: Rs ${Number(m.pccDue).toLocaleString("en-US")}</div>` : ""}`;
+    const m = D.plotMoney[f.id] || {}, ks = kinds(), ls = linesOf(f), ok = approved(f), canAdd = ed() && !ok;
+    if (!ks.length) return `<div class="subhead"><h3>Cheques</h3></div><div class="muted">The SOP has no repeating RG-05 items, so there are no cheque lines to add.</div>`;
+    const strip = ok ? `<div class="hint" style="background:#E3F3E6;color:#1E6B34"><b>Approved</b> by ${esc(m.linesOk.byName || "")}${m.linesOk.backup ? " (from portal)" : ""} · ${esc(fmtWhen(m.linesOk.at))}. Lines are locked; a change needs a new approval.</div>`
+      : ls.length ? `<div class="hint" style="background:#FBEBC8;color:#8A5A00;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>Waiting for the Accounts Head's approval.</b> RG-05 can be printed after approval.</span>${isManager() ? '<button class="btnt" id="pf-lok">Approve (backup)</button>' : ""}</div>` : "";
+    const groups = ks.map((k, ki) => {
+      const mine = ls.filter((l) => l.kind === ki); let n = 0;
+      const rows = mine.map((l) => { n++; const r = l.rec, chk = r && r.check;
+        const tagH = r ? `<span class="tag ${chk ? "red" : "blu"}">${chk ? "Check" : "Received"}</span>` : '<span class="tag">Expected</span>';
+        const sub = r ? `${esc(r.bank)} · no. ${esc(r.no)} · received ${esc(fmtShort(r.at))}${chk ? ' · <b style="color:var(--er)">date or amount differs from the line</b>' : ""}` : lineText(l) ? "Expected · dated " + esc(dshow(lineDate(l))) : "Expected";
+        const act = canAdd ? ` data-lnedit="${esc(l.id)}" style="cursor:pointer"` : "";
+        return `<div class="pfitem"${act}><div class="w"><b>${esc(lineTitle(l, n))}</b><span>${sub}</span></div><b>${money(lineAmt(l))}</b>${tagH}${ok && !r && ed() ? `<button class="btnt" data-rec="${esc(l.id)}">Record cheque</button>` : ""}</div>`; }).join("");
+      const tot = /^y/i.test(k.total || "") && mine.length ? `<div class="pfitem" style="border-bottom:0"><div class="w"><b style="color:var(--onv)">Total</b></div><b>${money(mine.reduce((a, l) => a + lineAmt(l), 0))}</b></div>` : "";
+      return `<div class="mh2" style="margin-top:12px">${esc(String(k.item || "").toUpperCase())}</div>${rows || '<div class="muted" style="padding:6px 4px">No lines.</div>'}${tot}`;
+    }).join("");
+    const old = (m.cheques || []).length ? `<div class="mh2" style="margin-top:12px">OTHER CHEQUES (ADDED BEFORE CHEQUE LINES)</div>${m.cheques.map((c) => `<div class="pfitem"><div class="w"><b>${esc(c.milestone)}</b><span>${esc(c.bank || "")} ${esc(c.no || "")}${c.deadline ? " · deadline " + fmtShort(c.deadline) : ""}</span></div><b>${money(c.amount)}</b></div>`).join("")}` : "";
+    return `<div class="subhead"><h3>Cheques</h3><div class="sp"></div>${canAdd ? '<button class="btnp edit-only" id="pf-lnadd">+ Add cheque line</button>' : ""}</div>${strip}${groups}${old}
+      ${canAdd && ls.length ? '<div class="hint">Tap a line to change or remove it. After approval the lines are locked.</div>' : ""}
+      ${m.pccDue ? `<div class="hint">Payment Clearance Certificate dues: ${money(m.pccDue)}</div>` : ""}`;
+  }
+  /** Add or change one cheque line. The type list and the boxes come from the SOP's RG-05 repeating items. */
+  function lineDialog(f, line) {
+    const ks = kinds(), md = document.getElementById("modal");
+    let ki = line ? line.kind : 0;
+    const draw = () => {
+      const cols = colsOf(ks[ki]), v = (line && line.kind === ki && line.v) || {};
+      md.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">${line ? "Change cheque line" : "Add cheque line"} · plot ${esc(f.plot)}</b><div class="foot">Only the lines this plot needs. They print on RG-05 as tables${ks[ki] && /^y/i.test(ks[ki].total || "") ? " with a total" : ""}, after the Accounts Head approves.</div>
+        <div class="lbl">TYPE</div><select id="ln-k">${ks.map((k, i) => `<option value="${i}" ${i === ki ? "selected" : ""}>${esc(k.item)}</option>`).join("")}</select>
+        ${cols.map((c, i) => `<div class="lbl">${esc(c.name.toUpperCase())}${c.kind === "amount" ? " (Rs)" : ""}</div><input data-ln="${i}" type="${c.kind === "date" ? "date" : c.kind === "amount" || c.kind === "number" ? "number" : "text"}" value="${esc(v[c.name] || "")}">`).join("")}
+        <div class="err" id="ln-err"></div><div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px">${line ? '<button class="link" id="ln-del" style="color:var(--er);margin-right:auto">Remove line</button>' : ""}<button class="link" id="ln-x">Cancel</button><button class="btnp" id="ln-ok">${line ? "Save" : "Add"}</button></div></div></div>`;
+      md.querySelector("#ln-k").onchange = (e) => { ki = Number(e.target.value); draw(); };
+      md.querySelector("#ln-x").onclick = () => (md.innerHTML = "");
+      const dl = md.querySelector("#ln-del");
+      if (dl) dl.onclick = async () => { const ls = linesOf(f).filter((l) => l.id !== line.id); await RB.Store.put("plotmoney", f.id, { lines: ls }, true); await RB.log("Plot " + f.plot + ": cheque line removed"); md.innerHTML = ""; RB.render(); };
+      md.querySelector("#ln-ok").onclick = async () => {
+        const vals = {}; let bad = "";
+        cols.forEach((c, i) => { const x = md.querySelector(`[data-ln="${i}"]`).value.trim(); vals[c.name] = x; if (!x) bad = "Fill in " + c.name.toLowerCase() + "."; else if (c.kind === "amount" && !(Number(x) > 0)) bad = c.name + " must be more than 0."; });
+        if (bad) { md.querySelector("#ln-err").textContent = bad; return; }
+        const nl = { id: line ? line.id : RB.id(), kind: ki, v: vals };
+        const ls = line ? linesOf(f).map((l) => (l.id === line.id ? nl : l)) : linesOf(f).concat(nl);
+        await RB.Store.put("plotmoney", f.id, { lines: ls, linesBy: { by: RB.uidOf(), byName: (D.me && D.me.name) || "", at: Date.now() } }, true);
+        await RB.log("Plot " + f.plot + ": cheque line " + (line ? "changed" : "added") + " (" + ks[ki].item + ")"); md.innerHTML = ""; RB.render();
+      };
+    };
+    draw();
+  }
+  /** Approve the cheque lines. Normally the Accounts Head on the phone; until then the owner or a manager here, recorded as from portal.
+   *  Approval locks the lines and adds the plot's RG-05 rows to Items: the SOP's normal RG-05 items plus one row per cheque line. */
+  function approveLines(f) {
+    const ls = linesOf(f); if (!ls.length) return;
+    RB.confirm("Approve the " + ls.length + " cheque lines of plot " + esc(f.plot) + "? The Accounts Head normally does this on the phone. It will show as approved from portal by you.", "Approve", async () => {
+      const now = Date.now(), ks = kinds(), have = new Set((f.items || []).map((i) => i.id)), add = [];
+      let lineN = {};
+      rg05Items().forEach((it, n) => {
+        if (/^repeat/i.test(it.type || "")) { const ki = ks.indexOf(it); ls.filter((l) => l.kind === ki).forEach((l) => { lineN[ki] = (lineN[ki] || 0) + 1; const id = "r5" + l.id; if (!have.has(id)) add.push({ id, group: R5, name: it.item.replace(/s$/, "") + " · " + (lineText(l) || "cheque " + lineN[ki]), lineId: l.id, status: "none" }); }); }
+        else { const id = "r5n" + n; if (!have.has(id)) add.push({ id, group: R5, name: it.item, status: "none" }); }
+      });
+      await RB.Store.put("plotmoney", f.id, { linesOk: { by: RB.uidOf(), byName: (D.me && D.me.name) || "Owner", at: now, backup: true } }, true);
+      await save(f, { items: (f.items || []).concat(add) }, "Cheque lines approved from portal by " + ((D.me && D.me.name) || "Owner") + " · " + add.length + " RG-05 rows added");
+    });
+  }
+  /** Front Desk records a cheque that arrived against its expected line; a date or amount that differs is flagged "Check". */
+  function recordDialog(f, lineId) {
+    const l = linesOf(f).find((x) => x.id === lineId); if (!l) return;
+    RB.form("Record cheque · plot " + f.plot, [{ k: "bank", label: "BANK" }, { k: "no", label: "CHEQUE NUMBER" }, { k: "date", label: "DATE ON THE CHEQUE", type: "date", value: lineDate(l) }, { k: "amount", label: "AMOUNT ON THE CHEQUE (Rs)", type: "number", value: String(lineAmt(l) || "") }], "Save", async (v) => {
+      if (!v.bank.trim() || !v.no.trim()) return "Type the bank and the cheque number.";
+      const check = (lineDate(l) && v.date !== lineDate(l)) || Number(v.amount) !== lineAmt(l);
+      const ls = linesOf(f).map((x) => (x.id === lineId ? Object.assign({}, x, { rec: { bank: v.bank.trim(), no: v.no.trim(), date: v.date, amount: Number(v.amount), at: Date.now(), by: RB.uidOf(), check: !!check } }) : x));
+      await RB.Store.put("plotmoney", f.id, { lines: ls }, true);
+      const items = (f.items || []).map((i) => (i.lineId === lineId && (i.status || "none") === "none" ? Object.assign({}, i, { status: "received", at: Date.now(), by: RB.uidOf() }) : i));
+      await save(f, { items }, "Cheque recorded: " + v.bank.trim() + " no. " + v.no.trim() + (check ? " (date or amount differs from the line)" : ""));
+    }, "Front Desk, at the counter. If the date or amount differs from the expected line, the line shows “Check”.");
+  }
+  /** Breakdown rows under an RG-05 item whose text uses a money variable (e.g. Rs {cashTotal}): the other Rs variables of the same
+   *  Variables group, printed only when they add up exactly to it (200,000 + 30,000 + 1,500 + 2,500 = 234,000). All from the sheet. */
+  function breakdown(n) {
+    const raw = D.plotSopX || {}, it = ((raw.formItems || []).filter((i) => /^RG-05/.test(i.form || "")))[n]; if (!it) return [];
+    const vs = (raw.variables || []).filter((v) => v.code && /^rs$/i.test(String(v.unit || "").trim()) && /^\d+$/.test(String(v.value)));
+    const codes = Array.from(String(it.item || "").matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+    for (const c of codes) {
+      const top = vs.find((v) => v.code === c); if (!top) continue;
+      const parts = vs.filter((v) => v !== top && v.group === top.group);
+      if (parts.length && parts.reduce((s, v) => s + Number(v.value), 0) === Number(top.value))
+        return parts.map((v) => Number(v.value).toLocaleString("en-US") + " " + String(v.name).charAt(0).toLowerCase() + String(v.name).slice(1));
+    }
+    return [];
+  }
+  /** RG-05 print (locked layout, plotforms.js): only after approval, only for people with money details. */
+  function printRG05(f) {
+    const m = D.plotMoney[f.id] || {}, ks = kinds(), x = sopX();
+    const form = ((x && x.forms) || []).find((y) => y.code === "RG-05");
+    const prep = m.linesBy ? RB.member(m.linesBy.by) : null;
+    RB.plotForms.print(RB.plotForms.rg05({ plot: f.plot, owner: f.owner, title: form ? form.name : "Required Attachments with Floor Plan submission",
+      items: rg05Items().map((it, n) => (/^repeat/i.test(it.type || "") ? { name: it.item, cols: colsOf(it), total: /^y/i.test(it.total || ""), rows: linesOf(f).filter((l) => l.kind === ks.indexOf(it)).map((l) => l.v) } : { name: it.item, parts: breakdown(n) })),
+      prepared: m.linesBy ? { name: m.linesBy.byName, at: m.linesBy.at, desig: prep && prep.designation } : null, approved: m.linesOk ? { name: m.linesOk.byName, at: m.linesOk.at } : null, phone: prep && prep.phone }));
+  }
+  /** RG-14 Still pending slip (locked layout): the plot's RG-05 rows not yet Verified or Waived; wording from the Slips tab. */
+  function printRG14(f, stepId) {
+    const x = sopX(), sl = ((x && x.slips) || []).filter((r) => /^RG-14/.test(r.slip || "")), part = (p) => (sl.find((r) => r.part === p) || {}).text || "";
+    const pend = (f.items || []).filter((i) => i.group === R5 && !["verified", "waived"].includes(i.status || "none"));
+    const lines = pend.map((i) => { const l = i.lineId ? linesOf(f).find((y) => y.id === i.lineId) : null; return l && RB.canMoney() ? i.name + " · " + money(lineAmt(l)) + (lineDate(l) ? " · dated " + dshow(lineDate(l)) : "") : i.name; });
+    const rec = (f.items || []).filter((i) => i.group === R5 && i.at && i.status !== "none").sort((a, b) => a.at - b.at)[0];
+    const st = stepDef(stepId);
+    RB.plotForms.print(RB.plotForms.rg14({ plot: f.plot, owner: f.owner, stage: st ? STAGES[st.stage] || "" : "", receivedOn: rec ? rec.at : 0, frontDesk: rec && RB.member(rec.by) ? RB.member(rec.by).name : "", submittedBy: f.submittedBy || "", message: part("Message"), closing: part("Closing"), items: lines }));
   }
   function timelineTab(f) {
     const ev = (f.events || []).slice().sort((a, b) => b.at - a.at);
@@ -176,31 +300,12 @@
       ${ev.map((e) => `<div class="pfev"><span class="sub">${fmtWhen(e.at)}${e.by && RB.member(e.by) ? " · " + esc(first(RB.member(e.by).name)) : ""}</span><div>${esc(e.text)}</div></div>`).join("") || '<div class="muted">Nothing yet.</div>'}`;
   }
 
-  // ------------------------------------------------------------------ Rules and timing (the register as defaults, his exceptions on top)
-  function rulesPage() {
-    const rows = STEPS.map((s) => {
-      const c = cfgStep(s.id), ch = c.days !== undefined || c.ask !== undefined;
-      return `<div class="pfrule"><div class="w"><b>${esc(s.id)} · ${esc(s.title)}</b><span>${esc(s.role)} · ${esc(STAGES[s.stage] || "")}</span></div><span class="pfk pfkd">${daysOf(s.id) ? daysOf(s.id) + " days" : esc(s.limit || "—")}</span><span class="pfk pfka">${esc(askOf(s.id) || "—")}</span>${ch ? '<span class="tag chg" data-rst="' + esc(s.id) + '" title="Back to the SOP default">✎ changed</span>' : '<span class="tag">default</span>'}${RB.isOwner() ? `<button class="btnt edit-only" data-rule="${esc(s.id)}">Change</button>` : ""}</div>`;
-    }).join("");
-    return { html: `<div class="card pfcard"><div class="subhead"><h3>Rules and timing</h3></div><div class="hint">Days and “Who to ask” come from the SOP register. Change one here only for an exception. A change applies to files that have not reached the step yet; steps already open keep their old limit. Fridays and holidays are skipped.</div>
-      <div class="pfrule head"><span class="w">STEP</span><span class="pfk">DAYS</span><span class="pfk">WHO TO ASK</span><span class="pf3"></span><span class="pf4"></span></div>${rows}</div>` };
-  }
-  function ruleDialog(id) {
-    const s = stepDef(id);
-    RB.form(id + " · " + s.title, [{ k: "days", label: "DAYS (working days, empty = no day limit)", value: daysOf(id) == null ? "" : daysOf(id), type: "number" }, { k: "ask", label: "WHO TO ASK", value: askOf(id) }], "Save", async (v) => {
-      const days = v.days === "" ? null : Number(v.days); if (days !== null && (!(days >= 0) || days > 60)) return "Days must be between 0 and 60.";
-      const steps = Object.assign({}, (D.plotCfg || {}).steps || {}, { [id]: { days, ask: v.ask.trim() } });
-      await RB.Store.put("config", "plotsteps", { steps }, true); await RB.log("Plot files rule " + id + ": " + (days === null ? "no day limit" : days + " days") + ", who to ask: " + v.ask.trim());
-    }, "Applies to files that have not reached this step yet.");
-  }
-
   // ------------------------------------------------------------------ dialogs
-  /** RG-03 rows of a new file: from the published SOP (Form items tab of the sheet) when there is one, else the built-in list. */
+  /** RG-03 rows of a new file: only from the imported SOP (Form items tab of the sheet). */
   function startItems() {
-    const sop = D.plotSop && D.plotSop.items;
-    return sop && sop.length ? sop.map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" })) : DEFAULT_ITEMS.map((x, i) => ({ id: "i" + i, group: x[0], name: x[1], status: "none" }));
+    return ((D.plotSop && D.plotSop.items) || []).map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" }));
   }
-  const sopReady = () => RB.DEMO || !!(D.plotSop && D.plotSop.version);
+  const sopReady = () => !!(D.plotSop && D.plotSop.version && D.plotSop.steps && D.plotSop.steps.length);
   function newFileDialog() {
     if (!sopReady()) return RB.alertBox("The SOP has not been imported yet. Import it in Docs > SOPs first. Every new plot file follows the rules of that SOP.");
     RB.form("Open plot file", [{ k: "plot", label: "PLOT NUMBER" }, { k: "owner", label: "PLOT OWNER NAME" }, { k: "phone1", label: "PHONE 1" }, { k: "phone2", label: "PHONE 2 (optional)" }, { k: "cnic", label: "CNIC" }, { k: "size", label: "SIZE", ph: "10 marla" }, { k: "address", label: "ADDRESS" }, { k: "driveInternal", label: "GOOGLE DRIVE: INTERNAL (optional)", ph: "https://drive.google.com/…" }, { k: "driveArchitect", label: "GOOGLE DRIVE: FOR ARCHITECT (optional)", ph: "https://drive.google.com/…" }].concat(RB.isOwner() ? [{ k: "test", label: "TEST FILE?", type: "select", options: [["no", "No, a real plot file"], ["yes", "Yes, a test file (only you see it; delete it when done)"]], value: "no" }] : []), "Open file", async (v) => {
@@ -221,27 +326,11 @@
       await RB.Store.put("plotfiles", f.id, patch, true); await RB.log("Edited details of plot file " + f.plot);
     });
   }
-  function chequeDialog(f) {
-    RB.form("Add cheque · plot " + f.plot, [{ k: "milestone", label: "MILESTONE", ph: "Construction started" }, { k: "deadline", label: "DEADLINE", type: "date" }, { k: "bank", label: "BANK" }, { k: "no", label: "CHEQUE NUMBER" }, { k: "amount", label: "AMOUNT (Rs)", type: "number" }], "Add", async (v) => {
-      if (!v.milestone.trim() || !(Number(v.amount) > 0)) return "Type the milestone and the amount.";
-      const m = D.plotMoney[f.id] || {}, list = (m.cheques || []).concat({ id: RB.id(), milestone: v.milestone.trim(), deadline: v.deadline ? new Date(v.deadline + "T09:00").getTime() : 0, bank: v.bank.trim(), no: v.no.trim(), amount: Number(v.amount), status: "held" });
-      await RB.Store.put("plotmoney", f.id, { cheques: list }, true); await RB.log("Cheque added to plot file " + f.plot);
-    });
-  }
 
-  /** RG-03 on A4 in the locked layout (sop/forms-revised/documents-checklist), with this file's ticks. */
+
+  /** RG-03 on A4 in the locked v3 layout (plotforms.js), with this file's ticks. */
   function printRG03(f) {
-    const items = (f.items || []).filter((i) => /RG-03/.test(i.group || "")), gs = Array.from(new Set(items.map((i) => i.stage || i.group)));
-    const ok = (i) => i.status === "verified" || i.status === "received";
-    const body = gs.map((g) => `<tr class="g"><td colspan="4">${esc(String(g).toUpperCase())}</td></tr>` + items.filter((i) => (i.stage || i.group) === g).map((i, n) => `<tr><td class="c">${esc(String(i.no || n + 1))}</td><td>${esc(i.name)}</td><td class="c">${ok(i) ? "☑" : "☐"}</td><td>${ok(i) && i.at ? esc(fmtShort(i.at)) : ""}</td></tr>`).join("")).join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Documents Checklist</title><style>@page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;font-size:10.5px;color:#111;margin:0}.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px}.org{font-weight:700;font-size:12px}.sub{font-size:10px;color:#555}h1{text-align:center;font-size:17px;margin:8px 0 6px;letter-spacing:1px}.top{display:flex;gap:20px;margin-bottom:8px;font-size:12px}.top span{flex:1;display:flex;gap:6px}.top b{flex:1;border-bottom:1px solid #444}table{width:100%;border-collapse:collapse}th,td{border:1px solid #888;padding:4px 6px;vertical-align:top}th{background:#e9e9e9;font-size:9.5px}.c{text-align:center}tr.g td{background:#f3f3f3;font-weight:700;font-size:9.5px;letter-spacing:.4px}.note{font-size:9px;color:#444;margin-top:6px}</style></head><body>
-<div class="hd"><div><div class="org">RAFIQ BUILDERS &amp; DEVELOPERS · ROYAL GARDEN, GOJRA</div><div class="sub">Plot files · glue inside the front cover</div></div><div class="sub">Form RG-03 · printed ${esc(fmtShort(Date.now()))}</div></div><h1>DOCUMENTS CHECKLIST</h1>
-<div class="top"><span>Plot No.<b>${esc(f.plot)}</b></span><span style="flex:2">Owner name<b>${esc(f.owner || "")}</b></span></div>
-<table><thead><tr><th style="width:24px">#</th><th>Document</th><th style="width:60px">In file</th><th style="width:110px">Date</th></tr></thead><tbody>${body}</tbody></table>
-<div class="note">Filled only by the Document Officer. The ticks and dates are from the app on the day of printing; full details are in the app.</div></body></html>`;
-    const fr = document.createElement("iframe"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0"; document.body.appendChild(fr);
-    fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 4000); };
-    fr.srcdoc = html;
+    RB.plotForms.print(RB.plotForms.rg03(f, (f.items || []).filter((i) => /RG-03/.test(i.group || "")), Date.now()));
   }
   async function deleteTestFiles() {
     const t = D.plot.filter((f) => f.test);
@@ -292,14 +381,17 @@
       on("[data-how]", (e) => RB.plotSop.how(e.dataset.how));
       const as = root.querySelector("#pf-as"); if (as) as.onchange = () => { S.pfAs = as.value; RB.render(); };
       on("#pf-edit", () => editDialog(cur()));
-      on("#pf-chq", () => chequeDialog(cur()));
+      on("#pf-lnadd", () => lineDialog(cur()));
+      on("[data-lnedit]", (e) => { const f = cur(); lineDialog(f, linesOf(f).find((l) => l.id === e.dataset.lnedit)); });
+      on("#pf-lok", () => approveLines(cur()));
+      on("[data-rec]", (e) => recordDialog(cur(), e.dataset.rec));
+      on("#pf-print5", () => { if (approved(cur())) printRG05(cur()); });
+      on("[data-rg14]", (e) => printRG14(cur(), e.dataset.rg14));
       on("[data-pft]", (e) => { S.pfTab = e.dataset.pft; RB.render(); });
       on("[data-open]", (e) => { const k = S.pfSel + e.dataset.open; S.pfOpen = S.pfOpen === k ? null : k; const c = document.getElementById("content"), t = c ? c.scrollTop : 0; RB.render(); const n = document.getElementById("content"); if (n) n.scrollTop = t; });
       on("[data-done]", (e) => { const f = cur(), s = stepDef(e.dataset.done); RB.confirm("Mark “" + esc(s.title) + "” done for plot " + esc(f.plot) + "? Staff normally do this on their phone.", "Done", () => doneStep(f, s.id)); });
       on("[data-wait]", (e) => waitStep(cur(), e.dataset.wait, true));
       on("[data-back]", (e) => waitStep(cur(), e.dataset.back, false));
-      on("[data-rule]", (e) => ruleDialog(e.dataset.rule));
-      on("[data-rst]", (e) => RB.confirm("Go back to the SOP default for " + esc(e.dataset.rst) + "?", "Go back", async () => { const steps = Object.assign({}, (D.plotCfg || {}).steps || {}); delete steps[e.dataset.rst]; await RB.Store.putField("config", "plotsteps", "steps", steps); await RB.log("Plot files rule " + e.dataset.rst + " back to the SOP default"); }));
       root.querySelectorAll("[data-item]").forEach((sel) => (sel.onchange = async () => { const f = cur(), items = (f.items || []).map((i) => (i.id === sel.dataset.item ? Object.assign({}, i, { status: sel.value, at: Date.now(), by: RB.uidOf() }) : i)); await save(f, { items }, (items.find((i) => i.id === sel.dataset.item) || {}).name + ": " + ITEM_ST[sel.value][0]); }));
       stickyBar(root);
       on("#pf-addnote", async () => { const v = document.getElementById("pf-note").value.trim(); if (!v) return; const f = cur(); await save(f, {}, v); });
