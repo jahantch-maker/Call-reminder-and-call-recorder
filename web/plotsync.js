@@ -118,7 +118,7 @@
   };
 
   // ------------------------------------------------------------------ pull and publish
-  const compact = (s) => ({ id: s.id, sid: s.sid, stage: s.stage, role: s.role, title: s.title, limit: s.limit, days: s.days, ask: s.ask, cc: s.cc, forms: s.forms, what: s.what });
+  const compact = (s) => ({ id: s.id, sid: s.sid, stage: s.stage, role: s.role, title: s.title, limit: s.limit, days: s.days, ask: s.ask, cc: s.cc, forms: s.forms, what: s.what, canPause: s.canPause || "", pauseName: s.pauseName || "", extend: s.extend || [] });
   async function pull() {
     const st = vdoc("settings"), link = st && st.link;
     if (!link) return;
