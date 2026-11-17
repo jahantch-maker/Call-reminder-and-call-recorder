@@ -178,7 +178,7 @@
       ${f("Name", esc(sopName()))}${f("Master Google Sheet", (url ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${esc(url)}">Open the sheet ↗</a>` : '<span class="sub">The sheet does not send its address yet.</span>') + '<div style="margin-top:8px"></div>' + RB.plotSync.settingsLink(), "The SOP is written in this sheet. Versions › Get changes from Google Sheet reads it through this private link.")}
       ${f("Section", esc(info("Section", "en") || "—"))}${f("Daily work shows in", "Plot files menu", "Where staff do this SOP's day-to-day work (the plot files, steps, cheques). Fixed for now.")}
       ${f("Who can edit", "Publish: only you (owner)", "The SOP is changed in the Google Sheet. Only you can publish a new version.")}</div>
-      <div style="height:12px"></div>${RB.plotSync.deleteCard()}`;
+`;
   }
 
   /** The opened built SOP: header, tabs, the draft bar, and the tab. Staff see only Role SOPs. */
@@ -191,7 +191,7 @@
       <div class="tabs sxtabs">${tabs.map(([k, t]) => `<button data-sxtab="${k}" class="${k === S.sopTab ? "on" : ""}">${t}</button>`).join("")}</div>
       ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} changes${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions">Open Versions to review and publish ›</button></div>` : ""}</div>`;
     let b;
-    if (S.sopTab === "versions") b = RB.plotSync.versionsTab();
+    if (S.sopTab === "versions") b = RB.plotSync.versionsTab() + (x ? '<div style="height:12px"></div>' + RB.plotSync.deleteCard() : "");
     else if (S.sopTab === "forms") b = RO + formsTab();
     else if (S.sopTab === "vars") b = RO + varsTab();
     else if (S.sopTab === "roles") b = rolesTab();
