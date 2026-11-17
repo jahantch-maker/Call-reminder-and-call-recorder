@@ -201,7 +201,7 @@
     const d = own() && RB.plotSync ? RB.plotSync.draft() : null, n = d ? RB.plotSync.diff(d).length : 0;
     const head = `<div class="sxhead"><button class="link" data-sxback="1">‹ All SOPs</button><div class="sxtitle"><h2>${esc(x ? sopName() : "New SOP")}</h2>${ver() ? `<span class="tag grn">Live v${ver()}</span>` : '<span class="tag">Not published yet</span>'}</div>
       <div class="tabs sxtabs">${tabs.map(([k, t]) => `<button data-sxtab="${k}" class="${k === S.sopTab ? "on" : ""}">${t}</button>`).join("")}</div>
-      ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} changes${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions">Open Versions to review and publish ›</button></div>` : ""}</div>`;
+      ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} change${n === 1 ? "" : "s"}${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions"><span class="sxlong">Open Versions to review and publish ›</span><span class="sxshort">Review ›</span></button></div>` : ""}</div>`;
     let b;
     if (S.sopTab === "versions") b = RB.plotSync.versionsTab() + (x ? '<div style="height:12px"></div>' + RB.plotSync.deleteCard() : "");
     else if (S.sopTab === "forms") b = RO + formsTab();
@@ -227,6 +227,11 @@
   /** From the reading list: open my role's SOP. */
   P.openRole = (role) => { S.sopOpen = "plot"; S.sopTab = "roles"; S.sopRole = role; S.sopNew = false; };
   P.bind = (root) => {
+    // Heights for the fixed bars: the SOP header (tabs + draft bar), the draft bar alone (phone) and the role SOP title.
+    const hd = root.querySelector(".sxhead"), dr = root.querySelector(".sxdraft"), rt = root.querySelector(".sxpage>h1"), st = document.documentElement.style;
+    if (hd) st.setProperty("--sxh", (hd.offsetHeight || 0) + "px");
+    st.setProperty("--sxd", (dr ? dr.offsetHeight : 0) + "px");
+    st.setProperty("--sxrt", (rt ? rt.offsetHeight : 0) + "px");
     const on = (sel, fn) => root.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e); }));
     const go = (patch) => { Object.assign(S, patch); RB.render(); const c = document.getElementById("content"); if (c) c.scrollTop = 0; };
     on("[data-sxopen]", () => go({ sopOpen: "plot", sopNew: false, sopStep: null, sopForm: null }));

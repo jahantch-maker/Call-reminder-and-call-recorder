@@ -30,3 +30,15 @@
 .sxfsec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}.sxfsec>.card{margin:0;min-width:0}
 .sxpv{width:100%;border:1px solid var(--line,#ddd);border-radius:10px;background:#fff;display:block}
 @media (max-width:1000px){.sxfsec{grid-template-columns:minmax(0,1fr)}}
+/* Locked fixed bars (mockup v8): SOP tabs + draft bar at top; below them the step picker, the open stage band of its own group,
+   the role SOP title; print preview beside the item list on wide screens. On phone only the one-line draft bar stays. --sxh = header height. */
+.sxgrp>.sxband2{position:sticky;top:var(--sxh,120px);z-index:4}
+.sxstepbar{position:sticky;top:var(--sxh,120px);z-index:4;background:var(--sf,#fff);padding:8px 0;margin-top:-8px}
+.sxpage>h1{position:sticky;top:var(--sxh,120px);z-index:4;background:var(--sf,#fff);margin-top:0;padding:4px 0}
+.sxpage>.sxband{position:sticky;top:calc(var(--sxh,120px) + var(--sxrt,0px));z-index:3}
+.sxfsec .sxband{position:sticky;top:var(--sxh,120px);z-index:3}
+@media (min-width:1001px){.sxfsec>.card:nth-child(2){position:sticky;top:var(--sxh,120px)}.sxfsec .sxpv{max-height:calc(100vh - var(--sxh,120px) - 140px)}}
+@media (max-width:700px){.sxhead{display:contents}.sxdraft{position:sticky;top:0;z-index:5}.sxdraft .link{white-space:nowrap}
+  .sxgrp>.sxband2,.sxstepbar,.sxpage>h1,.sxfsec .sxband{top:var(--sxd,0px)}.sxpage>.sxband{top:calc(var(--sxd,0px) + var(--sxrt,0px))}}
+.sxshort{display:none}
+@media (max-width:700px){.sxdraft{flex-wrap:nowrap;white-space:nowrap}.sxdraft>b{overflow:hidden;text-overflow:ellipsis;min-width:0}.sxlong{display:none}.sxshort{display:inline}}
