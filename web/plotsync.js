@@ -50,6 +50,16 @@
         canPause: r["Can the clock pause"], pauseName: r["Pause button name"], extend: list(r["Who may extend"]), confirms: list(r["Who confirms (ink approvals)"]), __row: r.__row,
       });
     });
+    // the written sections (shown on the SOP pages and in the print)
+    const info = table(T["SOP info"]).filter((r) => r.Field).map((r) => ({ k: r.Field, en: r.English, ur: r.Urdu }));
+    out.x = {
+      info: info,
+      stages: stages.filter((g) => g["Stage no."]).map((g) => ({ no: g["Stage no."], name: g.Name, nameUr: g["Name·ur"], what: g["What happens"], whatUr: g["What happens·ur"], time: g.Time, timeUr: g["Time·ur"] })),
+      roles: roles.filter((r) => r.Role).map((r) => ({ role: r.Role, roleUr: r["Role·ur"], job: r["Your job in one line"], jobUr: r["Your job in one line·ur"], rules: lines(r["Golden rules"]), rulesUr: lines(r["Golden rules·ur"]), need: lines(r["What you need"]), needUr: lines(r["What you need·ur"]), forms: lines(r["Forms you use (as printed)"]), formsUr: lines(r["Forms you use (as printed)·ur"]), ask: lines(r["Who to ask about what"]), askUr: lines(r["Who to ask about what·ur"]) })),
+      words: table(T.Words).filter((w) => w.Word).map((w) => ({ w: w.Word, m: w["What it means"], wUr: w["Word·ur"], mUr: w["What it means·ur"] })),
+      forms: forms.filter((f) => f.Code).map((f) => ({ code: f.Code, name: f["Form name"], kind: f.Kind, link: /^https:\/\//.test(f["Google Drive link"]) ? f["Google Drive link"] : "" })),
+      steps: steps.filter((r) => r["Step no."]).map((r) => ({ id: r["Step no."], stage: Number(r.Stage) || 0, role: r["Who does it"], title: r.Title, titleUr: r["Title·ur"], limit: r["Time limit as shown"], limitUr: r["Time limit as shown·ur"], ask: r["Who to ask"], starts: r["Starts when"], startsUr: r["Starts when·ur"], what: lines(r["What to do"]), whatUr: lines(r["What to do·ur"]), inapp: r["In the app"], inappUr: r["In the app·ur"], wrong: r["If something goes wrong"], wrongUr: r["If something goes wrong·ur"], done: r["Done when"], doneUr: r["Done when·ur"], forms: ["Form 1", "Form 2", "Form 3", "Form 4"].map((k) => (cell(r[k]).match(/^(RG-\d+|W\d+|T\d+)/) || [])[1]).filter(Boolean) })),
+    };
     fitems.filter((r) => /^RG-03/.test(r.Form)).forEach((r) => out.items.push({ stage: r.Group, no: r["No."], name: r.Item }));
     return out;
   };
@@ -118,7 +128,7 @@
       try { const r = await fetch(link, { redirect: "follow" }); json = await r.json(); }
       catch (e) { throw new Error("Could not reach the sheet link. Check the link and that the web app is deployed with access 'Anyone'."); }
       if (!json.ok) throw new Error(json.error || "The sheet link answered with an error.");
-      const p = SYNC.parse(json), draft = { version: pubVer() + 1, pulledAt: Date.now(), by: RB.uidOf(), sheet: p.sheet, steps: p.steps.map((s) => { const x = Object.assign({}, s); delete x.__row; x.row = s.__row; return x; }), stages: p.stages, items: p.items, roles: p.roles, problems: SYNC.checks(p), notice: SYNC.teamNotice(p) };
+      const p = SYNC.parse(json), draft = { version: pubVer() + 1, pulledAt: Date.now(), by: RB.uidOf(), sheet: p.sheet, steps: p.steps.map((s) => { const x = Object.assign({}, s); delete x.__row; x.row = s.__row; return x; }), stages: p.stages, items: p.items, roles: p.roles, x: p.x, problems: SYNC.checks(p), notice: SYNC.teamNotice(p) };
       await RB.Store.put("plotsopv", "draft", draft);
       msg = "";
     } catch (e) { msg = String(e.message || e); }
@@ -129,6 +139,7 @@
     const n = pubVer() + 1, now = Date.now(), full = Object.assign({}, d, { id: undefined, version: n, publishedAt: now, publishedBy: RB.uidOf() }); delete full.id;
     await RB.Store.put("plotsopv", "v" + n, full);
     await RB.Store.put("config", "plotsop", { version: n, publishedAt: now, publishedBy: RB.uidOf(), sheet: d.sheet || "", steps: d.steps.map(compact), stages: d.stages, items: d.items || [] });
+    if (d.x) await RB.Store.put("config", "plotsopx", Object.assign({ version: n, publishedAt: now }, d.x));
     await RB.Store.del("plotsopv", "draft");
     await RB.log("Plot files SOP version " + n + " published from the Google Sheet");
     shownVer = null; SYNC.apply(); RB.toast("Version " + n + " published");

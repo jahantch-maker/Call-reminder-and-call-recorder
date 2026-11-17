@@ -82,10 +82,12 @@
 
   // ------------------------------------------------------------------ owner pages
   function sops() {
+    const ps = RB.plotSop ? RB.plotSop.docs() : "";   // the built Plot files SOP (written live from the Google Sheet)
+    if (!isEd() || S.sopPage) return { html: ps || '<div class="card"><div class="muted">No SOPs here yet.</div></div>' };
     const secs = SECTIONS(), now = Date.now();
     const list = ofType("sop").filter((d) => (S.sopSection === "all" || d.section === S.sopSection) && (!S.q || d.title.toLowerCase().includes(S.q.toLowerCase())));
     const chips = ["all"].concat(secs).map((x) => `<button class="sc ${S.sopSection === x ? "on" : ""}" data-sec2="${esc(x)}">${x === "all" ? "All" : esc(x)}</button>`).join("");
-    const html = `<div class="card"><div class="subhead"><h3>SOPs</h3><div class="sp"></div>${chips}<button class="btnp edit-only" data-add="sop">+ Add SOP</button></div>${driveHint}
+    const html = ps + `<div class="card"><div class="subhead"><h3>SOPs</h3><div class="sp"></div>${chips}<button class="btnp edit-only" data-add="sop">+ Add SOP</button></div>${driveHint}
       ${list.map((d) => `<div class="docrow"><div class="w"><b>${esc(d.title)}</b><span>${esc(d.section || "")} · owner ${esc(d.owner || "—")} · version ${d.version || 1}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}${d.reviewBy && d.reviewBy < now ? ' <b style="color:var(--er)">review overdue</b>' : ""}</span><span>Must read: ${(d.designations || []).map((x) => `<span class="ty" style="background:${RB.desigColor(x)};font-size:11px;padding:2px 8px;margin-right:4px">${esc(x)}</span>`).join("") || "nobody yet"}</span></div>${link(d.url)}<button class="btnt edit-only" data-newver="${esc(d.id)}">Upload new version</button><button class="btnt edit-only" data-edit="${esc(d.id)}">Edit</button><button class="btnt edit-only" data-del="${esc(d.id)}">Delete</button></div>`).join("") || '<div class="muted" style="padding:12px 0">No SOPs here yet.</div>'}</div>`;
     return { html };
   }
@@ -158,6 +160,7 @@
       const t = [["reading", "My reading list"], ["work", "Work documents"]];
       if (visiblePolicies().length || RB.isOwner()) t.push(["policies", "Policies"]);
       if (isEd()) t.push(["sops", "SOPs"], ["jds", "Job descriptions"], ["progress", "Reading progress"]);
+      else if (RB.plotSop && RB.plotSop.has()) t.push(["sops", "SOPs"]);
       return t;
     },
     render(tab) {
@@ -179,6 +182,7 @@
       on("[data-edit]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.edit); docDialog(d.type, d); });
       on("[data-del]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.del); RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); });
       on("[data-newver]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.newver); RB.form("New version of " + d.title, [{ k: "url", label: "GOOGLE DRIVE LINK (leave as is if the same file)", value: d.url || "" }], "Publish version " + ((d.version || 1) + 1), async (v) => { if (v.url && !/^https:\/\//.test(v.url)) return "The link must start with https://"; await RB.Store.put("docs", d.id, { version: (d.version || 1) + 1, url: v.url.trim(), updatedAt: Date.now() }, true); await RB.log("New version " + ((d.version || 1) + 1) + " of " + d.title + ": " + (d.designations || []).join(", ") + " read again"); }, "Only the designations that must read it will read it again."); });
+      if (RB.plotSop) RB.plotSop.bind(root);
       on("[data-sec2]", (e) => { S.sopSection = e.dataset.sec2; RB.render(); });
       on("[data-pol]", (e) => { S.policySel = e.dataset.pol; RB.render(); });
       on("[data-tpl]", (e) => { const [p, t] = e.dataset.tpl.split(":"); tplDialog(p, t); });

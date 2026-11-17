@@ -130,8 +130,8 @@
         const st = stepSt(f, s.id), y = st.days || daysOf(s.id), open = S.pfOpen === f.id + s.id, status = st.status || "next";
         const ic = status === "done" ? '<span class="pfic done">✓</span>' : status === "doing" ? '<span class="pfic cur">▶</span>' : status === "waiting" ? '<span class="pfic wait">⏳</span>' : '<span class="pfic">·</span>';
         const right = status === "done" ? fmtShort(st.doneAt) : status === "doing" && y ? `<span class="pfday ${dayNo(st, now) > y ? "late" : ""}">Day ${dayNo(st, now)} of ${y}</span>` : status === "waiting" ? '<span class="pfday">Paused</span>' : status === "next" ? "Next" : "";
-        const forms = (sopOf(s.id).forms || []).map((x) => `<span class="tag blu">${esc(x)}</span>`).join(" ");
-        const detail = open ? `<div class="pfdet">${esc((s.what || []).join(" "))}<div class="sub" style="margin-top:6px">${s.limit ? "Time limit: " + esc(s.limit) + ". " : ""}Who to ask: ${esc(askOf(s.id) || "—")}.${s.cc ? " Notice to: " + esc(s.cc) + "." : ""}</div>${forms ? `<div style="margin-top:6px">${forms}</div>` : ""}
+        const fl = sopOf(s.id).forms || [], forms = fl.map((x) => (RB.plotSop && RB.plotSop.has() ? RB.plotSop.chip(x) : `<span class="tag blu">${esc(x)}</span>`)).join(" ");
+        const detail = open ? `<div class="pfdet">${RB.plotSop && RB.plotSop.has() ? `<button class="btnt" data-how="${esc(s.id)}">How to do this</button>` : esc((s.what || []).join(" "))}<div class="sub" style="margin-top:6px">${s.limit ? "Time limit: " + esc(s.limit) + ". " : ""}Who to ask: ${esc(askOf(s.id) || "—")}.${s.cc ? " Notice to: " + esc(s.cc) + "." : ""}</div>${forms ? `<div style="margin-top:6px">${forms}</div>` : ""}
           ${ed() && (status === "doing" || status === "waiting") && (!f.test || (S.pfAs && s.role === S.pfAs)) ? `<div class="pfact"><button class="btnp" data-done="${esc(s.id)}">Done</button>${status === "waiting" ? `<button class="btnt" data-back="${esc(s.id)}">Plot owner is back</button>` : WAIT_STEPS.includes(s.id) ? `<button class="btnt" data-wait="${esc(s.id)}">Waiting for plot owner</button>` : ""}</div><div class="foot">${f.test ? "Test file: acting as " + esc(S.pfAs) + "." : "Done is a backup here. Staff do it on their phone."}</div>` : ed() && f.test && (status === "doing" || status === "waiting") ? `<div class="foot">Test file: pick \"${esc(s.role)}\" in Act as to do this step.</div>` : ""}</div>` : "";
         return `<div class="pfstep ${status}"><div class="pfsr" data-open="${esc(s.id)}">${ic}<div class="w"><b>${esc(s.title)}</b><span>${esc(s.id)} · ${esc(s.role)}${status === "done" ? " · done " + fmtShort(st.doneAt) : st.startedAt ? " · started " + fmtShort(st.startedAt) : ""}</span></div><span class="pfrt">${right}</span></div>${detail}</div>`;
       }).join("");
@@ -272,6 +272,7 @@
       on("#pf-new", newFileDialog);
       on("#pf-deltest", deleteTestFiles);
       on("#pf-print", () => printRG03(cur()));
+      on("[data-how]", (e) => RB.plotSop.how(e.dataset.how));
       const as = root.querySelector("#pf-as"); if (as) as.onchange = () => { S.pfAs = as.value; RB.render(); };
       on("#pf-edit", () => editDialog(cur()));
       on("#pf-chq", () => chequeDialog(cur()));
