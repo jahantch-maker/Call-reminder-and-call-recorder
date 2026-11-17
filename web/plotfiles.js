@@ -73,7 +73,20 @@
     if (f.waiting && f.waiting.stepId === id) patch.waiting = null;
     await save(f, patch, line);
   }
-  const WAIT_STEPS = ["1.22", "6.01", "8.06", "4.02", "7.03"];
+  const WAIT_STEPS = ["1.22", "6.01", "8.06", "4.02", "7.03"];   // used only until a version with the sheet's "Can the clock pause" column is published
+  const canWait = (id) => { const s = STEPS.find((x) => x.id === id); return s && s.canPause ? /^y/i.test(s.canPause) : WAIT_STEPS.includes(id); };
+  const myDes = () => (RB.D.me && RB.D.me.designation) || ((RB.seatOfUid && RB.seatOfUid(RB.uidOf())) || {}).designation || "";
+  const mayExtend = (s) => RB.isOwner() || (s.extend || []).includes(myDes());
+  /** Extend the time limit of the running step: only who the sheet names, a typed reason is required, open steps keep the new limit only for this file. */
+  function extendStep(f, id) {
+    const s = STEPS.find((x) => x.id === id), st0 = stepSt(f, id);
+    RB.form("Extend time · " + id, [{ k: "days", label: "EXTRA WORKING DAYS", ph: "1" }, { k: "reason", label: "REASON (required)" }], "Extend", async (v) => {
+      const n = Math.floor(Number(v.days)); if (!(n >= 1 && n <= 30)) return "Type 1 to 30 days.";
+      if (!(v.reason || "").trim()) return "A reason is required.";
+      const steps = Object.assign({}, f.steps || {}), st = Object.assign({}, st0); st.days = (st.days || daysOf(id) || 0) + n; steps[id] = st;
+      await save(f, { steps }, "Time extended by " + n + " working day" + (n > 1 ? "s" : "") + " · " + id + " · " + v.reason.trim());
+    });
+  }
   async function waitStep(f, id, on) {
     const now = Date.now(), steps = Object.assign({}, f.steps || {}), st = Object.assign({}, steps[id]);
     if (on) { st.status = "waiting"; st.waitingSince = now; steps[id] = st; await save(f, { steps, waiting: { stepId: id, since: now } }, "Waiting for plot owner · " + id); }
@@ -85,7 +98,7 @@
     const now = Date.now(), q = (S.q || "").toLowerCase();
     const all = D.plot.filter((f) => (!f.test || RB.isOwner()) && (!q || (f.plot + " " + (f.owner || "")).toLowerCase().includes(q)));
     const open = all.filter((f) => !f.closed), late = open.filter((f) => isLate(f, now)), wait = open.filter(isWaiting), closed = all.filter((f) => f.closed);
-    const list = S.pfFilter === "late" ? late : S.pfFilter === "wait" ? wait : S.pfFilter === "closed" ? closed : open;
+    const list = S.pfFilter === "late" ? late : S.pfFilter === "wait" ? wait.slice().sort((a, b) => a.waiting.since - b.waiting.since) : S.pfFilter === "closed" ? closed : open;
     list.sort((a, b) => sortKey(a, now) - sortKey(b, now) || b.openedAt - a.openedAt);
     const chip = (k, n, l, tone) => `<button class="pfchip ${tone} ${S.pfFilter === k ? "on" : ""}" data-pff="${k}"><b>${n}</b><span>${l}</span></button>`;
     const row = (f) => {
@@ -94,10 +107,10 @@
       return `<div class="pfrow" data-pf="${esc(f.id)}"><div class="pfm"><b>Plot ${esc(f.plot)} · ${esc(f.owner || "")}${f.test ? ' <em class="tag yel">TEST</em>' : ""}</b><span>${f.closed ? "Closed" : "Stage " + stageOf(f) + " · " + esc(stage)}</span>
         ${c ? `<span class="pfcur">${esc(c.title)} · ${esc(c.role)}</span>` : ""}
         <span class="pfchips">${isLate(f, now) ? '<em class="tag red">Late</em>' : ""}${isWaiting(f) ? '<em class="tag yel">Waiting for plot owner</em>' : ""}${nr ? `<em class="tag">${nr} documents not received</em>` : ""}</span></div>
-        <div class="pfr">${y && !f.closed ? `<span class="pfday ${isLate(f, now) ? "late" : ""}">Day ${dn} of ${y}</span>` : ""}</div></div>`;
+        <div class="pfr">${S.pfFilter === "wait" && isWaiting(f) ? `<span class="pfday">Waiting ${workDays(f.waiting.since, now)} working days</span><span class="pfwb">${f.phone1 ? `<a class="btnt" href="tel:${esc(f.phone1.replace(/[^\d+]/g, ""))}" data-nogo="1">Call plot owner</a>` : ""}${ed() && !f.test ? `<button class="btnt" data-pfback="${esc(f.id)}">Plot owner is back</button>` : ""}</span>` : ""}${y && !f.closed && !(S.pfFilter === "wait" && isWaiting(f)) ? `<span class="pfday ${isLate(f, now) ? "late" : ""}">Day ${dn} of ${y}</span>` : ""}</div></div>`;
     };
     const html = `<div class="card pfcard"><div class="subhead"><h3>Plot files</h3><div class="sp"></div>${RB.isOwner() && D.plot.some((f) => f.test) ? '<button class="btnt edit-only" id="pf-deltest">Delete all test files</button>' : ""}${ed() ? '<button class="btnp edit-only" id="pf-new">+ Open plot file</button>' : ""}</div>
-      <div class="pfchips2">${chip("open", open.length, "Open files", "blu")}${chip("late", late.length, "Late", "red")}${chip("wait", wait.length, "Waiting for plot owner", "yel")}${chip("closed", closed.length, "Closed", "")}</div>
+      ${sopReady() ? "" : '<div class="hint warn" style="margin-bottom:10px">The SOP is not imported yet. Import it in Docs &gt; SOPs. New plot files can only be opened after that.</div>'}<div class="pfchips2">${chip("open", open.length, "Open files", "blu")}${chip("late", late.length, "Late", "red")}${chip("wait", wait.length, "Waiting for plot owner", "yel")}${chip("closed", closed.length, "Closed", "")}</div>
       ${list.map(row).join("") || '<div class="muted" style="padding:14px 0">No plot files here.</div>'}</div>`;
     return { html };
   }
@@ -132,7 +145,7 @@
         const right = status === "done" ? fmtShort(st.doneAt) : status === "doing" && y ? `<span class="pfday ${dayNo(st, now) > y ? "late" : ""}">Day ${dayNo(st, now)} of ${y}</span>` : status === "waiting" ? '<span class="pfday">Paused</span>' : status === "next" ? "Next" : "";
         const fl = sopOf(s.id).forms || [], forms = fl.map((x) => (RB.plotSop && RB.plotSop.has() ? RB.plotSop.chip(x) : `<span class="tag blu">${esc(x)}</span>`)).join(" ");
         const detail = open ? `<div class="pfdet">${RB.plotSop && RB.plotSop.has() ? `<button class="btnt" data-how="${esc(s.id)}">How to do this</button>` : esc((s.what || []).join(" "))}<div class="sub" style="margin-top:6px">${s.limit ? "Time limit: " + esc(s.limit) + ". " : ""}Who to ask: ${esc(askOf(s.id) || "—")}.${s.cc ? " Notice to: " + esc(s.cc) + "." : ""}</div>${forms ? `<div style="margin-top:6px">${forms}</div>` : ""}
-          ${ed() && (status === "doing" || status === "waiting") && (!f.test || (S.pfAs && s.role === S.pfAs)) ? `<div class="pfact"><button class="btnp" data-done="${esc(s.id)}">Done</button>${status === "waiting" ? `<button class="btnt" data-back="${esc(s.id)}">Plot owner is back</button>` : WAIT_STEPS.includes(s.id) ? `<button class="btnt" data-wait="${esc(s.id)}">Waiting for plot owner</button>` : ""}</div><div class="foot">${f.test ? "Test file: acting as " + esc(S.pfAs) + "." : "Done is a backup here. Staff do it on their phone."}</div>` : ed() && f.test && (status === "doing" || status === "waiting") ? `<div class="foot">Test file: pick \"${esc(s.role)}\" in Act as to do this step.</div>` : ""}</div>` : "";
+          ${ed() && (status === "doing" || status === "waiting") && (!f.test || (S.pfAs && s.role === S.pfAs)) ? `<div class="pfact"><button class="btnp" data-done="${esc(s.id)}">Done</button>${status === "doing" && y && mayExtend(s) ? `<button class="btnt" data-ext="${esc(s.id)}">Extend time</button>` : ""}${status === "waiting" ? `<button class="btnt" data-back="${esc(s.id)}">Plot owner is back</button>` : canWait(s.id) ? `<button class="btnt" data-wait="${esc(s.id)}">Waiting for plot owner</button>` : ""}</div><div class="foot">${f.test ? "Test file: acting as " + esc(S.pfAs) + "." : "Done is a backup here. Staff do it on their phone."}</div>` : ed() && f.test && (status === "doing" || status === "waiting") ? `<div class="foot">Test file: pick \"${esc(s.role)}\" in Act as to do this step.</div>` : ""}</div>` : "";
         return `<div class="pfstep ${status}"><div class="pfsr" data-open="${esc(s.id)}">${ic}<div class="w"><b>${esc(s.title)}</b><span>${esc(s.id)} · ${esc(s.role)}${status === "done" ? " · done " + fmtShort(st.doneAt) : st.startedAt ? " · started " + fmtShort(st.startedAt) : ""}</span></div><span class="pfrt">${right}</span></div>${detail}</div>`;
       }).join("");
       out += "</div>";
@@ -187,7 +200,9 @@
     const sop = D.plotSop && D.plotSop.items;
     return sop && sop.length ? sop.map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" })) : DEFAULT_ITEMS.map((x, i) => ({ id: "i" + i, group: x[0], name: x[1], status: "none" }));
   }
+  const sopReady = () => RB.DEMO || !!(D.plotSop && D.plotSop.version);
   function newFileDialog() {
+    if (!sopReady()) return RB.alertBox("The SOP has not been imported yet. Import it in Docs > SOPs first. Every new plot file follows the rules of that SOP.");
     RB.form("Open plot file", [{ k: "plot", label: "PLOT NUMBER" }, { k: "owner", label: "PLOT OWNER NAME" }, { k: "phone1", label: "PHONE 1" }, { k: "phone2", label: "PHONE 2 (optional)" }, { k: "cnic", label: "CNIC" }, { k: "size", label: "SIZE", ph: "10 marla" }, { k: "address", label: "ADDRESS" }, { k: "driveInternal", label: "GOOGLE DRIVE: INTERNAL (optional)", ph: "https://drive.google.com/…" }, { k: "driveArchitect", label: "GOOGLE DRIVE: FOR ARCHITECT (optional)", ph: "https://drive.google.com/…" }].concat(RB.isOwner() ? [{ k: "test", label: "TEST FILE?", type: "select", options: [["no", "No, a real plot file"], ["yes", "Yes, a test file (only you see it; delete it when done)"]], value: "no" }] : []), "Open file", async (v) => {
       if (!v.plot.trim() || !v.owner.trim()) return "Type the plot number and the plot owner's name.";
       if (D.plot.some((f) => !f.closed && f.plot.trim().toLowerCase() === v.plot.trim().toLowerCase())) return "An open file for plot " + v.plot.trim() + " already exists. Do not open a second one.";
@@ -253,25 +268,27 @@
 
   // ------------------------------------------------------------------ section
   RB.sections.plot = {
-    tabs() { return [["files", "Files"]].concat(RB.isOwner() ? [["rules", "Rules and timing"], ["sop", "SOP versions"]] : []); },
+    tabs() { return [["files", "Files"]]; },
     render(tab) {
       if (RB.plotSync) RB.plotSync.apply();
       const f = S.pfSel && D.plot.find((x) => x.id === S.pfSel);
       let p;
-      if (tab === "sop" && RB.isOwner() && RB.plotSync) p = RB.plotSync.render(); else if (tab === "rules" && RB.isOwner()) p = rulesPage(); else if (f) p = filePage(f); else { S.pfSel = null; p = filesPage(); }
+      if (f) p = filePage(f); else { S.pfSel = null; p = filesPage(); }
       p.title = "Plot files"; p.sub = "From opening a plot file to possession · one file per plot";
       return p;
     },
     bind(root) {
-      if ((S.tab || {}).plot === "sop" && RB.plotSync) return RB.plotSync.bind(root);
       const on = (sel, fn) => root.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e); }));
       const cur = () => D.plot.find((x) => x.id === S.pfSel);
+      root.querySelectorAll("[data-nogo]").forEach((e) => (e.onclick = (ev) => ev.stopPropagation()));
+      root.querySelectorAll("[data-pfback]").forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); const f = D.plot.find((x) => x.id === e.dataset.pfback); if (f && f.waiting) waitStep(f, f.waiting.stepId, false); }));
       on("[data-pff]", (e) => { S.pfFilter = e.dataset.pff; RB.render(); });
       on("[data-pf]", (e) => { S.pfSel = e.dataset.pf; S.pfTab = "steps"; RB.render(); });
       on("#pf-back", () => { S.pfSel = null; RB.render(); });
       on("#pf-new", newFileDialog);
       on("#pf-deltest", deleteTestFiles);
       on("#pf-print", () => printRG03(cur()));
+      on("[data-ext]", (e) => extendStep(cur(), e.dataset.ext));
       on("[data-how]", (e) => RB.plotSop.how(e.dataset.how));
       const as = root.querySelector("#pf-as"); if (as) as.onchange = () => { S.pfAs = as.value; RB.render(); };
       on("#pf-edit", () => editDialog(cur()));

@@ -381,7 +381,7 @@
     teamRef.collection("changelog").orderBy("at", "desc").limit(200).onSnapshot((s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     const tq = RB.isOwner() ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     tq.onSnapshot((s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    teamRef.collection("config").onSnapshot((s) => { s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsteps") D.plotCfg = d.data(); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    teamRef.collection("config").onSnapshot((s) => { D.plotSop = null; D.plotSopX = null; s.docs.forEach((d) => { if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsteps") D.plotCfg = d.data(); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves, and (only for the owner and people with "See money details") the cheques and amounts.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     if (RB.isOwner()) snap("plotsopv", (s) => (D.plotSopV = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));

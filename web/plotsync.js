@@ -118,7 +118,7 @@
   };
 
   // ------------------------------------------------------------------ pull and publish
-  const compact = (s) => ({ id: s.id, sid: s.sid, stage: s.stage, role: s.role, title: s.title, limit: s.limit, days: s.days, ask: s.ask, cc: s.cc, forms: s.forms, what: s.what });
+  const compact = (s) => ({ id: s.id, sid: s.sid, stage: s.stage, role: s.role, title: s.title, limit: s.limit, days: s.days, ask: s.ask, cc: s.cc, forms: s.forms, what: s.what, canPause: s.canPause || "", pauseName: s.pauseName || "", extend: s.extend || [] });
   async function pull() {
     const st = vdoc("settings"), link = st && st.link;
     if (!link) return;
@@ -171,6 +171,8 @@
     h += `<div class="card pfcard" style="margin-top:12px"><div class="subhead"><h3>Versions</h3></div>
       <div class="pfitem"><div class="w"><b>${v ? "Version " + v + " · live" : "Built-in rules · live"}</b><span>${v ? "published " + esc(when((D.plotSop || {}).publishedAt)) : "Until the first import from the Google Sheet. Version 1 will replace these."}</span></div></div>
       ${vs.filter((x) => x.version !== v).map((x) => `<div class="pfitem"><div class="w"><b>Version ${x.version}</b><span>published ${esc(when(x.publishedAt))} · ${x.steps.length} steps</span></div></div>`).join("")}</div>`;
+    h += `<div class="card pfcard" style="margin-top:12px"><div class="subhead"><h3>Remove the imported SOP</h3></div><div class="hint">Deletes every imported version and any draft, so you can import again from a clean start. The sheet link stays. Plot files already opened are kept, but new files cannot be opened until you import again.</div>
+      <div class="pfact"><button class="btnt" id="ps-del" ${v || vs.length || d ? "" : "disabled"}>Delete imported SOP (all versions)</button></div></div>`;
     return { html: h };
   };
   SYNC.bind = (root) => {
@@ -181,6 +183,11 @@
       await RB.Store.put("plotsopv", "settings", { link: v }); RB.toast("Link saved"); RB.render();
     });
     on("#ps-pull", pull);
+    on("#ps-del", () => RB.confirm("Delete the imported SOP, all its versions and the draft? This cannot be undone. You can import again from the Google Sheet.", "Delete", async () => {
+      for (const x of (D.plotSopV || [])) if (x.id !== "settings") await RB.Store.del("plotsopv", x.id);
+      await RB.Store.del("config", "plotsop"); await RB.Store.del("config", "plotsopx");
+      await RB.log("Plot files SOP deleted (all versions)"); shownVer = null; D.plotSop = null; D.plotSopX = null; SYNC.apply(); RB.toast("Imported SOP deleted"); RB.render();
+    }, true));
     on("#ps-pub", () => { const d = vdoc("draft"); RB.confirm("Publish version " + d.version + "? Steps not yet reached by running plot files will follow it.", "Publish", publish); });
     on("#ps-drop", () => RB.confirm("Discard this draft? The live version stays as it is.", "Discard", async () => { await RB.Store.del("plotsopv", "draft"); RB.render(); }, true));
     on("#ps-copy", () => {
