@@ -7,7 +7,15 @@
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   const P = (RB.plotSop = {});
 
-  const X = () => (D.plotSopX && D.plotSopX.steps ? D.plotSopX : null);
+  /** The published SOP with every {variable} replaced by its value from the sheet's Variables tab (cached per published version). */
+  let fillKey = null, filled = null;
+  const X = () => {
+    const raw = D.plotSopX && D.plotSopX.steps ? D.plotSopX : null; if (!raw) return null;
+    const k = raw.version + ":" + raw.publishedAt; if (k === fillKey) return filled;
+    const vals = {}; (raw.variables || []).forEach((v) => { if (v.code) vals[v.code] = v.value; });
+    const fill = (o) => (typeof o === "string" ? o.replace(/\{(\w+)\}/g, (m, c) => (vals[c] !== undefined && vals[c] !== "" ? vals[c] : m)) : Array.isArray(o) ? o.map(fill) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([a, b]) => [a, a === "variables" ? b : fill(b)])) : o);
+    fillKey = k; filled = fill(raw); return filled;
+  };
   const lang = () => (S.sopLang === "ur" ? "ur" : "en");
   const LAB = {
     en: { starts: "Starts when", what: "What to do", inapp: "In the app", wrong: "If something goes wrong", done: "Done when", ask: "Who to ask", forms: "Forms", limit: "Time limit", job: "Your job in one line", rules: "Golden rules", need: "What you need at your desk", formsUse: "Forms you use", askAbout: "Who to ask about what", words: "Words you will see", stage: "Stage", stages: "The process in stages", steps: "Every step, in order", roles: "The roles", rulesAll: "Rules for everyone", purpose: "Purpose", no: "No.", step: "Step", role: "Role", what2: "What happens", time: "Time", form: "Form" },
@@ -75,21 +83,125 @@
     fr.srcdoc = html;
   };
 
-  // ------------------------------------------------------------------ Docs > SOPs
+  // ------------------------------------------------------------------ Docs > SOPs: the built SOP, READ ONLY (locked design: SOP builder mockup v10)
+  // The Google Sheet is the master. Every tab shows the SOP exactly as published; to change anything, change the sheet and use Versions › Get changes.
+  Object.assign(S, { sopOpen: null, sopTab: "steps", sopStep: null, sopRole: null, sopBands: {}, sopForm: null, sopNew: false });
   const toggle = (l) => `<span class="sxlang"><button class="sc ${l === "en" ? "on" : ""}" data-sxlang="en">English</button><button class="sc ${l === "ur" ? "on" : ""}" data-sxlang="ur">اردو</button></span>`;
-  /** The built SOP in Docs > SOPs: a landing card (main SOP and a button for each role) or the page that was opened. */
-  P.docs = () => {
-    const x = X();
-    if (!x) return RB.isOwner() ? `<div class="card"><h3>Plot files SOP</h3><div class="muted">The written SOP pages appear here after you publish a version from the Google Sheet (Plot files > SOP versions > Get changes from Google Sheet).</div></div>` : "";
-    const l = lang(), meta = `Version ${esc(String(D.plotSopX.version || ""))} · published ${esc(when())}`;
-    if (S.sopPage && (S.sopPage === "main" || (x.roles || []).some((r) => r.role === S.sopPage))) {
-      return `<div class="card"><div class="subhead sxbar"><button class="btnt" data-sxback="1">‹ All SOPs</button><div class="sp"></div>${toggle(l)}<button class="btnp" data-sxprint="1">Print / Save PDF</button></div><div class="muted" style="margin:6px 0">${meta}</div><div class="sxpage ${l}" ${l === "ur" ? 'dir="rtl"' : ""}>${body(S.sopPage, l, false)}</div></div>`;
-    }
-    return `<div class="card"><div class="subhead"><h3>Plot files SOP</h3><div class="sp"></div>${toggle(l)}</div><div class="muted" style="margin:0 0 8px">${meta}. Opens in English or Urdu, and every page can be printed or saved as a PDF.</div>
-      <div class="docrow"><div class="w"><b>Main SOP (for team training)</b><span>Purpose, the 8 stages, every role in one line, every step in one line, forms</span></div><button class="btnp" data-sxopen="main">Open</button></div>
-      <div class="lbl" style="margin-top:10px">ROLE SOPs · TAP YOUR ROLE</div><div class="sxroles">${(x.roles || []).map((r) => `<button class="sc" data-sxopen="${esc(r.role)}">${esc(pick(r, "role", l))}</button>`).join("")}</div></div>`;
+  const own = () => RB.isOwner();
+  const ver = () => (D.plotSopX && D.plotSopX.version) || 0;
+  const sopName = () => (X() && info("SOP name", "en")) || "Plot files SOP";
+  const roleChips = (a) => (a && a.length ? a.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ") : '<span class="sub">none</span>');
+  const val = (v) => (v === undefined || v === null || v === "" ? '<span class="sub">—</span>' : esc(String(v)));
+  const sheetRow = (s) => { const x = X(), url = x.sheetUrl, gid = (x.gids || {}).Steps; return url && gid !== undefined && s.row ? `${url}#gid=${gid}&range=A${s.row}` : url || ""; };
+  const RO = '<div class="hint sxro">Read only. The SOP is written in its master Google Sheet. To change anything, change the sheet, then use Versions › Get changes from Google Sheet.</div>';
+
+  /** The built SOP's row in the Docs > SOPs list (the whole row opens it). */
+  P.listRow = (section) => {
+    const x = X(); if (!x) return "";
+    const sec = info("Section", "en"); if (section && section !== "all" && section !== sec) return "";
+    const nForms = (x.forms || []).filter((f) => /^RG-/.test(f.code)).length;
+    return `<div class="docrow sxrow" data-sxopen="plot"><div class="w"><b>${esc(sopName())}</b><span class="sxtag">Built in app</span><span>${esc(sec || "")}${sec ? " · " : ""}version ${ver()} · ${x.steps.length} steps · ${(x.stages || []).length} stages · ${nForms} forms</span><span>Must read: filled from step roles · ${(x.roles || []).length} roles</span></div><span class="sxgo">›</span></div>`;
   };
-  /** Tiny read-only window: one step's SOP, English or Urdu. */
+  P.section = () => (X() ? info("Section", "en") : "");
+
+  // ---- Steps tab
+  const stageOf = (n) => (X().stages || []).find((g) => String(g.no) === String(n)) || { no: n, name: "" };
+  function stepsTab() {
+    const x = X(), groups = Array.from(new Set(x.steps.map((s) => s.stage))), allOpen = groups.every((g) => S.sopBands[g]);
+    return `<div class="card"><div class="subhead"><h3>Steps</h3><div class="sp"></div><button class="btnt" data-sxall="${allOpen ? 0 : 1}">${allOpen ? "Close all" : "Open all"}</button></div><div class="hint">Tap a stage to open its steps. Tap a step to see all its details.</div>
+      ${groups.map((g) => { const ss = x.steps.filter((s) => s.stage === g), o = !!S.sopBands[g];
+        return `<div class="sxgrp"><div class="sxband2" data-sxband="${g}"><span class="sxn2">${g}</span><div class="w"><b>${esc(stageOf(g).name)}</b><span>Steps ${esc(ss[0].id)} to ${esc(ss[ss.length - 1].id)}</span></div><span class="sxcnt">${ss.length} steps</span><span class="sxchev">${o ? "▾" : "▸"}</span></div>
+          ${o ? `<div class="sxbody">${ss.map((s) => `<div class="sxsrow" data-sxstep="${esc(s.id)}"><b>${esc(s.id)}</b><div class="w"><span class="t">${esc(s.title)}</span><span>${esc(s.role)}${s.limit ? " · " + esc(s.limit) : ""}</span></div><span class="sxgo">›</span></div>`).join("")}</div>` : ""}</div>`; }).join("")}</div>`;
+  }
+  /** One step with every setting (read only), in the locked editor layout: Words, People, Time, Order, Phone task, Approval, Notify (CC). */
+  function stepPage(id) {
+    const x = X(), s = x.steps.find((y) => y.id === id); if (!s) { S.sopStep = null; return stepsTab(); }
+    const l = lang(), L = LAB[l], f = (lab, v, hint) => `<div class="sxf"><b>${lab}</b><div>${v}${hint ? `<div class="sub">${hint}</div>` : ""}</div></div>`;
+    const sec = (t, body, extra) => `<div class="card sxsec"><div class="subhead"><h3>${t}</h3><div class="sp"></div>${extra || ""}</div>${body}</div>`;
+    const forms = (s.forms || []).map((c) => P.chip(c)).join(" ");
+    const paused = /^y/i.test(s.canPause || "");
+    const link = sheetRow(s);
+    return `<div class="sxstepbar"><button class="link" data-sxsteps="1">‹ All steps</button><div class="sxsel"><b>${esc(s.id)}</b> <span>${esc(s.title)}</span><select id="sx-pick">${x.steps.map((y) => `<option value="${esc(y.id)}" ${y.id === s.id ? "selected" : ""}>${esc(y.id)} ${esc(y.title)}</option>`).join("")}</select></div>${link ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(link)}">Edit in sheet ↗</a>` : ""}</div>
+      ${sec("Words", `<div class="sxpage ${l}" ${l === "ur" ? 'dir="rtl"' : ""}>${f(L.step === "اسٹیپ" ? "عنوان" : "Title", esc(pick(s, "title", l)))}${f(L.starts, para(pick(s, "starts", l)) || val(""))}${f(L.what, ol(pick(s, "what", l)) || val(""))}${f(L.inapp, para(pick(s, "inapp", l)) || val(""))}${f(L.wrong, para(pick(s, "wrong", l)) || val(""))}${f(L.done, para(pick(s, "done", l)) || val(""), l === "en" ? "One short line: how the person knows this step is finished." : "")}</div>`, toggle(l))}
+      ${sec("People", f("Who does it", `<span class="tag">${esc(s.role)}</span>`) + f("Who to ask", roleChips(list(s.ask))))}
+      ${sec("Time", f("Time limit", val(s.limit) + (s.timer ? ` <span class="sub">(${esc(s.timer)}${s.days !== "" && s.days != null ? ", " + esc(String(s.days)) + " days" : ""})</span>` : "")) + f("Can the clock pause", val(s.canPause || "No"), "Yes adds a pause button to this step's phone task.") + (paused ? f("Pause button name", val(s.pauseName)) + f("Reminder while paused", val(s.reminder)) + f("If still paused after (days)", val(s.stillPaused)) + f("...also tell", roleChips(s.alsoTell)) : "") + f("Who may extend", roleChips(s.extend), "On the phone task and in the portal, these people can move the deadline, with a typed reason.") + f("Delay reasons", s.delays && s.delays.length ? ul(s.delays) : val(""), "When the task is late, the person picks one of these on the phone."))}
+      ${s.after.length || s.alongside.length || s.onlyIf ? sec("Order exceptions", f("Comes after step", roleChips(s.after)) + f("Runs alongside step", roleChips(s.alongside)) + f("Only if", val(s.onlyIf))) : ""}
+      ${sec("Phone task, forms and items", f("Makes a phone task", val(s.phoneTask) + (/^y/i.test(s.phoneTask || "") ? ` <span class="sub">goes to the person holding “${esc(s.role)}”</span>` : "")) + f("Forms used", forms || val("")) + (s.chkForm || s.chkJob ? f("Checklist job", val([s.chkForm, s.chkJob].filter(Boolean).join(": "))) : ""))}
+      ${s.approval && !/^none$/i.test(s.approval) ? sec("Approval", f("Approval type", val(s.approval)) + f("Reason box", val(s.reason)) + f("Photo of signed paper", val(s.photo)) + f("If rejected, go back to step", roleChips(s.goBack)) + (s.confirms.length ? f("Who confirms (ink)", roleChips(s.confirms)) : "")) : ""}
+      ${sec("Notify (CC)", f("On start", roleChips(s.notify.start)) + f("When done", roleChips(s.notify.done)) + f("When late", roleChips(s.notify.late)) + f("When rejected", roleChips(s.notify.rejected)))}
+      ${own() && s.note ? sec("Notes (only you see this)", para(s.note)) : ""}`;
+  }
+  const list = (t) => (Array.isArray(t) ? t : String(t || "").split(/[,;\n]+/).map((y) => y.trim()).filter(Boolean));
+
+  // ---- Forms tab
+  const KIND_SUB = (f) => (/Checklist/.test(f.kind) ? "Items with tick boxes" : /Slip/.test(f.kind) ? "Filled and printed by the app" : /Fixed/.test(f.kind) ? (f.link ? "Drive link saved" : "Drive link missing: PDF not uploaded yet") : f.kind || "");
+  function formsTab() {
+    const x = X(), fs = x.forms || [];
+    if (S.sopForm) {
+      const f = fs.find((y) => y.code === S.sopForm); if (!f) { S.sopForm = null; return formsTab(); }
+      const items = (x.formItems || []).filter((i) => i.form.indexOf(f.code) === 0), slips = (x.slips || []).filter((i) => i.slip.indexOf(f.code) === 0), used = x.steps.filter((s) => (s.forms || []).includes(f.code)).map((s) => s.id);
+      const groups = Array.from(new Set(items.map((i) => i.group)));
+      return `<div class="card"><div class="subhead"><button class="link" data-sxform="">‹ All forms</button><div class="sp"></div>${f.link ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(f.link)}">Open in Drive ↗</a>` : ""}</div>
+        <h3 style="margin:6px 0">${esc(f.code)} · ${esc(f.name)}</h3><div class="sub">${esc(f.kind || "")} · ${esc(KIND_SUB(f))}</div>${f.notes ? `<div class="hint" style="margin-top:8px">${esc(f.notes)}</div>` : ""}
+        <div class="mh2" style="margin-top:12px">USED IN STEPS</div><div>${used.length ? used.map((u) => `<button class="sc" data-sxstepgo="${esc(u)}">${esc(u)}</button>`).join(" ") : '<span class="sub">none</span>'}</div>
+        ${items.length ? `<div class="mh2" style="margin-top:12px">ITEMS</div>${groups.map((g) => `<div class="sxband"><span>${esc(g || "")}</span></div>${items.filter((i) => i.group === g).map((i) => `<div class="sxsrow"><b>${esc(String(i.no || ""))}</b><div class="w"><span class="t">${esc(i.item)}</span><span>${[i.type, i.cols && "columns: " + i.cols, i.total && "total row: " + i.total, i.money && "money: " + i.money, i.by && "lines entered by " + i.by, i.onlyIf && "only if " + i.onlyIf].filter(Boolean).map(esc).join(" · ")}</span></div></div>`).join("")}`).join("")}` : ""}
+        ${slips.length ? `<div class="mh2" style="margin-top:12px">WORDING</div>${slips.map((r) => `<div class="sxsrow"><b>${esc(r.part)}</b><div class="w"><span class="t">${esc(r.text)}</span><span>${esc(r.by || "")}${r.notes ? " · " + esc(r.notes) : ""}</span></div></div>`).join("")}` : ""}</div>`;
+    }
+    return `<div class="card"><div class="subhead"><h3>Forms</h3></div><div class="hint">Checklist and Slip are built and filled by the app. Fixed PDF opens the Google Drive link saved in the sheet's Forms tab.</div>
+      ${fs.map((f) => `<div class="sxsrow" data-sxform="${esc(f.code)}"><b>${esc(f.code)}</b><div class="w"><span class="t">${esc(f.name)}</span><span ${/missing/.test(KIND_SUB(f)) ? 'style="color:var(--er)"' : ""}>${esc(KIND_SUB(f))}</span></div><span class="tag">${esc(f.kind || "")}</span><span class="sxgo">›</span></div>`).join("")}</div>`;
+  }
+
+  // ---- Variables tab
+  function varsTab() {
+    const x = X(), vs = x.variables || [], groups = Array.from(new Set(vs.map((v) => v.group || "Other")));
+    const text = JSON.stringify(D.plotSopX), used = (c) => (c ? (text.match(new RegExp("\\{" + c.replace(/[^\w]/g, "") + "\\}", "g")) || []).length : 0);
+    return `<div class="card"><div class="subhead"><h3>Variables</h3></div><div class="hint">A value is written once in the sheet's Variables tab. Step text uses it like {sitePlanDays}. Tap a group to open it.</div>
+      ${groups.map((g) => { const o = S.sopBands["v" + g] !== false, gv = vs.filter((v) => (v.group || "Other") === g);
+        return `<div class="sxgrp"><div class="sxband2" data-sxband="v${esc(g)}"><div class="w"><b>${esc(g)}</b></div><span class="sxcnt">${gv.length} variables</span><span class="sxchev">${o ? "▾" : "▸"}</span></div>
+          ${o ? `<div class="sxbody">${gv.map((v) => `<div class="sxsrow"><div class="w"><span class="t">${esc(v.name)}</span><span>${v.code ? "{" + esc(v.code) + "} · used in " + used(v.code) + " places" : ""}${v.notes ? " · " + esc(v.notes) : ""}</span></div><b class="sxval">${esc(v.value)}</b><span class="sub" style="width:110px">${esc(v.unit || "")}</span></div>`).join("")}</div>` : ""}</div>`; }).join("") || '<div class="muted">No variables in this version.</div>'}</div>`;
+  }
+
+  // ---- Role SOPs tab (and the main SOP), with Print / Save PDF
+  function rolesTab() {
+    const x = X(), l = lang(), roles = x.roles || [];
+    const cur = S.sopRole === "main" || roles.some((r) => r.role === S.sopRole) ? S.sopRole : null;
+    const chips = `<button class="sc ${cur === "main" ? "on" : ""}" data-sxrole="main">Main SOP</button>${roles.map((r) => `<button class="sc ${cur === r.role ? "on" : ""}" data-sxrole="${esc(r.role)}">${esc(pick(r, "role", l))}</button>`).join("")}`;
+    return `<div class="card"><div class="subhead"><h3>Role SOPs</h3><div class="sp"></div>${toggle(l)}${cur ? '<button class="btnp" data-sxprint="1">🖨 Print / Save PDF</button>' : ""}</div>
+      <div class="hint">Built live from the steps. Nothing to update by hand. Staff see their own one in Docs › My reading list. Form codes are links. The main SOP is for team training.</div>
+      <div class="sxroles">${chips}</div>${cur ? `<div class="sxpage ${l}" ${l === "ur" ? 'dir="rtl"' : ""} style="margin-top:12px">${body(cur, l, false)}</div>` : '<div class="muted" style="margin-top:12px">Pick the main SOP or a role.</div>'}</div>`;
+  }
+
+  // ---- SOP settings tab
+  function settingsTab() {
+    const x = X(), url = x.sheetUrl, f = (lab, v, hint) => `<div class="sxf"><b>${lab}</b><div>${v}${hint ? `<div class="sub">${hint}</div>` : ""}</div></div>`;
+    return `<div class="card"><div class="subhead"><h3>About this SOP</h3></div>
+      ${f("Name", esc(sopName()))}${f("Master Google Sheet", (url ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${esc(url)}">Open the sheet ↗</a>` : '<span class="sub">The sheet does not send its address yet.</span>') + '<div style="margin-top:8px"></div>' + RB.plotSync.settingsLink(), "The SOP is written in this sheet. Versions › Get changes from Google Sheet reads it through this private link.")}
+      ${f("Section", esc(info("Section", "en") || "—"))}${f("Daily work shows in", "Plot files menu", "Where staff do this SOP's day-to-day work (the plot files, steps, cheques). Fixed for now.")}
+      ${f("Who can edit", "Publish: only you (owner)", "The SOP is changed in the Google Sheet. Only you can publish a new version.")}</div>
+      <div style="height:12px"></div>${RB.plotSync.deleteCard()}`;
+  }
+
+  /** The opened built SOP: header, tabs, the draft bar, and the tab. Staff see only Role SOPs. */
+  P.page = () => {
+    const x = X();
+    const tabs = !x ? [["versions", "Versions"]] : own() ? [["steps", "Steps"], ["forms", "Forms"], ["vars", "Variables"], ["roles", "Role SOPs"], ["settings", "SOP settings"], ["versions", "Versions"]] : [["roles", "Role SOPs"]];
+    if (!tabs.some((t) => t[0] === S.sopTab)) S.sopTab = tabs[0][0];
+    const d = own() && RB.plotSync ? RB.plotSync.draft() : null, n = d ? RB.plotSync.diff(d).length : 0;
+    const head = `<div class="sxhead"><button class="link" data-sxback="1">‹ All SOPs</button><div class="sxtitle"><h2>${esc(x ? sopName() : "New SOP")}</h2>${ver() ? `<span class="tag grn">Live v${ver()}</span>` : '<span class="tag">Not published yet</span>'}</div>
+      <div class="tabs sxtabs">${tabs.map(([k, t]) => `<button data-sxtab="${k}" class="${k === S.sopTab ? "on" : ""}">${t}</button>`).join("")}</div>
+      ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} changes${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions">Open Versions to review and publish ›</button></div>` : ""}</div>`;
+    let b;
+    if (S.sopTab === "versions") b = RB.plotSync.versionsTab();
+    else if (S.sopTab === "forms") b = RO + formsTab();
+    else if (S.sopTab === "vars") b = RO + varsTab();
+    else if (S.sopTab === "roles") b = rolesTab();
+    else if (S.sopTab === "settings") b = settingsTab();
+    else b = RO + (S.sopStep ? stepPage(S.sopStep) : stepsTab());
+    return head + b;
+  };
+  P.newSop = () => RB.plotSync.newSop();
+
+  /** Tiny read-only window on a plot file step: that step's SOP, English or Urdu. */
   P.how = (stepId) => {
     const x = X(), s = x && x.steps.find((y) => y.id === stepId), m = document.getElementById("modal"); if (!s || !m) return;
     const draw = (l) => {
@@ -100,11 +212,24 @@
     draw(lang());
   };
   P.has = () => !!X();
+  /** From the reading list: open my role's SOP. */
+  P.openRole = (role) => { S.sopOpen = "plot"; S.sopTab = "roles"; S.sopRole = role; S.sopNew = false; };
   P.bind = (root) => {
     const on = (sel, fn) => root.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e); }));
-    on("[data-sxopen]", (e) => { S.sopPage = e.dataset.sxopen; RB.render(); });
-    on("[data-sxback]", () => { S.sopPage = null; RB.render(); });
+    const go = (patch) => { Object.assign(S, patch); RB.render(); const c = document.getElementById("content"); if (c) c.scrollTop = 0; };
+    on("[data-sxopen]", () => go({ sopOpen: "plot", sopNew: false, sopStep: null, sopForm: null }));
+    on("[data-sxback]", () => go({ sopOpen: null, sopNew: false, sopStep: null, sopForm: null }));
+    on("[data-sxtab]", (e) => go({ sopTab: e.dataset.sxtab, sopStep: null, sopForm: null }));
     on("[data-sxlang]", (e) => { S.sopLang = e.dataset.sxlang; RB.render(); });
-    on("[data-sxprint]", () => P.print(S.sopPage, lang()));
+    on("[data-sxprint]", () => P.print(S.sopRole, lang()));
+    on("[data-sxrole]", (e) => { S.sopRole = e.dataset.sxrole; RB.render(); });
+    on("[data-sxband]", (e) => { const k = e.dataset.sxband; S.sopBands[k] = k[0] === "v" ? S.sopBands[k] === false : !S.sopBands[k]; RB.render(); });
+    on("[data-sxall]", (e) => { const o = e.dataset.sxall === "1"; (X() ? Array.from(new Set(X().steps.map((s) => s.stage))) : []).forEach((g) => (S.sopBands[g] = o)); RB.render(); });
+    on("[data-sxstep]", (e) => go({ sopStep: e.dataset.sxstep }));
+    on("[data-sxstepgo]", (e) => go({ sopTab: "steps", sopStep: e.dataset.sxstepgo, sopForm: null }));
+    on("[data-sxsteps]", () => go({ sopStep: null }));
+    on("[data-sxform]", (e) => go({ sopForm: e.dataset.sxform || null }));
+    const pk = root.querySelector("#sx-pick"); if (pk) pk.onchange = () => go({ sopStep: pk.value });
+    if (RB.plotSync && own()) RB.plotSync.bind(root);
   };
 })();
