@@ -12,7 +12,7 @@
   const X = () => {
     const raw = D.plotSopX && D.plotSopX.steps ? D.plotSopX : null; if (!raw) return null;
     const k = raw.version + ":" + raw.publishedAt; if (k === fillKey) return filled;
-    const vals = {}; (raw.variables || []).forEach((v) => { if (v.code) vals[v.code] = v.value; });
+    const vals = {}; (raw.variables || []).forEach((v) => { if (v.code) vals[v.code] = /^\d{4,}$/.test(String(v.value)) ? Number(v.value).toLocaleString("en-US") : v.value; });  // 234000 shows as 234,000
     const fill = (o) => (typeof o === "string" ? o.replace(/\{(\w+)\}/g, (m, c) => (vals[c] !== undefined && vals[c] !== "" ? vals[c] : m)) : Array.isArray(o) ? o.map(fill) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([a, b]) => [a, a === "variables" ? b : fill(b)])) : o);
     fillKey = k; filled = fill(raw); return filled;
   };
@@ -224,6 +224,8 @@
     draw(lang());
   };
   P.has = () => !!X();
+  /** The published SOP with variables filled (used by Plot files for RG-05 lines and slip wording). */
+  P.x = () => X();
   /** From the reading list: open my role's SOP. */
   P.openRole = (role) => { S.sopOpen = "plot"; S.sopTab = "roles"; S.sopRole = role; S.sopNew = false; };
   P.bind = (root) => {
