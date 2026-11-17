@@ -1,13 +1,12 @@
 /* Plot files: "Get changes from Google Sheet". The master SOP is the Google Sheet "Plot files SOP · master".
  * Pull = read the sheet through its private Apps Script link, build a DRAFT, show What changed + Checks, then Publish a new version.
  * Own module (loads before plotfiles.js). Data: config/plotsop (the published SOP, read by everyone), plotsopv/{draft | settings | v1, v2...} (owner only).
- * Until the first publish the built-in register in plotsteps.js is used (version 0).
+ * Nothing of the SOP is in the code: until a version is published, Plot files has no steps and cannot open files.
  */
 (function () {
   "use strict";
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   const STEPS = (window.PLOT_STEPS = window.PLOT_STEPS || []), STAGES = (window.PLOT_STAGES = window.PLOT_STAGES || {});
-  const BUILTIN = { steps: JSON.parse(JSON.stringify(STEPS)), stages: Object.assign({}, STAGES) };
   const SYNC = (RB.plotSync = {});
   let busy = false, msg = "", shownVer = null;
 
@@ -19,7 +18,7 @@
     const v = pubVer();
     if (shownVer === v + ":" + ((D.plotSop || {}).publishedAt || 0)) return;
     shownVer = v + ":" + ((D.plotSop || {}).publishedAt || 0);
-    const src = v && D.plotSop.steps ? D.plotSop : BUILTIN;
+    const src = v && D.plotSop.steps ? D.plotSop : { steps: [], stages: {} };   // no SOP imported = no steps (nothing is built into the code)
     STEPS.length = 0; src.steps.forEach((s) => STEPS.push(s));
     Object.keys(STAGES).forEach((k) => delete STAGES[k]); Object.assign(STAGES, src.stages);
   };

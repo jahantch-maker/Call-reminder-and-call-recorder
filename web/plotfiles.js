@@ -1,8 +1,8 @@
-/* Plot files: one file per plot, from opening it to possession and discount cheques (Phase 1 = stages 1-8 of the SOP register).
- * Own module: this file, plotsteps.js (the SOP register as defaults) and plotfiles.css. Data lives in teams/{t}/plotfiles (the file),
- * teams/{t}/plotmoney (cheques and amounts: only the owner and people with "See money details") and config/plotsteps (exceptions to
- * the register: days, who to ask). Switch the whole section off with config/plotsteps.enabled = false.
- * The register itself comes from plotsync.js: the published version of the Google Sheet, or the built-in plotsteps.js until the first publish.
+/* Plot files: the daily work on plot files (Files list, file page Steps / Items / Cheques / Timeline).
+ * Own module: this file and plotfiles.css. Data: teams/{t}/plotfiles (the file), teams/{t}/plotmoney (cheques and amounts: only the owner
+ * and people with "See money details"), config/plotsteps (only the on/off switch and the holiday list).
+ * Every rule (steps, roles, days, who to ask, pause, extend, forms, RG-03 items) comes ONLY from the SOP imported in Docs > SOPs (plotsync.js).
+ * Nothing of the SOP is in the code: with no SOP imported there are no steps and no new file can be opened.
  */
 (function () {
   "use strict";
@@ -21,10 +21,9 @@
     const s = RB.seatOfUid(RB.uidOf());
     return !!(s ? RB.effective(s).app.seeMoney : D.me && D.me.perms && D.me.perms.app && D.me.perms.app.seeMoney);
   };
-  const cfgStep = (id) => ((D.plotCfg || {}).steps || {})[id] || {};
   const stepDef = (id) => STEPS.find((s) => s.id === id);
-  const daysOf = (id) => { const c = cfgStep(id), d = stepDef(id); return c.days !== undefined && c.days !== "" ? c.days : d ? d.days : null; };
-  const askOf = (id) => { const c = cfgStep(id), d = stepDef(id); return c.ask !== undefined ? c.ask : d ? d.ask : ""; };
+  const daysOf = (id) => { const d = stepDef(id); return d ? d.days : null; };   // rules come only from the imported SOP
+  const askOf = (id) => { const d = stepDef(id); return d ? d.ask : ""; };
   const holidays = () => (D.plotCfg && D.plotCfg.holidays) || [];
 
   // ------------------------------------------------------------------ working days: Fridays and listed holidays are skipped
@@ -49,7 +48,6 @@
   const stageOf = (f) => { const c = curSteps(f)[0]; return c ? c.stage : f.stage || 1; };
   const sortKey = (f, now) => (isLate(f, now) ? 0 : isWaiting(f) ? 1 : 2);
   const ITEM_ST = { none: ["Not received", ""], received: ["Received", "blu"], verified: ["Verified", "grn"], rejected: ["Rejected", "red"], waived: ["Waived", "yel"] };
-  const DEFAULT_ITEMS = [["Documents checklist (RG-03)", "Site Plan Requisition form"], ["Documents checklist (RG-03)", "CNIC copy of plot owner"], ["Documents checklist (RG-03)", "Possession form"], ["Documents checklist (RG-03)", "Registry photocopy"], ["Documents checklist (RG-03)", "100 stamp paper · Undertaking"], ["Documents checklist (RG-03)", "1200 stamp paper with discount cheque"], ["Documents checklist (RG-03)", "Director waiver / discount approval"]];
 
   async function save(f, patch, line) {
     const data = Object.assign({}, patch);
@@ -176,31 +174,12 @@
       ${ev.map((e) => `<div class="pfev"><span class="sub">${fmtWhen(e.at)}${e.by && RB.member(e.by) ? " · " + esc(first(RB.member(e.by).name)) : ""}</span><div>${esc(e.text)}</div></div>`).join("") || '<div class="muted">Nothing yet.</div>'}`;
   }
 
-  // ------------------------------------------------------------------ Rules and timing (the register as defaults, his exceptions on top)
-  function rulesPage() {
-    const rows = STEPS.map((s) => {
-      const c = cfgStep(s.id), ch = c.days !== undefined || c.ask !== undefined;
-      return `<div class="pfrule"><div class="w"><b>${esc(s.id)} · ${esc(s.title)}</b><span>${esc(s.role)} · ${esc(STAGES[s.stage] || "")}</span></div><span class="pfk pfkd">${daysOf(s.id) ? daysOf(s.id) + " days" : esc(s.limit || "—")}</span><span class="pfk pfka">${esc(askOf(s.id) || "—")}</span>${ch ? '<span class="tag chg" data-rst="' + esc(s.id) + '" title="Back to the SOP default">✎ changed</span>' : '<span class="tag">default</span>'}${RB.isOwner() ? `<button class="btnt edit-only" data-rule="${esc(s.id)}">Change</button>` : ""}</div>`;
-    }).join("");
-    return { html: `<div class="card pfcard"><div class="subhead"><h3>Rules and timing</h3></div><div class="hint">Days and “Who to ask” come from the SOP register. Change one here only for an exception. A change applies to files that have not reached the step yet; steps already open keep their old limit. Fridays and holidays are skipped.</div>
-      <div class="pfrule head"><span class="w">STEP</span><span class="pfk">DAYS</span><span class="pfk">WHO TO ASK</span><span class="pf3"></span><span class="pf4"></span></div>${rows}</div>` };
-  }
-  function ruleDialog(id) {
-    const s = stepDef(id);
-    RB.form(id + " · " + s.title, [{ k: "days", label: "DAYS (working days, empty = no day limit)", value: daysOf(id) == null ? "" : daysOf(id), type: "number" }, { k: "ask", label: "WHO TO ASK", value: askOf(id) }], "Save", async (v) => {
-      const days = v.days === "" ? null : Number(v.days); if (days !== null && (!(days >= 0) || days > 60)) return "Days must be between 0 and 60.";
-      const steps = Object.assign({}, (D.plotCfg || {}).steps || {}, { [id]: { days, ask: v.ask.trim() } });
-      await RB.Store.put("config", "plotsteps", { steps }, true); await RB.log("Plot files rule " + id + ": " + (days === null ? "no day limit" : days + " days") + ", who to ask: " + v.ask.trim());
-    }, "Applies to files that have not reached this step yet.");
-  }
-
   // ------------------------------------------------------------------ dialogs
-  /** RG-03 rows of a new file: from the published SOP (Form items tab of the sheet) when there is one, else the built-in list. */
+  /** RG-03 rows of a new file: only from the imported SOP (Form items tab of the sheet). */
   function startItems() {
-    const sop = D.plotSop && D.plotSop.items;
-    return sop && sop.length ? sop.map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" })) : DEFAULT_ITEMS.map((x, i) => ({ id: "i" + i, group: x[0], name: x[1], status: "none" }));
+    return ((D.plotSop && D.plotSop.items) || []).map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" }));
   }
-  const sopReady = () => RB.DEMO || !!(D.plotSop && D.plotSop.version);
+  const sopReady = () => !!(D.plotSop && D.plotSop.version && D.plotSop.steps && D.plotSop.steps.length);
   function newFileDialog() {
     if (!sopReady()) return RB.alertBox("The SOP has not been imported yet. Import it in Docs > SOPs first. Every new plot file follows the rules of that SOP.");
     RB.form("Open plot file", [{ k: "plot", label: "PLOT NUMBER" }, { k: "owner", label: "PLOT OWNER NAME" }, { k: "phone1", label: "PHONE 1" }, { k: "phone2", label: "PHONE 2 (optional)" }, { k: "cnic", label: "CNIC" }, { k: "size", label: "SIZE", ph: "10 marla" }, { k: "address", label: "ADDRESS" }, { k: "driveInternal", label: "GOOGLE DRIVE: INTERNAL (optional)", ph: "https://drive.google.com/…" }, { k: "driveArchitect", label: "GOOGLE DRIVE: FOR ARCHITECT (optional)", ph: "https://drive.google.com/…" }].concat(RB.isOwner() ? [{ k: "test", label: "TEST FILE?", type: "select", options: [["no", "No, a real plot file"], ["yes", "Yes, a test file (only you see it; delete it when done)"]], value: "no" }] : []), "Open file", async (v) => {
@@ -298,8 +277,6 @@
       on("[data-done]", (e) => { const f = cur(), s = stepDef(e.dataset.done); RB.confirm("Mark “" + esc(s.title) + "” done for plot " + esc(f.plot) + "? Staff normally do this on their phone.", "Done", () => doneStep(f, s.id)); });
       on("[data-wait]", (e) => waitStep(cur(), e.dataset.wait, true));
       on("[data-back]", (e) => waitStep(cur(), e.dataset.back, false));
-      on("[data-rule]", (e) => ruleDialog(e.dataset.rule));
-      on("[data-rst]", (e) => RB.confirm("Go back to the SOP default for " + esc(e.dataset.rst) + "?", "Go back", async () => { const steps = Object.assign({}, (D.plotCfg || {}).steps || {}); delete steps[e.dataset.rst]; await RB.Store.putField("config", "plotsteps", "steps", steps); await RB.log("Plot files rule " + e.dataset.rst + " back to the SOP default"); }));
       root.querySelectorAll("[data-item]").forEach((sel) => (sel.onchange = async () => { const f = cur(), items = (f.items || []).map((i) => (i.id === sel.dataset.item ? Object.assign({}, i, { status: sel.value, at: Date.now(), by: RB.uidOf() }) : i)); await save(f, { items }, (items.find((i) => i.id === sel.dataset.item) || {}).name + ": " + ITEM_ST[sel.value][0]); }));
       stickyBar(root);
       on("#pf-addnote", async () => { const v = document.getElementById("pf-note").value.trim(); if (!v) return; const f = cur(); await save(f, {}, v); });
