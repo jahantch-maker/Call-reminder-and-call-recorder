@@ -26,3 +26,4 @@
 .sxchoice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.sxchoice .btnt{text-align:left;padding:10px 14px;height:auto;border-radius:12px}.sxchoice .btnt b{display:block}.sxchoice .btnt span{font-size:12.5px;color:var(--onv)}
 @media(max-width:700px){.sxf{flex-direction:column;gap:2px}.sxf>b{width:auto}.sxbody{padding-left:0}.sxsrow>b{width:44px}}
 .sxlist .docrow .w>span{display:block}.sxsrow .w .t{color:var(--on)}
+.sxlist .docrow .w.sxtap{cursor:pointer}.sxlist .docrow .w.sxtap:hover b{text-decoration:underline}

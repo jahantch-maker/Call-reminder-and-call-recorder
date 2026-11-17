@@ -91,7 +91,7 @@
     const chips = ["all"].concat(secs).map((x) => `<button class="sc sxfilt ${S.sopSection === x ? "on" : ""}" data-sec2="${esc(x)}">${S.sopSection === x ? "✓ " : ""}${x === "all" ? "All" : esc(x)}</button>`).join("");
     const built = P && (!S.q || "plot files".includes(S.q.toLowerCase())) ? P.listRow(S.sopSection) : "";
     const html = `<div class="card sxlist"><div class="subhead"><h3>SOPs</h3><div class="sp"></div>${chips}${ed ? '<button class="btnp sxblue edit-only" data-newsop="1">+ New SOP</button>' : ""}</div>
-      ${built}${list.map((d) => `<div class="docrow"><div class="w"><b>${esc(d.title)}</b><span class="sxtag drive">Drive link</span><span>${esc(d.section || "")} · version ${d.version || 1} · owner ${esc(d.owner || "—")}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}${d.reviewBy && d.reviewBy < now ? ' <b style="color:var(--er)">review overdue</b>' : ""}</span><span>Must read: ${esc((d.designations || []).join(", ")) || "nobody yet"}</span></div>${link(d.url)}${ed ? `<button class="btnt edit-only" data-newver="${esc(d.id)}">Upload new version</button><button class="btnt edit-only" data-edit="${esc(d.id)}">Edit</button><button class="btnt edit-only" data-del="${esc(d.id)}">Delete</button>` : ""}</div>`).join("")}
+      ${built}${list.map((d) => `<div class="docrow"><div class="w${ed ? " sxtap" : ""}"${ed ? ` data-drvopen="${esc(d.id)}" title="Open to edit or delete"` : ""}><b>${esc(d.title)}</b><span class="sxtag drive">Drive link</span><span>${esc(d.section || "")} · version ${d.version || 1} · owner ${esc(d.owner || "—")}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}${d.reviewBy && d.reviewBy < now ? ' <b style="color:var(--er)">review overdue</b>' : ""}</span><span>Must read: ${esc((d.designations || []).join(", ")) || "nobody yet"}</span></div>${link(d.url)}${ed ? `<button class="btnt edit-only" data-newver="${esc(d.id)}">Upload new version</button>` : ""}</div>`).join("")}
       ${!built && !list.length ? '<div class="muted" style="padding:12px 0">No SOPs here yet.</div>' : ""}</div>
       <div class="hint sxfoot">A built SOP opens inside the app in English and Urdu. A Drive link SOP works as today.${ed ? " Share each Drive file only with Rafiq Builders Gmails, never “anyone with the link”." : ""}</div>`;
     return { html };
@@ -187,6 +187,18 @@
       on("[data-add]", (e) => { const [k, pre] = e.dataset.add.split(":"); docDialog(k, null, pre); });
       on("[data-edit]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.edit); docDialog(d.type, d); });
       on("[data-del]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.del); RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); });
+      // A Drive link SOP row: Open and Upload new version stay on the row; Edit and Delete live in the window the row opens.
+      on("[data-drvopen]", (e) => {
+        const d = D.docs.find((x) => x.id === e.dataset.drvopen); if (!d) return;
+        const m = document.getElementById("modal");
+        m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:18px">${esc(d.title)}</b> <span class="sxtag drive">Drive link</span>
+          <div class="sub" style="margin-top:10px">${esc(d.section || "")} · version ${d.version || 1} · owner ${esc(d.owner || "—")}${d.reviewBy ? " · review by " + fmtShort(d.reviewBy) : ""}</div>
+          <div class="sub">Must read: ${esc((d.designations || []).join(", ")) || "nobody yet"}</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px"><button class="btnt" id="dv-del" style="color:var(--er)">Delete</button><div style="flex:1"></div><button class="btnt" id="dv-x">Close</button><button class="btnp" id="dv-edit">Edit</button></div></div></div>`;
+        m.querySelector("#dv-x").onclick = () => (m.innerHTML = "");
+        m.querySelector("#dv-edit").onclick = () => { m.innerHTML = ""; docDialog(d.type, d); };
+        m.querySelector("#dv-del").onclick = () => { m.innerHTML = ""; RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); };
+      });
       on("[data-newver]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.newver); RB.form("New version of " + d.title, [{ k: "url", label: "GOOGLE DRIVE LINK (leave as is if the same file)", value: d.url || "" }], "Publish version " + ((d.version || 1) + 1), async (v) => { if (v.url && !/^https:\/\//.test(v.url)) return "The link must start with https://"; await RB.Store.put("docs", d.id, { version: (d.version || 1) + 1, url: v.url.trim(), updatedAt: Date.now() }, true); await RB.log("New version " + ((d.version || 1) + 1) + " of " + d.title + ": " + (d.designations || []).join(", ") + " read again"); }, "Only the designations that must read it will read it again."); });
       if (RB.plotSop) RB.plotSop.bind(root);
       on("[data-sxread]", () => { RB.plotSop.openRole(myDesig()); S.tab.docs = "sops"; RB.render(); });

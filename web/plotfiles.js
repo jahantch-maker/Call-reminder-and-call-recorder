@@ -1,6 +1,6 @@
 /* Plot files: the daily work on plot files (Files list, file page Steps / Items / Cheques / Timeline).
  * Own module: this file and plotfiles.css. Data: teams/{t}/plotfiles (the file), teams/{t}/plotmoney (cheques and amounts: only the owner
- * and people with "See money details"), config/plotsteps (only the on/off switch and the holiday list).
+ * and people with "See money details"), config/plotsteps (only the on/off switch; holidays are in Settings > Holidays).
  * Every rule (steps, roles, days, who to ask, pause, extend, forms, RG-03 items) comes ONLY from the SOP imported in Docs > SOPs (plotsync.js).
  * Nothing of the SOP is in the code: with no SOP imported there are no steps and no new file can be opened.
  */
@@ -24,11 +24,13 @@
   const stepDef = (id) => STEPS.find((s) => s.id === id);
   const daysOf = (id) => { const d = stepDef(id); return d ? d.days : null; };   // rules come only from the imported SOP
   const askOf = (id) => { const d = stepDef(id); return d ? d.ask : ""; };
-  const holidays = () => (D.plotCfg && D.plotCfg.holidays) || [];
+  // Holidays live in Settings > Holidays (config/holidays) and every SOP reads them. Old dates in config/plotsteps still count.
+  const holidays = () => ((D.holidays && D.holidays.dates) || []).map((h) => h.d).concat((D.plotCfg && D.plotCfg.holidays) || []);
+  const offDays = () => (D.holidays && Array.isArray(D.holidays.offDays) ? D.holidays.offDays : [5]);
 
-  // ------------------------------------------------------------------ working days: Fridays and listed holidays are skipped
+  // ------------------------------------------------------------------ working days: the weekly off day (Friday) and listed holidays are skipped
   const dkey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
-  const isWork = (t) => new Date(t).getDay() !== 5 && !holidays().includes(dkey(t));
+  const isWork = (t) => !offDays().includes(new Date(t).getDay()) && !holidays().includes(dkey(t));
   /** Whole working days from a to b (not counting the day it started). Time spent Waiting for plot owner is taken off first. */
   function workDays(a, b) {
     let n = 0; const d = new Date(a); d.setHours(12, 0, 0, 0);

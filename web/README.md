@@ -20,3 +20,7 @@ Files: `core.js` (data, sign-in, access, seats), `calc.js` (numbers), `shell.js`
 - `config.js` holds the Firebase web settings. They are not secret: they identify the project, and the rules guard the data.
 - Plot files SOP pages (`plotsop.js`): the written SOP (main SOP and one page per role, English and Urdu) is built live from the published Google Sheet (`config/plotsopx`, written at Publish together with the steps). It shows in Docs > SOPs for everyone with Docs access, with Print / Save PDF; the step list has a "How to do this" window and clickable form chips. Publish a new version from the sheet and every page follows.
 - SOP import lives in Docs > SOPs (owner): master Google Sheet link, Get changes from Google Sheet, draft with What changed and checks, Publish, Versions, and "Delete imported SOP". The Plot files section has only the Files tab; new plot files can be opened only after an SOP is imported, and follow it.
+
+**Settings > Holidays.** The office's weekly off day (Friday) and its list of holiday dates are kept here, in `config/holidays`, and only the owner changes them. Every SOP counts its working days from this setting, so nothing about holidays goes in a SOP's Google Sheet.
+
+**Drive link SOP rows.** Open and Upload new version stay on the row. Tap the row to open a window with Edit and Delete.
