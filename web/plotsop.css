@@ -27,3 +27,6 @@
 @media(max-width:700px){.sxf{flex-direction:column;gap:2px}.sxf>b{width:auto}.sxbody{padding-left:0}.sxsrow>b{width:44px}}
 .sxlist .docrow .w>span{display:block}.sxsrow .w .t{color:var(--on)}
 .sxlist .docrow .w.sxtap{cursor:pointer}.sxlist .docrow .w.sxtap:hover b{text-decoration:underline}
+.sxfsec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}.sxfsec>.card{margin:0;min-width:0}
+.sxpv{width:100%;border:1px solid var(--line,#ddd);border-radius:10px;background:#fff;display:block}
+@media (max-width:1000px){.sxfsec{grid-template-columns:minmax(0,1fr)}}

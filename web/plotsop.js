@@ -135,17 +135,29 @@
 
   // ---- Forms tab
   const KIND_SUB = (f) => (/Checklist/.test(f.kind) ? "Items with tick boxes" : /Slip/.test(f.kind) ? "Filled and printed by the app" : /Fixed/.test(f.kind) ? (f.link ? "Drive link saved" : "Drive link missing: PDF not uploaded yet") : f.kind || "");
+  /** Right-hand card of a form: the print preview in its locked layout. RG-03 is drawn from this SOP's items; the others show their locked sample. */
+  function formPreview(f, x) {
+    const P = RB.plotForms, h = P.HEIGHT[f.code] || 800;
+    if (f.code === "RG-03") {
+      const items = (x.formItems || []).filter((i) => /^RG-03/.test(i.form)).map((i) => ({ stage: i.group, no: i.no, name: i.item }));
+      return `<div class="card"><h3>Print preview</h3><div class="sub" style="margin-bottom:6px">Blank RG-03 as the app prints it. In a plot file, Items › Print RG-03 fills the plot, ticks and dates.</div><iframe class="sxpv" title="Print preview" style="height:${h}px" srcdoc="${esc(P.rg03(null, items))}"></iframe></div>`;
+    }
+    if (P.SAMPLES[f.code]) return `<div class="card"><h3>Print preview (plot 245, sample)</h3><div class="sub" style="margin-bottom:6px">The exact locked ${esc(f.code)} design. The app fills it from the plot file when this form's phone task is built.</div><iframe class="sxpv" title="Print preview" style="height:${h}px" src="${esc(P.SAMPLES[f.code])}"></iframe></div>`;
+    return "";
+  }
   function formsTab() {
     const x = X(), fs = x.forms || [];
     if (S.sopForm) {
       const f = fs.find((y) => y.code === S.sopForm); if (!f) { S.sopForm = null; return formsTab(); }
       const items = (x.formItems || []).filter((i) => i.form.indexOf(f.code) === 0), slips = (x.slips || []).filter((i) => i.slip.indexOf(f.code) === 0), used = x.steps.filter((s) => (s.forms || []).includes(f.code)).map((s) => s.id);
       const groups = Array.from(new Set(items.map((i) => i.group)));
-      return `<div class="card"><div class="subhead"><button class="link" data-sxform="">‹ All forms</button><div class="sp"></div>${f.link ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(f.link)}">Open in Drive ↗</a>` : ""}</div>
+      const pv = formPreview(f, x);
+      return `<div class="sxfsec"><div class="card"><div class="subhead"><button class="link" data-sxform="">‹ All forms</button><div class="sp"></div>${f.link ? `<a class="btnt" target="_blank" rel="noopener noreferrer" href="${esc(f.link)}">Open in Drive ↗</a>` : ""}</div>
         <h3 style="margin:6px 0">${esc(f.code)} · ${esc(f.name)}</h3><div class="sub">${esc(f.kind || "")} · ${esc(KIND_SUB(f))}</div>${f.notes ? `<div class="hint" style="margin-top:8px">${esc(f.notes)}</div>` : ""}
+        ${/Fixed/.test(f.kind || "") ? `<div class="hint" style="margin-top:8px">Fixed paper. The app does not change it. To change it, upload a new PDF to Drive and paste the new link in the sheet's Forms tab, then get changes. Every step that mentions ${esc(f.code)} opens this link, on the web and on the phone task.</div>` : ""}
         <div class="mh2" style="margin-top:12px">USED IN STEPS</div><div>${used.length ? used.map((u) => `<button class="sc" data-sxstepgo="${esc(u)}">${esc(u)}</button>`).join(" ") : '<span class="sub">none</span>'}</div>
-        ${items.length ? `<div class="mh2" style="margin-top:12px">ITEMS</div>${groups.map((g) => `<div class="sxband"><span>${esc(g || "")}</span></div>${items.filter((i) => i.group === g).map((i) => `<div class="sxsrow"><b>${esc(String(i.no || ""))}</b><div class="w"><span class="t">${esc(i.item)}</span><span>${[i.type, i.cols && "columns: " + i.cols, i.total && "total row: " + i.total, i.money && "money: " + i.money, i.by && "lines entered by " + i.by, i.onlyIf && "only if " + i.onlyIf].filter(Boolean).map(esc).join(" · ")}</span></div></div>`).join("")}`).join("")}` : ""}
-        ${slips.length ? `<div class="mh2" style="margin-top:12px">WORDING</div>${slips.map((r) => `<div class="sxsrow"><b>${esc(r.part)}</b><div class="w"><span class="t">${esc(r.text)}</span><span>${esc(r.by || "")}${r.notes ? " · " + esc(r.notes) : ""}</span></div></div>`).join("")}` : ""}</div>`;
+        ${items.length ? `<div class="mh2" style="margin-top:12px">ITEMS</div>${groups.map((g) => `<div class="sxband"><span>${esc(g || "")}</span></div>${items.filter((i) => i.group === g).map((i) => `<div class="sxsrow"><b>${esc(String(i.no || ""))}</b><div class="w"><span class="t">${esc(i.item)}</span><span>${[i.type, i.cols && "columns: " + i.cols, i.total && "total row: " + i.total, i.money && "money: " + i.money, i.by && "lines entered by " + i.by, i.onlyIf && (/^only if/i.test(i.onlyIf) ? i.onlyIf : "only if " + i.onlyIf)].filter(Boolean).map(esc).join(" · ")}</span></div></div>`).join("")}`).join("")}` : ""}
+        ${slips.length ? `<div class="mh2" style="margin-top:12px">WORDING</div><div class="sub" style="margin-bottom:4px">Blanks in { } are filled by the app.</div>${slips.map((r) => `<div class="sxsrow"><b>${esc(r.part)}</b><div class="w"><span class="t">${esc(r.text)}</span><span>${esc(r.by || "")}${r.notes ? " · " + esc(r.notes) : ""}</span></div></div>`).join("")}` : ""}</div>${pv}</div>`;
     }
     return `<div class="card"><div class="subhead"><h3>Forms</h3></div><div class="hint">Checklist and Slip are built and filled by the app. Fixed PDF opens the Google Drive link saved in the sheet's Forms tab.</div>
       ${fs.map((f) => `<div class="sxsrow" data-sxform="${esc(f.code)}"><b>${esc(f.code)}</b><div class="w"><span class="t">${esc(f.name)}</span><span ${/missing/.test(KIND_SUB(f)) ? 'style="color:var(--er)"' : ""}>${esc(KIND_SUB(f))}</span></div><span class="tag">${esc(f.kind || "")}</span><span class="sxgo">›</span></div>`).join("")}</div>`;

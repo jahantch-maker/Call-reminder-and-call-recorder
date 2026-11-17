@@ -210,19 +210,9 @@
     });
   }
 
-  /** RG-03 on A4 in the locked layout (sop/forms-revised/documents-checklist), with this file's ticks. */
+  /** RG-03 on A4 in the locked v3 layout (plotforms.js), with this file's ticks. */
   function printRG03(f) {
-    const items = (f.items || []).filter((i) => /RG-03/.test(i.group || "")), gs = Array.from(new Set(items.map((i) => i.stage || i.group)));
-    const ok = (i) => i.status === "verified" || i.status === "received";
-    const body = gs.map((g) => `<tr class="g"><td colspan="4">${esc(String(g).toUpperCase())}</td></tr>` + items.filter((i) => (i.stage || i.group) === g).map((i, n) => `<tr><td class="c">${esc(String(i.no || n + 1))}</td><td>${esc(i.name)}</td><td class="c">${ok(i) ? "☑" : "☐"}</td><td>${ok(i) && i.at ? esc(fmtShort(i.at)) : ""}</td></tr>`).join("")).join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Documents Checklist</title><style>@page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;font-size:10.5px;color:#111;margin:0}.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px}.org{font-weight:700;font-size:12px}.sub{font-size:10px;color:#555}h1{text-align:center;font-size:17px;margin:8px 0 6px;letter-spacing:1px}.top{display:flex;gap:20px;margin-bottom:8px;font-size:12px}.top span{flex:1;display:flex;gap:6px}.top b{flex:1;border-bottom:1px solid #444}table{width:100%;border-collapse:collapse}th,td{border:1px solid #888;padding:4px 6px;vertical-align:top}th{background:#e9e9e9;font-size:9.5px}.c{text-align:center}tr.g td{background:#f3f3f3;font-weight:700;font-size:9.5px;letter-spacing:.4px}.note{font-size:9px;color:#444;margin-top:6px}</style></head><body>
-<div class="hd"><div><div class="org">RAFIQ BUILDERS &amp; DEVELOPERS · ROYAL GARDEN, GOJRA</div><div class="sub">Plot files · glue inside the front cover</div></div><div class="sub">Form RG-03 · printed ${esc(fmtShort(Date.now()))}</div></div><h1>DOCUMENTS CHECKLIST</h1>
-<div class="top"><span>Plot No.<b>${esc(f.plot)}</b></span><span style="flex:2">Owner name<b>${esc(f.owner || "")}</b></span></div>
-<table><thead><tr><th style="width:24px">#</th><th>Document</th><th style="width:60px">In file</th><th style="width:110px">Date</th></tr></thead><tbody>${body}</tbody></table>
-<div class="note">Filled only by the Document Officer. The ticks and dates are from the app on the day of printing; full details are in the app.</div></body></html>`;
-    const fr = document.createElement("iframe"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0"; document.body.appendChild(fr);
-    fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 4000); };
-    fr.srcdoc = html;
+    RB.plotForms.print(RB.plotForms.rg03(f, (f.items || []).filter((i) => /RG-03/.test(i.group || "")), Date.now()));
   }
   async function deleteTestFiles() {
     const t = D.plot.filter((f) => f.test);

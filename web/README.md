@@ -24,3 +24,5 @@ Files: `core.js` (data, sign-in, access, seats), `calc.js` (numbers), `shell.js`
 **Settings > Holidays.** The office's weekly off day (Friday) and its list of holiday dates are kept here, in `config/holidays`, and only the owner changes them. Every SOP counts its working days from this setting, so nothing about holidays goes in a SOP's Google Sheet.
 
 **Drive link SOP rows.** Open and Upload new version stay on the row. Tap the row to open a window with Edit and Delete.
+
+**Form previews.** Docs > SOPs > Forms shows each app-printed form beside its details. RG-03 is drawn live from the SOP's Form items (the same code prints it from a plot file's Items tab, `plotforms.js`). RG-05, RG-07, RG-13, RG-14 and RG-15 show their locked sample (`web/forms/*-sample.html`) until their phone tasks are built.
