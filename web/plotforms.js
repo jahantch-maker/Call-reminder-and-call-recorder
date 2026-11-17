@@ -57,14 +57,14 @@ h1{font-family:Tinos,'Times New Roman',serif;text-align:center;font-size:19px;te
 .r{display:flex;gap:24px;margin:0 0 16px}.f{flex:1;display:flex;align-items:flex-end;white-space:nowrap}.f i{flex:1;border-bottom:1px solid #222;margin-left:4px;height:14px}
 p{line-height:1.6;margin:10px 0 10px}.c{margin:0 0 9px;display:flex;align-items:flex-end}
 .b{display:inline-block;width:10px;height:10px;border:1px solid #111;margin-right:6px;vertical-align:-1px}.h{margin:12px 0 6px;font-weight:700}
-.note{font-size:13px;color:#333;margin-top:30px;line-height:1.6}
+.note{font-size:13px;color:#333;margin-top:30px;line-height:1.6}.c.s{margin-left:56px;margin-bottom:5px}
 table{width:100%;table-layout:fixed;border-collapse:collapse;margin:6px 0 4px;font-size:14px}th,td{border-bottom:1px solid #999;padding:4px 6px;text-align:left}th{font-weight:700;border-bottom:1.5px solid #222;font-size:13px}td.n,th.n{text-align:right}tr.t td{border-bottom:none;font-weight:700}
 .v{font-weight:700;border-bottom:1px solid #222;padding:0 6px 1px;flex:1}@media screen{body{padding:18px 22px;background:#fff}}</style></head><body>
 <div class="code">RG-05 · v2</div>
 <h1>${esc(String(d.title || "").toUpperCase())}</h1>
 <div class="r"><span class="f">Plot No&nbsp;<span class="v">${esc(d.plot || "")}</span></span><span class="f" style="flex:2">Owner Name&nbsp;<span class="v">${esc(d.owner || "")}</span></span></div>
 <p>This checklist serves as a reminder of all documents and payments that must be submitted along with the floor plan. Providing all items listed below will help ensure smooth and timely floor plan approval, after which the plot possession process for house construction will continue.</p>
-${(d.items || []).map((it) => (it.cols ? tbl(it) : `<div class="c"><span class="b"></span>${esc(it.name)}</div>`)).join("")}
+${(d.items || []).map((it) => (it.cols ? tbl(it) : `<div class="c"${it.parts && it.parts.length ? ' style="margin-top:14px"' : ""}><span class="b"></span>${esc(it.name)}</div>${(it.parts || []).map((p, i, a) => `<div class="c s"${i === a.length - 1 ? ' style="margin-bottom:13px"' : ""}><span class="b"></span>${esc(p)}</div>`).join("")}`)).join("")}
 <div style="margin-top:20px;font-size:13px;line-height:1.8">${d.prepared ? `Prepared by: <b>${esc((d.prepared.desig ? d.prepared.desig + ", " : "") + (d.prepared.name || ""))}</b> · ${esc(dd(d.prepared.at))}` : ""}${d.approved ? `<br>Approved in app by: <b>${esc(d.approved.name || "")}</b> · ${esc(when(d.approved.at))}` : ""}</div>
 <div class="r" style="margin-top:28px"><span class="f" style="flex:0 0 55%">Accounts Head signature<i></i></span><span class="f">Date<i></i></span></div>
 <div class="note" style="margin-top:14px">For any question about this list, contact the Accounts Officer: ${esc(d.phone || "______________________")}</div>

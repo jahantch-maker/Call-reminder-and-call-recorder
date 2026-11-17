@@ -262,13 +262,27 @@
       await save(f, { items }, "Cheque recorded: " + v.bank.trim() + " no. " + v.no.trim() + (check ? " (date or amount differs from the line)" : ""));
     }, "Front Desk, at the counter. If the date or amount differs from the expected line, the line shows “Check”.");
   }
+  /** Breakdown rows under an RG-05 item whose text uses a money variable (e.g. Rs {cashTotal}): the other Rs variables of the same
+   *  Variables group, printed only when they add up exactly to it (200,000 + 30,000 + 1,500 + 2,500 = 234,000). All from the sheet. */
+  function breakdown(n) {
+    const raw = D.plotSopX || {}, it = ((raw.formItems || []).filter((i) => /^RG-05/.test(i.form || "")))[n]; if (!it) return [];
+    const vs = (raw.variables || []).filter((v) => v.code && /^rs$/i.test(String(v.unit || "").trim()) && /^\d+$/.test(String(v.value)));
+    const codes = Array.from(String(it.item || "").matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+    for (const c of codes) {
+      const top = vs.find((v) => v.code === c); if (!top) continue;
+      const parts = vs.filter((v) => v !== top && v.group === top.group);
+      if (parts.length && parts.reduce((s, v) => s + Number(v.value), 0) === Number(top.value))
+        return parts.map((v) => Number(v.value).toLocaleString("en-US") + " " + String(v.name).charAt(0).toLowerCase() + String(v.name).slice(1));
+    }
+    return [];
+  }
   /** RG-05 print (locked layout, plotforms.js): only after approval, only for people with money details. */
   function printRG05(f) {
     const m = D.plotMoney[f.id] || {}, ks = kinds(), x = sopX();
     const form = ((x && x.forms) || []).find((y) => y.code === "RG-05");
     const prep = m.linesBy ? RB.member(m.linesBy.by) : null;
     RB.plotForms.print(RB.plotForms.rg05({ plot: f.plot, owner: f.owner, title: form ? form.name : "Required Attachments with Floor Plan submission",
-      items: rg05Items().map((it) => (/^repeat/i.test(it.type || "") ? { name: it.item, cols: colsOf(it), total: /^y/i.test(it.total || ""), rows: linesOf(f).filter((l) => l.kind === ks.indexOf(it)).map((l) => l.v) } : { name: it.item })),
+      items: rg05Items().map((it, n) => (/^repeat/i.test(it.type || "") ? { name: it.item, cols: colsOf(it), total: /^y/i.test(it.total || ""), rows: linesOf(f).filter((l) => l.kind === ks.indexOf(it)).map((l) => l.v) } : { name: it.item, parts: breakdown(n) })),
       prepared: m.linesBy ? { name: m.linesBy.byName, at: m.linesBy.at, desig: prep && prep.designation } : null, approved: m.linesOk ? { name: m.linesOk.byName, at: m.linesOk.at } : null, phone: prep && prep.phone }));
   }
   /** RG-14 Still pending slip (locked layout): the plot's RG-05 rows not yet Verified or Waived; wording from the Slips tab. */
