@@ -103,6 +103,11 @@ service cloud.firestore {
         allow read: if signedIn() && portalSee(t, 'plot');
         allow write: if signedIn() && portalEdit(t, 'plot');
       }
+      // Plot files SOP versions pulled from the master Google Sheet (draft, settings with the sheet link, v1, v2...): owner only.
+      // The published SOP itself is config/plotsop (read by every member, written by the owner, see config above).
+      match /plotsopv/{p} {
+        allow read, write: if signedIn() && isActive(t) && isOwner(t);
+      }
       match /plotmoney/{p} {
         allow read, write: if signedIn() && isActive(t) && (isOwner(t) || (lvl(t, 'plot') in ['view', 'edit'] && appSw(t, 'seeMoney')));
       }
