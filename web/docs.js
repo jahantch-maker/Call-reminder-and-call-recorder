@@ -82,7 +82,7 @@
 
   // ------------------------------------------------------------------ owner pages
   function sops() {
-    const ps = RB.plotSop ? RB.plotSop.docs() : "";   // the built Plot files SOP (written live from the Google Sheet)
+    const ps = (RB.plotSop ? RB.plotSop.docs() : "") + (RB.isOwner() && RB.plotSync && !S.sopPage ? '<div style="height:12px"></div>' + RB.plotSync.render().html : "");   // the SOP import (owner) and the built Plot files SOP (written live from the Google Sheet)
     if (!isEd() || S.sopPage) return { html: ps || '<div class="card"><div class="muted">No SOPs here yet.</div></div>' };
     const secs = SECTIONS(), now = Date.now();
     const list = ofType("sop").filter((d) => (S.sopSection === "all" || d.section === S.sopSection) && (!S.q || d.title.toLowerCase().includes(S.q.toLowerCase())));
@@ -183,6 +183,7 @@
       on("[data-del]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.del); RB.confirm("Delete “" + esc(d.title) + "”?", "Delete", async () => { await RB.Store.del("docs", d.id); await RB.log("Deleted " + d.type + " “" + d.title + "”"); }, true); });
       on("[data-newver]", (e) => { const d = D.docs.find((x) => x.id === e.dataset.newver); RB.form("New version of " + d.title, [{ k: "url", label: "GOOGLE DRIVE LINK (leave as is if the same file)", value: d.url || "" }], "Publish version " + ((d.version || 1) + 1), async (v) => { if (v.url && !/^https:\/\//.test(v.url)) return "The link must start with https://"; await RB.Store.put("docs", d.id, { version: (d.version || 1) + 1, url: v.url.trim(), updatedAt: Date.now() }, true); await RB.log("New version " + ((d.version || 1) + 1) + " of " + d.title + ": " + (d.designations || []).join(", ") + " read again"); }, "Only the designations that must read it will read it again."); });
       if (RB.plotSop) RB.plotSop.bind(root);
+      if (RB.isOwner() && RB.plotSync && (S.tab || {}).docs === "sops") RB.plotSync.bind(root);
       on("[data-sec2]", (e) => { S.sopSection = e.dataset.sec2; RB.render(); });
       on("[data-pol]", (e) => { S.policySel = e.dataset.pol; RB.render(); });
       on("[data-tpl]", (e) => { const [p, t] = e.dataset.tpl.split(":"); tplDialog(p, t); });

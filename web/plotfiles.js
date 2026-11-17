@@ -110,7 +110,7 @@
         <div class="pfr">${S.pfFilter === "wait" && isWaiting(f) ? `<span class="pfday">Waiting ${workDays(f.waiting.since, now)} working days</span><span class="pfwb">${f.phone1 ? `<a class="btnt" href="tel:${esc(f.phone1.replace(/[^\d+]/g, ""))}" data-nogo="1">Call plot owner</a>` : ""}${ed() && !f.test ? `<button class="btnt" data-pfback="${esc(f.id)}">Plot owner is back</button>` : ""}</span>` : ""}${y && !f.closed && !(S.pfFilter === "wait" && isWaiting(f)) ? `<span class="pfday ${isLate(f, now) ? "late" : ""}">Day ${dn} of ${y}</span>` : ""}</div></div>`;
     };
     const html = `<div class="card pfcard"><div class="subhead"><h3>Plot files</h3><div class="sp"></div>${RB.isOwner() && D.plot.some((f) => f.test) ? '<button class="btnt edit-only" id="pf-deltest">Delete all test files</button>' : ""}${ed() ? '<button class="btnp edit-only" id="pf-new">+ Open plot file</button>' : ""}</div>
-      <div class="pfchips2">${chip("open", open.length, "Open files", "blu")}${chip("late", late.length, "Late", "red")}${chip("wait", wait.length, "Waiting for plot owner", "yel")}${chip("closed", closed.length, "Closed", "")}</div>
+      ${sopReady() ? "" : '<div class="hint warn" style="margin-bottom:10px">The SOP is not imported yet. Import it in Docs &gt; SOPs. New plot files can only be opened after that.</div>'}<div class="pfchips2">${chip("open", open.length, "Open files", "blu")}${chip("late", late.length, "Late", "red")}${chip("wait", wait.length, "Waiting for plot owner", "yel")}${chip("closed", closed.length, "Closed", "")}</div>
       ${list.map(row).join("") || '<div class="muted" style="padding:14px 0">No plot files here.</div>'}</div>`;
     return { html };
   }
@@ -200,7 +200,9 @@
     const sop = D.plotSop && D.plotSop.items;
     return sop && sop.length ? sop.map((x, i) => ({ id: "i" + i, group: "Documents checklist (RG-03)", stage: x.stage, no: x.no, name: x.name, status: "none" })) : DEFAULT_ITEMS.map((x, i) => ({ id: "i" + i, group: x[0], name: x[1], status: "none" }));
   }
+  const sopReady = () => RB.DEMO || !!(D.plotSop && D.plotSop.version);
   function newFileDialog() {
+    if (!sopReady()) return RB.alertBox("The SOP has not been imported yet. Import it in Docs > SOPs first. Every new plot file follows the rules of that SOP.");
     RB.form("Open plot file", [{ k: "plot", label: "PLOT NUMBER" }, { k: "owner", label: "PLOT OWNER NAME" }, { k: "phone1", label: "PHONE 1" }, { k: "phone2", label: "PHONE 2 (optional)" }, { k: "cnic", label: "CNIC" }, { k: "size", label: "SIZE", ph: "10 marla" }, { k: "address", label: "ADDRESS" }, { k: "driveInternal", label: "GOOGLE DRIVE: INTERNAL (optional)", ph: "https://drive.google.com/…" }, { k: "driveArchitect", label: "GOOGLE DRIVE: FOR ARCHITECT (optional)", ph: "https://drive.google.com/…" }].concat(RB.isOwner() ? [{ k: "test", label: "TEST FILE?", type: "select", options: [["no", "No, a real plot file"], ["yes", "Yes, a test file (only you see it; delete it when done)"]], value: "no" }] : []), "Open file", async (v) => {
       if (!v.plot.trim() || !v.owner.trim()) return "Type the plot number and the plot owner's name.";
       if (D.plot.some((f) => !f.closed && f.plot.trim().toLowerCase() === v.plot.trim().toLowerCase())) return "An open file for plot " + v.plot.trim() + " already exists. Do not open a second one.";
@@ -266,17 +268,16 @@
 
   // ------------------------------------------------------------------ section
   RB.sections.plot = {
-    tabs() { return [["files", "Files"]].concat(RB.isOwner() ? [["rules", "Rules and timing"], ["sop", "SOP versions"]] : []); },
+    tabs() { return [["files", "Files"]]; },
     render(tab) {
       if (RB.plotSync) RB.plotSync.apply();
       const f = S.pfSel && D.plot.find((x) => x.id === S.pfSel);
       let p;
-      if (tab === "sop" && RB.isOwner() && RB.plotSync) p = RB.plotSync.render(); else if (tab === "rules" && RB.isOwner()) p = rulesPage(); else if (f) p = filePage(f); else { S.pfSel = null; p = filesPage(); }
+      if (f) p = filePage(f); else { S.pfSel = null; p = filesPage(); }
       p.title = "Plot files"; p.sub = "From opening a plot file to possession · one file per plot";
       return p;
     },
     bind(root) {
-      if ((S.tab || {}).plot === "sop" && RB.plotSync) return RB.plotSync.bind(root);
       const on = (sel, fn) => root.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e); }));
       const cur = () => D.plot.find((x) => x.id === S.pfSel);
       root.querySelectorAll("[data-nogo]").forEach((e) => (e.onclick = (ev) => ev.stopPropagation()));
