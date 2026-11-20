@@ -35,3 +35,7 @@ Both projects ship to the **same website, the same Firebase project (rafiq-build
 ### Build notes
 - No Android SDK in the cloud. App PRs rely on the GitHub Actions build check (`build.yml`); flavors are `full` and `cr`.
 - Web preview: `cd web && python3 -m http.server 8123`, then open `http://localhost:8123/index.html?demo`.
+
+## Coding style: Ponytail
+
+Use the `ponytail` skill (`.claude/skills/ponytail/SKILL.md`, level **full**) on every coding task in this repo: the smallest change that fully solves the task, no features, options or dependencies nobody asked for, and never cut validation, error handling, security or accessibility. Source: https://github.com/DietrichGebert/ponytail (MIT).
