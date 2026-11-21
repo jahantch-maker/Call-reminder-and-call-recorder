@@ -10,7 +10,7 @@
   /** The published SOP with every {variable} replaced by its value from the sheet's Variables tab (cached per published version). */
   let fillKey = null, filled = null;
   const X = () => {
-    const raw = D.plotSopX && D.plotSopX.steps ? D.plotSopX : null; if (!raw) return null;
+    const raw = D.plotSop && D.plotSop.steps ? D.plotSop : null; if (!raw) return null;
     const k = raw.version + ":" + raw.publishedAt; if (k === fillKey) return filled;
     const vals = {}; (raw.variables || []).forEach((v) => { if (v.code) vals[v.code] = /^\d{4,}$/.test(String(v.value)) ? Number(v.value).toLocaleString("en-US") : v.value; });  // 234000 shows as 234,000
     const fill = (o) => (typeof o === "string" ? o.replace(/\{(\w+)\}/g, (m, c) => (vals[c] !== undefined && vals[c] !== "" ? vals[c] : m)) : Array.isArray(o) ? o.map(fill) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([a, b]) => [a, a === "variables" ? b : fill(b)])) : o);
@@ -26,7 +26,7 @@
   const ol = (a) => (a && a.length ? `<ol>${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>` : "");
   const ul = (a) => (a && a.length ? `<ul>${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
   const para = (t) => (t ? `<p>${esc(t).replace(/\n/g, "<br>")}</p>` : "");
-  const when = () => { const t = D.plotSopX && D.plotSopX.publishedAt; return t ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""; };
+  const when = () => { const t = D.plotSop && D.plotSop.publishedAt; return t ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""; };
   const form = (code) => (X().forms || []).find((f) => f.code === code);
 
   /** A form chip: opens the form's Drive file. Forms the app prints show "app prints it". A missing link is flagged for the owner only. */
@@ -88,7 +88,7 @@
   Object.assign(S, { sopOpen: null, sopTab: "steps", sopStep: null, sopRole: null, sopBands: {}, sopForm: null, sopNew: false });
   const toggle = (l) => `<span class="sxlang"><button class="sc ${l === "en" ? "on" : ""}" data-sxlang="en">English</button><button class="sc ${l === "ur" ? "on" : ""}" data-sxlang="ur">اردو</button></span>`;
   const own = () => RB.isOwner();
-  const ver = () => (D.plotSopX && D.plotSopX.version) || 0;
+  const ver = () => (D.plotSop && D.plotSop.version) || 0;
   const sopName = () => (X() && info("SOP name", "en")) || "Plot files SOP";
   const roleChips = (a) => (a && a.length ? a.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ") : '<span class="sub">none</span>');
   const val = (v) => (v === undefined || v === null || v === "" ? '<span class="sub">—</span>' : esc(String(v)));
@@ -196,7 +196,8 @@
   /** The opened built SOP: header, tabs, the draft bar, and the tab. Staff see only Role SOPs. */
   P.page = () => {
     const x = X();
-    const tabs = !x ? [["versions", "Versions"]] : own() ? [["steps", "Steps"], ["forms", "Forms"], ["vars", "Variables"], ["roles", "Role SOPs"], ["settings", "SOP settings"], ["versions", "Versions"]] : [["roles", "Role SOPs"]];
+    // The SOP pages for the v2 sheet (Steps, Forms, Role SOPs, Flow chart) come in the next update; until then only the import tabs.
+    const tabs = !x ? [["versions", "Versions"]] : own() ? [["settings", "SOP settings"], ["versions", "Versions"]] : [["roles", "Role SOPs"]];
     if (!tabs.some((t) => t[0] === S.sopTab)) S.sopTab = tabs[0][0];
     const d = own() && RB.plotSync ? RB.plotSync.draft() : null, n = d ? RB.plotSync.diff(d).length : 0;
     const head = `<div class="sxhead"><button class="link" data-sxback="1">‹ All SOPs</button><div class="sxtitle"><h2>${esc(x ? sopName() : "New SOP")}</h2>${ver() ? `<span class="tag grn">Live v${ver()}</span>` : '<span class="tag">Not published yet</span>'}</div>
@@ -204,11 +205,8 @@
       ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} change${n === 1 ? "" : "s"}${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions"><span class="sxlong">Open Versions to review and publish ›</span><span class="sxshort">Review ›</span></button></div>` : ""}</div>`;
     let b;
     if (S.sopTab === "versions") b = RB.plotSync.versionsTab() + (x ? '<div style="height:12px"></div>' + RB.plotSync.deleteCard() : "");
-    else if (S.sopTab === "forms") b = RO + formsTab();
-    else if (S.sopTab === "vars") b = RO + varsTab();
-    else if (S.sopTab === "roles") b = rolesTab();
     else if (S.sopTab === "settings") b = settingsTab();
-    else b = RO + (S.sopStep ? stepPage(S.sopStep) : stepsTab());
+    else b = '<div class="card"><div class="muted">The SOP pages are being rebuilt for the new Google Sheet. They come in the next update.</div></div>';
     return head + b;
   };
   P.newSop = () => RB.plotSync.newSop();
