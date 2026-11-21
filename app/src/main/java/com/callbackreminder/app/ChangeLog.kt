@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.56.2", "21 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Plot files: opening a new file now creates only the first step, not a later step that another step opens",
+                "Restoring a backup no longer brings back an old unanswered \"Why not done\" window",
+            ),
+        ),
+        Entry(
             "0.56.1", "21 Nov",
             new = listOf(
                 "Plot files: a step that is waiting for the plot owner reminds you once every working day, with a Call button",

@@ -136,7 +136,10 @@ object PlotFiles {
         val sop = Sop(
             roles = list("roles").mapNotNull { str(it["role"]).takeIf { r -> r.isNotBlank() } },
             steps = steps,
-            opened = list("flow").map { str(it["to"]) }.toSet(),
+            // A step is "opened" by a Flow row, or by a pick-one option of another step ("Opens step"). The rest start the file.
+            opened = (list("flow").map { str(it["to"]) } + list("steps").flatMap { st ->
+                (st["checklist"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("opens")?.toString() }
+            }).filter { it.isNotBlank() }.toSet(),
             stages = list("stages").associate { str(it["no"]) to str(it["name"]) },
             forms = list("forms").map { Form(str(it["code"]), str(it["name"]), str(it["link"])) },
         )
