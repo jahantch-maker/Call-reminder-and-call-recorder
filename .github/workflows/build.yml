@@ -29,34 +29,7 @@ jobs:
       - name: Build APK
         run: gradle assembleRelease --stacktrace
 
-      - name: Screen tests at every display size
-        if: github.event_name == 'pull_request'
-        run: gradle testFullDebugUnitTest --stacktrace
-
-      - name: Show the screen test report and keep the pictures on the ci-screenshots branch
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          cat app/build/screenshots/report.txt || true
-          ls app/build/screenshots | head -100 || true
-          [ -d app/build/screenshots ] || exit 0
-          cd app/build/screenshots
-          git init -q -b ci-screenshots
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -qm "Screens for ${{ github.event.pull_request.head.sha }}"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-screenshots
-
-      # Spare copies are kept 3 days only (storage is small), and a full storage never fails the build.
-      - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'pull_request'
-        continue-on-error: true
-        with:
-          retention-days: 3
-          name: display-size-screenshots
-          path: |
-            app/build/screenshots
-            app/build/reports/tests
+      # The screen tests at every display size run at the same time in screens.yml (pull requests only).
 
       - uses: actions/upload-artifact@v4
         continue-on-error: true

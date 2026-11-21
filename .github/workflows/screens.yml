@@ -1,0 +1,54 @@
+name: Screen tests
+
+# Same checks as before, started at the same time as the APK build so a pull request is ready sooner.
+on:
+  pull_request:
+    paths-ignore: ["web/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  screens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Screen tests at every display size
+        if: github.event_name == 'pull_request'
+        run: gradle testFullDebugUnitTest --stacktrace
+
+      - name: Show the screen test report and keep the pictures on the ci-screenshots branch
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          cat app/build/screenshots/report.txt || true
+          ls app/build/screenshots | head -100 || true
+          [ -d app/build/screenshots ] || exit 0
+          cd app/build/screenshots
+          git init -q -b ci-screenshots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Screens for ${{ github.event.pull_request.head.sha }}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-screenshots
+
+      # Spare copies are kept 3 days only (storage is small), and a full storage never fails the build.
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        with:
+          retention-days: 3
+          name: display-size-screenshots
+          path: |
+            app/build/screenshots
+            app/build/reports/tests
