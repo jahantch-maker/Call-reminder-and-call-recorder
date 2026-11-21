@@ -168,6 +168,15 @@ object TeamSync {
                 val before = last[t.id]
                 // Plot files: the step's due time follows the doer's own working hours and off day.
                 if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.createdAt))
+                // Plot files: CC on this step (SOP Notify columns): one notification for Started, Late and Done.
+                PlotUi.ccStatus(t, me, System.currentTimeMillis())?.let { st ->
+                    val told = TeamLinks.set(c, "ccTold")
+                    if (told.add("${t.id}:$st")) {
+                        TeamLinks.putSet(c, "ccTold", told)
+                        notify(c, "cc:${t.id}", "👁 Plot ${t.plotNo} · Step ${t.step.substringAfter('.')} · $st", "${t.title}\n${t.toFirst}", mine = null, taskId = t.id,
+                            kind = NotifKind.FOLLOW_UPS, open = Open.TIMELINE)
+                    }
+                }
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
                 // ✓ Done, ➜ next part: your part was received and the task went on to someone else. Told once;

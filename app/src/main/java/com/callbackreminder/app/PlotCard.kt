@@ -68,6 +68,19 @@ import androidx.compose.ui.unit.sp
  * the cloud (functions/) when this one is Done.
  */
 object PlotUi {
+    /** What a CC person sees for this step in Follow-ups: "Started", "Late" or "Done" (24 hours), or null when it is not for them. */
+    fun ccStatus(t: TeamTask, me: String, now: Long): String? {
+        if (!t.plot || t.toUid == me || t.fromUid == me) return null
+        val ev = t.cc[me]?.split(",") ?: return null
+        return when {
+            t.doneAt > 0L && (t.status == Team.CHECKED || t.status == Team.DONE) -> "Done".takeIf { "done" in ev && now - t.doneAt < 24 * 3600_000L }
+            !t.open -> null
+            t.waitAt == 0L && t.due in 1..now && "late" in ev -> "Late"
+            "start" in ev -> "Started"
+            else -> null
+        }
+    }
+
     /** The line's own step and option a "Shown only if" points at: "6.1 · 6b" -> ("6.1", "6", "6b"). */
     private fun ref(t: String): Triple<String, String, String>? {
         val m = Regex("""^(\d+\.\d+)\s*[·.\-]\s*(\d+)(\w*)$""").find(t.trim()) ?: return null
@@ -430,4 +443,26 @@ object PlotActions {
     fun returnStep(t: TeamTask, s: PlotFiles.Step, reason: String) {
         TeamRepo.plotUpdate(t, mapOf("status" to Team.RETURNED, "reason" to reason, "returnTo" to s.returnTo), "↩ Returned to ${s.returnTo} · “$reason”")
     }
+}
+
+/** A plot step you are CC on (SOP Notify columns): read-only row in Follow-ups, tap opens the step's Timeline. */
+@Composable
+fun PlotCcCard(t: TeamTask, status: String, now: Long, pos: RowPos?) {
+    val dark = LocalDarkTheme.current
+    val sand = CardColours.PALETTE.first { it.name == "Sand" }
+    TaskCard(
+        title = t.title,
+        done = false,
+        onTick = {},
+        showTick = false,
+        time = if (status == "Done") "Done " + Fmt.dueLabel(t.doneAt) else t.due.takeIf { it > 0L }?.let { Fmt.dueLabel(it) },
+        late = status == "Late",
+        person = listOf("Plot ${t.plotNo}", t.toName).filter { it.isNotBlank() && it != "Plot " }.joinToString(" · "),
+        chips = listOf(RowChip(status, when (status) { "Late" -> ChipTone.RED; "Done" -> ChipTone.GREEN; else -> ChipTone.BLUE })),
+        sub = listOf("Stage ${t.step.substringBefore('.')}", "Step ${t.step.substringAfter('.')}", t.role).filter { it.isNotBlank() }.joinToString(" · "),
+        noTimeChip = false,
+        tint = sand.fill(dark),
+        onClick = { TeamUi.openTimeline(t.id) },
+        pos = pos,
+    )
 }

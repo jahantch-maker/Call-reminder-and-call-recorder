@@ -32,6 +32,7 @@ object ChangeLog {
             "0.56.1", "21 Nov",
             new = listOf(
                 "Plot files: a step that is waiting for the plot owner reminds you once every working day, with a Call button",
+                "Plot files: when you are CC on a step (start, done or late), it shows in Follow-ups under PLOT FILES · CC, read-only, with a notification. Tap it to open the step's Timeline",
             ),
             fixed = listOf(
                 "Plot files: staff now see the checklist on their plot step without opening Settings first",
