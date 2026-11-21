@@ -110,6 +110,8 @@ internal fun ListTabs(
     lists: List<TaskList>, selected: Long, onSelect: (Long) -> Unit, onNewList: () -> Unit,
     assigned: Boolean = false, assignedNew: Int = 0,
     helping: Boolean = false, helpingNew: Int = 0,
+    /** Plot files: open plot step tasks; the tab is hidden when there are none. */
+    plotCount: Int = 0,
 ) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -117,6 +119,7 @@ internal fun ListTabs(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ListTab("All", selected == ALL_LISTS) { onSelect(ALL_LISTS) }
+        if (plotCount > 0) ListTab("Plot files", selected == PLOT_LIST, dot = plotCount) { onSelect(PLOT_LIST) }
         if (assigned) ListTab("Assigned to me", selected == ASSIGNED_LIST, dot = assignedNew) { onSelect(ASSIGNED_LIST) }
         if (helping) ListTab("🤝 Helping", selected == HELPING_LIST, dot = helpingNew) { onSelect(HELPING_LIST) }
         lists.filter { it.id != MyTaskStore.UNSORTED }.forEach { l -> ListTab(l.name, selected == l.id) { onSelect(l.id) } }
@@ -127,6 +130,7 @@ internal fun ListTabs(
 const val ALL_LISTS = -1L
 const val ASSIGNED_LIST = -2L
 const val HELPING_LIST = -3L
+const val PLOT_LIST = -4L
 
 @Composable
 private fun ListTab(text: String, on: Boolean, dot: Int = 0, onClick: () -> Unit) {
@@ -238,6 +242,13 @@ internal fun MyTaskCard(
             kotlinx.coroutines.delay(60L)
             runCatching { bring.bringIntoView() }
         }
+    }
+    // Plot files: a plot step has its own card (sand tint, checklist, Done · Return · Waiting · Call · WhatsApp).
+    if (teamTask?.plot == true) {
+        Box(Modifier.bringIntoViewRequester(bring)) {
+            PlotTaskCard(t, teamTask, now, listName, highlighted, finishing, pos, expanded, onToggle, onTick, onStar)
+        }
+        return
     }
     Box(Modifier.bringIntoViewRequester(bring)) {
         TaskCard(

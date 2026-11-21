@@ -164,6 +164,8 @@ object TeamSync {
             val given = TeamLinks.map(c, "given")
             for (t in tasks) {
                 val before = last[t.id]
+                // Plot files: the step's due time follows the doer's own working hours and off day.
+                if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.createdAt))
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
                 // ✓ Done, ➜ next part: your part was received and the task went on to someone else. Told once;
@@ -238,11 +240,13 @@ object TeamSync {
             t.open -> {
                 if (local == null) {
                     val made = MyTaskStore.add(
-                        title = t.title, note = "", dueAt = 0L, name = "", number = "",
+                        title = t.title, note = "", dueAt = if (t.plot) t.due else 0L, name = "", number = "",
                         starred = t.urgent,
                     )
                     recv[t.id] = made.id.toString()
                 } else {
+                    // Plot files: the step's due time is its time on this phone (Overdue, Next up, the alarm).
+                    if (t.plot && !local.done && t.due > 0L && local.dueAt != t.due) MyTaskStore.setDue(local.id, t.due)
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
                     if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
                     // His task waits in To schedule until he sets his own reminder (⏰ My reminder): a deadline never
@@ -359,7 +363,8 @@ object TeamSync {
         val repeatMin = TeamRules.repeatMin(c)
         // Only inside working hours: a popup or an SMS never goes out at night.
         val inHours = TeamRules.minutesSince(c, now - 60_000L, now) > 0L
-        for (t in tasks.filter { it.fromUid == me && it.open }) {
+        // Plot step tasks have their own rules (the SOP's time allowed): no "no date" reminders or SMS.
+        for (t in tasks.filter { it.fromUid == me && it.open && !it.plot }) {
             val waited = TeamRules.minutesSince(c, t.createdAt, now)
             if (t.urgent && t.due == 0L) {
                 val k = "g:${t.id}"
@@ -376,7 +381,7 @@ object TeamSync {
             deadlineSms(c, t, waited, now, inHours, smsDone)
         }
         // His phone: an urgent task waiting for his deadline reminds him every N working hours; a normal one once, the next morning.
-        for (t in tasks.filter { it.toUid == me && it.open && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
+        for (t in tasks.filter { it.toUid == me && it.open && !it.plot && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
             if (t.urgent) {
                 val k = "h:${t.id}"
                 val last = chase[k]?.toLongOrNull() ?: t.createdAt

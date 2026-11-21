@@ -29,6 +29,17 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.56.0", "21 Nov",
+            new = listOf(
+                "Plot files: New plot file in Settings, right under your account (for the Front Desk and the app owner). It checks the plot number online, needs a 13-digit CNIC and 11-digit phone numbers, and gives Step 1 to the Front Desk",
+                "Plot files: the app owner can save a test file and choose which roles get their real task; the rest come to the owner's phone",
+                "Plot files: each plot step is a sand-coloured task with its checklist. Tap a line to tick it, tap ⓘ to see how to do it in English or Urdu. Done opens only when every line is ticked, and the next step goes to the next person by itself",
+                "Plot files: Return with a reason, Waiting for plot owner, and Call / WhatsApp that always shows who you are calling first. Every call is written on the task's Timeline",
+                "My tasks: a Plot files tab, shown when you have plot steps",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.55.1", "14 Nov",
             new = listOf(
                 "Person page: the four counts at the top (Pending, Overdue, Delayed, Done) are gone; that report is on the web app",

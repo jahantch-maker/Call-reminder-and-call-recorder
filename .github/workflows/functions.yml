@@ -1,0 +1,40 @@
+name: Publish cloud functions
+
+# Plot files: every merge to main that touches functions/ uploads the cloud program (opens the next plot step).
+# Needs the Blaze plan and the deploy key with Cloud Functions rights. "Run workflow" uploads it by hand.
+on:
+  push:
+    branches: [main]
+    paths: ["functions/**", ".github/workflows/functions.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: cd functions && npm install --omit=dev --no-audit --no-fund
+      - name: Publish to Firebase Functions
+        if: env.HAS_KEY == 'true'
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          set +e
+          npx -y firebase-tools@13 deploy --only functions --project rafiq-builders --non-interactive --force 2>&1 | tee deploy.log
+          status=${PIPESTATUS[0]}
+          rm -f "$RUNNER_TEMP/sa.json"
+          if [ "$status" -ne 0 ]; then
+            grep -iE "error|denied|permission|billing|not found|403" deploy.log | head -8 | while IFS= read -r l; do echo "::error::$l"; done
+            exit "$status"
+          fi

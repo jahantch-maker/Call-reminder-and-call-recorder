@@ -155,6 +155,29 @@ data class TeamTask(
     val played: Map<String, List<String>> = emptyMap(),
     /** v0.48 🤝 Meeting: an action agreed in a team meeting (given from the meeting web app). */
     val meeting: Boolean = false,
+    /** Plot files: one step of a plot file (its rules come from the published SOP, see [PlotFiles]). */
+    val plot: Boolean = false,
+    /** Plot files: the step's timer and days (from the SOP), and whether the doer's phone has set its due time yet. */
+    val timer: String = "",
+    val days: Int? = null,
+    val dueSet: Boolean = true,
+    val plotId: String = "",
+    val plotNo: String = "",
+    val step: String = "",
+    val role: String = "",
+    val test: Boolean = false,
+    /** Checklist line -> who ticked it, when, and the picked option or typed number. */
+    val ticks: Map<String, PlotTick> = emptyMap(),
+    /** "Waiting for plot owner" started (0 = not waiting): the timer stops meanwhile. */
+    val waitAt: Long = 0L,
+    /** The role of the step that opened this one ("" for the first step). */
+    val fromRole: String = "",
+    /** The plot owner, copied from the file, so the card can show and call him without reading the file. */
+    val ownerName: String = "",
+    val ownerWa: String = "",
+    val ownerSim2: String = "",
+    /** Picks made in earlier steps of the file ("2.2·3" -> "3b"), copied on by the cloud for "Shown only if" lines. */
+    val picks: Map<String, String> = emptyMap(),
 ) {
     /** [uid] has seen [m] on the Timeline (blue ticks). */
     fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
@@ -224,6 +247,9 @@ object Team {
     fun canUndo(m: TeamMsg, me: String?): Boolean =
         me != null && m.fromUid == me && !m.isDeleted && !m.pending && System.currentTimeMillis() - m.at < UNDO_MS
 }
+
+/** Plot files: one ticked checklist line. [value] is the picked option ("3b") or the typed number, else "". */
+data class PlotTick(val at: Long, val name: String, val value: String)
 
 /** One message on a task's Timeline: typed, a voice note or a photo; [tag] marks ❓ Ask, ⚠ Stuck, proof or the brief. */
 data class TeamMsg(
@@ -985,6 +1011,12 @@ object TeamRepo {
 
     private val seenWritten = mutableMapOf<String, Long>()
 
+    /** Plot files: any change to a plot step (ticks, Done, Return, waiting), with its Timeline line. */
+    fun plotUpdate(t: TeamTask, fields: Map<String, Any>, event: String?) = update(t, fields, event)
+
+    /** Plot files: the step's due time, set on the doer's phone from his own working hours. */
+    fun setPlotDue(t: TeamTask, due: Long) = update(t, mapOf("due" to due, "firstDue" to due, "deadline" to due, "dueSet" to true), null)
+
     fun markSeen(t: TeamTask) {
         if (t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)) return
         val now = System.currentTimeMillis()
@@ -1092,12 +1124,13 @@ object TeamRepo {
         val first = OnTime.promise(t)
         val mark = OnTime.label(t, now)?.let { m -> " · $m" + if (first > 0L && m != "No date") " · first deadline ${TeamUi.shortWhen(first)}" else "" }.orEmpty()
         // v0.48.1 A meeting action the owner gave himself: nobody else to check it, so Done closes it.
-        val self = t.fromUid == t.toUid
+        // Plot files: nobody checks a plot step; Done closes it and the cloud opens the next step(s).
+        val self = t.fromUid == t.toUid || t.plot
         update(t, mapOf("status" to (if (self) Team.CHECKED else Team.DONE), "doneAt" to now, "askAt" to 0L, "stuckAt" to 0L) +
             (if (self) mapOf("checkedAt" to now) else emptyMap()),
             (if (t.proofAt > 0L) "✅ Done with photo" else "✅ Done by ${t.toFirst}") + mark)
         // v0.48 Done after the first deadline: one tap on why it was late.
-        if (first > 0L && now - first > 60_000L) ReasonAsk.askTeamTask(t, ReasonAsk.LATE)
+        if (first > 0L && now - first > 60_000L && !t.plot) ReasonAsk.askTeamTask(t, ReasonAsk.LATE)
     }
 
     /** Received, thanks ✓: closes it and thanks him. */
@@ -1537,5 +1570,24 @@ object TeamRepo {
         msgSeen = longs(s.get("msgSeen")),
         played = (s.get("played") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to strings(v) } }?.toMap() ?: emptyMap(),
         meeting = s.getBoolean("meeting") ?: false,
+        plot = s.getBoolean("plot") ?: false,
+        timer = s.getString("timer").orEmpty(),
+        days = s.getLong("days")?.toInt(),
+        dueSet = s.getBoolean("dueSet") ?: true,
+        plotId = s.getString("plotId").orEmpty(),
+        plotNo = s.get("plotNo")?.toString().orEmpty(),
+        step = s.getString("step").orEmpty(),
+        role = s.getString("role").orEmpty(),
+        test = s.getBoolean("test") ?: false,
+        ticks = (s.get("ticks") as? Map<*, *>)?.entries?.mapNotNull { (k, v) ->
+            val m = v as? Map<*, *> ?: return@mapNotNull null
+            (k as? String)?.let { it to PlotTick((m["at"] as? Number)?.toLong() ?: 0L, m["name"]?.toString().orEmpty(), m["value"]?.toString().orEmpty()) }
+        }?.toMap() ?: emptyMap(),
+        waitAt = s.getLong("waitAt") ?: 0L,
+        fromRole = s.getString("fromRole").orEmpty(),
+        ownerName = s.getString("ownerName").orEmpty(),
+        ownerWa = s.getString("ownerWa").orEmpty(),
+        ownerSim2 = s.getString("ownerSim2").orEmpty(),
+        picks = (s.get("picks") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to v.toString() } }?.toMap() ?: emptyMap(),
     )
 }

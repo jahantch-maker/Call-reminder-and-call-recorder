@@ -195,8 +195,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         highlightId = -id
     }
     val inTeam = TeamRepo.activeNow
-    if (listSel == MyTaskStore.UNSORTED || (listSel == ASSIGNED_LIST && !inTeam) || (listSel == HELPING_LIST && !inTeam) ||
-        (listSel != ALL_LISTS && listSel != ASSIGNED_LIST && listSel != HELPING_LIST && lists.none { it.id == listSel })) listSel = ALL_LISTS
+    if (listSel == MyTaskStore.UNSORTED || (listSel == ASSIGNED_LIST && !inTeam) || (listSel == HELPING_LIST && !inTeam) || (listSel == PLOT_LIST && !inTeam) ||
+        (listSel != ALL_LISTS && listSel != ASSIGNED_LIST && listSel != HELPING_LIST && listSel != PLOT_LIST && lists.none { it.id == listSel })) listSel = ALL_LISTS
     // v0.53 🤝 Helping: tasks you were asked to help with, and the ones you asked help for.
     val helpThreads by HelpRepo.threads.collectAsState()
     val helpSeen by HelpRepo.seen.collectAsState()
@@ -244,8 +244,11 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         ALL_LISTS -> tasks
         ASSIGNED_LIST -> tasks.filter { t -> teamOf[t.id]?.let { fromSel == null || it.fromFirst == fromSel } == true }
         HELPING_LIST -> emptyList()
+        PLOT_LIST -> tasks.filter { t -> teamOf[t.id]?.plot == true }
         else -> tasks.filter { it.listId == listSel }
     }
+    val plotCount = remember(teamOf) { teamOf.values.count { it.plot && it.open } }
+    if (listSel == PLOT_LIST && plotCount == 0) listSel = ALL_LISTS
     val newOnTop = listSel == ASSIGNED_LIST
     val liveNew = remember(teamOf, teamV) { teamOf.filterValues { it.open && TeamSync.isNew(ctx, it.id) }.keys }
     // v0.51 A new task stays in "New" while you are here, even after tapping it clears its banner, so the card never
@@ -431,6 +434,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                                 lists = lists, selected = listSel, onSelect = { listSel = it; completedOpen = false }, onNewList = { newList = true },
                                 assigned = inTeam, assignedNew = assignedNew,
                                 helping = inTeam, helpingNew = helpingNew,
+                                plotCount = plotCount,
                             )
                         }
                         StarToggle(starredOnly) { starredOnly = it }
