@@ -342,14 +342,19 @@
       if (!u) return signInPage();
       uid = u.uid;
       try {
-        const us = await db.collection("users").doc(uid).get();
+        // The team of this browser is remembered, so the three reads go out together instead of one after another.
+        let t0 = ""; try { t0 = localStorage.getItem("rb_team_" + uid) || ""; } catch (e) { t0 = ""; }
+        const usP = db.collection("users").doc(uid).get();
+        const read = (t) => Promise.all([db.collection("teams").doc(t).get(), db.collection("teams").doc(t).collection("members").doc(uid).get()]);
+        let pre = t0 ? read(t0) : null; if (pre) pre.catch(() => {});
+        const us = await usP;
         const t = us.exists && us.data().teamId;
         if (us.exists) RB.theme.pull(us.data().portalTheme);
         if (!t) return joinPage(u);
+        try { localStorage.setItem("rb_team_" + uid, t); } catch (e) { /* remembering is optional */ }
         teamRef = db.collection("teams").doc(t);
-        const ts = await teamRef.get();
+        const [ts, ms] = await (pre && t === t0 ? pre.catch(() => read(t)) : read(t));
         D.team = Object.assign({ id: t }, ts.data());
-        const ms = await teamRef.collection("members").doc(uid).get();
         D.me = ms.exists ? Object.assign({ uid }, ms.data()) : null;
         if (!D.me) return joinPage(u, t);
         // Signed in on the phone first: the member row has no portal access yet. Copy it from the seat of this Gmail.
