@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.56.1", "21 Nov",
+            new = listOf(
+                "Plot files: a step that is waiting for the plot owner reminds you once every working day, with a Call button",
+            ),
+            fixed = listOf(
+                "Plot files: staff now see the checklist on their plot step without opening Settings first",
+            ),
+        ),
+        Entry(
             "0.56.0", "21 Nov",
             new = listOf(
                 "Plot files: New plot file in Settings, right under your account (for the Front Desk and the app owner). It checks the plot number online, needs a 13-digit CNIC and 11-digit phone numbers, and gives Step 1 to the Front Desk",

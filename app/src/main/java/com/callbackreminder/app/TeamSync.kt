@@ -162,6 +162,8 @@ object TeamSync {
             val recv = TeamLinks.map(c, "recv")
             val recvFu = TeamLinks.map(c, "recvFu")
             val given = TeamLinks.map(c, "given")
+            // Plot files: staff never open the New plot file screen, so the SOP is read here once a plot step reaches the phone.
+            if (PlotFiles.sop.value == null && tasks.any { it.plot && it.toUid == me }) TeamRepo.scope.launch { PlotFiles.loadSop() }
             for (t in tasks) {
                 val before = last[t.id]
                 // Plot files: the step's due time follows the doer's own working hours and off day.
@@ -394,6 +396,18 @@ object TeamSync {
                 chaseOnce += "pick:${t.id}"
                 notify(c, "pick:${t.id}", "📅 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}",
                     mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+            }
+        }
+        // Plot files: a step waiting for the plot owner whose SOP says "every working day": one reminder a working day, in working hours.
+        for (t in tasks.filter { it.toUid == me && it.plot && it.open && it.waitAt > 0 }) {
+            val every = PlotFiles.sop.value?.step(t.step)?.reminder.orEmpty()
+            if (!Regex("every|working day|daily", RegexOption.IGNORE_CASE).containsMatchIn(every)) continue
+            val k = "pw:${t.id}"
+            val last = chase[k]?.toLongOrNull() ?: t.waitAt
+            if (inHours && now - last >= 20 * 3600_000L) {
+                chase[k] = now.toString()
+                notify(c, "pw:${t.id}", "⏳ Plot ${t.plotNo} is still waiting for the plot owner · 📞 Call", "${t.title}\nStep ${t.step}",
+                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.CARD, call = t.ownerWa)
             }
         }
         val live = tasks.filter { it.open }.map { it.id }.toSet()
