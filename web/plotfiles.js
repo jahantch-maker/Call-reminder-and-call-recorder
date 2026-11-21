@@ -16,6 +16,7 @@
   Object.assign(S, { pfFile: null, pfTab: "steps", pfChip: "open", pfSort: ["due", 1], pfq: "", pfOpen: null, pfStages: {} });
   const X = () => (RB.plotSop && RB.plotSop.x ? RB.plotSop.x() : null);
   const M = {};   // task id -> its Timeline messages (loaded when needed)
+  const MA = {};  // task id -> its lastMsgAt when those messages were loaded
 
   // ------------------------------------------------------------------ small helpers
   const sod = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -102,16 +103,24 @@
   function header(f) {
     const now = Date.now(), t = current(f), s = t && step(t.step), st = stateOf(f, now), x = X();
     const curStage = s ? String(s.stage) : null;
-    const stageDone = (g) => x.steps.filter((y) => String(y.stage) === String(g.no)).every((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; });
-    const fld = (l, v, cls) => `<div class="${cls || ""}"><span>${l}</span><b>${v}</b></div>`;
+    const inStage = (g) => x.steps.filter((y) => String(y.stage) === String(g.no));
+    const nDone = (g) => inStage(g).filter((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; }).length;
+    const opened = f.openedAt ? "File opened " + RB.fmtDay(f.openedAt) + " · " + pl(days(f.openedAt, now), "day") + " ago" : "";
+    const facts = [phone(f.wa) !== "—" ? "WhatsApp " + phone(f.wa) : "", f.sim2 ? "Second SIM " + phone(f.sim2) : "", f.cnic ? "CNIC " + cnic(f.cnic) : "", esc(f.address || ""), f.attorney ? "Attorney " + esc(f.attorney) : "", opened].filter(Boolean);
+    const ib = (attr, icon, label) => `<button class="plib" ${attr}><i aria-hidden="true">${icon}</i>${label}</button>`;
+    // Stepper: done = ✓, current = outlined with "N of M steps done"; the line to the next stage fills by that share.
+    const stages = (x.stages || []).map((g, i, all) => {
+      const n = inStage(g).length, d = nDone(g), done = n && d === n, cur = String(g.no) === curStage;
+      const prev = all[i - 1], pn = prev ? inStage(prev).length : 0, fill = prev ? Math.round((pn ? nDone(prev) / pn : 0) * 100) : 0;
+      return `<div class="${done ? "done" : cur ? "cur" : ""}" style="--f:${fill}%"><i>${done ? "✓" : esc(g.no)}</i><span>${esc(g.name)}${cur ? `<small>${d} of ${n} steps done</small>` : ""}</span></div>`;
+    }).join("");
     return `<button class="link plback" data-pfback="1">← All files</button>
-      <div class="card plhd"><div class="plhdtop"><div class="plttl"><h2>Plot ${esc(f.plotNo)}</h2>${f.size ? `<span class="tag">${esc(f.size)} marla</span>` : ""}${badge(st)}${f.test ? '<span class="tag yel">TEST</span>' : ""}</div>
-        <div class="plbtns"><button class="btnt" data-pfcall="1">📞 Call</button><a class="btnt" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}">💬 WhatsApp</a>${RB.canEdit("plot") ? '<button class="btnt" data-pfedit="1">Edit details</button>' : ""}${f.test && RB.isOwner() ? '<button class="btnt" data-pfdel="1">🗑 Delete test file</button>' : ""}</div></div>
-        <div class="sub">${s ? esc("Stage " + s.stage + " · " + stageOf(s.stage).name + " · Step " + s.id + " " + s.title) : st === "build" ? "All steps done · construction started" : ""}</div>
-        <div class="plflds">${fld("Plot owner", esc(f.name || "—"))}${fld("WhatsApp number", phone(f.wa))}${fld("Second SIM", f.sim2 ? phone(f.sim2) : "—")}${fld("CNIC number", cnic(f.cnic))}
-          ${fld("Address", esc(f.address || "—"), "w2")}${fld("Attorney", esc(f.attorney || "—"))}${fld("File opened", f.openedAt ? RB.fmtDay(f.openedAt) + " · " + pl(days(f.openedAt, now), "day") + " ago" : "—")}</div>
-        <div class="plstages">${(x.stages || []).map((g) => `<div class="${String(g.no) === curStage ? "cur" : stageDone(g) ? "done" : ""}"><i></i><span>${esc(g.no + " " + g.name)}</span></div>`).join("")}</div>
-        ${t ? `<div class="plnow">Now with <b>${esc(s ? s.role : "")} · ${withName(t)}</b><span>Due <b>${t.due ? RB.fmtDay(t.due) : "—"}</b></span> ${dueText(t, now)}</div>` : ""}</div>`;
+      <div class="card plhd"><div class="plcc"><div class="plav" aria-hidden="true">${esc((f.name || "?").trim().charAt(0).toUpperCase())}</div>
+        <div class="w"><div class="plttl"><h2>Plot ${esc(f.plotNo)}</h2>${f.size ? `<span class="tag">${esc(f.size)} marla</span>` : ""}${badge(st)}${f.test ? '<span class="tag yel">TEST</span>' : ""}<b class="plnm">${esc(f.name || "—")}</b></div>
+          <div class="plfacts">Plot owner · ${facts.join(" · ")}</div></div>
+        <div class="plibs">${ib('data-pfcall="1"', "📞", "Call")}<a class="plib" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}"><i aria-hidden="true">💬</i>WhatsApp</a>${RB.canEdit("plot") ? ib('data-pfedit="1"', "✏️", "Edit") : ""}${f.test && RB.isOwner() ? ib('data-pfdel="1"', "🗑", "Delete test") : ""}</div></div>
+        ${t ? `<div class="plnow">Now with <b>${esc(s ? s.role : "")} · ${withName(t)}</b><span>Due <b>${t.due ? RB.fmtDay(t.due) : "—"}</b></span> ${dueText(t, now)}</div>` : ""}</div>
+      <div class="card plstcard"><div class="plstages">${stages}</div></div>`;
   }
 
   /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
@@ -197,10 +206,12 @@
   }
 
   // ------------------------------------------------------------------ actions
+  // Live: a new message (phone or web) moves the task's lastMsgAt; the task list is watched, so the Timeline reloads then.
   async function loadMsgs(tasks) {
-    const need = tasks.filter((t) => !M[t.id]);
+    const need = tasks.filter((t) => !M[t.id] || (t.lastMsgAt || 0) > (MA[t.id] || 0));
     if (!need.length) return;
-    await Promise.all(need.map((t) => RB.Store.msgs(t.id).then((m) => (M[t.id] = m)).catch(() => (M[t.id] = []))));
+    need.forEach((t) => (MA[t.id] = t.lastMsgAt || 0));
+    await Promise.all(need.map((t) => RB.Store.msgs(t.id).then((m) => (M[t.id] = m)).catch(() => (M[t.id] = M[t.id] || []))));
     RB.render();
   }
   const fileNow = () => (D.plot || []).find((f) => f.id === S.pfFile);

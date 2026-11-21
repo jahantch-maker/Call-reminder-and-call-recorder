@@ -16,7 +16,30 @@
     else if (sec === "app" || sec === "meetings") S.view = S.views[sec];
     RB.render(); const c = document.getElementById("content"); if (c) c.scrollTop = 0;
   };
-  RB.ready = () => { const a = RB.allowed(); S.sec = a[0] || "docs"; S.view = S.views[S.sec] || "people"; RB.render(); };
+  RB.ready = () => {
+    const a = RB.allowed(); S.sec = a[0] || "docs"; S.view = S.views[S.sec] || "people";
+    const back = restore();
+    RB.render();
+    // Back to the same scroll spot; data that arrives a moment later can make the page taller, so try again then.
+    if (back) [0, 400, 1200].forEach((ms) => setTimeout(() => { const c = document.getElementById("content"); if (c) c.scrollTop = back.top; window.scrollTo(0, back.wy || 0); }, ms));
+  };
+
+  // A refresh lands where you were: section, tab, open item and scroll spot are kept for this browser tab only.
+  const KEEP = "rb_place";
+  const plain = (v) => v === null || ["string", "number", "boolean"].includes(typeof v) || ((Array.isArray(v) || (v && v.constructor === Object)) && Object.values(v).every(plain));
+  window.addEventListener("pagehide", () => {
+    if (!S.sec) return;
+    const st = {}; Object.keys(S).forEach((k) => { if (plain(S[k])) st[k] = S[k]; });
+    const c = document.getElementById("content");
+    try { sessionStorage.setItem(KEEP, JSON.stringify({ S: st, top: c ? c.scrollTop : 0, wy: window.scrollY })); } catch (e) { /* remembering is optional */ }
+  });
+  function restore() {
+    let v = null;
+    try { v = JSON.parse(sessionStorage.getItem(KEEP) || "null"); sessionStorage.removeItem(KEEP); } catch (e) { v = null; }
+    if (!v || !v.S || !RB.allowed().includes(v.S.sec)) return null;
+    Object.keys(v.S).forEach((k) => { if (!(k in S) || plain(S[k])) S[k] = v.S[k]; });
+    return v;
+  }
 
   const waiting = () => D.members.filter((m) => m.status === "pending");
   RB.waiting = waiting;
