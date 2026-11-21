@@ -162,10 +162,21 @@ object TeamSync {
             val recv = TeamLinks.map(c, "recv")
             val recvFu = TeamLinks.map(c, "recvFu")
             val given = TeamLinks.map(c, "given")
+            // Plot files: staff never open the New plot file screen, so the SOP is read here once a plot step reaches the phone.
+            if (PlotFiles.sop.value == null && tasks.any { it.plot && it.toUid == me }) TeamRepo.scope.launch { PlotFiles.loadSop() }
             for (t in tasks) {
                 val before = last[t.id]
                 // Plot files: the step's due time follows the doer's own working hours and off day.
                 if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.createdAt))
+                // Plot files: CC on this step (SOP Notify columns): one notification for Started, Late and Done.
+                PlotUi.ccStatus(t, me, System.currentTimeMillis())?.let { st ->
+                    val told = TeamLinks.set(c, "ccTold")
+                    if (told.add("${t.id}:$st")) {
+                        TeamLinks.putSet(c, "ccTold", told)
+                        notify(c, "cc:${t.id}", "👁 Plot ${t.plotNo} · Step ${t.step.substringAfter('.')} · $st", "${t.title}\n${t.toFirst}", mine = null, taskId = t.id,
+                            kind = NotifKind.FOLLOW_UPS, open = Open.TIMELINE)
+                    }
+                }
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
                 // ✓ Done, ➜ next part: your part was received and the task went on to someone else. Told once;
@@ -394,6 +405,18 @@ object TeamSync {
                 chaseOnce += "pick:${t.id}"
                 notify(c, "pick:${t.id}", "📅 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}",
                     mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+            }
+        }
+        // Plot files: a step waiting for the plot owner whose SOP says "every working day": one reminder a working day, in working hours.
+        for (t in tasks.filter { it.toUid == me && it.plot && it.open && it.waitAt > 0 }) {
+            val every = PlotFiles.sop.value?.step(t.step)?.reminder.orEmpty()
+            if (!Regex("every|working day|daily", RegexOption.IGNORE_CASE).containsMatchIn(every)) continue
+            val k = "pw:${t.id}"
+            val last = chase[k]?.toLongOrNull() ?: t.waitAt
+            if (inHours && now - last >= 20 * 3600_000L) {
+                chase[k] = now.toString()
+                notify(c, "pw:${t.id}", "⏳ Plot ${t.plotNo} is still waiting for the plot owner · 📞 Call", "${t.title}\nStep ${t.step}",
+                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.CARD, call = t.ownerWa)
             }
         }
         val live = tasks.filter { it.open }.map { it.id }.toSet()

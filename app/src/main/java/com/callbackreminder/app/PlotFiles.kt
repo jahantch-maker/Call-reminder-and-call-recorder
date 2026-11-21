@@ -85,7 +85,7 @@ object PlotFiles {
     data class Step(
         val id: String, val stage: String, val role: String, val title: String, val timer: String, val days: Int?,
         val next: List<String> = emptyList(), val recv: String = "", val returnTo: String = "",
-        val canPause: Boolean = false, val pauseStarts: String = "", val doneWithoutAll: Boolean = false,
+        val canPause: Boolean = false, val pauseStarts: String = "", val reminder: String = "", val doneWithoutAll: Boolean = false,
         val call: List<String> = emptyList(), val wa: List<String> = emptyList(), val waMsg: String = "",
         val forms: List<String> = emptyList(), val wrongShort: String = "", val wrongShortUr: String = "",
         val lines: List<Line> = emptyList(),
@@ -125,7 +125,7 @@ object PlotFiles {
             Step(
                 id = id, stage = str(m["stage"]), role = str(m["role"]), title = str(m["title"]), timer = str(m["timer"]),
                 days = (m["days"] as? Number)?.toInt(), next = strs(m["next"]), recv = str(m["recv"]), returnTo = str(m["returnTo"]),
-                canPause = m["canPause"] == true, pauseStarts = str(m["pauseStarts"]), doneWithoutAll = m["doneWithoutAll"] == true,
+                canPause = m["canPause"] == true, pauseStarts = str(m["pauseStarts"]), reminder = str(m["reminder"]), doneWithoutAll = m["doneWithoutAll"] == true,
                 call = strs(m["call"]), wa = strs(m["wa"]), waMsg = str(m["waMsg"]), forms = strs(m["forms"]),
                 wrongShort = str(m["wrongShort"]), wrongShortUr = str(m["wrongShortUr"]),
                 lines = (m["checklist"] as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }.map { c ->

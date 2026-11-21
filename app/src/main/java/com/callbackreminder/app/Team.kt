@@ -178,6 +178,8 @@ data class TeamTask(
     val ownerSim2: String = "",
     /** Picks made in earlier steps of the file ("2.2·3" -> "3b"), copied on by the cloud for "Shown only if" lines. */
     val picks: Map<String, String> = emptyMap(),
+    /** Plot files: who is CC on this step and for what (uid -> "start,done,late"), written by the cloud from the SOP's Notify columns. */
+    val cc: Map<String, String> = emptyMap(),
 ) {
     /** [uid] has seen [m] on the Timeline (blue ticks). */
     fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
@@ -1589,5 +1591,6 @@ object TeamRepo {
         ownerWa = s.getString("ownerWa").orEmpty(),
         ownerSim2 = s.getString("ownerSim2").orEmpty(),
         picks = (s.get("picks") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to v.toString() } }?.toMap() ?: emptyMap(),
+        cc = (s.get("cc") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to v.toString() } }?.toMap() ?: emptyMap(),
     )
 }

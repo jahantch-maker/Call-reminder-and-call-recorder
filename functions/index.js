@@ -81,7 +81,13 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
 
   /** Creates one step task with a fixed id; an id that already exists means it was made already. */
   async function give(id, s, to, extra) {
-    const viewers = Array.from(new Set([from.uid, to.uid, ...(to.managers || []), ...(from.managers || [])].filter(Boolean)));
+    // "Notify on start / done / late" of the SOP: those people see the step in their Follow-ups (cc = { uid: "start,done,late" }).
+    const cc = {};
+    Object.entries(s.notify || {}).forEach(([when, roles]) => (roles || []).forEach((role) => {
+      const m = doerOf(role);
+      if (m && m.uid !== to.uid) cc[m.uid] = Array.from(new Set([...(cc[m.uid] ? cc[m.uid].split(",") : []), when])).join(",");
+    }));
+    const viewers = Array.from(new Set([from.uid, to.uid, ...(to.managers || []), ...(from.managers || []), ...Object.keys(cc)].filter(Boolean)));
     const paused = s.canPause && /created/i.test(s.pauseStarts || "");
     const due = dueOf(s.timer, s.days, now);
     const doc = {
@@ -93,7 +99,7 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
       events: [{ at: now, text: extra.event }],
       plot: true, plotId: after.plotId, plotNo: after.plotNo || file.plotNo || "", step: s.id, role: s.role, stage: s.stage || "",
       test: !!file.test, ticks: {}, waitAt: paused ? now : 0, timer: s.timer || "", days: s.days === undefined ? null : s.days, dueSet: false,
-      fromRole: after.role || "", ownerName: file.name || "", ownerWa: file.wa || "", ownerSim2: file.sim2 || "", picks,
+      cc, fromRole: after.role || "", ownerName: file.name || "", ownerWa: file.wa || "", ownerSim2: file.sim2 || "", picks,
       ...(extra.fields || {}),
     };
     try { await teamRef.collection("tasks").doc(id).create(doc); }

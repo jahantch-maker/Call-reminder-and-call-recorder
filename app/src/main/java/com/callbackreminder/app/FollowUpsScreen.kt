@@ -547,6 +547,16 @@ private fun FollowUpsAll(
                         Box(Modifier.animateItem()) { sched.Card(t, rowPos(i, noTimeHere.size)) }
                     }
                 }
+                // Plot files: steps you are CC on (start / done / late), read-only.
+                val ccRows = if (needKind != null || personName != null || starredOnly) emptyList() else teamTasks.mapNotNull { t ->
+                    TeamRepo.uid?.let { me -> PlotUi.ccStatus(t, me, now) }?.let { t to it }
+                }.sortedBy { it.first.due }
+                if (ccRows.isNotEmpty()) {
+                    item(key = "group-plotcc") { Box(Modifier.animateItem()) { DayHeader("PLOT FILES · CC", "${ccRows.size}", cs.primary) } }
+                    itemsIndexed(ccRows, key = { _, r -> "cc-${r.first.id}" }) { i, r ->
+                        Box(Modifier.animateItem()) { PlotCcCard(r.first, r.second, now, rowPos(i, ccRows.size)) }
+                    }
+                }
                 block("waiting", "WAITING ON YOU", "${pinned.size}", cs.error, pinned)
                 if (all.isEmpty() && noTimeHere.isEmpty()) {
                     item(key = "empty") {
