@@ -106,12 +106,27 @@
     const fld = (l, v, cls) => `<div class="${cls || ""}"><span>${l}</span><b>${v}</b></div>`;
     return `<button class="link plback" data-pfback="1">← All files</button>
       <div class="card plhd"><div class="plhdtop"><div class="plttl"><h2>Plot ${esc(f.plotNo)}</h2>${f.size ? `<span class="tag">${esc(f.size)} marla</span>` : ""}${badge(st)}${f.test ? '<span class="tag yel">TEST</span>' : ""}</div>
-        <div class="plbtns"><button class="btnt" data-pfcall="1">📞 Call</button><a class="btnt" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}">💬 WhatsApp</a>${RB.canEdit("plot") ? '<button class="btnt" data-pfedit="1">Edit details</button>' : ""}</div></div>
+        <div class="plbtns"><button class="btnt" data-pfcall="1">📞 Call</button><a class="btnt" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}">💬 WhatsApp</a>${RB.canEdit("plot") ? '<button class="btnt" data-pfedit="1">Edit details</button>' : ""}${f.test && RB.isOwner() ? '<button class="btnt" data-pfdel="1">🗑 Delete test file</button>' : ""}</div></div>
         <div class="sub">${s ? esc("Stage " + s.stage + " · " + stageOf(s.stage).name + " · Step " + s.id + " " + s.title) : st === "build" ? "All steps done · construction started" : ""}</div>
         <div class="plflds">${fld("Plot owner", esc(f.name || "—"))}${fld("WhatsApp number", phone(f.wa))}${fld("Second SIM", f.sim2 ? phone(f.sim2) : "—")}${fld("CNIC number", cnic(f.cnic))}
           ${fld("Address", esc(f.address || "—"), "w2")}${fld("Attorney", esc(f.attorney || "—"))}${fld("File opened", f.openedAt ? RB.fmtDay(f.openedAt) + " · " + pl(days(f.openedAt, now), "day") + " ago" : "—")}</div>
         <div class="plstages">${(x.stages || []).map((g) => `<div class="${String(g.no) === curStage ? "cur" : stageDone(g) ? "done" : ""}"><i></i><span>${esc(g.no + " " + g.name)}</span></div>`).join("")}</div>
         ${t ? `<div class="plnow">Now with <b>${esc(s ? s.role : "")} · ${withName(t)}</b><span>Due <b>${t.due ? RB.fmtDay(t.due) : "—"}</b></span> ${dueText(t, now)}</div>` : ""}</div>`;
+  }
+
+  /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
+  function delTest(f) {
+    if (!f.test || !RB.isOwner()) return;
+    RB.confirm("Delete test file Plot " + esc(f.plotNo) + " and all its tasks? They also disappear from every phone. This cannot be undone.", "Delete", async () => {
+      const ts = tasksOf(f.id);
+      try {
+        for (const t of ts) await RB.Store.del("tasks", t.id);
+        await RB.Store.del("plotfiles", f.id);
+        if (RB.DEMO) D.plotTasks = D.plotTasks.filter((t) => t.plotId !== f.id);
+        await RB.log("Plot files: test file " + f.plotNo + " deleted");
+        S.pfFile = null; RB.toast("Test file deleted");
+      } catch (e) { RB.toast("Could not delete: " + (e && e.message ? e.message : e)); }
+    }, true);
   }
 
   /** One step row (and its checklist + Timeline when opened in place). */
@@ -337,6 +352,7 @@
       const f = fileNow(); if (!f || !X()) return;
       const c = root.querySelector("[data-pfcall]"); if (c) c.onclick = () => callPick(f);
       const ed = root.querySelector("[data-pfedit]"); if (ed) ed.onclick = () => editDetails(f);
+      const dl = root.querySelector("[data-pfdel]"); if (dl) dl.onclick = () => delTest(f);
       bindNote(root, f); bindVoice(root);
       const need = S.pfTab === "timeline" ? tasksOf(f.id) : S.pfOpen && taskOf(f.id, S.pfOpen) ? [taskOf(f.id, S.pfOpen)] : [];
       loadMsgs(need);
