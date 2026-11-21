@@ -122,20 +122,22 @@
   // ------------------------------------------------------------------ what changed (against the live version)
   const FIELDS = [["role", "Who does it"], ["title", "Title"], ["stage", "Stage"], ["limit", "Time allowed"], ["days", "Days"], ["next", "Next step(s)"], ["recv", "Receive / Return"], ["returnTo", "Return goes to"], ["canPause", "Can pause"], ["doneWithoutAll", "Done without all ticks"], ["ask", "Who to ask"], ["notify", "Notify"], ["call", "Call list"], ["wa", "WhatsApp list"], ["forms", "Forms used"]];
   const TEXTS = [["checklist", "Checklist"], ["waMsg", "WhatsApp message"], ["wrong", "If something goes wrong"], ["wrongShort", "Short 'If something goes wrong'"], ["starts", "Starts when"]];
-  const show = (v) => (Array.isArray(v) ? v.join(" · ") || "none" : v && typeof v === "object" ? JSON.stringify(v) : v === null || v === undefined || v === "" ? "none" : String(v));
+  /** JSON with keys sorted: Firestore gives keys back in another order, which must not count as a change. */
+  const same = (v) => JSON.stringify(v === undefined ? "" : v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, y) => ((o[y] = x[y]), o), {}) : x));
+  const show = (v) => (Array.isArray(v) ? v.join(" · ") || "none" : v && typeof v === "object" ? Object.entries(v).filter(([, x]) => !Array.isArray(x) || x.length).map(([k, x]) => k + ": " + x).join("; ") || "none" : v === null || v === undefined || v === "" ? "none" : String(v));
   SYNC.diff = (draft) => {
     const live = (D.plotSop && D.plotSop.steps) || [], old = {}, now = {}, ch = [];
     live.forEach((s) => (old[s.id] = s)); draft.steps.forEach((s) => (now[s.id] = s));
     draft.steps.forEach((s) => {
       const o = old[s.id];
       if (!o) { ch.push({ kind: "new", id: s.id, text: "New step: " + s.title }); return; }
-      const f = FIELDS.filter(([k]) => show(o[k]) !== show(s[k])).map(([k, l]) => l + ": " + show(o[k]) + " → " + show(s[k]))
-        .concat(TEXTS.filter(([k]) => JSON.stringify(o[k] || "") !== JSON.stringify(s[k] || "")).map(([, l]) => l + " changed"));
+      const f = FIELDS.filter(([k]) => same(o[k]) !== same(s[k])).map(([k, l]) => l + ": " + show(o[k]) + " → " + show(s[k]))
+        .concat(TEXTS.filter(([k]) => same(o[k] || "") !== same(s[k] || "")).map(([, l]) => l + " changed"));
       if (f.length) ch.push({ kind: "chg", id: s.id, text: s.title + " · " + f.join("; ") });
     });
     live.forEach((o) => { if (!now[o.id]) ch.push({ kind: "gone", id: o.id, text: "Step removed: " + o.title }); });
-    if (D.plotSop && JSON.stringify(D.plotSop.flow || []) !== JSON.stringify(draft.flow)) ch.push({ kind: "chg", id: "Flow", text: "Flow tab changed" });
-    if (D.plotSop && JSON.stringify(D.plotSop.stages || []) !== JSON.stringify(draft.stages)) ch.push({ kind: "chg", id: "Stages", text: "Stage names changed" });
+    if (D.plotSop && same(D.plotSop.flow || []) !== same(draft.flow)) ch.push({ kind: "chg", id: "Flow", text: "Flow tab changed" });
+    if (D.plotSop && same(D.plotSop.stages || []) !== same(draft.stages)) ch.push({ kind: "chg", id: "Stages", text: "Stage names changed" });
     return ch;
   };
 
