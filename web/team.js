@@ -349,7 +349,7 @@
       ${row("Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", stag("portal.meetings"), lv("meetings", NVE))}
       ${row("Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments, approving joins). The People list follows “How far”.", stag("portal.team", "portal.teamTabs"), lv("team", NVE),
         e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, teamOn.includes(v))).join("") + lock("Access · Offboard (owners only)")) : "")}
-      ${row("Plot files", "View: sees plot files and their steps. Edit: opens files, adds notes and items, uses Done as a backup. Rules and timing is for owners. Money is a separate switch below (See money details).", stag("portal.plot"), lv("plot", NVE))}
+      ${row("Plot files", "View: sees every plot file and its steps. Edit: also writes notes in a step. Steps are done only on the phone.", stag("portal.plot"), lv("plot", NVE))}
       ${row("Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", stag("portal.docs"), lv("docs", NVE))}
       ${row("Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", stag("portal.settings", "portal.settingsTabs"), lv("settings", NVE),
         e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, setOn.includes(v))).join("") + lock("Check for updates · Appearance (always on)")) : "")}
