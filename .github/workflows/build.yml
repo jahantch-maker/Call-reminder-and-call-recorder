@@ -43,6 +43,12 @@ jobs:
       - name: Build APK
         run: gradle assembleRelease --stacktrace
 
+      # The fingerprint is public information. It must match the one of the key in the project's private folder.
+      - name: Show who signed the app
+        run: |
+          AS=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$AS" verify --print-certs app/build/outputs/apk/full/release/app-full-release.apk | grep -E "SHA-256|Signer #1 certificate DN" || echo "APK is unsigned"
+
       - name: Screen tests at every display size
         if: github.event_name == 'pull_request'
         run: gradle testFullDebugUnitTest --stacktrace
