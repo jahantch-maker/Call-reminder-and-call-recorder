@@ -5,3 +5,8 @@ build/
 local.properties
 .DS_Store
 functions/node_modules/
+
+# Signing keys never go in the code
+*.jks
+*.keystore
+keystore/

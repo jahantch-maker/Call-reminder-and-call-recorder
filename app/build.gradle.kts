@@ -29,27 +29,28 @@ android {
         }
     }
 
-    // A fixed test key so every new build installs as an update over the previous one.
-    // (A separate private key will be created before publishing to the Play Store.)
+    // The signing key is NOT in the code. The build gets it from GitHub secrets (KEYSTORE_PATH / KEYSTORE_PASSWORD).
+    // Without it (a fork, or a plain local build) the debug build uses Android's own debug key and release stays unsigned.
+    val keystore = System.getenv("KEYSTORE_PATH")?.let { file(it) }?.takeIf { it.exists() }
     signingConfigs {
-        create("shared") {
-            storeFile = file("../keystore/callback-test.jks")
-            storePassword = "callback123"
-            keyAlias = "callback"
-            keyPassword = "callback123"
+        if (keystore != null) create("shared") {
+            storeFile = keystore
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = "rafiq"
+            keyPassword = System.getenv("KEYSTORE_PASSWORD")
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("shared")
+            signingConfigs.findByName("shared")?.let { signingConfig = it }
         }
         // The build people install. Release (not debug) so animations run at full speed:
         // debug builds skip Android's and R8's optimizations and visibly stutter.
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("shared")
+            signingConfigs.findByName("shared")?.let { signingConfig = it }
         }
     }
 
