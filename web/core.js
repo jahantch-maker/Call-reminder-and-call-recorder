@@ -253,13 +253,12 @@
   RB.sync = async function () {
     const writes = [];
     D.seats.forEach((s) => {
-      // An empty or invited seat keeps its permissions on itself, so the person opens the portal the moment they sign in.
-      if (s.status !== "filled" || !s.uid) {
-        if (s.role === "owner" || !s.gmail) return;
-        const e = RB.effective(s), perms = { app: e.app, portal: e.portal };
-        if (JSON.stringify(s.perms) !== JSON.stringify(perms)) writes.push(RB.Store.put("seats", s.id, { perms }, true).catch((err) => console.warn("sync seat", s.id, err)));
-        return;
+      // Every seat keeps its permissions on itself, so whoever signs in (phone or web) gets them at once.
+      if (s.role !== "owner" && s.gmail) {
+        const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal };
+        if (JSON.stringify(s.perms) !== JSON.stringify(p0)) writes.push(RB.Store.put("seats", s.id, { perms: p0 }, true).catch((err) => console.warn("sync seat", s.id, err)));
       }
+      if (s.status !== "filled" || !s.uid) return;
       // Only an owner may write an owner's row; a Team editor skips it (the server would refuse the whole save otherwise).
       if (s.role === "owner" && !RB.isOwner()) return;
       const e = RB.effective(s), h0 = RB.headOf(s), head = h0 && h0.virtual ? RB.boardOwners().find((o) => o.uid) : h0;
@@ -353,11 +352,24 @@
         const ms = await teamRef.collection("members").doc(uid).get();
         D.me = ms.exists ? Object.assign({ uid }, ms.data()) : null;
         if (!D.me) return joinPage(u, t);
+        // Signed in on the phone first: the member row has no portal access yet. Copy it from the seat of this Gmail.
+        const mail = (u.email || "").trim().toLowerCase();
+        if (D.me.status === "active" && D.me.role !== "owner" && D.me.seatId === mail) {
+          try {
+            const sp = (await teamRef.collection("seats").doc(mail).get()).data();
+            if (sp && sp.perms && JSON.stringify(sp.perms) !== JSON.stringify(D.me.perms || null)) {
+              await teamRef.collection("members").doc(uid).update({ perms: sp.perms });
+              D.me.perms = sp.perms;
+            }
+          } catch (e) { console.warn("self perms", e); }
+        }
         if (D.me.status === "pending") return RB.message("Your request is waiting.", "An owner will approve it. Come back after that.<br>Signed in as " + RB.esc(u.email) + ".", true);
         if (!RB.isOwner() && !(D.me && D.me.status === "active" && D.me.perms && D.me.perms.portal && RB.SECTIONS.some(([k]) => D.me.perms.portal[k] && D.me.perms.portal[k] !== "none"))) {
           return RB.message("You don't have access to the portal.", "Ask an owner. The phone app still works. Signed in as " + RB.esc(u.email) + ".", true);
         }
         listen(); RB.ready();
+        // An owner or Team editor opening the portal also keeps every seat's permissions up to date.
+        if (RB.isOwner() || RB.canEdit("team")) setTimeout(() => RB.sync().catch(() => {}), 4000);
       } catch (e) { RB.message("Couldn't open the portal.", RB.esc(e.message || e) + "<br>If this is the first time, the new Firestore rules may not be pasted yet.", true); }
     });
   };
