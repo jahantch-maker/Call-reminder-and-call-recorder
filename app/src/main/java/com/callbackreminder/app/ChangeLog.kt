@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.56.3", "22 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Timeline: a message you send now shows its ticks as soon as it reaches the server, not only after your next message",
+                "Timeline: a message stuck on the clock now sends by itself after a few seconds, without closing the app",
+            ),
+        ),
+        Entry(
             "0.56.2", "21 Nov",
             new = emptyList(),
             fixed = listOf(
