@@ -164,6 +164,8 @@ object TeamSync {
             val given = TeamLinks.map(c, "given")
             for (t in tasks) {
                 val before = last[t.id]
+                // Plot files: the step's due time follows the doer's own working hours and off day.
+                if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.createdAt))
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
                 if (t.fromUid == me) giverSide(c, t, before, given)
                 // ✓ Done, ➜ next part: your part was received and the task went on to someone else. Told once;

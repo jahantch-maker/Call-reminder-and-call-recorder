@@ -157,6 +157,10 @@ data class TeamTask(
     val meeting: Boolean = false,
     /** Plot files: one step of a plot file (its rules come from the published SOP, see [PlotFiles]). */
     val plot: Boolean = false,
+    /** Plot files: the step's timer and days (from the SOP), and whether the doer's phone has set its due time yet. */
+    val timer: String = "",
+    val days: Int? = null,
+    val dueSet: Boolean = true,
 ) {
     /** [uid] has seen [m] on the Timeline (blue ticks). */
     fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
@@ -987,6 +991,9 @@ object TeamRepo {
 
     private val seenWritten = mutableMapOf<String, Long>()
 
+    /** Plot files: the step's due time, set on the doer's phone from his own working hours. */
+    fun setPlotDue(t: TeamTask, due: Long) = update(t, mapOf("due" to due, "firstDue" to due, "deadline" to due, "dueSet" to true), null)
+
     fun markSeen(t: TeamTask) {
         if (t.seenAt > 0L || (t.status != Team.SENT && t.status != Team.DATED)) return
         val now = System.currentTimeMillis()
@@ -1540,5 +1547,8 @@ object TeamRepo {
         played = (s.get("played") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to strings(v) } }?.toMap() ?: emptyMap(),
         meeting = s.getBoolean("meeting") ?: false,
         plot = s.getBoolean("plot") ?: false,
+        timer = s.getString("timer").orEmpty(),
+        days = s.getLong("days")?.toInt(),
+        dueSet = s.getBoolean("dueSet") ?: true,
     )
 }

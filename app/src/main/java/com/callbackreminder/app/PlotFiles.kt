@@ -118,24 +118,41 @@ object PlotFiles {
     fun doerOf(role: String, me: TeamMember, members: List<TeamMember>): TeamMember? =
         if (me.designation == role) me else members.firstOrNull { it.active && it.designation == role }
 
-    /** The end of the working day the step is due: today for "Same visit" / "Same day", else after its days. */
-    fun dueOf(c: Context, s: Step, from: Long): Long {
+    /**
+     * When a step is due (his rules, 21 Nov), from his own working hours and weekly off day. A task that comes outside
+     * working hours counts from the start of the next working day. Same visit: the end of that working day. Same day:
+     * the end of that working day when it comes before 1 PM, else 1 PM the next working day. N days: the same clock
+     * time N working days later.
+     */
+    fun dueOf(c: Context, timer: String, days: Int?, from: Long): Long {
         val z = ZoneId.systemDefault()
+        fun win(d: java.time.LocalDate): Pair<Long, Long>? = when {
+            OffDays.isOff(d) -> null
+            WorkHours.isSet(c) -> WorkHours.window(c, d)
+            else -> CalendarData.at(d, 11 * 60) to CalendarData.at(d, 21 * 60)   // the office's 11 AM - 9 PM, as Team uses
+        }
+        fun nextWorkDay(d: java.time.LocalDate): java.time.LocalDate {
+            var x = d.plusDays(1)
+            var guard = 0
+            while (win(x) == null && guard++ < 14) x = x.plusDays(1)
+            return x
+        }
         var day = Instant.ofEpochMilli(from).atZone(z).toLocalDate()
-        val working = s.timer.contains("working", ignoreCase = true)
-        var n = s.days ?: 0
-        while (n > 0) {
-            day = day.plusDays(1)
-            if (!working || !OffDays.isOff(day)) n--
+        var start = from
+        val w = win(day)
+        if (w == null || from >= w.second) {
+            day = nextWorkDay(day)
+            start = win(day)?.first ?: from
+        } else if (from < w.first) start = w.first
+        val n = days ?: 0
+        if (n > 0) {
+            val clock = Instant.ofEpochMilli(start).atZone(z).toLocalTime()
+            repeat(n) { day = nextWorkDay(day) }
+            return day.atTime(clock).atZone(z).toInstant().toEpochMilli()
         }
-        fun endOf(d: java.time.LocalDate) = WorkHours.window(c, d)?.second ?: CalendarData.at(d, if (WorkHours.isSet(c)) WorkHours.end(c) else 21 * 60)
-        var end = endOf(day)
-        // Saved after today's working hours: it is due at the end of the next working day.
-        while (end <= from) {
-            day = day.plusDays(1)
-            if (!OffDays.isOff(day)) end = endOf(day)
-        }
-        return end
+        if (timer.contains("same day", ignoreCase = true) && start >= CalendarData.at(day, 13 * 60))
+            return CalendarData.at(nextWorkDay(day), 13 * 60)
+        return win(day)?.second ?: start
     }
 
     /** The file already opened for this plot number (test files only clash with test files), or null. */
@@ -190,7 +207,8 @@ object PlotFiles {
             ) + (if (testRoles != null) mapOf("testRoles" to testRoles.toList()) else emptyMap()),
         )
         for ((s, to) in doers) {
-            val due = dueOf(c, s, now)
+            // A first guess from this phone; the doer's phone sets it again from his own working hours (TeamSync).
+            val due = dueOf(c, s.timer, s.days, now)
             val viewers = (listOf(me.uid, to.uid) + to.managers + me.managers).distinct()
             batch.set(
                 t.collection("tasks").document(), mapOf(
@@ -212,6 +230,7 @@ object PlotFiles {
                     "events" to listOf(mapOf("at" to now, "text" to "Plot file opened by ${me.first}")),
                     "plot" to true, "plotId" to file.id, "plotNo" to f.plotNo.trim(), "step" to s.id, "role" to s.role,
                     "test" to test, "ticks" to emptyMap<String, Any>(), "waitAt" to 0L,
+                    "timer" to s.timer, "days" to s.days, "dueSet" to false,
                 ),
             )
         }
