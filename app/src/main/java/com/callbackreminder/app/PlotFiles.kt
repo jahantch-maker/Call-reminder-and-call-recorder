@@ -79,11 +79,31 @@ import java.time.ZoneId
  *   tasks/{id}: one normal team task per step, plus plot: true, plotId, plotNo, step, role, test, ticks {}, waitAt 0.
  */
 object PlotFiles {
-    data class Step(val id: String, val role: String, val title: String, val timer: String, val days: Int?)
+    /** One checklist line: Tick, Pick one (its Option lines follow it), Option or Number box. */
+    data class Line(val no: String, val type: String, val en: String, val ur: String, val onlyIf: String, val detail: String, val detailUr: String)
 
-    data class Sop(val roles: List<String>, val steps: List<Step>, val opened: Set<String>) {
+    data class Step(
+        val id: String, val stage: String, val role: String, val title: String, val timer: String, val days: Int?,
+        val next: List<String> = emptyList(), val recv: String = "", val returnTo: String = "",
+        val canPause: Boolean = false, val pauseStarts: String = "", val doneWithoutAll: Boolean = false,
+        val call: List<String> = emptyList(), val wa: List<String> = emptyList(), val waMsg: String = "",
+        val forms: List<String> = emptyList(), val wrongShort: String = "", val wrongShortUr: String = "",
+        val lines: List<Line> = emptyList(),
+    ) {
+        /** "1.8" -> 8: the step's number inside its stage. */
+        val noInStage: String get() = id.substringAfter('.')
+        val canReturn: Boolean get() = recv.contains("Return", ignoreCase = true) && returnTo.isNotBlank()
+    }
+
+    data class Form(val code: String, val name: String, val link: String)
+
+    data class Sop(
+        val roles: List<String>, val steps: List<Step>, val opened: Set<String>,
+        val stages: Map<String, String> = emptyMap(), val forms: List<Form> = emptyList(),
+    ) {
         /** The steps no Flow row opens: they start when a new plot file is saved (Step 1.1). */
         val first: List<Step> get() = steps.filter { it.id !in opened }
+        fun step(id: String): Step? = steps.firstOrNull { it.id == id }
     }
 
     private val _sop = MutableStateFlow<Sop?>(null)
@@ -92,19 +112,33 @@ object PlotFiles {
 
     private fun teamDoc() = TeamRepo.teamId?.let { FirebaseFirestore.getInstance().collection("teams").document(it) }
 
-    /** Reads the published SOP again. Null when there is none (nothing can be opened then). */
+    private fun str(v: Any?) = v?.toString().orEmpty()
+    private fun strs(v: Any?) = (v as? List<*>).orEmpty().mapNotNull { it?.toString()?.takeIf { s -> s.isNotBlank() } }
+
+    /** Reads the published SOP again (kept for the session). Null when there is none (nothing can be opened then). */
     suspend fun loadSop(): Sop? {
         val d = runCatching { teamDoc()?.collection("config")?.document("plotsop")?.get()?.await() }.getOrNull()
         if (d == null || !d.exists()) return _sop.value
         fun list(k: String) = (d.get(k) as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
         val steps = list("steps").mapNotNull { m ->
-            val id = m["id"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            Step(id, m["role"]?.toString().orEmpty(), m["title"]?.toString().orEmpty(), m["timer"]?.toString().orEmpty(), (m["days"] as? Number)?.toInt())
+            val id = str(m["id"]).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            Step(
+                id = id, stage = str(m["stage"]), role = str(m["role"]), title = str(m["title"]), timer = str(m["timer"]),
+                days = (m["days"] as? Number)?.toInt(), next = strs(m["next"]), recv = str(m["recv"]), returnTo = str(m["returnTo"]),
+                canPause = m["canPause"] == true, pauseStarts = str(m["pauseStarts"]), doneWithoutAll = m["doneWithoutAll"] == true,
+                call = strs(m["call"]), wa = strs(m["wa"]), waMsg = str(m["waMsg"]), forms = strs(m["forms"]),
+                wrongShort = str(m["wrongShort"]), wrongShortUr = str(m["wrongShortUr"]),
+                lines = (m["checklist"] as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }.map { c ->
+                    Line(str(c["no"]), str(c["type"]), str(c["en"]), str(c["ur"]), str(c["onlyIf"]), str(c["detail"]), str(c["detailUr"]))
+                },
+            )
         }
         val sop = Sop(
-            roles = list("roles").mapNotNull { it["role"]?.toString()?.takeIf { r -> r.isNotBlank() } },
+            roles = list("roles").mapNotNull { str(it["role"]).takeIf { r -> r.isNotBlank() } },
             steps = steps,
-            opened = list("flow").mapNotNull { it["to"]?.toString() }.toSet(),
+            opened = list("flow").map { str(it["to"]) }.toSet(),
+            stages = list("stages").associate { str(it["no"]) to str(it["name"]) },
+            forms = list("forms").map { Form(str(it["code"]), str(it["name"]), str(it["link"])) },
         )
         _sop.value = sop
         return sop
@@ -230,7 +264,8 @@ object PlotFiles {
                     "events" to listOf(mapOf("at" to now, "text" to "Plot file opened by ${me.first}")),
                     "plot" to true, "plotId" to file.id, "plotNo" to f.plotNo.trim(), "step" to s.id, "role" to s.role,
                     "test" to test, "ticks" to emptyMap<String, Any>(), "waitAt" to 0L,
-                    "timer" to s.timer, "days" to s.days, "dueSet" to false,
+                    "timer" to s.timer, "days" to s.days, "dueSet" to false, "stage" to s.stage, "fromRole" to "",
+                    "ownerName" to f.name.trim(), "ownerWa" to f.wa, "ownerSim2" to f.sim2,
                 ),
             )
         }

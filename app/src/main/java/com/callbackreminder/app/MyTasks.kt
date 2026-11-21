@@ -500,6 +500,13 @@ object MyTaskStore {
             }
             return
         }
+        // Plot files: Done waits for every checklist line (unless the SOP allows it).
+        if (done && !force) PlotUi.blockedFor(appCtx, id)?.let { why ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(appCtx, why, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val now = System.currentTimeMillis()
         val t = old.copy(done = done, doneAt = if (done) now else 0L, events = old.events + TaskEvent(now, if (done) "Done" else "Not done, opened again"))
         save(_items.value.map { if (it.id == id) t else it })

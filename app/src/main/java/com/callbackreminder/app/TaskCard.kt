@@ -115,10 +115,14 @@ fun TaskCard(
     urgent: Boolean = false,
     /** False hides "⏱ No time yet" (a task given to you shows its promise chip instead). */
     noTimeChip: Boolean = true,
+    /** Plot files: the sand card tint (a plot step). */
+    tint: Color? = null,
+    /** Plot files: the opened part starts at the card's left edge (the checklist), not under the text. */
+    panelFromEdge: Boolean = false,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
-    val base = if (urgent && !done) Tones.urgentCard else cs.surface
+    val base = tint ?: if (urgent && !done) Tones.urgentCard else cs.surface
     val bg by animateColorAsState(
         if (expanded) cs.primary.copy(alpha = if (LocalDarkTheme.current) 0.10f else 0.05f).compositeOver(base)
         else base,
@@ -202,7 +206,7 @@ fun TaskCard(
             enter = expandVertically(tween(220)) + fadeIn(tween(220)),
             exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = if (showTick) 52.dp else 12.dp, end = 12.dp, bottom = 10.dp)) {
+            Column(Modifier.fillMaxWidth().padding(start = if (showTick && !panelFromEdge) 52.dp else 12.dp, end = 12.dp, bottom = 10.dp)) {
                 val acts = CardActions(done, if (tickEnabled && !done) onTick else null, onCall, onWhatsApp)
                 CompositionLocalProvider(LocalCardActions provides acts) { expandedContent?.invoke(this) }
             }

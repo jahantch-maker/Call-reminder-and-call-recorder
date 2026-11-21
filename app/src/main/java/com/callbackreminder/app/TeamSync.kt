@@ -240,11 +240,13 @@ object TeamSync {
             t.open -> {
                 if (local == null) {
                     val made = MyTaskStore.add(
-                        title = t.title, note = "", dueAt = 0L, name = "", number = "",
+                        title = t.title, note = "", dueAt = if (t.plot) t.due else 0L, name = "", number = "",
                         starred = t.urgent,
                     )
                     recv[t.id] = made.id.toString()
                 } else {
+                    // Plot files: the step's due time is its time on this phone (Overdue, Next up, the alarm).
+                    if (t.plot && !local.done && t.due > 0L && local.dueAt != t.due) MyTaskStore.setDue(local.id, t.due)
                     if (local.done && t.status == Team.REOPENED) MyTaskStore.setDone(local.id, false)
                     if (urgentOf(before)?.let { it != t.urgent } == true && local.starred != t.urgent) MyTaskStore.setStar(local.id, t.urgent)
                     // His task waits in To schedule until he sets his own reminder (⏰ My reminder): a deadline never
