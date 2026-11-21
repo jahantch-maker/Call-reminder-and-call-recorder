@@ -144,6 +144,9 @@ service cloud.firestore {
         allow update: if signedIn() && resource.data.get('plot', false) == true && portalEdit(t, 'plot')
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMsgAt', 'lastMsgBy', 'lastMsgText', 'nBy', 'nPhoto']);
 
+        // Plot files: only the owner may delete, and only a step task of a test file (the web "Delete test file" button).
+        allow delete: if signedIn() && isActive(t) && isOwner(t) && resource.data.get('plot', false) == true && resource.data.get('test', false) == true;
+
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
         match /msgs/{m} {
