@@ -3,7 +3,7 @@
  */
 (function () {
   "use strict";
-  const RB = (window.RB = { D: { plot: [], plotSop: null, plotSopX: null, plotSopV: [], holidays: null, me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
+  const RB = (window.RB = { D: { plot: [], plotTasks: [], plotSop: null, plotSopX: null, plotSopV: [], holidays: null, me: null, team: null, members: [], seats: [], docs: [], reading: {}, changelog: [], tasks: [], own: {}, reasons: null, cfg: null, meetings: [], desig: null, dossier: {}, days: {} }, S: {}, DEMO: /[?&]demo\b/.test(location.search) });
   const D = RB.D;
   const DAY = 86400000;
   RB.DAY = DAY;
@@ -18,6 +18,7 @@
   RB.fmtWhen = (t) => RB.fmtDay(t) + ", " + new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   RB.gkey = (g) => String(g || "").trim().toLowerCase();
   RB.uidOf = () => uid;
+  RB.tref = () => teamRef;
   RB.id = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   /** v0.50 Light / Dark / Same as device. Remembered in this browser at once and saved on the person's own users row so it follows them. */
@@ -417,6 +418,8 @@
     teamRef.collection("config").onSnapshot((s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
+    // Plot files: the step tasks of every file (the rules let Plot files access read tasks marked plot: true).
+    if (RB.level("plot") !== "none") teamRef.collection("tasks").where("plot", "==", true).onSnapshot((s) => { D.plotTasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     if (RB.isOwner()) snap("plotsopv", (s) => (D.plotSopV = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     if (RB.level("meetings") !== "none") teamRef.collection("meetings").orderBy("startedAt", "desc").limit(100).onSnapshot((s) => { D.meetings = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
   }

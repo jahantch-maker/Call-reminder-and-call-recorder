@@ -191,6 +191,8 @@
   P.newSop = () => RB.plotSync.newSop();
   P.has = () => !!X();
   P.x = () => X();
+  /** One step's part of its role SOP, all lines open (Plot files › How to do this). */
+  P.stepBox = (id, l) => { const s = X() && X().steps.find((y) => y.id === id); return s ? stepBox(s, l, true) : ""; };
   /** From the reading list: open my role's SOP. */
   P.openRole = (role) => { S.sopOpen = "plot"; S.sopTab = "roles"; S.sopRole = role; S.sopNew = false; };
   /** Fit the flow chart to the card width (never wider than the screen). */
