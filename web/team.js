@@ -459,7 +459,7 @@
   RB.reconcile = async function () {
     if (recBusy || RB.DEMO || !ed()) return;
     const todo = D.members.filter((m) => m.status === "active" && m.seatId && RB.seat(m.seatId) && RB.seat(m.seatId).status === "empty");
-    if (!todo.length) { if (D.seats.some((s) => s.status !== "filled" && s.role !== "owner" && s.gmail && !s.perms)) RB.sync(); return; }
+    if (!todo.length) { if (D.seats.some((s) => s.role !== "owner" && s.gmail && !s.perms)) RB.sync(); return; }
     recBusy = true;
     try { for (const m of todo) { await fillFrom(m, RB.seat(m.seatId)); await RB.log((m.name || m.seatId) + " joined seat " + m.seatId); } await RB.sync(); } finally { recBusy = false; }
   };
