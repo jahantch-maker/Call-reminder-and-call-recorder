@@ -20,7 +20,7 @@
     const heads = rows[0].map(cell);
     return rows.slice(1).map((r, i) => { const o = { __row: i + 5 }; heads.forEach((h, c) => h && (o[h] = cell(r[c]))); return o; }).filter((o) => heads.some((h) => h && o[h] !== ""));
   }
-  const list = (t) => cell(t).split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+  const list = (t) => cell(t).split(/[,;\n]+/).map((x) => x.trim()).filter((x) => x && !/^(—|-|none)$/i.test(x));   // "—" or "None" = nothing
   const yes = (t) => /^yes/i.test(cell(t));
   const PLOT_OWNER = "Plot owner";   // the only name allowed in Call / WhatsApp lists that is not a role
   const TYPES = ["Tick", "Pick one", "Option", "Number box"];
@@ -79,7 +79,8 @@
       [["Call list", s.call], ["WhatsApp list", s.wa]].forEach(([col, a]) => a.forEach((x) => { if (x !== PLOT_OWNER && !isRole(x)) A(col, "'" + x + "' is not in the Roles tab (or 'Plot owner')."); }));
       s.next.forEach((x) => { if (!isStep(x)) A("Next step(s)", "Step " + x + " does not exist."); });
       s.forms.forEach((x) => { if (!formSet.has(x)) A("Forms used", "Form " + x + " is not in the Forms tab."); });
-      if (s.lines !== null && s.lines !== s.checklist.length) A("Lines", "Says " + s.lines + " lines but the Checklist tab has " + s.checklist.length + ".");
+      const nLines = s.checklist.filter((c) => c.type !== "Option").length;   // Lines counts the lines, not the options under a Pick one
+      if (s.lines !== null && s.lines !== nLines) A("Lines", "Says " + s.lines + " lines but the Checklist tab has " + nLines + " (options not counted).");
       if (s.wrong && !s.wrongShort) add("If something goes wrong", (p.__wrong.find((w) => w["Step no."] === s.id) || {}).__row, s.id, "Short (English)", "The long text is filled but the short line is empty.");
       const wr = (p.__wrong.find((w) => w["Step no."] === s.id) || {}).__row;
       urdu("If something goes wrong", wr, s.id, "If something goes wrong", s.wrong, s.wrongUr); urdu("If something goes wrong", wr, s.id, "Short", s.wrongShort, s.wrongShortUr);
