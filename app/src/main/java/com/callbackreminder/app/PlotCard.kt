@@ -328,7 +328,7 @@ private fun PlotLineHelpSheet(step: String, l: PlotFiles.Line, onDismiss: () -> 
     var urdu by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp + navBarMissing())) {
-            BoxTabs(listOf("English", "اردو"), if (urdu) 1 else 0) { urdu = it == 1 }
+            BoxTabs(listOf("English", "اردو"), if (urdu) 1 else 0, onSelect = { urdu = it == 1 })
             Spacer(Modifier.height(12.dp))
             Text("$step · Line ${l.no} · How to do this", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant)
             val text = if (urdu) l.detailUr.ifBlank { l.detail } else l.detail.ifBlank { l.detailUr }
