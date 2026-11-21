@@ -221,7 +221,7 @@ gradle assembleRelease
 GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) does the same on every push to `main`
 and publishes the APK as the **Latest build** release.
 
-> The APK is signed with a shared test key (`keystore/callback-test.jks`) so each build installs as an update.
+> The release APK is signed with a private key kept in GitHub secrets (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`), so each build installs as an update. The key is never in the code.
 > Create your own private key before publishing to the Play Store.
 
 ## How it works inside

@@ -26,6 +26,20 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      # The signing key comes from GitHub secrets (never from the code). No secret = an unsigned release build.
+      - name: Get the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "No signing key set: release APK will be unsigned"
+          fi
+
       - name: Build APK
         run: gradle assembleRelease --stacktrace
 
