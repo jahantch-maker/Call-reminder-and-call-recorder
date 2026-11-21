@@ -155,6 +155,8 @@ data class TeamTask(
     val played: Map<String, List<String>> = emptyMap(),
     /** v0.48 🤝 Meeting: an action agreed in a team meeting (given from the meeting web app). */
     val meeting: Boolean = false,
+    /** Plot files: one step of a plot file (its rules come from the published SOP, see [PlotFiles]). */
+    val plot: Boolean = false,
 ) {
     /** [uid] has seen [m] on the Timeline (blue ticks). */
     fun saw(m: TeamMsg, uid: String): Boolean = uid in m.seenBy || (msgSeen[uid] ?: 0L) >= m.at
@@ -1537,5 +1539,6 @@ object TeamRepo {
         msgSeen = longs(s.get("msgSeen")),
         played = (s.get("played") as? Map<*, *>)?.entries?.mapNotNull { (k, v) -> (k as? String)?.let { it to strings(v) } }?.toMap() ?: emptyMap(),
         meeting = s.getBoolean("meeting") ?: false,
+        plot = s.getBoolean("plot") ?: false,
     )
 }

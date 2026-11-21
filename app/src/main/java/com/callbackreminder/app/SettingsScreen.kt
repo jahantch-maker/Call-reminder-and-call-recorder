@@ -141,6 +141,7 @@ fun SettingsScreen(
     onOpenMyDay: () -> Unit = {},
     onOpenTeam: () -> Unit = {},
     onOpenWhatsNew: () -> Unit = {},
+    onOpenNewPlotFile: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -189,6 +190,8 @@ fun SettingsScreen(
             },
             onClick = onOpenTeam,
         )
+        // Plot files: New plot file, right under the account card (the owner and Front Desk only).
+        PlotFilesSettingsGroup(onOpenNewPlotFile)
         val look by Appearance.version.collectAsState()
         val workHours by WorkHours.version.collectAsState()
         BadgeGroup("GENERAL") {

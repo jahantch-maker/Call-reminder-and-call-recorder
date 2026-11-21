@@ -359,7 +359,8 @@ object TeamSync {
         val repeatMin = TeamRules.repeatMin(c)
         // Only inside working hours: a popup or an SMS never goes out at night.
         val inHours = TeamRules.minutesSince(c, now - 60_000L, now) > 0L
-        for (t in tasks.filter { it.fromUid == me && it.open }) {
+        // Plot step tasks have their own rules (the SOP's time allowed): no "no date" reminders or SMS.
+        for (t in tasks.filter { it.fromUid == me && it.open && !it.plot }) {
             val waited = TeamRules.minutesSince(c, t.createdAt, now)
             if (t.urgent && t.due == 0L) {
                 val k = "g:${t.id}"
@@ -376,7 +377,7 @@ object TeamSync {
             deadlineSms(c, t, waited, now, inHours, smsDone)
         }
         // His phone: an urgent task waiting for his deadline reminds him every N working hours; a normal one once, the next morning.
-        for (t in tasks.filter { it.toUid == me && it.open && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
+        for (t in tasks.filter { it.toUid == me && it.open && !it.plot && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
             if (t.urgent) {
                 val k = "h:${t.id}"
                 val last = chase[k]?.toLongOrNull() ?: t.createdAt
