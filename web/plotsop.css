@@ -56,3 +56,6 @@
 @media(max-width:700px){.sxdet{padding:10px 12px 10px 40px}.sxpage.ur .sxdet{padding:10px 40px 10px 12px}.sxty{display:none}}
 .sxforms td{overflow-wrap:break-word}.sxur2{display:none;font-family:"Noto Nastaliq Urdu",serif;line-height:2}
 @media(max-width:700px){.sxforms .sxur{display:none}.sxur2{display:block}.sxtabs{flex-wrap:wrap}.sxsel{flex-basis:100%;order:3}}
+/* Step rows (locked 22 Nov, style C, same as Plot file steps): each step its own light blue card with a dark blue line. */
+.sxbody{display:flex;flex-direction:column;gap:6px}.sxsrow{border-bottom:0;border-left:4px solid #1F3A93;border-radius:10px;background:#F6F7FB;padding:9px 12px}
+html[data-theme="dark"] .sxsrow{background:#2A2E3A;border-left-color:#7C95E0}

@@ -14,6 +14,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1282,7 +1283,7 @@ object TeamRepo {
         if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
         val ref = msgs(t.id).document()
         lastSentId = ref.id
-        ref.set(doc)
+        ref.set(doc).addOnFailureListener { if (::appCtx.isInitialized) CrashLog.record(appCtx, it, "Timeline · Send") }
         val preview = when (kind) {
             Team.VOICE -> "🎤 Voice note"
             Team.PHOTO -> "📷 Photo" + if (text.isNotBlank()) ": ${text.trim()}" else ""
@@ -1380,12 +1381,35 @@ object TeamRepo {
         tasksRef().document(t.id).update("msgDel.$u", t.lastMsgAt)
     }
 
+    private const val STUCK_MS = 10_000L
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var reconnectAt = 0L
+
+    /** The connection to the server can stall (messages stay on 🕓 until the app restarts): restart it, at most every 10 s. */
+    private fun reconnect() {
+        val now = System.currentTimeMillis()
+        if (now - reconnectAt < STUCK_MS) return
+        reconnectAt = now
+        db().disableNetwork().addOnCompleteListener { db().enableNetwork() }
+    }
+
     /** The Timeline's messages, oldest first (null until the first read). */
     fun watchMsgs(taskId: String, onChange: (List<TeamMsg>) -> Unit): ListenerRegistration? {
         if (teamId == null) return null
         val u = uid ?: return null
-        return msgs(taskId).whereArrayContains("viewers", u).addSnapshotListener { s, _ ->
+        // Metadata changes too: the 🕓 turns into ticks as soon as the server has the message, not on the next message.
+        var waiting = false
+        var timer = false
+        return msgs(taskId).whereArrayContains("viewers", u).addSnapshotListener(MetadataChanges.INCLUDE) { s, _ ->
             s ?: return@addSnapshotListener
+            // A message of mine still on 🕓: if it is over 10 s old (or stays so for 10 s), reconnect so it sends by itself.
+            val mine = s.documents.filter { it.metadata.hasPendingWrites() && it.getString("fromUid") == u }
+            waiting = mine.isNotEmpty()
+            if (mine.any { System.currentTimeMillis() - (it.getLong("at") ?: 0L) > STUCK_MS }) reconnect()
+            else if (waiting && !timer) {
+                timer = true
+                main.postDelayed({ timer = false; if (waiting) reconnect() }, STUCK_MS)
+            }
             onChange(s.documents.map { d ->
                 TeamMsg(
                     id = d.id,
