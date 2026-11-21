@@ -138,6 +138,11 @@ service cloud.firestore {
           && request.resource.data.fromUid == resource.data.fromUid
           // Only the giver (or, when someone is offboarded, an owner) may give it to someone else (Edit › person).
           && (request.resource.data.toUid == resource.data.toUid || resource.data.fromUid == me() || isOwner(t));
+        // Plot files: a plot step task (plot: true) is read by everyone with Plot files access; a note from the web
+        // only touches its "last message" counters.
+        allow read: if signedIn() && resource.data.get('plot', false) == true && portalSee(t, 'plot');
+        allow update: if signedIn() && resource.data.get('plot', false) == true && portalEdit(t, 'plot')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMsgAt', 'lastMsgBy', 'lastMsgText', 'nBy', 'nPhoto']);
 
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
@@ -151,6 +156,10 @@ service cloud.firestore {
               // The giver hands the Timeline on with the task.
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewers'])
                 && get(/databases/$(database)/documents/teams/$(t)/tasks/$(task)).data.fromUid == me()));
+          // Plot files: the step Timeline is read on the web, and notes (text or photo) are written there as the writer himself.
+          allow read: if signedIn() && portalSee(t, 'plot') && get(/databases/$(database)/documents/teams/$(t)/tasks/$(task)).data.get('plot', false) == true;
+          allow create: if signedIn() && portalEdit(t, 'plot') && request.resource.data.fromUid == me()
+            && get(/databases/$(database)/documents/teams/$(t)/tasks/$(task)).data.get('plot', false) == true;
         }
       }
 
