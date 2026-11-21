@@ -34,7 +34,7 @@ object Backup {
     private const val HOUR = 23
 
     /** Phone-call bookkeeping and the backup's own settings never go into (or come back from) a file. */
-    private val SKIP = setOf("callstate", "sms_inflight", "backup", "caller_card_runtime")
+    private val SKIP = setOf("callstate", "sms_inflight", "backup", "caller_card_runtime", "reason_asks")
 
     private fun p(c: Context) = c.getSharedPreferences("backup", Context.MODE_PRIVATE)
 
