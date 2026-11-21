@@ -42,7 +42,9 @@ service cloud.firestore {
         allow create: if signedIn() && uid == me() && (
           (request.resource.data.status == 'pending' && request.resource.data.role == 'member') ||
           (isOwner(t) && request.resource.data.role == 'owner' && request.resource.data.status == 'active') ||
-          (request.resource.data.status == 'active' && request.resource.data.role == 'member' && !('perms' in request.resource.data)
+          (request.resource.data.status == 'active' && request.resource.data.role == 'member'
+            // v0.50 The join may carry the seat's own permissions (the portal keeps them on the seat), never anything else.
+            && (!('perms' in request.resource.data) || request.resource.data.perms == get(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower())).data.get('perms', null))
             && request.auth.token.email_verified == true
             && request.resource.data.seatId == request.auth.token.email.lower()
             && exists(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower()))));

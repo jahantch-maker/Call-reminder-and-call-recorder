@@ -253,7 +253,13 @@
   RB.sync = async function () {
     const writes = [];
     D.seats.forEach((s) => {
-      if (s.status !== "filled" || !s.uid) return;
+      // An empty or invited seat keeps its permissions on itself, so the person opens the portal the moment they sign in.
+      if (s.status !== "filled" || !s.uid) {
+        if (s.role === "owner" || !s.gmail) return;
+        const e = RB.effective(s), perms = { app: e.app, portal: e.portal };
+        if (JSON.stringify(s.perms) !== JSON.stringify(perms)) writes.push(RB.Store.put("seats", s.id, { perms }, true).catch((err) => console.warn("sync seat", s.id, err)));
+        return;
+      }
       // Only an owner may write an owner's row; a Team editor skips it (the server would refuse the whole save otherwise).
       if (s.role === "owner" && !RB.isOwner()) return;
       const e = RB.effective(s), h0 = RB.headOf(s), head = h0 && h0.virtual ? RB.boardOwners().find((o) => o.uid) : h0;
@@ -273,39 +279,50 @@
 
   // ------------------------------------------------------------------ start
   const $app = () => document.getElementById("app");
+  const BOOT = $app().innerHTML; // the loading animation from index.html, shown again while a join is checked
+  /** The sign-in look (skyline + glass card) for every screen before the portal opens. */
+  const lpage = (inner) => `<div class="center login"><div class="lcard"><img class="logo" src="logo.svg" alt="Rafiq Builders">${inner}</div><div class="lfoot">© Rafiq Builders &amp; Developers</div></div>`;
+  const GLOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.5-5.1 3.5-8.7z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.7-4.9h-4v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.3 14.4a7.2 7.2 0 0 1 0-4.7V6.6h-4a12 12 0 0 0 0 10.8z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1C6.3 6.9 8.9 4.8 12 4.8z"/></svg>';
   RB.message = (a, b, out) => {
-    $app().innerHTML = `<div class="center"><h2>${a}</h2><div class="muted">${b}</div>${out ? '<button class="btnt" id="so">Sign out</button>' : ""}</div>`;
+    $app().innerHTML = lpage(`<h2>${a}</h2><div class="muted">${b}</div>${out ? '<button class="btnt" id="so">Sign out</button>' : ""}`);
     const so = document.getElementById("so"); if (so) so.onclick = () => firebase.auth().signOut().then(() => location.reload());
   };
   function signInPage() {
-    $app().innerHTML = `<div class="center login"><div class="logo">RB</div><h2>Rafiq Builders</h2><div class="muted">Sign in with your official Gmail.</div>
-      <button class="btnp" id="gs">Sign in with Google</button></div>`;
+    $app().innerHTML = lpage(`<h2>Rafiq Builders</h2><div class="muted">Sign in with your official Gmail</div>
+      <button class="gbtn" id="gs">${GLOGO}Sign in with Google</button>`);
     document.getElementById("gs").onclick = () => firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch((e) => RB.alertBox(RB.esc(e.message)));
   }
-  /** A signed-in Gmail with no place in the team yet: it asks to join from here, the same as the phone app does. */
-  function joinPage(u, knownTeam) {
-    $app().innerHTML = `<div class="center login"><div class="logo">RB</div><h2>Join Rafiq Builders</h2>
-      <div class="muted">Signed in as ${RB.esc(u.email)}.<br>If an owner already added this Gmail as a seat, you get in at once. Otherwise an owner approves you.</div>
-      <button class="btnp" id="jn">Join Rafiq Builders</button><div style="margin-top:10px"><button class="btnt" id="so">Sign out</button></div></div>`;
+  /** A signed-in Gmail with no place in the team yet. A Gmail that already has a seat joins at once; anyone else asks to join. */
+  async function joinPage(u, knownTeam) {
+    $app().innerHTML = BOOT;
+    const mail = (u.email || "").trim().toLowerCase();
+    let t = knownTeam, seat = null;
+    try {
+      if (!t) {
+        const q = await db.collection("codes").where("teamName", "==", "Rafiq Builders").limit(1).get();
+        t = q.docs[0] && q.docs[0].data().teamId;
+      }
+      if (t) { const sd = await db.collection("teams").doc(t).collection("seats").doc(mail).get(); seat = sd.exists ? sd.data() : null; }
+    } catch (e) { seat = null; }
+    const join = async () => {
+      if (!t) throw new Error("Couldn't find the Rafiq Builders team.");
+      const now = Date.now();
+      const base = { name: u.displayName || "", email: u.email || "", phone: "", role: "member", reportsTo: "", managers: [], joinedAt: now, lastSeen: now };
+      const mref = db.collection("teams").doc(t).collection("members").doc(u.uid);
+      await mref.set(seat ? Object.assign(base, { status: "active", seatId: mail }, seat.perms ? { perms: seat.perms } : {}) : Object.assign(base, { status: "pending" }));
+      await db.collection("users").doc(u.uid).set({ teamId: t });
+      location.reload();
+    };
+    if (seat) {
+      try { return await join(); } catch (e) { console.warn("auto join", e); }
+    }
+    $app().innerHTML = lpage(`<h2>Join Rafiq Builders</h2>
+      <div class="muted">Signed in as ${RB.esc(u.email)}.<br>An owner approves your request.</div>
+      <button class="btnp" id="jn">Join Rafiq Builders</button><button class="btnt" id="so">Sign out</button>`);
     document.getElementById("so").onclick = () => firebase.auth().signOut().then(() => location.reload());
     document.getElementById("jn").onclick = async (ev) => {
       const b = ev.target; b.disabled = true; b.textContent = "Joining…";
-      try {
-        let t = knownTeam;
-        if (!t) {
-          const q = await db.collection("codes").where("teamName", "==", "Rafiq Builders").limit(1).get();
-          t = q.docs[0] && q.docs[0].data().teamId;
-          if (!t) throw new Error("Couldn't find the Rafiq Builders team.");
-        }
-        const mail = (u.email || "").trim().toLowerCase(), now = Date.now();
-        let seat = false;
-        try { seat = (await db.collection("teams").doc(t).collection("seats").doc(mail).get()).exists; } catch (e) { seat = false; }
-        const base = { name: u.displayName || "", email: u.email || "", phone: "", role: "member", reportsTo: "", managers: [], joinedAt: now, lastSeen: now };
-        const mref = db.collection("teams").doc(t).collection("members").doc(u.uid);
-        await mref.set(seat ? Object.assign(base, { status: "active", seatId: mail }) : Object.assign(base, { status: "pending" }));
-        await db.collection("users").doc(u.uid).set({ teamId: t });
-        location.reload();
-      } catch (e) {
+      try { await join(); } catch (e) {
         b.disabled = false; b.textContent = "Join Rafiq Builders";
         RB.alertBox(RB.esc((e.message || e) + "") + "<br>If it says permission denied, ask an owner to check your seat.");
       }
