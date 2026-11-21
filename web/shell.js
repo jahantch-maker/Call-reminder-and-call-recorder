@@ -54,7 +54,7 @@
     const sig = sec + "/" + tab, anim = sig !== RB._sig; RB._sig = sig;
     const oldC = document.getElementById("content"), oldS = document.getElementById("side");
     const keepC = !anim && oldC ? oldC.scrollTop : 0, keepS = !anim && oldS ? oldS.scrollTop : 0;
-    root.innerHTML = `<div class="app${anim ? "" : " still"}"><nav class="rail"><div class="rl">RB</div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
+    root.innerHTML = `<div class="app${anim ? "" : " still"}"><nav class="rail"><div class="rl"><img src="logo.svg" alt="Rafiq Builders"></div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
       <div class="pmain"><div class="pc">
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
           <label class="srch"><span>⌕</span><input id="gq" placeholder="Search" value="${esc(S.q)}" autocomplete="off"></label><button class="bell" id="bell" title="Notices">🔔${noticeCount() ? `<b class="bd">${noticeCount()}</b>` : ""}</button></div>

@@ -279,18 +279,22 @@
 
   // ------------------------------------------------------------------ start
   const $app = () => document.getElementById("app");
+  const BOOT = $app().innerHTML; // the loading animation from index.html, shown again while a join is checked
+  /** The sign-in look (skyline + glass card) for every screen before the portal opens. */
+  const lpage = (inner) => `<div class="center login"><div class="lcard"><img class="logo" src="logo.svg" alt="Rafiq Builders">${inner}</div><div class="lfoot">© Rafiq Builders &amp; Developers</div></div>`;
+  const GLOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.5-5.1 3.5-8.7z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.7-4.9h-4v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.3 14.4a7.2 7.2 0 0 1 0-4.7V6.6h-4a12 12 0 0 0 0 10.8z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1C6.3 6.9 8.9 4.8 12 4.8z"/></svg>';
   RB.message = (a, b, out) => {
-    $app().innerHTML = `<div class="center"><h2>${a}</h2><div class="muted">${b}</div>${out ? '<button class="btnt" id="so">Sign out</button>' : ""}</div>`;
+    $app().innerHTML = lpage(`<h2>${a}</h2><div class="muted">${b}</div>${out ? '<button class="btnt" id="so">Sign out</button>' : ""}`);
     const so = document.getElementById("so"); if (so) so.onclick = () => firebase.auth().signOut().then(() => location.reload());
   };
   function signInPage() {
-    $app().innerHTML = `<div class="center login"><div class="logo">RB</div><h2>Rafiq Builders</h2><div class="muted">Sign in with your official Gmail.</div>
-      <button class="btnp" id="gs">Sign in with Google</button></div>`;
+    $app().innerHTML = lpage(`<h2>Rafiq Builders</h2><div class="muted">Sign in with your official Gmail</div>
+      <button class="gbtn" id="gs">${GLOGO}Sign in with Google</button>`);
     document.getElementById("gs").onclick = () => firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch((e) => RB.alertBox(RB.esc(e.message)));
   }
   /** A signed-in Gmail with no place in the team yet. A Gmail that already has a seat joins at once; anyone else asks to join. */
   async function joinPage(u, knownTeam) {
-    $app().innerHTML = `<div class="center"><div class="muted">Opening…</div></div>`;
+    $app().innerHTML = BOOT;
     const mail = (u.email || "").trim().toLowerCase();
     let t = knownTeam, seat = null;
     try {
@@ -312,9 +316,9 @@
     if (seat) {
       try { return await join(); } catch (e) { console.warn("auto join", e); }
     }
-    $app().innerHTML = `<div class="center login"><div class="logo">RB</div><h2>Join Rafiq Builders</h2>
+    $app().innerHTML = lpage(`<h2>Join Rafiq Builders</h2>
       <div class="muted">Signed in as ${RB.esc(u.email)}.<br>An owner approves your request.</div>
-      <button class="btnp" id="jn">Join Rafiq Builders</button><div style="margin-top:10px"><button class="btnt" id="so">Sign out</button></div></div>`;
+      <button class="btnp" id="jn">Join Rafiq Builders</button><button class="btnt" id="so">Sign out</button>`);
     document.getElementById("so").onclick = () => firebase.auth().signOut().then(() => location.reload());
     document.getElementById("jn").onclick = async (ev) => {
       const b = ev.target; b.disabled = true; b.textContent = "Joining…";
