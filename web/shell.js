@@ -96,6 +96,25 @@
     if (sec === "app" || sec === "meetings") RB.meet.bind(content);
     if (RB.sections[sec].bind) RB.sections[sec].bind(content, document.getElementById("side"));
     if (page.afterBind) page.afterBind();
+    RB.stickHeads(content);
+  };
+  /** Frozen top bars (locked 23 Nov, WEB7): in every page card, the title bar (count, buttons, filters), the help note
+   *  under it and the column names stay in place while the list scrolls. Done once here for every section. */
+  RB.stickHeads = (content) => {
+    if (!content) return;
+    content.querySelectorAll(".card").forEach((card) => {
+      if (card.parentElement.closest(".card")) return;   // only page cards, not cards inside cards
+      let head = card.firstElementChild;
+      if (!head) return;
+      if (!head.classList.contains("stickhead")) {
+        if (!head.classList.contains("subhead")) return;
+        const w = document.createElement("div"); w.className = "stickhead";
+        card.insertBefore(w, head);
+        while (w.nextElementSibling && (w.childElementCount === 0 || /\b(hint|plchips|plsearch)\b/.test(w.nextElementSibling.className))) w.appendChild(w.nextElementSibling);
+      }
+      const ph = card.querySelector(":scope > .pltable > .plhead");
+      if (ph) card.firstElementChild.appendChild(ph);
+    });
   };
 
   // ------------------------------------------------------------------ notices (bell)
