@@ -29,6 +29,18 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.57.1", "24 Nov",
+            new = listOf(
+                "Team list: each person's Google account photo shows once they have signed in",
+                "Team: your timetable is named by its hours, for example 8 AM to 5 PM · Fri off",
+                "Adding a number: only 11-digit mobile numbers starting with 03 are accepted",
+            ),
+            fixed = listOf(
+                "Plot files: unticking a checklist item now shows at once, like ticking",
+                "Plot files: due times use only Working hours or Working days from the sheet",
+            ),
+        ),
+        Entry(
             "0.57.0", "23 Nov",
             new = listOf(
                 "Team: sign in with Google and you are in, nothing to type. Your name, phone and place come from the website",
