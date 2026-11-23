@@ -167,7 +167,7 @@ object TeamSync {
             for (t in tasks) {
                 val before = last[t.id]
                 // Plot files: the step's due time follows the doer's own working hours and off day.
-                if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.createdAt))
+                if (t.plot && t.toUid == me && t.open && !t.dueSet) TeamRepo.setPlotDue(t, PlotFiles.dueOf(c, t.timer, t.days, t.hours, t.createdAt))
                 // Plot files: CC on this step (SOP Notify columns): one notification for Started, Late and Done.
                 PlotUi.ccStatus(t, me, System.currentTimeMillis())?.let { st ->
                     val told = TeamLinks.set(c, "ccTold")

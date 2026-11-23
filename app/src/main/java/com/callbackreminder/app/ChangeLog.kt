@@ -29,6 +29,16 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.56.4", "23 Nov",
+            new = listOf(
+                "Plot files: a step can now be given working hours (for example 2 hours) instead of days",
+            ),
+            fixed = listOf(
+                "Plot files: a same-visit step is now due 2 hours after it opens, not at closing time",
+                "Plot files: a same-day step that opens after 1 PM is now due at closing time of the next working day",
+            ),
+        ),
+        Entry(
             "0.56.3", "22 Nov",
             new = emptyList(),
             fixed = listOf(

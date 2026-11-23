@@ -435,7 +435,7 @@ object PlotActions {
         } else t.due
         // A step created paused (2.1) starts its time now.
         val fresh = t.seenAt == 0L && t.due > 0L && t.waitAt <= t.createdAt + 60_000L
-        val newDue = if (fresh) PlotFiles.dueOf(c, t.timer, t.days, now) else due
+        val newDue = if (fresh) PlotFiles.dueOf(c, t.timer, t.days, t.hours, now) else due
         TeamRepo.plotUpdate(t, mapOf("waitAt" to 0L, "due" to newDue, "deadline" to newDue), "▶ Plot owner came" + if (newDue != t.due && newDue > 0L) " · due ${TeamUi.shortWhen(newDue)}" else "")
     }
 

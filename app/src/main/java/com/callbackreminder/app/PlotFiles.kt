@@ -84,6 +84,7 @@ object PlotFiles {
 
     data class Step(
         val id: String, val stage: String, val role: String, val title: String, val timer: String, val days: Int?,
+        val hours: Int? = null,
         val next: List<String> = emptyList(), val recv: String = "", val returnTo: String = "",
         val canPause: Boolean = false, val pauseStarts: String = "", val reminder: String = "", val doneWithoutAll: Boolean = false,
         val call: List<String> = emptyList(), val wa: List<String> = emptyList(), val waMsg: String = "",
@@ -124,7 +125,7 @@ object PlotFiles {
             val id = str(m["id"]).takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Step(
                 id = id, stage = str(m["stage"]), role = str(m["role"]), title = str(m["title"]), timer = str(m["timer"]),
-                days = (m["days"] as? Number)?.toInt(), next = strs(m["next"]), recv = str(m["recv"]), returnTo = str(m["returnTo"]),
+                days = (m["days"] as? Number)?.toInt(), hours = (m["hours"] as? Number)?.toInt(), next = strs(m["next"]), recv = str(m["recv"]), returnTo = str(m["returnTo"]),
                 canPause = m["canPause"] == true, pauseStarts = str(m["pauseStarts"]), reminder = str(m["reminder"]), doneWithoutAll = m["doneWithoutAll"] == true,
                 call = strs(m["call"]), wa = strs(m["wa"]), waMsg = str(m["waMsg"]), forms = strs(m["forms"]),
                 wrongShort = str(m["wrongShort"]), wrongShortUr = str(m["wrongShortUr"]),
@@ -156,12 +157,15 @@ object PlotFiles {
         if (me.designation == role) me else members.firstOrNull { it.active && it.designation == role }
 
     /**
-     * When a step is due (his rules, 21 Nov), from his own working hours and weekly off day. A task that comes outside
-     * working hours counts from the start of the next working day. Same visit: the end of that working day. Same day:
-     * the end of that working day when it comes before 1 PM, else 1 PM the next working day. N days: the same clock
-     * time N working days later.
+     * When a step is due (his rules, 23 Nov; written for everyone in the sheet's "Time rules" tab), from his own working
+     * hours and weekly off day. The clock starts when the step is made; outside working hours it starts when work starts
+     * on the next working day.
+     * Working hours (N in Hours): N hours later if that many are left today, else N hours after work starts next working day.
+     * Working days (N in Days): the same clock time N working days later.
+     * Same visit: 2 hours later, never after closing time. Same day: closing time if it starts before 1 PM, else closing
+     * time of the next working day. Anything else: closing time that day.
      */
-    fun dueOf(c: Context, timer: String, days: Int?, from: Long): Long {
+    fun dueOf(c: Context, timer: String, days: Int?, hours: Int?, from: Long): Long {
         val z = ZoneId.systemDefault()
         fun win(d: java.time.LocalDate): Pair<Long, Long>? = when {
             OffDays.isOff(d) -> null
@@ -181,15 +185,25 @@ object PlotFiles {
             day = nextWorkDay(day)
             start = win(day)?.first ?: from
         } else if (from < w.first) start = w.first
+        val end = win(day)?.second ?: start
+        val h = hours ?: 0
         val n = days ?: 0
-        if (n > 0) {
-            val clock = Instant.ofEpochMilli(start).atZone(z).toLocalTime()
-            repeat(n) { day = nextWorkDay(day) }
-            return day.atTime(clock).atZone(z).toInstant().toEpochMilli()
+        return when {
+            timer.contains("working hours", ignoreCase = true) && h > 0 -> {
+                val need = h * 3_600_000L
+                if (end - start >= need) start + need
+                else win(nextWorkDay(day))?.let { (a, b) -> minOf(a + need, b) } ?: (start + need)
+            }
+            n > 0 -> {
+                val clock = Instant.ofEpochMilli(start).atZone(z).toLocalTime()
+                repeat(n) { day = nextWorkDay(day) }
+                day.atTime(clock).atZone(z).toInstant().toEpochMilli()
+            }
+            timer.contains("same visit", ignoreCase = true) -> minOf(start + 2 * 3_600_000L, end)
+            timer.contains("same day", ignoreCase = true) && start >= CalendarData.at(day, 13 * 60) ->
+                win(nextWorkDay(day))?.second ?: end
+            else -> end
         }
-        if (timer.contains("same day", ignoreCase = true) && start >= CalendarData.at(day, 13 * 60))
-            return CalendarData.at(nextWorkDay(day), 13 * 60)
-        return win(day)?.second ?: start
     }
 
     /** The file already opened for this plot number (test files only clash with test files), or null. */
@@ -245,7 +259,7 @@ object PlotFiles {
         )
         for ((s, to) in doers) {
             // A first guess from this phone; the doer's phone sets it again from his own working hours (TeamSync).
-            val due = dueOf(c, s.timer, s.days, now)
+            val due = dueOf(c, s.timer, s.days, s.hours, now)
             val viewers = (listOf(me.uid, to.uid) + to.managers + me.managers).distinct()
             batch.set(
                 t.collection("tasks").document(), mapOf(
@@ -267,7 +281,7 @@ object PlotFiles {
                     "events" to listOf(mapOf("at" to now, "text" to "Plot file opened by ${me.first}")),
                     "plot" to true, "plotId" to file.id, "plotNo" to f.plotNo.trim(), "step" to s.id, "role" to s.role,
                     "test" to test, "ticks" to emptyMap<String, Any>(), "waitAt" to 0L,
-                    "timer" to s.timer, "days" to s.days, "dueSet" to false, "stage" to s.stage, "fromRole" to "",
+                    "timer" to s.timer, "days" to s.days, "hours" to s.hours, "dueSet" to false, "stage" to s.stage, "fromRole" to "",
                     "ownerName" to f.name.trim(), "ownerWa" to f.wa, "ownerSim2" to f.sim2,
                 ),
             )

@@ -158,9 +158,10 @@ data class TeamTask(
     val meeting: Boolean = false,
     /** Plot files: one step of a plot file (its rules come from the published SOP, see [PlotFiles]). */
     val plot: Boolean = false,
-    /** Plot files: the step's timer and days (from the SOP), and whether the doer's phone has set its due time yet. */
+    /** Plot files: the step's timer, days and hours (from the SOP), and whether the doer's phone has set its due time yet. */
     val timer: String = "",
     val days: Int? = null,
+    val hours: Int? = null,
     val dueSet: Boolean = true,
     val plotId: String = "",
     val plotNo: String = "",
@@ -1599,6 +1600,7 @@ object TeamRepo {
         plot = s.getBoolean("plot") ?: false,
         timer = s.getString("timer").orEmpty(),
         days = s.getLong("days")?.toInt(),
+        hours = s.getLong("hours")?.toInt(),
         dueSet = s.getBoolean("dueSet") ?: true,
         plotId = s.getString("plotId").orEmpty(),
         plotNo = s.get("plotNo")?.toString().orEmpty(),

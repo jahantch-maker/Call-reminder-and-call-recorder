@@ -32,14 +32,17 @@ const dayStart = (ms) => Math.floor((ms + PKT) / DAY) * DAY - PKT;   // midnight
 const at = (day, min) => day + min * 60000;
 const off = (day) => new Date(day + PKT).getUTCDay() === 5;          // Friday
 const nextWork = (day) => { let d = day + DAY, g = 0; while (off(d) && g++ < 14) d += DAY; return d; };
-function dueOf(timer, days, from) {
+function dueOf(timer, days, hours, from) {
   let day = dayStart(from), start = from;
   if (off(day) || from >= at(day, END)) { day = nextWork(day); start = at(day, START); }
   else if (from < at(day, START)) start = at(day, START);
-  const n = Number(days) || 0;
+  const end = at(day, END), n = Number(days) || 0, h = Number(hours) || 0, HR = 3600000;
+  // The sheet's "Time rules" tab says the same in simple English (locked 23 Nov).
+  if (/working hours/i.test(timer || "") && h > 0) return end - start >= h * HR ? start + h * HR : Math.min(at(nextWork(day), START) + h * HR, at(nextWork(day), END));
   if (n > 0) { const clock = start - day; for (let i = 0; i < n; i++) day = nextWork(day); return day + clock; }
-  if (/same day/i.test(timer || "") && start >= at(day, ONE_PM)) return at(nextWork(day), ONE_PM);
-  return at(day, END);
+  if (/same visit/i.test(timer || "")) return Math.min(start + 2 * HR, end);
+  if (/same day/i.test(timer || "") && start >= at(day, ONE_PM)) return at(nextWork(day), END);
+  return end;
 }
 
 // ------------------------------------------------------------------ the trigger
@@ -89,7 +92,7 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
     }));
     const viewers = Array.from(new Set([from.uid, to.uid, ...(to.managers || []), ...(from.managers || []), ...Object.keys(cc)].filter(Boolean)));
     const paused = s.canPause && /created/i.test(s.pauseStarts || "");
-    const due = dueOf(s.timer, s.days, now);
+    const due = dueOf(s.timer, s.days, s.hours, now);
     const doc = {
       title: s.title, fromUid: from.uid, fromName: from.name || "", toUid: to.uid, toName: to.name || "", toPhone: to.phone || "",
       viewers, createdAt: now, updatedAt: now, deadline: due, urgent: false, dateBy: "giver", due, firstDue: due, status: "dated",
@@ -98,7 +101,7 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
       locked: true, freeExt: 0, extCount: 0, reminderAt: 0, nPhoto: 0, nVoice: 0, nBy: {},
       events: [{ at: now, text: extra.event }],
       plot: true, plotId: after.plotId, plotNo: after.plotNo || file.plotNo || "", step: s.id, role: s.role, stage: s.stage || "",
-      test: !!file.test, ticks: {}, waitAt: paused ? now : 0, timer: s.timer || "", days: s.days === undefined ? null : s.days, dueSet: false,
+      test: !!file.test, ticks: {}, waitAt: paused ? now : 0, timer: s.timer || "", days: s.days === undefined ? null : s.days, hours: s.hours === undefined ? null : s.hours, dueSet: false,
       cc, fromRole: after.role || "", ownerName: file.name || "", ownerWa: file.wa || "", ownerSim2: file.sim2 || "", picks,
       ...(extra.fields || {}),
     };
