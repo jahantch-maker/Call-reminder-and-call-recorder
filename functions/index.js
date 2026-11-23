@@ -25,23 +25,26 @@ const ref = (txt) => {
   return m ? { step: m[1], line: m[2], opt: m[2] + m[3] } : null;
 };
 
-// ------------------------------------------------------------------ due time (a first guess; the doer's phone sets it again
-// from his own working hours). Office 11 AM - 9 PM Pakistan time, Friday off; the same rules as PlotFiles.dueOf on the phone.
-const PKT = 5 * 3600000, DAY = 86400000, START = 11 * 60, END = 21 * 60, ONE_PM = 13 * 60;
+// ------------------------------------------------------------------ due time (a first guess; the doer's phone sets it again).
+// The doer's own timetable (web Team › Timetables, locked 23 Nov) and the company holidays (web Settings › Holidays) decide
+// working hours and days off. Nobody on a timetable yet: 11 AM - 9 PM Pakistan time, Friday off. Same rules as the phone.
+const PKT = 5 * 3600000, DAY = 86400000, ONE_PM = 13 * 60, FALLBACK = { start: 11 * 60, end: 21 * 60, off: [5] };
 const dayStart = (ms) => Math.floor((ms + PKT) / DAY) * DAY - PKT;   // midnight PKT of that day, as UTC ms
 const at = (day, min) => day + min * 60000;
-const off = (day) => new Date(day + PKT).getUTCDay() === 5;          // Friday
-const nextWork = (day) => { let d = day + DAY, g = 0; while (off(d) && g++ < 14) d += DAY; return d; };
-function dueOf(timer, days, hours, from) {
+/** cal = { start, end, off: [week days], hol: Set of "YYYY-MM-DD" } */
+const isOff = (cal, day) => cal.off.includes(new Date(day + PKT).getUTCDay()) || cal.hol.has(new Date(day + PKT).toISOString().slice(0, 10));
+const nextWork = (cal, day) => { let d = day + DAY, g = 0; while (isOff(cal, d) && g++ < 400) d += DAY; return d; };
+function dueOf(timer, days, hours, from, cal) {
+  const START = cal.start, END = cal.end, off = (d) => isOff(cal, d), next = (d) => nextWork(cal, d);
   let day = dayStart(from), start = from;
-  if (off(day) || from >= at(day, END)) { day = nextWork(day); start = at(day, START); }
+  if (off(day) || from >= at(day, END)) { day = next(day); start = at(day, START); }
   else if (from < at(day, START)) start = at(day, START);
   const end = at(day, END), n = Number(days) || 0, h = Number(hours) || 0, HR = 3600000;
   // The sheet's "Time rules" tab says the same in simple English (locked 23 Nov).
-  if (/working hours/i.test(timer || "") && h > 0) return end - start >= h * HR ? start + h * HR : Math.min(at(nextWork(day), START) + h * HR, at(nextWork(day), END));
-  if (n > 0) { const clock = start - day; for (let i = 0; i < n; i++) day = nextWork(day); return day + clock; }
+  if (/working hours/i.test(timer || "") && h > 0) return end - start >= h * HR ? start + h * HR : Math.min(at(next(day), START) + h * HR, at(next(day), END));
+  if (n > 0) { const clock = start - day; for (let i = 0; i < n; i++) day = next(day); return day + clock; }
   if (/same visit/i.test(timer || "")) return Math.min(start + 2 * HR, end);
-  if (/same day/i.test(timer || "") && start >= at(day, ONE_PM)) return at(nextWork(day), END);
+  if (/same day/i.test(timer || "") && start >= at(day, ONE_PM)) return at(next(day), END);
   return end;
 }
 
@@ -54,12 +57,15 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
   if (!doneNow && !returnedNow) return;
 
   const teamRef = db.doc(`teams/${event.params.team}`);
-  const [sopSnap, fileSnap, teamSnap, tasksSnap, membersSnap] = await Promise.all([
+  const [sopSnap, fileSnap, teamSnap, tasksSnap, membersSnap, desigSnap, holSnap, seatsSnap] = await Promise.all([
     teamRef.collection("config").doc("plotsop").get(),
     teamRef.collection("plotfiles").doc(after.plotId).get(),
     teamRef.get(),
     teamRef.collection("tasks").where("plotId", "==", after.plotId).get(),
     teamRef.collection("members").get(),
+    teamRef.collection("config").doc("designations").get(),
+    teamRef.collection("config").doc("holidays").get(),
+    teamRef.collection("seats").get(),
   ]);
   const sop = sopSnap.data();
   if (!sop || !fileSnap.exists) return;
@@ -70,6 +76,10 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
   const members = membersSnap.docs.map((d) => ({ uid: d.id, ...d.data() })).filter((m) => m.status === "active");
   const latest = (sid) => tasks.filter((t) => t.step === sid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
   const now = Date.now();
+  const timetables = (desigSnap.data() || {}).timetables || [], seats = {};
+  seatsSnap.docs.forEach((d) => (seats[d.id] = d.data()));
+  const hol = new Set(((holSnap.data() || {}).dates || []).map((h) => h.d));
+  const calOf = (m) => { const t = timetables.find((x) => x.id === ((seats[m.seatId] || {}).timetable)) || FALLBACK; return { start: t.start, end: t.end, off: t.off || [], hol }; };
 
   // Picks made in the file so far ("2.2·3" -> "3b"), for "Only if" here and "Shown only if" lines on the new tasks.
   const picks = {};
@@ -92,9 +102,9 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
     }));
     const viewers = Array.from(new Set([from.uid, to.uid, ...(to.managers || []), ...(from.managers || []), ...Object.keys(cc)].filter(Boolean)));
     const paused = s.canPause && /created/i.test(s.pauseStarts || "");
-    const due = dueOf(s.timer, s.days, s.hours, now);
+    const due = dueOf(s.timer, s.days, s.hours, now, calOf(to)), seat = seats[to.seatId] || {};
     const doc = {
-      title: s.title, fromUid: from.uid, fromName: from.name || "", toUid: to.uid, toName: to.name || "", toPhone: to.phone || "",
+      title: s.title, fromUid: from.uid, fromName: from.name || "", toUid: to.uid, toName: seat.name || to.name || "", toPhone: seat.phone || to.phone || "",
       viewers, createdAt: now, updatedAt: now, deadline: due, urgent: false, dateBy: "giver", due, firstDue: due, status: "dated",
       seenAt: 0, doneAt: 0, checkedAt: 0, moreDue: 0, moreReason: "", moreAt: 0, reason: "", passedTo: "",
       askAt: 0, stuckAt: 0, stuckText: "", lastMsgAt: 0, lastMsgBy: "", lastMsgText: "", photoProof: false, proofAt: 0, deliveredAt: 0,

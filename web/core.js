@@ -53,7 +53,7 @@
   RB.SECTIONS = [["app", "App view"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
   /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
-  RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["waiting", "Waiting"]];
+  RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["timetables", "Timetables"]];
   RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"]];
   RB.SCOPES = [["own", "Own only"], ["team", "Own + team below"], ["all", "Whole RB"]];
   const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", plot: "none", settingsTabs: [] };
@@ -265,13 +265,15 @@
       const e = RB.effective(s), h0 = RB.headOf(s), head = h0 && h0.virtual ? RB.boardOwners().find((o) => o.uid) : h0;
       const chain = RB.chainOf(s).filter((h) => h.status === "filled" && h.uid).map((h) => h.uid);
       const data = {
+        // The seat's name is the only name shown anywhere (locked 23 Nov), so the member row follows it.
+        name: s.name || (RB.member(s.uid) || {}).name || "",
         seatId: s.id, designation: s.designation || "", dept: s.dept || "", reportsTo: head && head.uid ? head.uid : "", managers: chain,
         perms: { app: e.app, portal: e.portal }, setDossier: !!e.app.setDossier, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
         role: s.role === "owner" ? "owner" : "member",
         docDesigs: Array.from(new Set([s.designation].concat(RB.descendants(s.id).map((x) => x.designation)).filter(Boolean))),
       };
       const cur = RB.member(s.uid);
-      if (cur && JSON.stringify([cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs]) === JSON.stringify([data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs])) return;
+      if (cur && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs])) return;
       writes.push(RB.Store.put("members", s.uid, data, true).catch((err) => console.warn("sync", s.uid, err)));
     });
     await Promise.all(writes);
@@ -292,8 +294,8 @@
       <button class="gbtn" id="gs">${GLOGO}Sign in with Google</button>`);
     document.getElementById("gs").onclick = () => firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch((e) => RB.alertBox(RB.esc(e.message)));
   }
-  /** A signed-in Gmail with no place in the team yet. A Gmail that already has a seat joins at once; anyone else asks to join. */
-  async function joinPage(u, knownTeam) {
+  /** A signed-in Gmail with no place in the team yet (or an old join request). A Gmail that has a seat joins at once. */
+  async function joinPage(u, knownTeam, wasPending) {
     $app().innerHTML = BOOT;
     const mail = (u.email || "").trim().toLowerCase();
     let t = knownTeam, seat = null;
@@ -309,24 +311,19 @@
       const now = Date.now();
       const base = { name: u.displayName || "", email: u.email || "", phone: "", role: "member", reportsTo: "", managers: [], joinedAt: now, lastSeen: now };
       const mref = db.collection("teams").doc(t).collection("members").doc(u.uid);
-      await mref.set(seat ? Object.assign(base, { status: "active", seatId: mail }, seat.perms ? { perms: seat.perms } : {}) : Object.assign(base, { status: "pending" }));
+      await mref.set(seat ? Object.assign(base, { status: "active", seatId: mail }, seat.perms && !wasPending ? { perms: seat.perms } : {}) : Object.assign(base, { status: "pending" }));
       await db.collection("users").doc(u.uid).set({ teamId: t });
       location.reload();
     };
     if (seat) {
       try { return await join(); } catch (e) { console.warn("auto join", e); }
     }
-    $app().innerHTML = lpage(`<h2>Join Rafiq Builders</h2>
-      <div class="muted">Signed in as ${RB.esc(u.email)}.<br>An owner approves your request.</div>
-      <button class="btnp" id="jn">Join Rafiq Builders</button><button class="btnt" id="so">Sign out</button>`);
+    // No seat for this Gmail: nothing to fill in or request (locked 23 Nov). The manager adds the Gmail in Team › People.
+    $app().innerHTML = lpage(`<h2>Your Gmail isn't added yet</h2>
+      <div class="muted">Signed in as ${RB.esc(u.email)}.<br>Ask your manager to add it, then tap Try again.</div>
+      <button class="btnp" id="jn">Try again</button><button class="btnt" id="so">Sign out</button>`);
     document.getElementById("so").onclick = () => firebase.auth().signOut().then(() => location.reload());
-    document.getElementById("jn").onclick = async (ev) => {
-      const b = ev.target; b.disabled = true; b.textContent = "Joining…";
-      try { await join(); } catch (e) {
-        b.disabled = false; b.textContent = "Join Rafiq Builders";
-        RB.alertBox(RB.esc((e.message || e) + "") + "<br>If it says permission denied, ask an owner to check your seat.");
-      }
-    };
+    document.getElementById("jn").onclick = () => location.reload();
   }
   RB.alertBox = (t) => { const m = document.getElementById("modal"); m.innerHTML = `<div class="back"><div class="dlg"><div>${t}</div><div style="text-align:right;margin-top:12px"><button class="btnp" id="ok">OK</button></div></div></div>`; document.getElementById("ok").onclick = () => (m.innerHTML = ""); };
 
@@ -369,7 +366,7 @@
             }
           } catch (e) { console.warn("self perms", e); }
         }
-        if (D.me.status === "pending") return RB.message("Your request is waiting.", "An owner will approve it. Come back after that.<br>Signed in as " + RB.esc(u.email) + ".", true);
+        if (D.me.status === "pending") return joinPage(u, t, true);
         if (!RB.isOwner() && !(D.me && D.me.status === "active" && D.me.perms && D.me.perms.portal && RB.SECTIONS.some(([k]) => D.me.perms.portal[k] && D.me.perms.portal[k] !== "none"))) {
           return RB.message("You don't have access to the portal.", "Ask an owner. The phone app still works. Signed in as " + RB.esc(u.email) + ".", true);
         }
