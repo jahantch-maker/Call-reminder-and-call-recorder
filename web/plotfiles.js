@@ -149,6 +149,20 @@
       <div class="card plstcard"><div class="plstages">${stages}</div></div>`;
   }
 
+  /** WEB16 The slim line (locked 24 Nov): back, plot, plot owner, now with, status, stage, Steps | Timeline. */
+  function slimLine(f, tabs) {
+    const now = Date.now(), t = current(f), s = t && step(t.step), x = X(), cur = s ? String(s.stage) : null;
+    const inStage = (g) => x.steps.filter((y) => String(y.stage) === String(g.no) && !notNeeded(f, y.id));
+    const done = (g) => inStage(g).filter((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; }).length;
+    const g = (x.stages || []).find((y) => String(y.no) === cur);
+    const dots = (x.stages || []).map((y) => { const n = inStage(y).length; return `<i class="${String(y.no) === cur ? "c" : n && done(y) === n ? "d" : ""}"></i>`; }).join("");
+    return `<div class="plslimw" aria-hidden="true"><div class="plslim"><button class="link" data-pfback="1" tabindex="-1">← All files</button><span class="dv"></span>
+      <span class="plav sm">${esc((f.name || "?").trim().charAt(0).toUpperCase())}</span><b class="pn">Plot ${esc(f.plotNo)}</b>${f.test ? '<span class="tag yel">TEST</span>' : ""}<span class="nm">${esc(f.name || "—")}</span>
+      ${t ? `<span class="dv"></span><span class="mut">Now with</span><b>${esc(s ? s.role : "")} · ${withName(t)}</b>` : ""}${badge(stateOf(f, now))}
+      ${g ? `<span class="dv"></span><span class="stg"><span class="dots">${dots}</span><span class="mut">Stage ${esc(g.no)} ·</span><b>${esc(g.name)}</b><span class="mut">${done(g)} of ${inStage(g).length} done</span></span>` : ""}
+      <span class="sp"></span>${tabs.replace(/<button /g, '<button tabindex="-1" ')}</div></div>`;
+  }
+
   /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
   function delTest(f) {
     if (!f.test || !RB.isOwner()) return;
@@ -168,7 +182,10 @@
    *  Rows with "Also waits for" mean ALL must be Done ("and"); several plain rows mean ANY one opens it ("or"). */
   function startsAfter(f, s) {
     const x = X(), rows = ((x && x.flow) || []).filter((r) => r.to === s.id);
-    const ids = (t) => String(t || "").match(/\d+\.\d+/g) || [];
+    // FLOW5 each "Also waits for" item is one step, maybe "(only if 6.1 · 6b)": left out when that option was not picked.
+    const fp = filePicks(f);
+    const ids = (t) => String(t || "").split(/[,;]/).filter((w) => { const r = refOf((w.match(/only if\s+([^)]+)/i) || [])[1]); return !r || fp[r.step + "·" + r.line] === r.opt; })
+      .map((w) => (w.trim().match(/^\d+\.\d+/) || [])[0]).filter(Boolean);
     const all = rows.some((r) => r.waits);
     const num = (a, b) => a.split(".")[0] - b.split(".")[0] || a.split(".")[1] - b.split(".")[1];
     const from = Array.from(new Set(rows.flatMap((r) => [r.from].concat(all ? ids(r.waits) : [])))).sort(num);
@@ -199,11 +216,26 @@
         <div class="plright">${right}${startsAfter(f, s)}</div><span class="plchev" aria-hidden="true">${open ? "⌄" : "›"}</span></div>${open ? inPlace(f, s, t) : ""}</div>`;
   }
 
+  /** FLOW3 Every pick-one answer in this file, "6.1·6" -> "6b" (the cloud and the phone read the same ticks). */
+  const filePicks = (f) => { const p = {}; tasksOf(f.id).forEach((t) => Object.entries(t.ticks || {}).forEach(([l, v]) => { if (v && /^\d+[a-z]+$/i.test(v.value || "")) p[t.step + "·" + l] = v.value; })); return p; };
+  const refOf = (txt) => { const m = String(txt || "").trim().match(/^(\d+\.\d+)\s*[·.\-]\s*(\d+)(\w*)$/); return m ? { step: m[1], line: m[2], opt: m[2] + m[3] } : null; };
+  const letter = (o) => String(o).replace(/^\d+/, "");
+
   function inPlace(f, s, t) {
-    const ticks = (t && t.ticks) || {}, cl = s.checklist || [], counted = cl.filter((c) => c.type !== "Option");
-    const lines = cl.map((c) => { const k = ticks[c.no]; return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : ""}</div></div>`; }).join("");
+    const ticks = (t && t.ticks) || {}, cl = s.checklist || [], picks = filePicks(f);
+    // FLOW3 a "Shown only if" line whose option was not picked: grey "Not needed (6.1 picked b)", left out of the count.
+    const skipOf = (c) => { const r = refOf(c.onlyIf); if (!r) return ""; const v = picks[r.step + "·" + r.line]; return v === r.opt ? "" : v ? `Not needed (${r.step} picked ${letter(v)})` : `Only if ${r.step} picks ${letter(r.opt)}`; };
+    // WEB15 a pick one is a heading; the option that was picked is ticked (its tick is kept on the pick-one line).
+    const pickOf = (c) => ticks[String(c.no).match(/^\d+/)[0]];
+    const tickOf = (c) => (c.type === "Option" ? (pickOf(c) && pickOf(c).value === c.no ? pickOf(c) : null) : c.type === "Pick one" ? null : ticks[c.no]);
+    const counted = cl.filter((c) => c.type !== "Option" && !skipOf(c));
+    const lines = cl.map((c) => { const skip = skipOf(c);
+      if (c.type === "Pick one") return `<div class="plcl pick ${skip ? "skip" : ""}"><div>${esc(c.en)}${skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`;
+      const k = skip ? null : tickOf(c);
+      return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""} ${skip ? "skip" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value && c.type !== "Option" ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`; }).join("");
+    const nTicked = counted.filter((c) => (c.type === "Pick one" ? ticks[c.no] : tickOf(c))).length;
     const canNote = t && !t.doneAt && !ret(t) && RB.canEdit("plot");
-    return `<div class="plpanel"><div class="card plchk"><div class="subhead"><h3>Checklist</h3><span class="sub">${counted.filter((c) => ticks[c.no]).length} of ${counted.length} ticked</span><div class="sp"></div><span class="tag">View only · ticked on the phone</span></div>
+    return `<div class="plpanel"><div class="card plchk"><div class="subhead"><h3>Checklist</h3><span class="sub">${nTicked} of ${counted.length} ticked</span><div class="sp"></div><span class="tag">View only · ticked on the phone</span></div>
         ${lines || '<div class="muted">This step has no checklist.</div>'}
         <button class="btnt" data-pfhow="${esc(s.id)}" style="margin-top:12px">📖 How to do this</button><div class="sub" style="margin-top:4px">Opens the ${esc(s.role)} SOP for this step, English | اردو</div></div>
       <div class="card pltl"><div class="subhead"><h3>Timeline of step ${esc(s.id)}</h3><span class="sub">only this step</span></div>
@@ -240,7 +272,8 @@
   function filePage(f) {
     const x = X(), t = current(f), cur = t && step(t.step), nextIds = cur ? cur.next || [] : [];
     // WEB12 the file's top (back, header with Now with, stages, Steps/Timeline) stays in place while the steps scroll.
-    const top = () => `<div class="plfix">${header(f)}${tabs}</div>`;
+    // WEB16 once the header has scrolled away, one slim line slides in over the steps (it takes no room, so nothing moves).
+    const top = () => slimLine(f, tabs) + `<div class="plfix">${header(f)}${tabs}</div>`;
     const tabs = `<div class="tabs pltabs"><button data-pftab="steps" class="${S.pfTab === "steps" ? "on" : ""}">Steps</button><button data-pftab="timeline" class="${S.pfTab === "timeline" ? "on" : ""}">Timeline</button></div>`;
     if (S.pfTab === "timeline") return top() + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;
     const groups = Array.from(new Set(x.steps.map((s) => String(s.stage))));

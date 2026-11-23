@@ -142,13 +142,17 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
     const ns = steps[tg.to];
     if (!ns || seen.has(tg.to)) continue;
     seen.add(tg.to);
-    // "Also waits for": every one of those steps must be Done ("only if X was created": only when X exists).
+    // "Also waits for": every one of those steps must be Done ("only if X was created": only when X exists;
+    // "only if 6.1 · 6b": only when that option was picked).
     const need = [event.params.task];
     let ready = true;
     String(tg.waits || "").split(/[,;]/).map((w) => w.trim()).filter(Boolean).forEach((w) => {
       const sid = stepOf(w), t = latest(sid);
       if (!sid) return;
-      if (!t) { if (!/only if/i.test(w)) ready = false; return; }
+      // FLOW5 "6.8 (only if 6.1 · 6b)": waits for 6.8 only when that option was picked, even before 6.8 exists.
+      const cond = ref((w.match(/only if\s+([^)]+)/i) || [])[1]);
+      if (cond && !picked(cond)) return;
+      if (!t) { if (!/only if/i.test(w) || cond) ready = false; return; }
       if (!isDone(t)) ready = false; else need.push(t.id);
     });
     if (!ready) continue;
