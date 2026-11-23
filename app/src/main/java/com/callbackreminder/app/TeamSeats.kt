@@ -98,12 +98,16 @@ object Seats {
 
     fun timetableOf(s: Seat?): Timetable? = s?.let { x -> _timetables.value.firstOrNull { it.id == x.timetable } }
 
-    /** "Office · 11 AM - 9 PM, Friday off" (or "Not set yet …" when the seat has none). */
-    fun ttLabel(t: Timetable?): String = if (t == null) "Not set yet · 11 AM - 9 PM, Friday off for now"
-        else listOf(t.name, hoursLabel(t)).filter { it.isNotBlank() }.joinToString(" · ")
+    /** A timetable's name is its hours and days off, as on the website (locked 23 Nov): "8 AM to 5 PM · Fri off". */
+    fun ttLabel(t: Timetable?): String = if (t == null) "Not set yet · 11 AM to 9 PM · Fri off for now" else ttName(t)
 
-    private fun hoursLabel(t: Timetable): String = Dossier.timeLabel(t.start) + " - " + Dossier.timeLabel(t.end % (24 * 60)) + ", " +
-        if (t.off.isEmpty()) "no day off" else OffDays.label(maskOf(t.off)) + " off"
+    fun ttName(t: Timetable): String {
+        fun hs(min: Int): String { val h = (min / 60) % 24; val m = min % 60
+            return "${if (h % 12 == 0) 12 else h % 12}${if (m > 0) ":" + m.toString().padStart(2, '0') else ""} ${if (h < 12) "AM" else "PM"}" }
+        val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+        val off = listOf(1, 2, 3, 4, 5, 6, 0).filter { it in t.off }
+        return "${hs(t.start)} to ${hs(t.end)} · " + if (off.isEmpty()) "No day off" else off.joinToString(", ") { names[it] } + " off"
+    }
 
     /** Website week days (0 = Sunday) as the phone's mask (bit 0 = Monday … bit 6 = Sunday). */
     private fun maskOf(off: List<Int>): Int = off.fold(0) { m, d -> m or (1 shl ((if (d == 0) 7 else d) - 1)) }
@@ -130,7 +134,7 @@ object Seats {
         val mask = maskOf(use.off)
         OffDays.init(c)
         if (OffDays.mask.value != mask) OffDays.set(c, mask)
-        p(c).edit().putBoolean("managed", true).putString("tt", t?.name.orEmpty()).apply()
+        p(c).edit().putBoolean("managed", true).putString("tt", t?.let(::ttName).orEmpty()).apply()
     }
 
     /** A company holiday (website Settings › Holidays): no working hours that day. */

@@ -28,7 +28,7 @@ const ref = (txt) => {
 // ------------------------------------------------------------------ due time (a first guess; the doer's phone sets it again).
 // The doer's own timetable (web Team › Timetables, locked 23 Nov) and the company holidays (web Settings › Holidays) decide
 // working hours and days off. Nobody on a timetable yet: 11 AM - 9 PM Pakistan time, Friday off. Same rules as the phone.
-const PKT = 5 * 3600000, DAY = 86400000, ONE_PM = 13 * 60, FALLBACK = { start: 11 * 60, end: 21 * 60, off: [5] };
+const PKT = 5 * 3600000, DAY = 86400000, FALLBACK = { start: 11 * 60, end: 21 * 60, off: [5] };
 const dayStart = (ms) => Math.floor((ms + PKT) / DAY) * DAY - PKT;   // midnight PKT of that day, as UTC ms
 const at = (day, min) => day + min * 60000;
 /** cal = { start, end, off: [week days], hol: Set of "YYYY-MM-DD" } */
@@ -43,8 +43,6 @@ function dueOf(timer, days, hours, from, cal) {
   // The sheet's "Time rules" tab says the same in simple English (locked 23 Nov).
   if (/working hours/i.test(timer || "") && h > 0) return end - start >= h * HR ? start + h * HR : Math.min(at(next(day), START) + h * HR, at(next(day), END));
   if (n > 0) { const clock = start - day; for (let i = 0; i < n; i++) day = next(day); return day + clock; }
-  if (/same visit/i.test(timer || "")) return Math.min(start + 2 * HR, end);
-  if (/same day/i.test(timer || "") && start >= at(day, ONE_PM)) return at(next(day), END);
   return end;
 }
 

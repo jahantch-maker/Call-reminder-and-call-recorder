@@ -8,11 +8,11 @@
   const ed = () => RB.canEdit("team");
   const gmailOk = (g) => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(g).trim());
   const initial = (s) => esc((RB.holderName(s) || "?")[0].toUpperCase());
+  /** The round picture of a seat: the letter, dashed while nobody has joined. */
+  /** WEB9 the person's Google photo (saved by his own phone or browser at sign-in), else his first letter. */
+  const face = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return m && /^https:\/\//.test(m.photo || "") ? `<img src="${esc(m.photo)}" alt="" referrerpolicy="no-referrer" data-l="${initial(s)}" onerror="this.replaceWith(this.dataset.l)">` : initial(s); };
+  const avatar = (s) => `<span class="pav2 ${s.status === "filled" ? "" : "off"}" aria-hidden="true">${s.status === "filled" || s.invited ? face(s) : "＋"}</span>`;
   const tag = (name) => `<span class="ty" style="background:${RB.desigColor(name)}">${esc(name || "No designation")}</span>`;
-  const seatLine = (s) => {
-    const h = RB.headOf(s);
-    return [s.dept, h ? "head: " + (h.status === "filled" ? first(h.name) : first(h.gmail)) : s.role === "owner" ? "App owner" : ""].filter(Boolean).join(" · ");
-  };
   const selSeat = () => RB.seat(S.seatSel) || D.seats.find((s) => s.status === "filled") || D.seats[0];
   // The change is already saved; the history line and the phone rows are extras that must never show as an error.
   const done = async (text) => { try { await RB.log(text); } catch (e) { console.warn("log", e); } await RB.sync(); };
@@ -35,34 +35,49 @@
   RB.ttOf = (s) => (s && s.timetable ? RB.timetables().find((t) => t.id === s.timetable) : null);
   RB.noTimetable = () => D.seats.filter((s) => !RB.ttOf(s));
   const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const hm = (min) => { const h = Math.floor(min / 60); return (h % 12 || 12) + ":" + String(min % 60).padStart(2, "0") + (h < 12 ? " AM" : " PM"); };
-  const offTxt = (t) => (t.off.length ? t.off.map((i) => DAYS[i]).join(", ") + " off" : "No day off");
-  const ttLine = (t) => hm(t.start) + " – " + hm(t.end) + ", " + offTxt(t);
+  /** A timetable's name is its hours and days off (no typed name, locked 23 Nov): "8 AM to 5 PM · Fri off". */
+  const hs = (min) => { const h = Math.floor(min / 60) % 24, m = min % 60; return (h % 12 || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " AM" : " PM"); };
+  RB.ttName = (t) => (t ? hs(t.start) + " to " + hs(t.end) + " · " + (t.off && t.off.length ? [1, 2, 3, 4, 5, 6, 0].filter((i) => t.off.includes(i)).map((i) => DAYS[i].slice(0, 3)).join(", ") + " off" : "No day off") : "");
   const pname = (s) => s.name || s.gmail || "";
   const onTt = (id) => D.seats.filter((s) => s.timetable === id).sort((a, b) => pname(a).localeCompare(pname(b)));
-  const noTt = (s) => (RB.ttOf(s) ? "" : ' <span class="tag amb">No timetable</span>');
   /** Seat form options: each timetable with who else is on it. */
   const ttOpts = (seatId) => [["", "— pick a timetable —"]].concat(RB.timetables().map((t) => {
     const p = onTt(t.id).filter((s) => s.id !== seatId).map((s) => first(pname(s)));
-    return [t.id, t.name + " · " + ttLine(t) + " · " + (p.length ? p.slice(0, 5).join(", ") + (p.length > 5 ? " +" + (p.length - 5) + " more" : "") : "nobody yet")];
+    return [t.id, RB.ttName(t) + " · " + (p.length ? p.slice(0, 5).join(", ") + (p.length > 5 ? " +" + (p.length - 5) + " more" : "") : "nobody yet")];
   }));
   const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
   // ------------------------------------------------------------------ people
   function people() {
     const q = (S.q || "").toLowerCase();
-    S.psort = S.psort || "az";
+    // Sort by a column (locked 23 Nov, WEB8): click a column name, click again to flip. [column, 1 = A→Z / -1 = Z→A]
+    if (!Array.isArray(S.psort)) S.psort = ["name", 1];
+    const [col, dir] = S.psort;
     const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
-    const by = { az: (a, b) => nm(a).localeCompare(nm(b)), desig: (a, b) => (a.designation || "~").localeCompare(b.designation || "~") || nm(a).localeCompare(nm(b)), dept: (a, b) => (a.dept || "~").localeCompare(b.dept || "~") || nm(a).localeCompare(nm(b)) }[S.psort];
+    const key = { name: nm, dept: (s) => (s.dept || "~").toLowerCase(), tt: (s) => (RB.ttOf(s) ? RB.ttOf(s).start * 10000 + RB.ttOf(s).end : 9e9), desig: (s) => (s.designation || "~").toLowerCase() }[col] || nm;
+    const by = (a, b) => { const x = key(a), y = key(b); return (x < y ? -dir : x > y ? dir : 0) || nm(a).localeCompare(nm(b)); };
     const inScope = RB.scope() === "all" ? null : new Set(RB.visibleSeats().map((x) => x.id));
-    const list = D.seats.filter((s) => (!inScope || inScope.has(s.id)) && (!q || (RB.holderName(s) + " " + s.gmail + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q))).slice().sort(by);
-    const pchips = [["az", "A–Z"], ["desig", "Designation"], ["dept", "Department"]].map(([k, l]) => `<button class="sc ${S.psort === k ? "on" : ""}" data-psort="${k}">${l}</button>`).join("");
+    const list = D.seats.filter((s) => (!inScope || inScope.has(s.id)) && (!q || (RB.holderName(s) + " " + s.gmail + " " + (s.phone || "") + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q))).slice().sort(by);
     const sel = selSeat();
-    const row = (s) => s.status === "filled"
-      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}${noTt(s)}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
-      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}${noTt(s)}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() && s.invited ? `<button class="btnt edit-only" data-wainv="${esc(s.id)}" title="Send the invite on WhatsApp">🟢 Invite</button>` : ""}${ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${s.invited ? "Edit" : "Fill seat"}</button>` : ""}</div>`;
-    const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${pchips}${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
-      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
+    const th = (k, l) => k ? `<button class="plth ${col === k ? "on" : ""}" data-psort="${k}" aria-label="Sort by ${l}">${l} <span aria-hidden="true">${col === k ? (dir === 1 ? "▲" : "▼") : "⬍"}</span></button>` : `<span class="plth">${l}</span>`;
+    const head = `<div class="prow phead" aria-hidden="false"><span></span>${th("name", "Name")}${th("", "Contact")}${th("dept", "Department")}${th("tt", "Timetable")}${th("desig", "Designation")}<span></span></div>`;
+    const headName = (s) => { const h = RB.headOf(s); return h ? (h.status === "filled" ? h.name : h.name || first(h.gmail)) : ""; };
+    const row = (s) => {
+      const joined = s.status === "filled", tt = RB.ttOf(s);
+      const status = joined ? '<span class="pst on">● Joined</span>' : s.invited ? '<span class="pst">Invited, not joined</span>' : '<span class="pst">Nobody invited yet</span>';
+      const miss = [s.phone ? "" : '<span class="tag amb">No phone number</span>', tt ? "" : '<span class="tag amb">No timetable</span>'].join("");
+      const btn = ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${joined || s.invited ? "Edit" : "Fill seat"}</button>` : "";
+      return `<div class="prow ${joined ? "on" : "off"} ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}" role="button" tabindex="0">
+        ${avatar(s)}
+        <div class="pcl"><b>${esc(joined ? s.name : s.name || "Empty seat")}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b>${status}</div>
+        <div class="pcl">${s.phone ? `<b class="pph">📞 ${esc(s.phone)}</b>` : '<b class="pph none">📞 —</b>'}<span class="pem">✉ ${esc(s.gmail)}</span></div>
+        <div class="pcl"><b>${esc(s.dept || "—")}</b><span>${headName(s) ? "Head: <b>" + esc(headName(s)) + "</b>" : s.role === "owner" ? "Top of the chart" : "No head"}</span></div>
+        <div class="pcl">${tt ? `<b>${esc(RB.ttName(tt))}</b>` : '<span>—</span>'}</div>
+        <div class="pcl">${tag(s.designation)}</div>
+        <div class="pend">${miss}${btn}</div></div>`;
+    };
+    const html = `<div class="cols"><div class="card pcard" style="flex:2"><div class="stickhead"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
+      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>${list.length ? head : ""}</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
     return { html, side: seatPanel(sel) };
   }
@@ -85,14 +100,13 @@
     if (!s) return "";
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
-    const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttOf(s).name + " · " + ttLine(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
-      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
+    const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
+      ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
 
-  const phoneOk = (p) => !p || /^\+?[0-9][0-9 -]{6,16}$/.test(p);
   /** The seat form (locked 23 Nov): Name, Official phone, Official Gmail (editable later too, his choice 23 Nov), Designation,
    *  Department (from the designation), Reports to, Timetable. */
   function seatForm(s, prefill) {
@@ -100,7 +114,7 @@
     const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.filter((x) => !id || (x.id !== id && !RB.wouldLoop(id, x.id))).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
     const f = [
       { k: "name", label: "NAME", value: p.name || "", ph: "Full name" },
-      { k: "phone", label: "OFFICIAL PHONE", value: p.phone || "", ph: "0300 1234567" },
+      { k: "phone", label: "OFFICIAL PHONE", type: "phone", value: p.phone || "" },
       { k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" },
     ].concat([
       { k: "designation", label: "DESIGNATION", type: "select", value: p.designation || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
@@ -110,9 +124,9 @@
     ]);
     if (s && RB.isOwner()) f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     const check = (v) => {
-      v.name = v.name.trim().replace(/\s+/g, " "); v.phone = v.phone.trim();
+      v.name = v.name.trim().replace(/\s+/g, " "); v.phone = RB.digitsFmt(v.phone, "phone");
       if (!v.name) return "Type the name.";
-      if (!phoneOk(v.phone)) return "Type the official phone as digits, e.g. 0300 1234567.";
+      if (!RB.phoneOk(v.phone)) return "The official phone must be a mobile number: 11 digits starting 03, e.g. 0300 1234567.";
       if (!v.timetable && (!s || s.timetable)) return RB.timetables().length ? "Pick a timetable." : "Make a timetable first, in Team › Timetables.";
       return "";
     };
@@ -144,7 +158,7 @@
         await RB.Store.put("seats", id, patch, true);
         const hd = v.reportsTo !== (s.reportsTo || "");
         if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
-        const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttOf({ timetable: v.timetable }).name : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
+        const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttName(RB.ttOf({ timetable: v.timetable })) : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
         if (moved) { await moveGmail(id, g, Object.assign({}, patch, { reportsTo: v.reportsTo })); ch.push("Gmail now " + g); }
         await done("Edited seat " + id + (ch.length ? " · " + ch.join(" · ") : ""));
       }, s.status === "filled" ? "If you change the Gmail, " + esc(s.name) + " signs in again with the new one. Open tasks wait in the seat and go back when they sign in." : "");
@@ -391,7 +405,7 @@
     const sw = (k) => `<div class="sw ${e.app[k] ? "on" : ""} ${can ? "" : "dis"}" data-sw="${k}" role="switch" aria-checked="${!!e.app[k]}"></div>`;
     const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
-      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
+      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
     const cur = S.accDesig && RB.desigOf(S.accDesig);
     const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div><div class="sp"></div>${mode === "desig" && ed() ? `${cur && RB.isChecked(cur) ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
       <div class="subhead">${mode === "person" ? `<select id="accp" style="flex:1">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd" style="flex:1">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}</div>
@@ -561,7 +575,7 @@
   function timetables() {
     const tts = RB.timetables(), miss = RB.noTimetable(), E = S.ttEdit;
     const chip = (s, pick) => `<button class="ttp" ${pick && ed() ? `data-ttpick="${esc(s.id)}" title="Pick a timetable"` : `data-ttseat="${esc(s.id)}" title="Open seat"`}><span class="av" style="background:${RB.desigColor(s.designation)}">${esc((pname(s)[0] || "?").toUpperCase())}</span>${esc(pname(s))}</button>`;
-    const card = (t) => { const p = onTt(t.id); return `<div class="tt ${E && E.id === t.id ? "sel" : ""}"><div class="tth"><h4>${esc(t.name)}</h4><div class="sp"></div><b>${hm(t.start)} – ${hm(t.end)}</b><span class="sub">· ${esc(offTxt(t))}</span>${ed() ? `<button class="btnt edit-only" data-ttedit="${esc(t.id)}">Edit</button>` : ""}</div>${p.length ? `<div class="ttppl">${p.map((x) => chip(x)).join("")}</div>` : ""}<div class="sub ttn">${p.length ? p.length + (p.length === 1 ? " person" : " people") : "Nobody yet"}</div></div>`; };
+    const card = (t) => { const p = onTt(t.id); return `<div class="tt ${E && E.id === t.id ? "sel" : ""}"><div class="tth"><h4>${esc(RB.ttName(t))}</h4><div class="sp"></div>${ed() ? `<button class="btnt edit-only" data-ttedit="${esc(t.id)}">Edit</button>` : ""}</div>${p.length ? `<div class="ttppl">${p.map((x) => chip(x)).join("")}</div>` : ""}<div class="sub ttn">${p.length ? p.length + (p.length === 1 ? " person" : " people") : "Nobody yet"}</div></div>`; };
     const html = `<div class="card"><div class="subhead"><h3>Timetables · ${tts.length}</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="ttnew">+ New timetable</button>' : ""}</div>
       <div class="hint">Each person works on one timetable. Change a timetable here and everyone on it gets the new time. Steps already started keep their due time. Holidays are in Settings › Holidays.</div>
       ${miss.length ? `<div class="tt miss"><div class="tth"><h4>⚠ No timetable · ${miss.length}</h4><div class="sp"></div><span class="sub">${ed() ? "Tap a name to pick. " : ""}Until then: 11:00 AM – 9:00 PM, Friday off</span></div><div class="ttppl">${miss.map((x) => chip(x, true)).join("")}</div></div>` : ""}
@@ -577,9 +591,8 @@
     const t = RB.timetables().find((x) => x.id === E.id), now = t ? onTt(t.id) : [];
     const list = D.seats.slice().sort((a, b) => Number(RB.ttOf(b) && RB.ttOf(b).id === E.id) - Number(RB.ttOf(a) && RB.ttOf(a).id === E.id) || pname(a).localeCompare(pname(b)));
     const row = (s) => { const cur = RB.ttOf(s), mine = cur && cur.id === E.id, on = E.people.includes(s.id);
-      return `<label class="ttck ${on ? "on" : ""}" ${mine ? 'title="Already on this timetable. To move, tick them on another timetable or edit their seat."' : ""}><input type="checkbox" data-ttck="${esc(s.id)}" ${on ? "checked" : ""} ${mine ? "disabled" : ""}><span class="w"><b>${esc(pname(s))}</b><small>${esc(s.designation || "")}</small></span><span class="${cur ? "sub" : "amb"}">${cur ? esc(cur.name) : "now: none"}</span></label>`; };
-    return `<div class="ttpanel"><h3>${t ? esc(t.name) : "New timetable"}</h3><div class="sub">${t ? now.length + (now.length === 1 ? " person" : " people") + " on this timetable" : "Name it, set the hours and days off, then add people."}</div>
-      <div class="lbl">NAME</div><input id="ttname" value="${esc(E.name)}" placeholder="Office">
+      return `<label class="ttck ${on ? "on" : ""}" ${mine ? 'title="Already on this timetable. To move, tick them on another timetable or edit their seat."' : ""}><input type="checkbox" data-ttck="${esc(s.id)}" ${on ? "checked" : ""} ${mine ? "disabled" : ""}><span class="w"><b>${esc(pname(s))}</b><small>${esc(s.designation || "")}</small></span><span class="${cur ? "sub" : "amb"}">${cur ? esc(RB.ttName(cur)) : "now: none"}</span></label>`; };
+    return `<div class="ttpanel"><h3>${t ? esc(RB.ttName(t)) : "New timetable"}</h3><div class="sub">${t ? now.length + (now.length === 1 ? " person" : " people") + " on this timetable" : "Set the hours and days off, then add people. Its name is made from them."}</div>
       <div class="ttrow"><div><div class="lbl">STARTS</div><input type="time" id="ttstart" value="${m2t(E.start)}"></div><div><div class="lbl">CLOSES</div><input type="time" id="ttend" value="${m2t(E.end)}"></div></div>
       <div class="lbl">DAYS OFF</div><div class="ttdays">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<button class="ttd ${E.off.includes(i) ? "on" : ""}" data-ttoff="${i}" aria-pressed="${E.off.includes(i)}" title="${DAYS[i]}">${DAYS[i].slice(0, 3)}</button>`).join("")}</div>
       <div class="lbl">PEOPLE · ADD PEOPLE</div>${list.map(row).join("") || '<div class="muted">No seats yet.</div>'}
@@ -588,10 +601,9 @@
   }
   async function ttSave(btn) {
     const E = S.ttEdit, err = (t) => { const e = document.getElementById("tterr"); if (e) e.textContent = t; };
-    const name = E.name.trim().replace(/\s+/g, " ");
-    if (!name) return err("Type a name.");
-    if (RB.timetables().some((x) => x.id !== E.id && x.name.toLowerCase() === name.toLowerCase())) return err("Another timetable has that name.");
     if (!(E.start >= 0 && E.end > E.start)) return err("Closing time must be after the starting time.");
+    const name = RB.ttName(E);
+    if (RB.timetables().some((x) => x.id !== E.id && RB.ttName(x) === name)) return err("A timetable with these hours and days off already exists: " + name + ".");
     if (E.off.length > 6) return err("Leave at least one working day.");
     const id = E.id || "tt" + Date.now().toString(36), row = { id, name, start: E.start, end: E.end, off: E.off.slice().sort() };
     const old = RB.timetables().find((x) => x.id === id);
@@ -602,7 +614,7 @@
       await RB.Store.put("config", "designations", { timetables: list, updatedAt: Date.now() }, true);
       for (const sid of mv) await RB.Store.put("seats", sid, { timetable: id }, true);
       S.ttEdit = null;
-      await done((old ? "Edited" : "Added") + " timetable " + name + " (" + ttLine(row) + ")" + (mv.length ? " · moved " + mv.map((x) => pname(RB.seat(x))).join(", ") : ""));
+      await done((old ? "Edited" : "Added") + " timetable " + name + (mv.length ? " · moved " + mv.map((x) => pname(RB.seat(x))).join(", ") : ""));
     } catch (e) { btn.disabled = false; err("Couldn't save: " + (e.message || e)); }
     finally { RB.hold = false; RB.render(); }
   }
@@ -612,7 +624,7 @@
     RB.form("Timetable for " + pname(s), [{ k: "tt", label: "TIMETABLE", type: "select", value: "", options: ttOpts(seatId) }], "Save", async (v) => {
       if (!v.tt) return "Pick a timetable.";
       await RB.Store.put("seats", seatId, { timetable: v.tt }, true);
-      await done(pname(s) + " is now on timetable " + RB.ttOf({ timetable: v.tt }).name);
+      await done(pname(s) + " is now on timetable " + RB.ttName(RB.ttOf({ timetable: v.tt })));
     });
   }
   function ttBind(root, side) {
@@ -622,16 +634,15 @@
     root.querySelectorAll("[data-ttseat]").forEach((b) => (b.onclick = () => { S.seatSel = b.dataset.ttseat; S.tab.team = "people"; RB.render(); }));
     const E = S.ttEdit, P = side && side.querySelector(".ttpanel"); if (!E || !P) return;
     const sv = P.querySelector("#ttsave"), lbl = () => (sv.textContent = saveLbl(E));
-    P.querySelector("#ttname").oninput = (e) => (E.name = e.target.value);
     P.querySelector("#ttstart").oninput = (e) => (E.start = t2m(e.target.value));
     P.querySelector("#ttend").oninput = (e) => (E.end = t2m(e.target.value));
     P.querySelectorAll("[data-ttoff]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.ttoff); E.off = E.off.includes(i) ? E.off.filter((x) => x !== i) : E.off.concat(i); b.classList.toggle("on"); b.setAttribute("aria-pressed", E.off.includes(i)); }));
     P.querySelectorAll("[data-ttck]").forEach((c) => (c.onchange = () => { const id = c.dataset.ttck; E.people = c.checked ? E.people.concat(id) : E.people.filter((x) => x !== id); c.closest(".ttck").classList.toggle("on", c.checked); lbl(); }));
     P.querySelector("#ttcancel").onclick = () => { S.ttEdit = null; RB.render(); };
     sv.onclick = () => ttSave(sv);
-    const dl = P.querySelector("#ttdel"); if (dl) dl.onclick = () => RB.confirm("Delete the timetable “" + esc(E.name) + "”? Nobody is on it.", "Delete", async () => {
+    const dl = P.querySelector("#ttdel"); if (dl) dl.onclick = () => RB.confirm("Delete the timetable “" + esc(RB.ttName(E)) + "”? Nobody is on it.", "Delete", async () => {
       if (onTt(E.id).length) return RB.alertBox("Someone was just put on it. Move them first.");
-      const n = E.name; await RB.Store.put("config", "designations", { timetables: RB.timetables().filter((x) => x.id !== E.id), updatedAt: Date.now() }, true);
+      const n = RB.ttName(E); await RB.Store.put("config", "designations", { timetables: RB.timetables().filter((x) => x.id !== E.id), updatedAt: Date.now() }, true);
       S.ttEdit = null; await done("Deleted timetable " + n);
     }, true);
   }
@@ -653,6 +664,7 @@
         // On a phone the person's panel (Edit, Access, Offboard) sits below the whole list: bring it into view.
         if (window.innerWidth < 900) { const sd = document.getElementById("side"); if (sd) setTimeout(() => sd.scrollIntoView({ behavior: "smooth", block: "start" }), 30); }
       });
+      root.querySelectorAll(".prow[data-seat]").forEach((e) => (e.onkeydown = (ev) => { if (ev.key === "Enter" && ev.target === e) e.click(); }));
       const ad = root.querySelector("#addseat"); if (ad) ad.onclick = () => addSeat();
       const mg = root.querySelector("#migrate"); if (mg) mg.onclick = () => { mg.disabled = true; migrate().then(RB.render); };
       // WhatsApp invite: opens WhatsApp with a short ready message; he picks the person and sends it himself.
@@ -733,7 +745,7 @@
         const add = Array.from(new Set(D.seats.map((s) => (s.dept || "").trim()).filter(Boolean))).filter((x) => !RB.deptList().includes(x));
         (add.length ? saveDepts(RB.deptList().concat(add), "Added typed departments") : Promise.resolve()).then(() => saveDesig(list, "Placed designations under their seats' departments")).then(RB.render);
       };
-      both("[data-psort]", (e) => { S.psort = e.dataset.psort; RB.render(); });
+      both("[data-psort]", (e) => { const k = e.dataset.psort; S.psort = [k, S.psort[0] === k ? -S.psort[1] : 1]; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
       // access

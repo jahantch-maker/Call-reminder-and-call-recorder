@@ -30,7 +30,7 @@
   const first = (n) => RB.first(n).split(" ")[0];
   const step = (id) => (X() ? X().steps.find((s) => s.id === id) : null);
   const stageOf = (n) => ((X() && X().stages) || []).find((g) => String(g.no) === String(n)) || { no: n, name: "" };
-  const allowed = (s) => (s && s.limit ? (/allowed$/i.test(s.limit) ? s.limit : s.limit + " allowed") : "");
+  const allowed = (s) => (RB.stepTime(s) ? RB.stepTime(s) + " allowed" : "");
   const b64 = (b) => { if (!b) return ""; if (typeof b === "string") return b; try { if (typeof b.toBase64 === "function") return b.toBase64(); if (b._byteString && b._byteString.toBase64) return b._byteString.toBase64(); } catch (e) {} return ""; };
 
   // ------------------------------------------------------------------ where each file stands
@@ -218,15 +218,15 @@
 
   function editDetails(f) {
     const F = [["plotNo", "Plot number"], ["size", "Plot size (marla)"], ["name", "Plot owner name"], ["cnic", "CNIC number (13 digits)"], ["wa", "WhatsApp number (11 digits)"], ["sim2", "Second SIM (11 digits, optional)"], ["address", "Address"], ["attorney", "Attorney name (optional)"]];
-    RB.form("Edit details · Plot " + f.plotNo, F.map(([k, label]) => ({ k, label, value: f[k] === undefined || f[k] === null ? "" : String(f[k]), type: k === "size" ? "number" : "text" })), "Save", async (v) => {
+    RB.form("Edit details · Plot " + f.plotNo, F.map(([k, label]) => ({ k, label, value: f[k] === undefined || f[k] === null ? "" : String(f[k]), type: k === "size" ? "number" : k === "cnic" ? "cnic" : k === "wa" || k === "sim2" ? "phone" : "text" })), "Save", async (v) => {
       Object.keys(v).forEach((k) => (v[k] = String(v[k]).trim()));
       ["cnic", "wa", "sim2"].forEach((k) => (v[k] = digits(v[k])));
       if (!v.plotNo) return "Plot number is needed.";
       if (!(Number(v.size) > 0)) return "Plot size must be a number of marla.";
       if (!v.name) return "Plot owner name is needed.";
       if (v.cnic.length !== 13) return "CNIC must be exactly 13 digits.";
-      if (v.wa.length !== 11) return "WhatsApp number must be exactly 11 digits.";
-      if (v.sim2 && v.sim2.length !== 11) return "Second SIM must be exactly 11 digits, or empty.";
+      if (!/^03\d{9}$/.test(v.wa)) return "WhatsApp number must be a mobile number: 11 digits starting 03.";
+      if (v.sim2 && !/^03\d{9}$/.test(v.sim2)) return "Second SIM must be a mobile number (11 digits starting 03), or empty.";
       if (!v.address) return "Address is needed.";
       const same = (D.plot || []).find((o) => o.id !== f.id && !!o.test === !!f.test && String(o.plotNo).trim().toLowerCase() === v.plotNo.toLowerCase());
       if (same) return "Plot " + v.plotNo + " already has a file" + (same.name ? " (" + same.name + ")" : "") + ". A plot number can be opened only once.";

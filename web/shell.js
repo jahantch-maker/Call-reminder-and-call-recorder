@@ -96,6 +96,25 @@
     if (sec === "app" || sec === "meetings") RB.meet.bind(content);
     if (RB.sections[sec].bind) RB.sections[sec].bind(content, document.getElementById("side"));
     if (page.afterBind) page.afterBind();
+    RB.stickHeads(content);
+  };
+  /** Frozen top bars (locked 23 Nov, WEB7): in every page card, the title bar (count, buttons, filters), the help note
+   *  under it and the column names stay in place while the list scrolls. Done once here for every section. */
+  RB.stickHeads = (content) => {
+    if (!content) return;
+    content.querySelectorAll(".card").forEach((card) => {
+      if (card.parentElement.closest(".card")) return;   // only page cards, not cards inside cards
+      let head = card.firstElementChild;
+      if (!head) return;
+      if (!head.classList.contains("stickhead")) {
+        if (!head.classList.contains("subhead")) return;
+        const w = document.createElement("div"); w.className = "stickhead";
+        card.insertBefore(w, head);
+        while (w.nextElementSibling && (w.childElementCount === 0 || /\b(hint|plchips|plsearch)\b/.test(w.nextElementSibling.className))) w.appendChild(w.nextElementSibling);
+      }
+      const ph = card.querySelector(":scope > .pltable > .plhead");
+      if (ph) card.firstElementChild.appendChild(ph);
+    });
   };
 
   // ------------------------------------------------------------------ notices (bell)
@@ -139,11 +158,26 @@
     const b = Array.from(card.querySelectorAll("button")).find((x) => /^\s*save\b/i.test(x.textContent) && !x.disabled);
     if (b) { e.preventDefault(); b.click(); }
   });
+  // Phone (11 digits, Pakistani mobile) and CNIC (13 digits) boxes: digits only, no more than that, spaced as you type
+  // (0300 1234567 · 35202-1234567-1), the same as the phone app (locked 23 Nov). +92 3xx becomes 03xx.
+  RB.digitsFmt = (v, kind) => {
+    let d = String(v || "").replace(/\D/g, "");
+    if (kind === "phone" && /^923/.test(d)) d = "0" + d.slice(2);
+    if (kind === "phone") { d = d.slice(0, 11); return d.length > 4 ? d.slice(0, 4) + " " + d.slice(4) : d; }
+    d = d.slice(0, 13); return d.length > 12 ? d.slice(0, 5) + "-" + d.slice(5, 12) + "-" + d.slice(12) : d.length > 5 ? d.slice(0, 5) + "-" + d.slice(5) : d;
+  };
+  /** A Pakistani mobile: empty, or 11 digits starting 03. */
+  RB.phoneOk = (v) => { const d = String(v || "").replace(/\D/g, ""); return !d || /^03\d{9}$/.test(d); };
+  document.addEventListener("input", (e) => {
+    const el = e.target; if (!el || !el.dataset || !el.dataset.dig) return;
+    const f = RB.digitsFmt(el.value, el.dataset.dig); if (f !== el.value) el.value = f;
+  });
   /** A small form dialog. fields: [{k, label, value, type, options}] → fn(values) */
   RB.form = (title, fields, yes, fn, note) => {
     const m = document.getElementById("modal");
     const f = (x) => x.type === "select" ? `<select data-k="${x.k}">${x.options.map((o) => { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return `<option value="${esc(v)}" ${String(x.value) === String(v) ? "selected" : ""}>${esc(l)}</option>`; }).join("")}</select>`
       : x.type === "textarea" ? `<textarea data-k="${x.k}" rows="4" placeholder="${esc(x.ph || "")}">${esc(x.value || "")}</textarea>`
+      : x.type === "phone" || x.type === "cnic" ? `<input data-k="${x.k}" data-dig="${x.type}" type="text" inputmode="numeric" autocomplete="off" value="${esc(RB.digitsFmt(x.value, x.type))}" placeholder="${esc(x.ph || (x.type === "cnic" ? "35202-1234567-1" : "0300 1234567"))}">`
       : `<input data-k="${x.k}" type="${x.type || "text"}" value="${esc(x.value || "")}" placeholder="${esc(x.ph || "")}">`;
     m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">${esc(title)}</b>${note ? `<div class="foot">${note}</div>` : ""}${fields.map((x) => `<div class="lbl">${esc(x.label)}</div>${f(x)}`).join("")}<div class="err" id="ferr"></div><div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="fc">Cancel</button><button class="btnp" id="fy">${esc(yes)}</button></div></div></div>`;
     document.getElementById("fc").onclick = () => (m.innerHTML = "");
