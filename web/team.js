@@ -93,7 +93,7 @@
   }
 
   const phoneOk = (p) => !p || /^\+?[0-9][0-9 -]{6,16}$/.test(p);
-  /** The seat form (locked 23 Nov): Name, Official phone, Official Gmail (new seats only: it is the seat's key), Designation,
+  /** The seat form (locked 23 Nov): Name, Official phone, Official Gmail (editable later too, his choice 23 Nov), Designation,
    *  Department (from the designation), Reports to, Timetable. */
   function seatForm(s, prefill) {
     const id = s ? s.id : "", p = s || prefill || {};
@@ -101,7 +101,8 @@
     const f = [
       { k: "name", label: "NAME", value: p.name || "", ph: "Full name" },
       { k: "phone", label: "OFFICIAL PHONE", value: p.phone || "", ph: "0300 1234567" },
-    ].concat(s ? [] : [{ k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" }]).concat([
+      { k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" },
+    ].concat([
       { k: "designation", label: "DESIGNATION", type: "select", value: p.designation || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
       deptField("DEPARTMENT", p.dept),
       { k: "reportsTo", label: "REPORTS TO", type: "select", value: p.reportsTo || "", options: heads },
@@ -128,6 +129,12 @@
     } else {
       RB.form("Edit seat", f, "Save", async (v) => {
         const bad = check(v); if (bad) return bad;
+        const g = RB.gkey(v.gmail), moved = g !== id;
+        if (moved) {
+          if (!gmailOk(g)) return "Type a plain Gmail address (name@gmail.com).";
+          if (RB.seat(g)) return "That Gmail already has a seat.";
+          if (s.role === "owner" || (s.uid && s.uid === RB.uidOf())) return "This Gmail can't be changed here: it would sign out the app owner or you.";
+        }
         const patch = { name: v.name, phone: v.phone, designation: v.designation, dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
         if (v.timetable) patch.timetable = v.timetable;
         if (s.status !== "filled") patch.invited = true;
@@ -138,10 +145,32 @@
         const hd = v.reportsTo !== (s.reportsTo || "");
         if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
         const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttOf({ timetable: v.timetable }).name : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
+        if (moved) { await moveGmail(id, g, Object.assign({}, patch, { reportsTo: v.reportsTo })); ch.push("Gmail now " + g); }
         await done("Edited seat " + id + (ch.length ? " · " + ch.join(" · ") : ""));
-      });
+      }, s.status === "filled" ? "If you change the Gmail, " + esc(s.name) + " signs in again with the new one. Open tasks wait in the seat and go back when they sign in." : "");
     }
     wireDesigDept(p.dept || "");
+  }
+  /** Gmail changed (23 Nov, his choice): the seat moves to the new Gmail, with its place in the chart and history. Whoever is in
+   *  it signs in again with the new Gmail; until then their open tasks wait with the seat (like caretaker tasks) and go back
+   *  to them when they sign in. */
+  async function moveGmail(oldId, g, extra) {
+    const s = RB.seat(oldId), now = Date.now(), filled = s.status === "filled" && s.uid;
+    const data = Object.assign({}, s, extra, { gmail: g }); delete data.id; delete data.perms;
+    if (filled) Object.assign(data, { status: "empty", uid: "", invited: true, holders: (s.holders || []).map((h, i, a) => (i === a.length - 1 && !h.to ? Object.assign({}, h, { to: now }) : h)) });
+    await RB.Store.put("seats", g, data);
+    for (const x of D.seats.filter((y) => y.id !== oldId && (y.reportsTo === oldId || (y.extraGivers || []).includes(oldId))))
+      await RB.Store.put("seats", x.id, { reportsTo: x.reportsTo === oldId ? g : x.reportsTo || "", extraGivers: (x.extraGivers || []).map((e) => (e === oldId ? g : e)) }, true);
+    const open = (t) => !["done", "checked", "cancelled", "returned"].includes(t.status);
+    for (const t of D.tasks.filter(open)) {
+      let c = t.caretaker && t.caretaker.seatId === oldId ? Object.assign({}, t.caretaker, { seatId: g }) : null;
+      if (!c && filled && t.toUid === s.uid) c = { seatId: g, forName: s.name, role: "to", uid: s.uid, name: s.name, keep: false, at: now };
+      else if (!c && filled && t.fromUid === s.uid && t.toUid !== s.uid) c = { seatId: g, forName: s.name, role: "by", uid: s.uid, name: s.name, keep: false, at: now };
+      if (c) await RB.Store.put("tasks", t.id, { caretaker: c }, true);
+    }
+    if (filled) await RB.Store.put("members", s.uid, { status: "removed", perms: { app: {}, portal: { app: "none", meetings: "none", team: "none", docs: "none", settings: "none" } }, removedAt: now }, true);
+    await RB.Store.del("seats", oldId);
+    if (S.seatSel === oldId) S.seatSel = g;
   }
   const addSeat = (prefill) => seatForm(null, prefill);
   const editSeat = (id) => seatForm(RB.seat(id));
@@ -726,5 +755,5 @@
       ttBind(root, side);
     },
   };
-  RB.team = { addSeat, offboard, moveSeat, migrate };
+  RB.team = { addSeat, editSeat, offboard, moveSeat, migrate };
 })();
