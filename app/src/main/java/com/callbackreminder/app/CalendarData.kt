@@ -43,11 +43,11 @@ object WorkHours {
 
     fun label(c: Context): String =
         if (!isSet(c)) "Not set yet (needed for the Calendar)"
-        else Dossier.timeLabel(start(c)) + " - " + Dossier.timeLabel(end(c) % (24 * 60))
+        else Dossier.timeLabel(start(c)) + " - " + Dossier.timeLabel(end(c) % (24 * 60)) + if (Seats.managed(c)) " · Set by your manager" else ""
 
-    /** Today's working hours as times, or null on the weekly off day (no free slots then). */
+    /** Today's working hours as times, or null on the weekly off day or a company holiday (no free slots then). */
     fun window(c: Context, date: LocalDate): Pair<Long, Long>? {
-        if (!isSet(c) || OffDays.isOff(date)) return null
+        if (!isSet(c) || OffDays.isOff(date) || Seats.isHoliday(c, date)) return null
         return CalendarData.at(date, start(c)) to CalendarData.at(date, end(c))
     }
 }

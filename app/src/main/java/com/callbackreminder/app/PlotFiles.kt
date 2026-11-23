@@ -158,7 +158,7 @@ object PlotFiles {
 
     /**
      * When a step is due (his rules, 23 Nov; written for everyone in the sheet's "Time rules" tab), from his own working
-     * hours and weekly off day. The clock starts when the step is made; outside working hours it starts when work starts
+     * hours and weekly off day (his timetable on the website) and the company holidays. The clock starts when the step is made; outside working hours it starts when work starts
      * on the next working day.
      * Working hours (N in Hours): N hours later if that many are left today, else N hours after work starts next working day.
      * Working days (N in Days): the same clock time N working days later.
@@ -168,7 +168,7 @@ object PlotFiles {
     fun dueOf(c: Context, timer: String, days: Int?, hours: Int?, from: Long): Long {
         val z = ZoneId.systemDefault()
         fun win(d: java.time.LocalDate): Pair<Long, Long>? = when {
-            OffDays.isOff(d) -> null
+            OffDays.isOff(d) || Seats.isHoliday(c, d) -> null
             WorkHours.isSet(c) -> WorkHours.window(c, d)
             else -> CalendarData.at(d, 11 * 60) to CalendarData.at(d, 21 * 60)   // the office's 11 AM - 9 PM, as Team uses
         }

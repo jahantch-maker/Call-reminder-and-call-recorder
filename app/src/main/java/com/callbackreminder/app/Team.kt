@@ -336,7 +336,7 @@ object TeamRules {
         var total = 0L
         var guard = 0
         while (!day.isAfter(last) && guard++ < 60) {
-            if (!OffDays.isOff(day)) {
+            if (!OffDays.isOff(day) && !Seats.isHoliday(c, day)) {
                 // Working hours from Settings, else the office's 11 AM - 9 PM.
                 val w = WorkHours.window(c, day) ?: if (!WorkHours.isSet(c)) CalendarData.at(day, 11 * 60) to CalendarData.at(day, 21 * 60) else null
                 w?.let { (s, e) ->
@@ -408,8 +408,6 @@ object TeamRepo {
         init(c)
         CrashLog.guard(appCtx, "Team start") {
             _user.value = auth().currentUser
-            // Contact names may have changed since last time: look them up again.
-            if (_members.value.isNotEmpty()) refreshNames() else contactNames.clear()
             listen()
             TeamSync.start(appCtx)
         }
@@ -433,10 +431,11 @@ object TeamRepo {
                     if (!s.metadata.isFromCache) leaveLocal()
                     return@addSnapshotListener
                 }
-                val m = memberOf(s)
+                val m = named(memberOf(s))
                 val was = _me.value
                 _me.value = m
-                if (m.status == Team.REMOVED) { leaveLocal(); return@addSnapshotListener }
+                if (m.status == Team.REMOVED) { removed(t); return@addSnapshotListener }
+                Seats.applyMine(appCtx, m.uid, m.seatId)
                 if (m.active && was?.active != true) {
                     listenMembersAndTasks(t, u.uid)
                     TeamWorker.schedule(appCtx)
@@ -473,7 +472,7 @@ object TeamRepo {
             team.collection("members").addSnapshotListener { s, e ->
                 if (e != null) return@addSnapshotListener relisten()
                 s ?: return@addSnapshotListener
-                _members.value = s.documents.map { memberOf(it) }.sortedBy { it.name.lowercase() }
+                _members.value = s.documents.map { named(memberOf(it)) }.sortedBy { it.name.lowercase() }
             },
             team.collection("tasks").whereArrayContains("viewers", me).addSnapshotListener { s, e ->
                 if (e != null) return@addSnapshotListener relisten()
@@ -494,7 +493,11 @@ object TeamRepo {
                 val blocks = (s.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList()
                 scope.launch { CrashLog.guard(appCtx, "Team dossier") { TeamDossier.apply(appCtx, blocks) } }
             },
-        )
+        ) + Seats.listen(appCtx, team) {
+            // The seat name is the only name (locked 23 Nov); your timetable is your working hours.
+            _members.value = _members.value.map(::named).sortedBy { it.name.lowercase() }
+            _me.value?.let { m -> _me.value = named(m); Seats.applyMine(appCtx, m.uid, m.seatId) }
+        }
         touch(force = true)
     }
 
@@ -560,9 +563,10 @@ object TeamRepo {
             val google = GoogleIdTokenCredential.createFrom(cred.data)
             auth().signInWithCredential(GoogleAuthProvider.getCredential(google.idToken, null)).await()
             _user.value = auth().currentUser
+            p().edit().remove("signed_out_note").apply()
             findMyTeam()
             start(activity)
-            null
+            if (teamId == null) autoJoin() else null
         } else "Google sign-in didn't return an account."
     } catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) {
         "Sign-in cancelled."
@@ -613,6 +617,7 @@ object TeamRepo {
         _me.value = null
         _members.value = emptyList()
         _tasks.value = emptyList()
+        Seats.clear(appCtx)
         TeamWorker.cancel(appCtx)
     }
 
@@ -644,57 +649,65 @@ object TeamRepo {
         "Couldn't make the team: ${e.message ?: e.javaClass.simpleName}"
     }
 
-    /** Asks to join with the 6-letter code; the Owner approves with one tap. */
     /** The company's team ("Rafiq Builders" for the pilot): its id and name, or null when it can't be found. */
     suspend fun findHomeTeam(): Pair<String, String>? = runCatching {
         db().collection("codes").whereEqualTo("teamName", Team.HOME_TEAM).limit(1).get().await().documents.firstOrNull()
             ?.let { d -> d.getString("teamId")?.let { it to (d.getString("teamName") ?: Team.HOME_TEAM) } }
     }.getOrNull()
 
-    /** Ask to join the company's team (no code): the Owner approves. */
-    suspend fun joinTeam(teamId: String, myName: String, myPhone: String): String? = try {
-        val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
-        joinNow(u, teamId, myName, myPhone)
-    } catch (e: Exception) {
-        if (e.message?.contains("PERMISSION_DENIED") == true) "Couldn't join with this Gmail yet. Ask your manager to check your seat, then try again."
-        else "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
-    }
+    /** "Your Gmail isn't added yet …": shown with Try again (locked 23 Nov: no join form, no request). */
+    const val NOT_ADDED = "Your Gmail isn't added yet. Ask your manager to add it, then tap Try again."
 
     /**
-     * v0.49 A Gmail the owner already added as a seat joins that seat at once ("Welcome to Rafiq Builders · Surveyor");
-     * any other Gmail waits in the portal's Waiting to join. Returns the seat's designation, "" when he joins his seat
-     * without one, or null when there is no seat for this Gmail.
+     * Signed in with Google (locked 23 Nov): a Gmail that has a seat on the website joins it at once, with nothing typed;
+     * the name and official phone come from the seat. Any other Gmail is told to ask the manager. Null = joined.
      */
-    private suspend fun seatFor(u: FirebaseUser, t: String): String? {
+    suspend fun autoJoin(): String? = try {
+        val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
         val mail = u.email?.trim()?.lowercase().orEmpty()
-        if (mail.isEmpty()) return null
-        val s = runCatching { db().collection("teams").document(t).collection("seats").document(mail).get(Source.SERVER).await() }.getOrNull()
-        return if (s != null && s.exists()) s.getString("designation").orEmpty() else null
-    }
-
-    private suspend fun writeJoin(u: FirebaseUser, t: String, myName: String, myPhone: String) {
-        val now = System.currentTimeMillis()
-        val seat = seatFor(u, t)
-        val ref = db().collection("teams").document(t).collection("members").document(u.uid)
-        if (seat != null) {
-            ref.set(memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.ACTIVE, now, myName) + mapOf("seatId" to u.email.orEmpty().trim().lowercase())).await()
-            p().edit().putString("welcome", seat).apply()
-        } else {
-            ref.set(memberMap(u, myPhone, Team.MEMBER, "", emptyList(), Team.PENDING, now, myName)).await()
-            p().edit().remove("welcome").apply()
+        val t = teamId ?: findHomeTeam()?.first ?: throw IllegalStateException("Couldn't find ${Team.HOME_TEAM}. Check the internet, then tap Try again.")
+        val seat = if (mail.isEmpty()) null
+            else db().collection("teams").document(t).collection("seats").document(mail).get(Source.SERVER).await().takeIf { it.exists() }
+        if (seat == null) NOT_ADDED
+        else {
+            val now = System.currentTimeMillis()
+            val name = seat.getString("name").orEmpty().ifBlank { u.displayName.orEmpty() }
+            db().collection("teams").document(t).collection("members").document(u.uid).set(
+                memberMap(u, seat.getString("phone").orEmpty(), Team.MEMBER, "", emptyList(), Team.ACTIVE, now, name) + mapOf("seatId" to mail)
+            ).await()
+            p().edit().putString("welcome", "Welcome, $name" + seat.getString("designation").orEmpty().let { if (it.isBlank()) "" else " · $it" }).apply()
+            db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
+            setTeamId(t)
+            start(appCtx)
+            null
         }
+    } catch (e: Exception) {
+        if (e.message?.contains("PERMISSION_DENIED") == true) NOT_ADDED
+        else e.message?.takeIf { e is IllegalStateException } ?: "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 
-    /** "Welcome to Rafiq Builders · Surveyor": set when he joined his seat straight away. Null = he is waiting or already settled. */
+    /** "Welcome, Name · Designation": set when he joined his seat. Null = already settled. */
     fun welcome(): String? = if (::appCtx.isInitialized) p().getString("welcome", null) else null
     fun clearWelcome() { if (::appCtx.isInitialized) p().edit().remove("welcome").apply() }
 
-    private suspend fun joinNow(u: FirebaseUser, t: String, myName: String, myPhone: String): String? {
-        writeJoin(u, t, myName, myPhone)
-        db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
-        setTeamId(t)
-        start(appCtx)
-        return null
+    /** Why this phone was signed out of the team (his Gmail was changed or removed on the website), for the sign-in card. */
+    fun signedOutNote(): String? = if (::appCtx.isInitialized) p().getString("signed_out_note", null) else null
+
+    /**
+     * Removed on the website. When his seat's Gmail is gone too (the manager changed it to a new Gmail, or removed the seat),
+     * he is signed out of Google here and asked to sign in again with the Gmail his manager gave him.
+     */
+    private fun removed(t: String) {
+        val mail = auth().currentUser?.email?.trim()?.lowercase().orEmpty()
+        scope.launch {
+            val gone = mail.isNotEmpty() && runCatching {
+                !db().collection("teams").document(t).collection("seats").document(mail).get(Source.SERVER).await().exists()
+            }.getOrDefault(false)
+            if (gone) {
+                p().edit().putString("signed_out_note", "You're signed out of ${Team.HOME_TEAM}. If your manager gave you a new Gmail, sign in with it.").apply()
+                finishSignOut()
+            } else leaveLocal()
+        }
     }
 
     /**
@@ -706,21 +719,6 @@ object TeamRepo {
         if (me.role != Team.OWNER || p().getBoolean("admins_to_members", false)) return
         _members.value.filter { it.active && it.role == Team.ADMIN }.forEach { setChartNow(it, it.reportsTo, Team.MEMBER, MemberNumbers.of(it), it.ownDossier, it.setDossier) }
         p().edit().putBoolean("admins_to_members", true).apply()
-    }
-
-    suspend fun join(code: String, myName: String, myPhone: String): String? = try {
-        val u = auth().currentUser ?: throw IllegalStateException("Sign in first")
-        val c = code.trim().uppercase()
-        val doc = db().collection("codes").document(c).get().await()
-        val t = doc.getString("teamId") ?: throw IllegalStateException("No team has the code $c. Check the letters with your manager.")
-        writeJoin(u, t, myName, myPhone)
-        db().collection("users").document(u.uid).set(mapOf("teamId" to t)).await()
-        setTeamId(t)
-        start(appCtx)
-        null
-    } catch (e: Exception) {
-        if (e.message?.contains("PERMISSION_DENIED") == true) "Couldn't join with this Gmail yet. Ask your manager to check your seat, then try again."
-        else "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 
     /** Cancels your own join request (or leaves the team). */
@@ -822,7 +820,7 @@ object TeamRepo {
         // Local copy first, so the people under them get the new chain.
         _members.value = _members.value.map {
             if (it.uid == m.uid) it.copy(reportsTo = reportsTo, role = role, phone = phone, more = more, wa = wa, managers = chainFrom(reportsTo),
-                name = shownName(it.uid, it.typed, phone), ownDossier = ownDossier, setDossier = setDossier) else it
+                ownDossier = ownDossier, setDossier = setDossier) else it
         }
         _members.value.filter { m.uid in it.managers }.forEach { under ->
             members().document(under.uid).update("managers", chainFrom(under.reportsTo)).await()
@@ -1504,28 +1502,13 @@ object TeamRepo {
     private fun longs(v: Any?): Map<String, Long> =
         (v as? Map<*, *>)?.entries?.mapNotNull { (k, n) -> (k as? String)?.let { it to ((n as? Number)?.toLong() ?: 0L) } }?.toMap() ?: emptyMap()
 
-    /** Your contact name for this number ("" when not saved), looked up once per number. */
-    private val contactNames = java.util.concurrent.ConcurrentHashMap<String, String>()
-
-    fun contactName(number: String): String {
-        if (number.isBlank() || !::appCtx.isInitialized) return ""
-        val k = RecentPeople.key(number)
-        return contactNames.getOrPut(k) { ContactLookup.nameFor(appCtx, number).trim() }
-    }
-
-    /** Contacts changed (or permission given): names are looked up again. */
-    fun refreshNames() {
-        contactNames.clear()
-        _members.value = _members.value.map { m -> m.copy(name = shownName(m.uid, m.typed, m.phone)) }
-    }
-
-    /** Your phone book decides: your contact name for his ⭐ Main number, else the name he typed. Your own is yours. */
-    private fun shownName(id: String, typed: String, phone: String): String =
-        if (id == uid) typed else contactName(phone).ifBlank { typed }
+    /** The one name (locked 23 Nov): the name on his seat on the website, the same on every phone. No contact or typed names. */
+    private fun named(m: TeamMember): TeamMember =
+        Seats.of(m.uid, m.seatId)?.name?.takeIf { it.isNotBlank() }?.let { m.copy(name = it) } ?: m
 
     private fun memberOf(s: DocumentSnapshot) = TeamMember(
         uid = s.id,
-        name = shownName(s.id, s.getString("name").orEmpty(), s.getString("phone").orEmpty()),
+        name = s.getString("name").orEmpty(),
         typed = s.getString("name").orEmpty(),
         email = s.getString("email").orEmpty(),
         phone = s.getString("phone").orEmpty(),

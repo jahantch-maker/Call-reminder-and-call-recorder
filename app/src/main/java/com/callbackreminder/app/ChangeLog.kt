@@ -29,6 +29,18 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.57.0", "23 Nov",
+            new = listOf(
+                "Team: sign in with Google and you are in, nothing to type. Your name, phone and place come from the website",
+                "Team: a new team list, the same as the website chart, with search. Tap a person to call or WhatsApp them",
+                "Working hours and weekly off day now come from your timetable on the website, and company holidays count as off",
+            ),
+            fixed = listOf(
+                "Team: everyone's name is now the same on every phone (no more phone contact names or typed names)",
+                "Team: if your manager changes your Gmail, the app asks you to sign in again with the new one",
+            ),
+        ),
+        Entry(
             "0.56.4", "23 Nov",
             new = listOf(
                 "Plot files: a step can now be given working hours (for example 2 hours) instead of days",

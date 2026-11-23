@@ -483,9 +483,12 @@ fun WeeklyOffDayScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     var mask by remember { mutableIntStateOf(OffDays.mask.value) }
     val count = Integer.bitCount(mask)
+    // In a seat: from your timetable on the website, read only (locked 23 Nov).
+    val managed = remember { Seats.managed(ctx) }
 
     SettingsPage(title = "Weekly off day", onBack = onBack) {
-        SectionCard(title = "Your off days", subtitle = "Pick up to ${OffDays.MAX} days. Untick all if you work every day.") {
+        SectionCard(title = "Your off days", subtitle = if (managed) "Set by your manager (timetable ${Seats.myTimetable(ctx).ifBlank { "not set yet" }}). Company holidays are off too."
+            else "Pick up to ${OffDays.MAX} days. Untick all if you work every day.") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DayOfWeek.values().forEach { day ->
@@ -493,6 +496,7 @@ fun WeeklyOffDayScreen(onBack: () -> Unit) {
                         val on = mask and bit != 0
                         val faded = !on && count >= OffDays.MAX
                         Surface(
+                            enabled = !managed,
                             onClick = {
                                 if (!on && count >= OffDays.MAX) {
                                     Toast.makeText(ctx, "Max ${OffDays.MAX} off days. Untick one first.", Toast.LENGTH_SHORT).show()

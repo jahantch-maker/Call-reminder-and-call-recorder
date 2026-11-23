@@ -1931,8 +1931,10 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
             title = "Working hours (required)",
             subtitle = "Free time, the best free slots and the free count only look inside these hours. Your off day has none."
         ) {
+            // In a seat: from your timetable on the website, read only (locked 23 Nov).
+            val managed = remember(wh) { Seats.managed(ctx) }
             Row(
-                Modifier.fillMaxWidth().clickable { editHours = true }.padding(vertical = 10.dp),
+                Modifier.fillMaxWidth().clickable(enabled = !managed) { editHours = true }.padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Hours", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
