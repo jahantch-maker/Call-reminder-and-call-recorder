@@ -35,16 +35,16 @@
   RB.ttOf = (s) => (s && s.timetable ? RB.timetables().find((t) => t.id === s.timetable) : null);
   RB.noTimetable = () => D.seats.filter((s) => !RB.ttOf(s));
   const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const hm = (min) => { const h = Math.floor(min / 60); return (h % 12 || 12) + ":" + String(min % 60).padStart(2, "0") + (h < 12 ? " AM" : " PM"); };
-  const offTxt = (t) => (t.off.length ? t.off.map((i) => DAYS[i]).join(", ") + " off" : "No day off");
-  const ttLine = (t) => hm(t.start) + " – " + hm(t.end) + ", " + offTxt(t);
+  /** A timetable's name is its hours and days off (no typed name, locked 23 Nov): "8 AM to 5 PM · Fri off". */
+  const hs = (min) => { const h = Math.floor(min / 60) % 24, m = min % 60; return (h % 12 || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " AM" : " PM"); };
+  RB.ttName = (t) => (t ? hs(t.start) + " to " + hs(t.end) + " · " + (t.off && t.off.length ? [1, 2, 3, 4, 5, 6, 0].filter((i) => t.off.includes(i)).map((i) => DAYS[i].slice(0, 3)).join(", ") + " off" : "No day off") : "");
   const pname = (s) => s.name || s.gmail || "";
   const onTt = (id) => D.seats.filter((s) => s.timetable === id).sort((a, b) => pname(a).localeCompare(pname(b)));
   const noTt = (s) => (RB.ttOf(s) ? "" : ' <span class="tag amb">No timetable</span>');
   /** Seat form options: each timetable with who else is on it. */
   const ttOpts = (seatId) => [["", "— pick a timetable —"]].concat(RB.timetables().map((t) => {
     const p = onTt(t.id).filter((s) => s.id !== seatId).map((s) => first(pname(s)));
-    return [t.id, t.name + " · " + ttLine(t) + " · " + (p.length ? p.slice(0, 5).join(", ") + (p.length > 5 ? " +" + (p.length - 5) + " more" : "") : "nobody yet")];
+    return [t.id, RB.ttName(t) + " · " + (p.length ? p.slice(0, 5).join(", ") + (p.length > 5 ? " +" + (p.length - 5) + " more" : "") : "nobody yet")];
   }));
   const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
@@ -86,7 +86,7 @@
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttOf(s).name + " · " + ttLine(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
@@ -143,7 +143,7 @@
         await RB.Store.put("seats", id, patch, true);
         const hd = v.reportsTo !== (s.reportsTo || "");
         if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
-        const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttOf({ timetable: v.timetable }).name : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
+        const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttName(RB.ttOf({ timetable: v.timetable })) : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
         if (moved) { await moveGmail(id, g, Object.assign({}, patch, { reportsTo: v.reportsTo })); ch.push("Gmail now " + g); }
         await done("Edited seat " + id + (ch.length ? " · " + ch.join(" · ") : ""));
       }, s.status === "filled" ? "If you change the Gmail, " + esc(s.name) + " signs in again with the new one. Open tasks wait in the seat and go back when they sign in." : "");
@@ -560,7 +560,7 @@
   function timetables() {
     const tts = RB.timetables(), miss = RB.noTimetable(), E = S.ttEdit;
     const chip = (s, pick) => `<button class="ttp" ${pick && ed() ? `data-ttpick="${esc(s.id)}" title="Pick a timetable"` : `data-ttseat="${esc(s.id)}" title="Open seat"`}><span class="av" style="background:${RB.desigColor(s.designation)}">${esc((pname(s)[0] || "?").toUpperCase())}</span>${esc(pname(s))}</button>`;
-    const card = (t) => { const p = onTt(t.id); return `<div class="tt ${E && E.id === t.id ? "sel" : ""}"><div class="tth"><h4>${esc(t.name)}</h4><div class="sp"></div><b>${hm(t.start)} – ${hm(t.end)}</b><span class="sub">· ${esc(offTxt(t))}</span>${ed() ? `<button class="btnt edit-only" data-ttedit="${esc(t.id)}">Edit</button>` : ""}</div>${p.length ? `<div class="ttppl">${p.map((x) => chip(x)).join("")}</div>` : ""}<div class="sub ttn">${p.length ? p.length + (p.length === 1 ? " person" : " people") : "Nobody yet"}</div></div>`; };
+    const card = (t) => { const p = onTt(t.id); return `<div class="tt ${E && E.id === t.id ? "sel" : ""}"><div class="tth"><h4>${esc(RB.ttName(t))}</h4><div class="sp"></div>${ed() ? `<button class="btnt edit-only" data-ttedit="${esc(t.id)}">Edit</button>` : ""}</div>${p.length ? `<div class="ttppl">${p.map((x) => chip(x)).join("")}</div>` : ""}<div class="sub ttn">${p.length ? p.length + (p.length === 1 ? " person" : " people") : "Nobody yet"}</div></div>`; };
     const html = `<div class="card"><div class="subhead"><h3>Timetables · ${tts.length}</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="ttnew">+ New timetable</button>' : ""}</div>
       <div class="hint">Each person works on one timetable. Change a timetable here and everyone on it gets the new time. Steps already started keep their due time. Holidays are in Settings › Holidays.</div>
       ${miss.length ? `<div class="tt miss"><div class="tth"><h4>⚠ No timetable · ${miss.length}</h4><div class="sp"></div><span class="sub">${ed() ? "Tap a name to pick. " : ""}Until then: 11:00 AM – 9:00 PM, Friday off</span></div><div class="ttppl">${miss.map((x) => chip(x, true)).join("")}</div></div>` : ""}
@@ -576,9 +576,8 @@
     const t = RB.timetables().find((x) => x.id === E.id), now = t ? onTt(t.id) : [];
     const list = D.seats.slice().sort((a, b) => Number(RB.ttOf(b) && RB.ttOf(b).id === E.id) - Number(RB.ttOf(a) && RB.ttOf(a).id === E.id) || pname(a).localeCompare(pname(b)));
     const row = (s) => { const cur = RB.ttOf(s), mine = cur && cur.id === E.id, on = E.people.includes(s.id);
-      return `<label class="ttck ${on ? "on" : ""}" ${mine ? 'title="Already on this timetable. To move, tick them on another timetable or edit their seat."' : ""}><input type="checkbox" data-ttck="${esc(s.id)}" ${on ? "checked" : ""} ${mine ? "disabled" : ""}><span class="w"><b>${esc(pname(s))}</b><small>${esc(s.designation || "")}</small></span><span class="${cur ? "sub" : "amb"}">${cur ? esc(cur.name) : "now: none"}</span></label>`; };
-    return `<div class="ttpanel"><h3>${t ? esc(t.name) : "New timetable"}</h3><div class="sub">${t ? now.length + (now.length === 1 ? " person" : " people") + " on this timetable" : "Name it, set the hours and days off, then add people."}</div>
-      <div class="lbl">NAME</div><input id="ttname" value="${esc(E.name)}" placeholder="Office">
+      return `<label class="ttck ${on ? "on" : ""}" ${mine ? 'title="Already on this timetable. To move, tick them on another timetable or edit their seat."' : ""}><input type="checkbox" data-ttck="${esc(s.id)}" ${on ? "checked" : ""} ${mine ? "disabled" : ""}><span class="w"><b>${esc(pname(s))}</b><small>${esc(s.designation || "")}</small></span><span class="${cur ? "sub" : "amb"}">${cur ? esc(RB.ttName(cur)) : "now: none"}</span></label>`; };
+    return `<div class="ttpanel"><h3>${t ? esc(RB.ttName(t)) : "New timetable"}</h3><div class="sub">${t ? now.length + (now.length === 1 ? " person" : " people") + " on this timetable" : "Set the hours and days off, then add people. Its name is made from them."}</div>
       <div class="ttrow"><div><div class="lbl">STARTS</div><input type="time" id="ttstart" value="${m2t(E.start)}"></div><div><div class="lbl">CLOSES</div><input type="time" id="ttend" value="${m2t(E.end)}"></div></div>
       <div class="lbl">DAYS OFF</div><div class="ttdays">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<button class="ttd ${E.off.includes(i) ? "on" : ""}" data-ttoff="${i}" aria-pressed="${E.off.includes(i)}" title="${DAYS[i]}">${DAYS[i].slice(0, 3)}</button>`).join("")}</div>
       <div class="lbl">PEOPLE · ADD PEOPLE</div>${list.map(row).join("") || '<div class="muted">No seats yet.</div>'}
@@ -587,10 +586,9 @@
   }
   async function ttSave(btn) {
     const E = S.ttEdit, err = (t) => { const e = document.getElementById("tterr"); if (e) e.textContent = t; };
-    const name = E.name.trim().replace(/\s+/g, " ");
-    if (!name) return err("Type a name.");
-    if (RB.timetables().some((x) => x.id !== E.id && x.name.toLowerCase() === name.toLowerCase())) return err("Another timetable has that name.");
     if (!(E.start >= 0 && E.end > E.start)) return err("Closing time must be after the starting time.");
+    const name = RB.ttName(E);
+    if (RB.timetables().some((x) => x.id !== E.id && RB.ttName(x) === name)) return err("A timetable with these hours and days off already exists: " + name + ".");
     if (E.off.length > 6) return err("Leave at least one working day.");
     const id = E.id || "tt" + Date.now().toString(36), row = { id, name, start: E.start, end: E.end, off: E.off.slice().sort() };
     const old = RB.timetables().find((x) => x.id === id);
@@ -601,7 +599,7 @@
       await RB.Store.put("config", "designations", { timetables: list, updatedAt: Date.now() }, true);
       for (const sid of mv) await RB.Store.put("seats", sid, { timetable: id }, true);
       S.ttEdit = null;
-      await done((old ? "Edited" : "Added") + " timetable " + name + " (" + ttLine(row) + ")" + (mv.length ? " · moved " + mv.map((x) => pname(RB.seat(x))).join(", ") : ""));
+      await done((old ? "Edited" : "Added") + " timetable " + name + (mv.length ? " · moved " + mv.map((x) => pname(RB.seat(x))).join(", ") : ""));
     } catch (e) { btn.disabled = false; err("Couldn't save: " + (e.message || e)); }
     finally { RB.hold = false; RB.render(); }
   }
@@ -611,7 +609,7 @@
     RB.form("Timetable for " + pname(s), [{ k: "tt", label: "TIMETABLE", type: "select", value: "", options: ttOpts(seatId) }], "Save", async (v) => {
       if (!v.tt) return "Pick a timetable.";
       await RB.Store.put("seats", seatId, { timetable: v.tt }, true);
-      await done(pname(s) + " is now on timetable " + RB.ttOf({ timetable: v.tt }).name);
+      await done(pname(s) + " is now on timetable " + RB.ttName(RB.ttOf({ timetable: v.tt })));
     });
   }
   function ttBind(root, side) {
@@ -621,16 +619,15 @@
     root.querySelectorAll("[data-ttseat]").forEach((b) => (b.onclick = () => { S.seatSel = b.dataset.ttseat; S.tab.team = "people"; RB.render(); }));
     const E = S.ttEdit, P = side && side.querySelector(".ttpanel"); if (!E || !P) return;
     const sv = P.querySelector("#ttsave"), lbl = () => (sv.textContent = saveLbl(E));
-    P.querySelector("#ttname").oninput = (e) => (E.name = e.target.value);
     P.querySelector("#ttstart").oninput = (e) => (E.start = t2m(e.target.value));
     P.querySelector("#ttend").oninput = (e) => (E.end = t2m(e.target.value));
     P.querySelectorAll("[data-ttoff]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.ttoff); E.off = E.off.includes(i) ? E.off.filter((x) => x !== i) : E.off.concat(i); b.classList.toggle("on"); b.setAttribute("aria-pressed", E.off.includes(i)); }));
     P.querySelectorAll("[data-ttck]").forEach((c) => (c.onchange = () => { const id = c.dataset.ttck; E.people = c.checked ? E.people.concat(id) : E.people.filter((x) => x !== id); c.closest(".ttck").classList.toggle("on", c.checked); lbl(); }));
     P.querySelector("#ttcancel").onclick = () => { S.ttEdit = null; RB.render(); };
     sv.onclick = () => ttSave(sv);
-    const dl = P.querySelector("#ttdel"); if (dl) dl.onclick = () => RB.confirm("Delete the timetable “" + esc(E.name) + "”? Nobody is on it.", "Delete", async () => {
+    const dl = P.querySelector("#ttdel"); if (dl) dl.onclick = () => RB.confirm("Delete the timetable “" + esc(RB.ttName(E)) + "”? Nobody is on it.", "Delete", async () => {
       if (onTt(E.id).length) return RB.alertBox("Someone was just put on it. Move them first.");
-      const n = E.name; await RB.Store.put("config", "designations", { timetables: RB.timetables().filter((x) => x.id !== E.id), updatedAt: Date.now() }, true);
+      const n = RB.ttName(E); await RB.Store.put("config", "designations", { timetables: RB.timetables().filter((x) => x.id !== E.id), updatedAt: Date.now() }, true);
       S.ttEdit = null; await done("Deleted timetable " + n);
     }, true);
   }
