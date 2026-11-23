@@ -29,9 +29,14 @@
 .pfwb{display:inline-flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .pfwb a.btnt{text-decoration:none}
 /* Plot files list and one file (mockups v4 A, B1-B4). Rows keep one column grid; on a phone each row stacks, nothing goes off screen. */
-.plchips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
-.plchip{display:inline-flex;align-items:center;gap:8px;border-radius:18px;padding:9px 16px;font-weight:600;font-size:14px;background:#F0F0EE;border:2px solid transparent;color:var(--on);cursor:pointer}
-.plchip b{font-size:17px}.plchip.blu{background:#DCE7F5}.plchip.peach{background:#FBE3D3}.plchip.red{background:#F9DAD8}.plchip.yel{background:#FBEBC8}.plchip.grn{background:#DDF0E3}.plchip.on{border-color:var(--on)}
+.plseg{display:flex;gap:4px;flex-wrap:wrap;background:#F0F0EE;border-radius:20px;padding:4px;margin:6px 0 10px;width:fit-content;max-width:100%}
+.plseg button{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:16px;font-weight:600;font-size:14px;color:var(--onv);background:none;transition:background .2s,color .2s}
+.plseg button:hover{color:var(--on)}.plseg button b{font-size:15px;color:var(--on)}.plseg button.on{background:var(--on);color:#fff}.plseg button.on b{color:#fff}
+.plsts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.plst{display:inline-flex;align-items:center;gap:7px;border-radius:16px;padding:6px 13px;font-weight:600;font-size:13px;background:var(--sf);border:1.5px solid var(--ol);color:var(--on);cursor:pointer;transition:background .2s,border-color .2s}
+.plst b{font-size:14px}.plst.peach{border-color:#F2B48C}.plst.red{border-color:#E8918B}.plst.yel{border-color:#E9C46A}
+.plst.peach.on{background:#FBE3D3}.plst.red.on{background:#F9DAD8}.plst.yel.on{background:#FBEBC8}.plst.on{border-color:var(--on)}
+.pltest{font-size:11px;font-weight:600;color:#8A6D1E;background:#FBEBC8;border-radius:8px;padding:1px 6px}
 .plsearch{display:flex;align-items:center;gap:8px;border:1px solid var(--ol);border-radius:14px;padding:0 12px;background:var(--sf)}.plsearch input{flex:1;min-width:0;border:0;background:none;padding:11px 0;outline:none}
 .pltable{margin-top:8px}
 .plhead,.plrow{display:grid;grid-template-columns:7% 9% 15% minmax(0,1fr) 15% 12% 13%;gap:10px;align-items:start}
@@ -81,8 +86,8 @@
 @media(max-width:1180px){.plpanel{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:900px){.plhead{display:none}.plrow{grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}.plrow .plc{grid-column:1}.plrow .plc.plot{grid-column:1;font-size:16px}.plrow .plc.due,.plrow .plc:last-child{grid-column:2;text-align:right}.plrow .plc.due{grid-row:1}.plrow .plc:last-child{grid-row:2}
   .plrow .plc[data-l="Size"]{display:none}.plflds{grid-template-columns:repeat(2,minmax(0,1fr))}.plflds .w2{grid-column:1/-1}.plev,.pltl .plev{grid-template-columns:minmax(0,1fr)}.plsr{flex-wrap:wrap}.plright{max-width:none;text-align:left;padding-left:42px}}
-html[data-theme="dark"] .plchip,html[data-theme="dark"] .plnow,html[data-theme="dark"] .plday span,html[data-theme="dark"] .plvoice,html[data-theme="dark"] .plstep.cur>.plsr,html[data-theme="dark"] .plstep.open>.plsr,html[data-theme="dark"] .plpanel{background:#2E3035}
-html[data-theme="dark"] .plpanel .card{background:var(--sf)}html[data-theme="dark"] .plchip.on{border-color:#F2F2F0}html[data-theme="dark"] .plrow:hover{background:#2A2C30}html[data-theme="dark"] .plwho{background:#1F3550;color:#A9C8EE}
+html[data-theme="dark"] .plseg,html[data-theme="dark"] .plst,html[data-theme="dark"] .plnow,html[data-theme="dark"] .plday span,html[data-theme="dark"] .plvoice,html[data-theme="dark"] .plstep.cur>.plsr,html[data-theme="dark"] .plstep.open>.plsr,html[data-theme="dark"] .plpanel{background:#2E3035}
+html[data-theme="dark"] .plpanel .card{background:var(--sf)}html[data-theme="dark"] .plseg button.on{background:#F2F2F0;color:#1B1C1F}html[data-theme="dark"] .plseg button.on b{color:#1B1C1F}html[data-theme="dark"] .plst.on{border-color:#F2F2F0;color:#1B1C1F}html[data-theme="dark"] .plrow:hover{background:#2A2C30}html[data-theme="dark"] .plwho{background:#1F3550;color:#A9C8EE}
 
 /* File header (locked 22 Nov, mockup v6-testing H8): plot, chips and plot owner on one line in a grey contact card; round buttons. */
 .plcc{display:flex;align-items:center;gap:14px;padding:10px 14px;background:#F6F7FB;border-radius:14px;flex-wrap:wrap}

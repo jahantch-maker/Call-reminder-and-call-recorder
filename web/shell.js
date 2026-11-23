@@ -132,7 +132,7 @@
         if (!head.classList.contains("subhead") && head.tagName !== "H3") return;   // WEB12 a plain heading counts too
         const w = document.createElement("div"); w.className = "stickhead";
         card.insertBefore(w, head);
-        while (w.nextElementSibling && (w.childElementCount === 0 || /\b(hint|plchips|plsearch)\b/.test(w.nextElementSibling.className))) w.appendChild(w.nextElementSibling);
+        while (w.nextElementSibling && (w.childElementCount === 0 || /\b(hint|plseg|plsts|plsearch)\b/.test(w.nextElementSibling.className))) w.appendChild(w.nextElementSibling);
       }
       const ph = card.querySelector(":scope > .pltable > .plhead");
       if (ph) card.firstElementChild.appendChild(ph);
