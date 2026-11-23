@@ -163,8 +163,13 @@
 
   // ------------------------------------------------------------------ store (Firebase or demo)
   const COLL = { members: "members", seats: "seats", docs: "docs", changelog: "changelog", tasks: "tasks", meetings: "meetings", plotfiles: "plot", plotsopv: "plotSopV" };
+  // WEB10 A save shows at once (Firestore applies it on this page straight away) and the window closes without waiting for the
+  // server. If the server refuses it, the change goes back and this message says so.
+  // Background writes (seat sync, history lines) stay quiet: the message only follows something the person just did.
+  const fire = (p, quiet) => { const by = Date.now() - userAt < 8000 && !quiet; if (by) RB.savedSoon(); p.catch((e) => { console.warn("save", e); if (by) RB.alertBox("Couldn't save: " + RB.esc(e.message || e) + "<br>Please try again."); }); return p; };
+  RB.fire = fire;
   RB.Store = {
-    async put(coll, id, data, merge) {
+    async put(coll, id, data, merge, quiet) {
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
@@ -178,25 +183,22 @@
         return id;
       }
       const ref = teamRef.collection(coll).doc(id);
-      if (merge) await ref.set(data, { merge: true }); else await ref.set(data);
-      if (coll === "policies") await reindex(id, Object.assign({}, D.docs.find((x) => x.id === id) || {}, data).shareWith || []);
-      RB.savedSoon();
+      fire(merge ? ref.set(data, { merge: true }) : ref.set(data), quiet || coll === "changelog");
+      if (coll === "policies") fire(reindex(id, Object.assign({}, D.docs.find((x) => x.id === id) || {}, data).shareWith || []));
       return id;
     },
     // Replaces one whole field (a map such as a seat's "override"): a normal merge cannot remove keys inside it.
     async putField(coll, id, field, value) {
       if (RB.DEMO) return RB.Store.put(coll, id, { [field]: value }, true);
-      await teamRef.collection(coll).doc(id).set({ [field]: value }, { mergeFields: [field] });
-      RB.savedSoon();
+      fire(teamRef.collection(coll).doc(id).set({ [field]: value }, { mergeFields: [field] }));
       return id;
     },
     async add(coll, data) { const id = RB.id(); await RB.Store.put(coll, id, data); return id; },
     async del(coll, id) {
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); if (ex && ex.type === "policy") coll = "policies"; }
       if (RB.DEMO) { const arr = D[COLL[coll]]; const key = coll === "members" ? "uid" : "id"; const i = arr.findIndex((x) => x[key] === id); if (i >= 0) arr.splice(i, 1); return; }
-      await teamRef.collection(coll).doc(id).delete();
-      RB.savedSoon();
-      if (coll === "policies") await reindex(id, null);
+      fire(teamRef.collection(coll).doc(id).delete());
+      if (coll === "policies") fire(reindex(id, null));
     },
     /** A given task, in the same shape the phone app writes. */
     async task(fromUid, toUid, title, due, extra) {
@@ -212,7 +214,8 @@
         events: [{ at: now, text: "Given by " + RB.first(me.name) + " · 📅 Deadline " + RB.fmtWhen(due) }],
       }, extra || {});
       if (RB.DEMO) { const id = "d" + now + Math.random().toString(36).slice(2, 5); D.tasks.push(Object.assign({ id }, doc)); return id; }
-      const ref = await teamRef.collection("tasks").add(doc);
+      const ref = teamRef.collection("tasks").doc();
+      fire(ref.set(doc));
       return ref.id;
     },
     async addAction(toUid, title, due, fromReason) {
@@ -222,8 +225,8 @@
     async saveMeeting(m) {
       if (RB.DEMO) { const i = D.meetings.findIndex((x) => x.id === m.id); if (i >= 0) D.meetings[i] = m; else { m.id = m.id || "mt" + Date.now(); D.meetings.unshift(m); } return m.id; }
       const data = Object.assign({}, m); delete data.id;
-      if (m.id) { await teamRef.collection("meetings").doc(m.id).set(data); return m.id; }
-      const ref = await teamRef.collection("meetings").add(data); m.id = ref.id; return ref.id;
+      const ref = m.id ? teamRef.collection("meetings").doc(m.id) : teamRef.collection("meetings").doc();
+      fire(ref.set(data)); m.id = ref.id; return ref.id;
     },
     async saveConfig(doc, data) { return RB.Store.put("config", doc, data); },
     async msgs(taskId) {
@@ -264,7 +267,7 @@
       // Every seat keeps its permissions on itself, so whoever signs in (phone or web) gets them at once.
       if (s.role !== "owner" && s.gmail) {
         const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal };
-        if (JSON.stringify(s.perms) !== JSON.stringify(p0)) writes.push(RB.Store.put("seats", s.id, { perms: p0 }, true).catch((err) => console.warn("sync seat", s.id, err)));
+        if (JSON.stringify(s.perms) !== JSON.stringify(p0)) writes.push(RB.Store.put("seats", s.id, { perms: p0 }, true, true).catch((err) => console.warn("sync seat", s.id, err)));
       }
       if (s.status !== "filled" || !s.uid) return;
       // Only an owner may write an owner's row; a Team editor skips it (the server would refuse the whole save otherwise).
@@ -281,7 +284,7 @@
       };
       const cur = RB.member(s.uid);
       if (cur && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs])) return;
-      writes.push(RB.Store.put("members", s.uid, data, true).catch((err) => console.warn("sync", s.uid, err)));
+      writes.push(RB.Store.put("members", s.uid, data, true, true).catch((err) => console.warn("sync", s.uid, err)));
     });
     await Promise.all(writes);
   };
@@ -343,14 +346,18 @@
     }
     firebase.initializeApp(window.FIREBASE_CONFIG);
     db = firebase.firestore();
+    // WEB10 Keep a copy of the team's data in this browser: the portal opens at once from it and refreshes from the server after.
+    db.enablePersistence({ synchronizeTabs: true }).catch((e) => console.warn("cache", e && e.code));
     firebase.auth().onAuthStateChanged(async (u) => {
       if (!u) return signInPage();
       uid = u.uid;
       try {
         // The team of this browser is remembered, so the three reads go out together instead of one after another.
         let t0 = ""; try { t0 = localStorage.getItem("rb_team_" + uid) || ""; } catch (e) { t0 = ""; }
-        const usP = db.collection("users").doc(uid).get();
-        const read = (t) => Promise.all([db.collection("teams").doc(t).get(), db.collection("teams").doc(t).collection("members").doc(uid).get()]);
+        // This browser's copy first (instant); the server only when there is no copy yet. The live listeners refresh it all after.
+        const fast = (ref) => ref.get({ source: "cache" }).then((x) => (x.exists ? x : ref.get()), () => ref.get());
+        const usP = fast(db.collection("users").doc(uid));
+        const read = (t) => Promise.all([fast(db.collection("teams").doc(t)), fast(db.collection("teams").doc(t).collection("members").doc(uid))]);
         let pre = t0 ? read(t0) : null; if (pre) pre.catch(() => {});
         const us = await usP;
         const t = us.exists && us.data().teamId;
@@ -366,7 +373,7 @@
         const mail = (u.email || "").trim().toLowerCase();
         if (D.me.status === "active" && D.me.role !== "owner" && D.me.seatId === mail) {
           try {
-            const sp = (await teamRef.collection("seats").doc(mail).get()).data();
+            const sp = (await fast(teamRef.collection("seats").doc(mail))).data();
             if (sp && sp.perms && JSON.stringify(sp.perms) !== JSON.stringify(D.me.perms || null)) {
               await teamRef.collection("members").doc(uid).update({ perms: sp.perms });
               D.me.perms = sp.perms;
@@ -386,10 +393,18 @@
 
   let softT = null;
   RB.soft = () => { if (RB.hold || document.getElementById("modal").innerHTML) return; clearTimeout(softT); softT = setTimeout(() => RB.render && RB.render(), 250); };
+  /** WEB10 The lists still waiting for their first data: the page says "Loading…" instead of "No … yet" until they arrive. */
+  RB.waiting = new Set();
+  const once = (k) => { RB.waiting.add(k); return () => { if (RB.waiting.delete(k)) RB.soft(); }; };
+  RB.loading = () => !RB.DEMO && RB.waiting.size > 0;
   function listen() {
+    setTimeout(() => { if (RB.waiting.size) { RB.waiting.clear(); RB.soft(); } }, 20000); // never wait for ever
     const onErr = () => {};
-    const snap = (name, fn) => teamRef.collection(name).onSnapshot((s) => { fn(s); RB.soft(); }, onErr);
+    const on = (q, k, fn) => { const d = once(k); q.onSnapshot((s) => { d(); fn(s); RB.soft(); }, () => d()); };
+    const snap = (name, fn) => on(teamRef.collection(name), name, fn);
+    const dMem = once("members");
     teamRef.collection("members").onSnapshot((s) => {
+      dMem();
       D.members = s.docs.map((d) => Object.assign({ uid: d.id }, d.data()));
       D.me = RB.member(uid) || D.me;
       // WEB9 keep my Google photo on my member row for the avatars (its own write, so older rules only skip it).
@@ -404,7 +419,7 @@
         teamRef.collection("dossier").doc(m.uid).onSnapshot((q) => { if (q.exists) D.dossier[m.uid] = q.data(); RB.soft(); }, onErr);
       });
       RB.soft();
-    }, (e) => RB.message("Couldn't read the team.", RB.esc(e.message), true));
+    }, (e) => { dMem(); RB.message("Couldn't read the team.", RB.esc(e.message), true); });
     snap("seats", (s) => (D.seats = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     let plain = [], pols = [];
     const merge = () => (D.docs = plain.concat(pols));
@@ -413,21 +428,21 @@
     const myDes = () => ((D.me && D.me.designation) || (RB.seatOfUid(uid) || {}).designation || "");
     const polMap = {}, watched = new Set();
     const setPols = () => { pols = Object.values(polMap); merge(); RB.soft(); };
-    if (seeAllPol) teamRef.collection("policies").onSnapshot((s) => { s.docs.forEach((d) => (polMap[d.id] = Object.assign({ id: d.id, type: "policy" }, d.data()))); Object.keys(polMap).forEach((k) => { if (!s.docs.some((d) => d.id === k)) delete polMap[k]; }); setPols(); }, onErr);
+    if (seeAllPol) on(teamRef.collection("policies"), "policies", (s) => { s.docs.forEach((d) => (polMap[d.id] = Object.assign({ id: d.id, type: "policy" }, d.data()))); Object.keys(polMap).forEach((k) => { if (!s.docs.some((d) => d.id === k)) delete polMap[k]; }); setPols(); }, onErr);
     RB.watchPolicies = (byDesig) => {
       if (seeAllPol) return;
       ((byDesig || {})[myDes()] || []).forEach((pid) => { if (watched.has(pid)) return; watched.add(pid); teamRef.collection("policies").doc(pid).onSnapshot((q) => { if (q.exists) polMap[pid] = Object.assign({ id: pid, type: "policy" }, q.data()); else delete polMap[pid]; setPols(); }, () => {}); });
     };
     if (seeAllPol) snap("reading", (s) => s.docs.forEach((d) => (D.reading[d.id] = d.data())));
-    teamRef.collection("changelog").orderBy("at", "desc").limit(200).onSnapshot((s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
+    on(teamRef.collection("changelog").orderBy("at", "desc").limit(200), "changelog", (s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     const tq = RB.isOwner() ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
-    tq.onSnapshot((s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    teamRef.collection("config").onSnapshot((s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    on(tq, "tasks", (s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
+    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     // Plot files: the step tasks of every file (the rules let Plot files access read tasks marked plot: true).
-    if (RB.level("plot") !== "none") teamRef.collection("tasks").where("plot", "==", true).onSnapshot((s) => { D.plotTasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
+    if (RB.level("plot") !== "none") on(teamRef.collection("tasks").where("plot", "==", true), "plotTasks", (s) => { D.plotTasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     if (RB.isOwner()) snap("plotsopv", (s) => (D.plotSopV = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
-    if (RB.level("meetings") !== "none") teamRef.collection("meetings").orderBy("startedAt", "desc").limit(100).onSnapshot((s) => { D.meetings = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
+    if (RB.level("meetings") !== "none") on(teamRef.collection("meetings").orderBy("startedAt", "desc").limit(100), "meetings", (s) => { D.meetings = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
   }
 })();

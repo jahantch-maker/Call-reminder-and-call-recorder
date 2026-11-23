@@ -294,8 +294,9 @@
       b.set(href.collection("msgs").doc(), { at: now, fromUid: uid, fromName: me.name, text: line, line: true });
       b.set(href.collection("msgs").doc(), { at: now + 1, fromUid: uid, fromName: me.name, text, line: false });
     }
-    await b.commit();
-    delete M[t.id];
+    // WEB10 shows at once; the Timeline reloads from the server by itself once the note has arrived there.
+    RB.fire(b.commit());
+    (M[t.id] = M[t.id] || []).push(Object.assign({ id: "w" + now }, msg));
   }
 
   function bindNote(root, f) {
@@ -319,7 +320,7 @@
     const go = async (photo) => {
       const text = ta.value.trim(); if (!text && !photo) return;
       err.textContent = "";
-      try { await send(t, text, photo, S.pfPicked); S.pfDraft = ""; S.pfPicked = []; await loadMsgs([t]); RB.toast("Sent"); RB.render(); }
+      try { await send(t, text, photo, S.pfPicked); S.pfDraft = ""; S.pfPicked = []; RB.toast("Sent"); RB.render(); }
       catch (e) { err.textContent = "Not sent: " + (e.message || e); }
     };
     root.querySelector("#pfsend").onclick = () => go(null);

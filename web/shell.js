@@ -66,6 +66,9 @@
     let page;
     if (sec === "app" || sec === "meetings") page = RB.sections[sec].render(tab);
     else page = RB.sections[sec].render(tab);
+    // WEB10 Until the first data arrives, say so (never "No … yet", which looks like everything is gone).
+    const wait = RB.loading && RB.loading();
+    if (wait) page = { title: page.title, sub: page.sub, html: '<div class="card"><div class="muted loadmsg">Loading…</div></div>' };
     const dt = new Date();
     const ownerSeat = RB.seatOfUid(RB.uidOf());
     const hi = "Hi, " + esc(RB.first(meRow.name || (D.team.ownerUid === RB.uidOf() ? "Jahanzaib" : "there")));
@@ -93,6 +96,7 @@
     gq.oninput = () => { S.q = gq.value; RB.render(); const n = document.getElementById("gq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     document.getElementById("bell").onclick = notices;
     const content = document.getElementById("content");
+    if (wait) return;
     if (sec === "app" || sec === "meetings") RB.meet.bind(content);
     if (RB.sections[sec].bind) RB.sections[sec].bind(content, document.getElementById("side"));
     if (page.afterBind) page.afterBind();
