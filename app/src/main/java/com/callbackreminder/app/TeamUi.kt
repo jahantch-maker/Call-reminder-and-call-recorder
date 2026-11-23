@@ -649,7 +649,10 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = fals
     var typing by remember { mutableStateOf(false) }
     var typed by remember { mutableStateOf("") }
     val suggested = remember(name) { WaNumbers.contactsNamed(ctx, Names.first(name) ?: name) }
-    fun addContact(contact: String, number: String) {
+    fun addContact(contact: String, picked: String) {
+        // A Pakistani mobile saved as +92 3xx becomes 03xx (locked 23 Nov).
+        val d = picked.filter(Char::isDigit)
+        val number = if (d.length == 12 && d.startsWith("923")) "0" + d.drop(2) else picked
         val found = WaNumbers.lookup(ctx, number).options
         val rows = found.ifEmpty { listOf(WaOption(number, "", false)) }.map { MemberNumbers.Row(it.number, contact.ifBlank { it.label }, onWa = it.onWhatsApp) }
         onChange(nums.plus(rows))
@@ -691,10 +694,15 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = fals
         CardLinkText("＋ Type number") { typing = true }
     }
     if (typing) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedTextField(typed, { typed = it }, label = { Text("Number") }, singleLine = true, modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone))
-        TextButton(onClick = {
-            if (typed.isNotBlank()) addContact(ContactLookup.nameFor(ctx, typed.trim()), typed.trim())
+        // A Pakistani mobile only: 11 digits starting 03, no more can be typed (locked 23 Nov).
+        val typedOk = typed.length == 11 && typed.startsWith("03")
+        OutlinedTextField(typed, { v -> typed = v.filter(Char::isDigit).let { d -> if (d.length == 12 && d.startsWith("923")) "0" + d.drop(2) else d }.take(11) },
+            label = { Text("Mobile number") }, placeholder = { Text("03001234567") }, singleLine = true, modifier = Modifier.weight(1f),
+            isError = typed.length >= 2 && !typed.startsWith("03"),
+            supportingText = if (typed.length >= 2 && !typed.startsWith("03")) { { Text("A mobile number starts with 03.") } } else null,
+            shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+        TextButton(enabled = typedOk, onClick = {
+            addContact(ContactLookup.nameFor(ctx, typed), typed)
             typed = ""; typing = false
         }) { Text("Add") }
     }

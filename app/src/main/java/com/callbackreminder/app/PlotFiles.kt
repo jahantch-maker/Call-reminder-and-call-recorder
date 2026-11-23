@@ -348,17 +348,20 @@ private val PhoneCuts = Grouped(listOf(4), ' ')
 private fun DigitsField(label: String, value: String, need: Int, optional: Boolean, what: String, format: VisualTransformation, onChange: (String) -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val n = value.length
-    val ok = n == need
-    val bad = n > need || (n in 1 until need && !focused)
+    val mobile = what == "Phone numbers"   // a Pakistani mobile: starts 03 (locked 23 Nov)
+    val notMobile = mobile && n >= 2 && !value.startsWith("03")
+    val ok = n == need && !notMobile
+    val bad = notMobile || n > need || (n in 1 until need && !focused)
     val cs = MaterialTheme.colorScheme
     val hint: (@Composable () -> Unit)? = if (optional) { { Text("If any") } } else null
     val count: (@Composable () -> Unit)? = if (n > 0) {
         { Text(if (ok) "$n/$need ✓" else "$n/$need", color = if (ok) TextGreen else if (bad) cs.error else cs.onSurfaceVariant, fontSize = 13.sp) }
     } else null
-    val error: (@Composable () -> Unit)? = if (bad) { { Text("$what must have $need digits. You typed $n.") } } else null
+    val error: (@Composable () -> Unit)? = if (bad) { { Text(if (notMobile) "A mobile number starts with 03." else "$what must have $need digits. You typed $n.") } } else null
     OutlinedTextField(
         value = value,
-        onValueChange = { v -> onChange(v.filter(Char::isDigit).take(need + 3)) },
+        // Locked to [need] digits (23 Nov): no more can be typed; a pasted +92 3xx becomes 03xx.
+        onValueChange = { v -> onChange(v.filter(Char::isDigit).let { d -> if (mobile && d.length == 12 && d.startsWith("923")) "0" + d.drop(2) else d }.take(need)) },
         label = { Text(if (optional) label else "$label *") },
         placeholder = hint,
         suffix = count,
@@ -427,7 +430,7 @@ fun NewPlotFileScreen(onBack: () -> Unit) {
 
     val sizeNum = size.toDoubleOrNull()?.takeIf { it > 0 }
     val ready = plotNo.isNotBlank() && clash == null && !checking && sizeNum != null && name.isNotBlank() && cnic.length == 13 &&
-        wa.length == 11 && (sim2.isEmpty() || sim2.length == 11) && address.isNotBlank() && (test || aoOk) && sop != null && !busy
+        wa.length == 11 && wa.startsWith("03") && (sim2.isEmpty() || (sim2.length == 11 && sim2.startsWith("03"))) && address.isNotBlank() && (test || aoOk) && sop != null && !busy
 
     val red = clash != null || (size.isNotEmpty() && sizeNum == null) || listOf(cnic to 13, wa to 11, sim2 to 11).any { (v, n) -> v.isNotEmpty() && v.length != n }
 

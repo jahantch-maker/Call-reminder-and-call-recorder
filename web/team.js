@@ -92,7 +92,6 @@
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
 
-  const phoneOk = (p) => !p || /^\+?[0-9][0-9 -]{6,16}$/.test(p);
   /** The seat form (locked 23 Nov): Name, Official phone, Official Gmail (editable later too, his choice 23 Nov), Designation,
    *  Department (from the designation), Reports to, Timetable. */
   function seatForm(s, prefill) {
@@ -100,7 +99,7 @@
     const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.filter((x) => !id || (x.id !== id && !RB.wouldLoop(id, x.id))).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
     const f = [
       { k: "name", label: "NAME", value: p.name || "", ph: "Full name" },
-      { k: "phone", label: "OFFICIAL PHONE", value: p.phone || "", ph: "0300 1234567" },
+      { k: "phone", label: "OFFICIAL PHONE", type: "phone", value: p.phone || "" },
       { k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" },
     ].concat([
       { k: "designation", label: "DESIGNATION", type: "select", value: p.designation || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
@@ -110,9 +109,9 @@
     ]);
     if (s && RB.isOwner()) f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
     const check = (v) => {
-      v.name = v.name.trim().replace(/\s+/g, " "); v.phone = v.phone.trim();
+      v.name = v.name.trim().replace(/\s+/g, " "); v.phone = RB.digitsFmt(v.phone, "phone");
       if (!v.name) return "Type the name.";
-      if (!phoneOk(v.phone)) return "Type the official phone as digits, e.g. 0300 1234567.";
+      if (!RB.phoneOk(v.phone)) return "The official phone must be a mobile number: 11 digits starting 03, e.g. 0300 1234567.";
       if (!v.timetable && (!s || s.timetable)) return RB.timetables().length ? "Pick a timetable." : "Make a timetable first, in Team › Timetables.";
       return "";
     };
