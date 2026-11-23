@@ -162,8 +162,7 @@ object PlotFiles {
      * on the next working day.
      * Working hours (N in Hours): N hours later if that many are left today, else N hours after work starts next working day.
      * Working days (N in Days): the same clock time N working days later.
-     * Same visit: 2 hours later, never after closing time. Same day: closing time if it starts before 1 PM, else closing
-     * time of the next working day. Anything else: closing time that day.
+     * Only these two timer types exist (23 Nov: Same visit and Same day were removed). Anything else: closing time that day.
      */
     fun dueOf(c: Context, timer: String, days: Int?, hours: Int?, from: Long): Long {
         val z = ZoneId.systemDefault()
@@ -199,9 +198,6 @@ object PlotFiles {
                 repeat(n) { day = nextWorkDay(day) }
                 day.atTime(clock).atZone(z).toInstant().toEpochMilli()
             }
-            timer.contains("same visit", ignoreCase = true) -> minOf(start + 2 * 3_600_000L, end)
-            timer.contains("same day", ignoreCase = true) && start >= CalendarData.at(day, 13 * 60) ->
-                win(nextWorkDay(day))?.second ?: end
             else -> end
         }
     }

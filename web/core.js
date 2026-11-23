@@ -13,6 +13,13 @@
   RB.esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // v0.49.4 Full names everywhere (owner's rule): "first" now gives the whole name.
   RB.first = (n) => String(n || "").trim().replace(/\s+/g, " ") || "Member";
+  /** A plot step's time, made from the sheet's Timer type + Days / Hours (column F is gone, locked 23 Nov): "2 working hours". */
+  RB.stepTime = (s) => {
+    if (!s) return "";
+    const n = /working hours/i.test(s.timer || "") ? s.hours : /working days/i.test(s.timer || "") ? s.days : null;
+    if (!(n > 0)) return "";
+    return n + (/hours/i.test(s.timer) ? " working hour" : " working day") + (n === 1 ? "" : "s");
+  };
   RB.fmtDay = (t) => new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   RB.fmtShort = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   RB.fmtWhen = (t) => RB.fmtDay(t) + ", " + new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });

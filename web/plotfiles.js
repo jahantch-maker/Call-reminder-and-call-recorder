@@ -30,7 +30,7 @@
   const first = (n) => RB.first(n).split(" ")[0];
   const step = (id) => (X() ? X().steps.find((s) => s.id === id) : null);
   const stageOf = (n) => ((X() && X().stages) || []).find((g) => String(g.no) === String(n)) || { no: n, name: "" };
-  const allowed = (s) => (s && s.limit ? (/allowed$/i.test(s.limit) ? s.limit : s.limit + " allowed") : "");
+  const allowed = (s) => (RB.stepTime(s) ? RB.stepTime(s) + " allowed" : "");
   const b64 = (b) => { if (!b) return ""; if (typeof b === "string") return b; try { if (typeof b.toBase64 === "function") return b.toBase64(); if (b._byteString && b._byteString.toBase64) return b._byteString.toBase64(); } catch (e) {} return ""; };
 
   // ------------------------------------------------------------------ where each file stands

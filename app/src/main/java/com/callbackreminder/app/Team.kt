@@ -1007,6 +1007,15 @@ object TeamRepo {
         (f["extCount"] as? Int)?.let { x = x.copy(extCount = it) }
         (f["firstDue"] as? Long)?.let { x = x.copy(firstDue = it) }
         (f["reminderAt"] as? Long)?.let { x = x.copy(reminderAt = it) }
+        // Plot files: a tick or untick ("ticks.N" set or deleted) shows at once too, not after the cloud answers.
+        val tk = f.filterKeys { it.startsWith("ticks.") }
+        if (tk.isNotEmpty()) x = x.copy(ticks = x.ticks.toMutableMap().apply {
+            tk.forEach { (k, v) ->
+                val no = k.removePrefix("ticks.")
+                val m = v as? Map<*, *>
+                if (m == null) remove(no) else put(no, PlotTick((m["at"] as? Number)?.toLong() ?: 0L, m["name"]?.toString().orEmpty(), m["value"]?.toString().orEmpty()))
+            }
+        })
         if (event != null) x = x.copy(events = x.events + TaskEvent(System.currentTimeMillis(), event))
         return x
     }

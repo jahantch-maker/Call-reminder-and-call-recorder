@@ -42,7 +42,7 @@
       const w = wrong.find((x) => x["Step no."] === r["Step no."]) || {};
       return {
         id: r["Step no."], stage: r.Stage, role: r["Who does it"], title: r["Title (English)"], titleUr: r["Title (Urdu)"],
-        limit: r["Time allowed (as locked)"], timer: r["Timer type"], days: r.Days === "" ? null : Number(r.Days), hours: r.Hours === undefined || r.Hours === "" ? null : Number(r.Hours),
+        timer: r["Timer type"], days: r.Days === "" ? null : Number(r.Days), hours: r.Hours === undefined || r.Hours === "" ? null : Number(r.Hours),
         starts: r["Starts when (English)"], startsUr: r["Starts when (Urdu)"], next: Array.from(new Set(list(r["Next step(s)"]).map((x) => (x.match(/^\d+\.\d+/) || [])[0]).filter(Boolean))),   // "3.1 (if 2.2 · 3a picked)" -> 3.1; "None" -> nothing
         recv: r["Receive / Return"], returnTo: r["Return goes to"], canPause: yes(r["Can pause (Waiting for plot owner)"]), pauseStarts: r["Pause starts"], reminder: r["Reminder while paused"],
         doneWithoutAll: yes(r["Done allowed without all ticks"]), ask: list(r["Who to ask"]),
@@ -74,6 +74,9 @@
       if (!stageSet.has(String(s.stage))) A("Stage", "Stage '" + s.stage + "' is not in the Stages tab.");
       if (s.days !== null && !(s.days >= 0 && s.days <= 60)) A("Days", "Days must be a number from 0 to 60, or empty.");
       if (s.hours !== null && !(s.hours >= 1 && s.hours <= 10)) A("Hours", "Hours must be a number from 1 to 10, or empty.");
+      if (!/^working (hours|days)$/i.test(s.timer || "")) A("Timer type", "Must be 'Working hours' or 'Working days'.");
+      if (/^working days$/i.test(s.timer || "") && !(s.days >= 1)) A("Days", "Timer type is 'Working days', so write how many days in Days.");
+      if (s.days !== null && /^working hours$/i.test(s.timer || "")) A("Days", "Days is only used when Timer type is 'Working days'.");
       if (/working hours/i.test(s.timer || "") && s.hours === null) A("Hours", "Timer type is 'Working hours', so write how many hours in Hours.");
       if (s.hours !== null && !/working hours/i.test(s.timer || "")) A("Hours", "Hours is only used when Timer type is 'Working hours'.");
       if (!["Receive only", "Receive / Return"].includes(s.recv)) A("Receive / Return", "Must be 'Receive only' or 'Receive / Return'.");
@@ -123,7 +126,7 @@
   };
 
   // ------------------------------------------------------------------ what changed (against the live version)
-  const FIELDS = [["role", "Who does it"], ["title", "Title"], ["stage", "Stage"], ["limit", "Time allowed"], ["days", "Days"], ["hours", "Hours"], ["next", "Next step(s)"], ["recv", "Receive / Return"], ["returnTo", "Return goes to"], ["canPause", "Can pause"], ["doneWithoutAll", "Done without all ticks"], ["ask", "Who to ask"], ["notify", "Notify"], ["call", "Call list"], ["wa", "WhatsApp list"], ["forms", "Forms used"]];
+  const FIELDS = [["role", "Who does it"], ["title", "Title"], ["stage", "Stage"], ["timer", "Timer type"], ["days", "Days"], ["hours", "Hours"], ["next", "Next step(s)"], ["recv", "Receive / Return"], ["returnTo", "Return goes to"], ["canPause", "Can pause"], ["doneWithoutAll", "Done without all ticks"], ["ask", "Who to ask"], ["notify", "Notify"], ["call", "Call list"], ["wa", "WhatsApp list"], ["forms", "Forms used"]];
   const TEXTS = [["checklist", "Checklist"], ["waMsg", "WhatsApp message"], ["wrong", "If something goes wrong"], ["wrongShort", "Short 'If something goes wrong'"], ["starts", "Starts when"]];
   /** JSON with keys sorted: Firestore gives keys back in another order, which must not count as a change. */
   const same = (v) => JSON.stringify(v === undefined ? "" : v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, y) => ((o[y] = x[y]), o), {}) : x));
