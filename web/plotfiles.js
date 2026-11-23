@@ -156,11 +156,11 @@
     const done = (g) => inStage(g).filter((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; }).length;
     const g = (x.stages || []).find((y) => String(y.no) === cur);
     const dots = (x.stages || []).map((y) => { const n = inStage(y).length; return `<i class="${String(y.no) === cur ? "c" : n && done(y) === n ? "d" : ""}"></i>`; }).join("");
-    return `<div class="plslimw" aria-hidden="true"><div class="plslim"><button class="link" data-pfback="1" tabindex="-1">← All files</button><span class="dv"></span>
+    return `<div class="plslimw"><div class="plslim"><button class="link" data-pfback="1">← All files</button><span class="dv"></span>
       <span class="plav sm">${esc((f.name || "?").trim().charAt(0).toUpperCase())}</span><b class="pn">Plot ${esc(f.plotNo)}</b>${f.test ? '<span class="tag yel">TEST</span>' : ""}<span class="nm">${esc(f.name || "—")}</span>
       ${t ? `<span class="dv"></span><span class="mut">Now with</span><b>${esc(s ? s.role : "")} · ${withName(t)}</b>` : ""}${badge(stateOf(f, now))}
       ${g ? `<span class="dv"></span><span class="stg"><span class="dots">${dots}</span><span class="mut">Stage ${esc(g.no)} ·</span><b>${esc(g.name)}</b><span class="mut">${done(g)} of ${inStage(g).length} done</span></span>` : ""}
-      <span class="sp"></span>${tabs.replace(/<button /g, '<button tabindex="-1" ')}</div></div>`;
+      <span class="sp"></span>${tabs}</div></div>`;
   }
 
   /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
@@ -272,7 +272,7 @@
   function filePage(f) {
     const x = X(), t = current(f), cur = t && step(t.step), nextIds = cur ? cur.next || [] : [];
     // WEB12 the file's top (back, header with Now with, stages, Steps/Timeline) stays in place while the steps scroll.
-    // WEB16 once the header has scrolled away, one slim line slides in over the steps (it takes no room, so nothing moves).
+    // WEB16 scrolled down, the header folds away and this slim line grows in its place (shell.js slimTop).
     const top = () => slimLine(f, tabs) + `<div class="plfix">${header(f)}${tabs}</div>`;
     const tabs = `<div class="tabs pltabs"><button data-pftab="steps" class="${S.pfTab === "steps" ? "on" : ""}">Steps</button><button data-pftab="timeline" class="${S.pfTab === "timeline" ? "on" : ""}">Timeline</button></div>`;
     if (S.pfTab === "timeline") return top() + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;

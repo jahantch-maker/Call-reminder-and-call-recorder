@@ -103,15 +103,17 @@
     if (page.afterBind) page.afterBind();
     RB.stickHeads(content);
   };
-  /** WEB16 Slim top (locked 24 Nov): scrolled down, the page title folds to one line (a plot file shows its slim line instead).
-   *  Two different points to fold and unfold, so it never flickers at the edge. A redraw keeps the state with no animation. */
+  /** WEB16 Slim top (locked 24 Nov): the moment the page is scrolled its top folds (a plot file: into its slim line), and it
+   *  opens again back at the very top. It folds only when the page is long enough to stay scrolled once folded, so it never
+   *  flickers. A redraw keeps the state with no animation. */
   function slimTop(pc, content) {
     if (!pc || !content) return;
     const set = () => {
-      const y = content.scrollTop, fix = content.querySelector(".plfix");
-      pc.classList.toggle("slim", pc.classList.contains("slim") ? y > 8 : y > 60);
+      const y = content.scrollTop, fix = content.querySelector(".plfix"), on = pc.classList.contains("slim");
+      if (fix && !on) pc.style.setProperty("--pfh", fix.scrollHeight + "px");
+      const room = content.scrollHeight - content.clientHeight - (fix && !on ? fix.offsetHeight : 0) - 160;
+      pc.classList.toggle("slim", on ? y > 4 : y > 4 && room > 40);
       pc.classList.toggle("pfpage", !!fix);
-      pc.classList.toggle("pfslim", !!fix && fix.getBoundingClientRect().bottom < content.getBoundingClientRect().top + 12);
     };
     pc.classList.add("notr"); set();
     requestAnimationFrame(() => requestAnimationFrame(() => pc.classList.remove("notr")));
