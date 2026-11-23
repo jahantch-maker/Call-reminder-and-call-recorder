@@ -45,11 +45,35 @@
     const open = tasksOf(f.id).filter((t) => !t.doneAt && !ret(t));
     return open.sort((a, b) => (a.waitAt ? 1 : 0) - (b.waitAt ? 1 : 0) || (a.due || 9e15) - (b.due || 9e15))[0] || null;
   }
+  /** WEB14 Every way a step can open: Flow rows (an "Only if" makes it a choice) and pick-one checklist lines (always a choice). */
+  function openers(sid) {
+    const x = X(); if (!x) return [];
+    const rows = (x.flow || []).filter((r) => r.to === sid).map((r) => ({ from: r.from, choice: !!r.onlyIf }));
+    const picks = x.steps.filter((y) => (y.checklist || []).some((c) => c.opens === sid)).map((y) => ({ from: y.id, choice: true }));
+    return rows.concat(picks);
+  }
+  /** WEB14 "Not needed for this file": never opened, and every way to open it was a choice already made the other way
+   *  (its step is Done) or comes from a step that is itself not needed. Returns the deciding steps, or null. */
+  function notNeeded(f, sid, seen) {
+    if (taskOf(f.id, sid)) return null;
+    const ops = openers(sid); if (!ops.length) return null;
+    seen = seen || new Set([sid]);
+    const why = [];
+    for (const o of ops) {
+      if (seen.has(o.from)) return null;
+      const k = taskOf(f.id, o.from);
+      if (k && k.doneAt && o.choice) { why.push(o.from); continue; }
+      if (!k && notNeeded(f, o.from, new Set(seen).add(o.from))) continue;
+      return null;
+    }
+    return why.length ? Array.from(new Set(why)) : ["an earlier choice"];
+  }
+  const finished = (f, sid) => { const k = taskOf(f.id, sid); return (k && k.doneAt) || !!notNeeded(f, sid); };
   /** open | late | today | wait | ontime | build (construction started) | closed */
   function stateOf(f, now) {
     if (f.status === "closed") return "closed";
     const t = current(f);
-    if (!t) { const x = X(); return x && x.steps.length && x.steps.every((s) => { const k = taskOf(f.id, s.id); return k && k.doneAt; }) ? "build" : "ontime"; }
+    if (!t) { const x = X(); return x && x.steps.length && x.steps.every((s) => finished(f, s.id)) ? "build" : "ontime"; }
     if (t.waitAt) return "wait";
     if (isLate(t, now)) return "late";
     if (t.due && sod(t.due) === sod(now)) return "today";
@@ -105,7 +129,7 @@
   function header(f) {
     const now = Date.now(), t = current(f), s = t && step(t.step), st = stateOf(f, now), x = X();
     const curStage = s ? String(s.stage) : null;
-    const inStage = (g) => x.steps.filter((y) => String(y.stage) === String(g.no));
+    const inStage = (g) => x.steps.filter((y) => String(y.stage) === String(g.no) && !notNeeded(f, y.id));
     const nDone = (g) => inStage(g).filter((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; }).length;
     const opened = f.openedAt ? "File opened " + RB.fmtDay(f.openedAt) + " · " + pl(days(f.openedAt, now), "day") + " ago" : "";
     const facts = [phone(f.wa) !== "—" ? "WhatsApp " + phone(f.wa) : "", f.sim2 ? "Second SIM " + phone(f.sim2) : "", f.cnic ? "CNIC " + cnic(f.cnic) : "", esc(f.address || ""), f.attorney ? "Attorney " + esc(f.attorney) : "", opened].filter(Boolean);
@@ -140,20 +164,39 @@
     }, true);
   }
 
+  /** WEB13 Which earlier steps open this one, from the sheet's Flow tab (+ a pick-one line that opens it), each ticked when Done.
+   *  Rows with "Also waits for" mean ALL must be Done ("and"); several plain rows mean ANY one opens it ("or"). */
+  function startsAfter(f, s) {
+    const x = X(), rows = ((x && x.flow) || []).filter((r) => r.to === s.id);
+    const ids = (t) => String(t || "").match(/\d+\.\d+/g) || [];
+    const all = rows.some((r) => r.waits);
+    const num = (a, b) => a.split(".")[0] - b.split(".")[0] || a.split(".")[1] - b.split(".")[1];
+    const from = Array.from(new Set(rows.flatMap((r) => [r.from].concat(all ? ids(r.waits) : [])))).sort(num);
+    const picks = ((x && x.steps) || []).filter((y) => (y.checklist || []).some((c) => c.opens === s.id)).map((y) => y.id).filter((id) => !from.includes(id));
+    if (!from.length && !picks.length) return "";
+    const one = (id) => { const k = taskOf(f.id, id), ok = k && k.doneAt; return `<b class="${ok ? "plok" : ""}">${ok ? "✓ " : ""}${esc(id)}</b>`; };
+    const list = (a, w) => (a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " " + w + " " + a[a.length - 1]);
+    const txt = from.length ? `Starts after ${list(from.map(one), all ? "and" : "or")} ${from.length > 1 && all ? "are" : "is"} Done` : "";
+    const pk = picks.length ? `${txt ? " · or" : "Starts"} when it is picked in ${list(picks.map(one), "or")}` : "";
+    return `<div class="plafter">${txt}${pk}</div>`;
+  }
+
   /** One step row (and its checklist + Timeline when opened in place). */
   function stepRow(f, s, nextIds) {
     const now = Date.now(), t = taskOf(f.id, s.id), done = t && t.doneAt, open = S.pfOpen === s.id;
-    const back = ret(t), state = done ? "done" : t && !back ? "cur" : "later";
+    const skip = !t && notNeeded(f, s.id);
+    const back = ret(t), state = done ? "done" : t && !back ? "cur" : skip ? "later plskip" : "later";
     const who = `<span class="plwho">👤 ${esc(s.role)}${t ? " · " + withName(t) : ""}</span>`;
-    const when = done ? "Done " + RB.fmtDay(t.doneAt) : back ? `Returned to ${esc(t.returnTo || "the earlier step")} ${RB.fmtWhen(t.updatedAt || t.createdAt || now)} · “${esc(t.reason || "")}”` : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtDay(t.waitAt) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
+    const when = skip ? `Not needed for this file (not picked in ${esc(skip.join(", "))})` : done ? "Done " + RB.fmtDay(t.doneAt) : back ? `Returned to ${esc(t.returnTo || "the earlier step")} ${RB.fmtWhen(t.updatedAt || t.createdAt || now)} · “${esc(t.reason || "")}”` : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtDay(t.waitAt) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
     let right = "";
     if (done) { const n = t.due && t.doneAt > t.due ? days(t.due, t.doneAt) : -1; right = n < 0 ? '<span class="plok">On time</span>' : `<span class="pllate">${n ? pl(n, "day") + " late" : "Late"}</span>`; }
     else if (back) right = '<span class="plgrey">Returned</span>';
+    else if (skip) right = '<span class="plgrey">Not needed</span>';
     else if (t) right = dueText(t, now) || '<span class="plgrey">No due time</span>';
     else if (nextIds.includes(s.id)) right = '<span class="plgrey">Next</span>';
     return `<div class="plstep ${state} ${open ? "open" : ""}"><div class="plsr" data-pfstep="${esc(s.id)}" role="button" tabindex="0" aria-expanded="${open}">
-        <span class="plic">${done ? "✓" : ""}</span><div class="w"><div class="plst"><b>${esc(s.id)}</b> ${esc(s.title)}</div><div class="plmeta">${who}<b>${when}</b><span>⏱ ${esc(allowed(s) || "—")}</span></div></div>
-        <div class="plright">${right}</div><span class="plchev" aria-hidden="true">${open ? "⌄" : "›"}</span></div>${open ? inPlace(f, s, t) : ""}</div>`;
+        <span class="plic">${done ? "✓" : skip ? "–" : ""}</span><div class="w"><div class="plst"><b>${esc(s.id)}</b> ${esc(s.title)}</div><div class="plmeta">${who}<b>${when}</b><span>⏱ ${esc(allowed(s) || "—")}</span></div></div>
+        <div class="plright">${right}${startsAfter(f, s)}</div><span class="plchev" aria-hidden="true">${open ? "⌄" : "›"}</span></div>${open ? inPlace(f, s, t) : ""}</div>`;
   }
 
   function inPlace(f, s, t) {
@@ -202,10 +245,10 @@
     if (S.pfTab === "timeline") return top() + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;
     const groups = Array.from(new Set(x.steps.map((s) => String(s.stage))));
     const body = groups.map((g) => {
-      const ss = x.steps.filter((s) => String(s.stage) === g), started = ss.some((s) => taskOf(f.id, s.id)), nd = ss.filter((s) => { const k = taskOf(f.id, s.id); return k && k.doneAt; }).length;
+      const ss = x.steps.filter((s) => String(s.stage) === g && !notNeeded(f, s.id)), started = ss.some((s) => taskOf(f.id, s.id)), nd = ss.filter((s) => { const k = taskOf(f.id, s.id); return k && k.doneAt; }).length;
       const openG = S.pfStages[g] !== undefined ? S.pfStages[g] : started;
       if (!openG) return `<div class="plgrp" data-pfstage="${esc(g)}" role="button" tabindex="0" aria-expanded="false"><span class="pfn">${esc(g)}</span><b>${esc(stageOf(g).name)}</b><span class="sub">${pl(ss.length, "step")} · ${nd === ss.length ? "done" : nd ? nd + " done" : "not started"}</span></div>`;
-      return `<div class="plgh" data-pfstage="${esc(g)}" role="button" tabindex="0" aria-expanded="true">STAGE ${esc(g)} · ${esc(String(stageOf(g).name).toUpperCase())} · ${nd} OF ${ss.length} DONE</div>${ss.map((s) => stepRow(f, s, nextIds)).join("")}`;
+      return `<div class="plgh" data-pfstage="${esc(g)}" role="button" tabindex="0" aria-expanded="true">STAGE ${esc(g)} · ${esc(String(stageOf(g).name).toUpperCase())} · ${nd} OF ${ss.length} DONE</div>${x.steps.filter((s) => String(s.stage) === g).map((s) => stepRow(f, s, nextIds)).join("")}`;
     }).join("");
     return top() + `<div class="card plsteps">${body}</div>`;
   }

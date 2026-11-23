@@ -43,7 +43,7 @@
       return {
         id: r["Step no."], stage: r.Stage, role: r["Who does it"], title: r["Title (English)"], titleUr: r["Title (Urdu)"],
         timer: r["Timer type"], days: r.Days === "" ? null : Number(r.Days), hours: r.Hours === undefined || r.Hours === "" ? null : Number(r.Hours),
-        starts: r["Starts when (English)"], startsUr: r["Starts when (Urdu)"], next: Array.from(new Set(list(r["Next step(s)"]).map((x) => (x.match(/^\d+\.\d+/) || [])[0]).filter(Boolean))),   // "3.1 (if 2.2 · 3a picked)" -> 3.1; "None" -> nothing
+        starts: r["Starts when (English)"], startsUr: r["Starts when (Urdu)"], next: Array.from(new Set(list(r["Next step(s)"]).map((x) => (x.match(/^\d+\.\d+/) || [])[0]).filter(Boolean))), side: /side step/i.test(r["Next step(s)"] || ""),   // "3.1 (if 2.2 · 3a picked)" -> 3.1; "None" -> nothing
         recv: r["Receive / Return"], returnTo: r["Return goes to"], canPause: yes(r["Can pause (Waiting for plot owner)"]), pauseStarts: r["Pause starts"], reminder: r["Reminder while paused"],
         doneWithoutAll: yes(r["Done allowed without all ticks"]), ask: list(r["Who to ask"]),
         notify: { start: list(r["Notify on start"]), done: list(r["Notify when done"]), late: list(r["Notify when late"]) },
@@ -108,7 +108,7 @@
       const A = (col, text) => add("Flow", f.__row, f.from, col, text);
       if (!isStep(f.from)) A("From step", "Step " + f.from + " does not exist.");
       if (!isStep(f.to)) A("Opens step", "Step " + (f.to || "(empty)") + " does not exist.");
-      const w = (f.waits.match(/^\d+\.\d+/) || [])[0]; if (f.waits && !isStep(w)) A("Also waits for", "Step " + f.waits + " does not exist.");
+      (f.waits.match(/\d+\.\d+/g) || []).forEach((w) => { if (!isStep(w)) A("Also waits for", "Step " + w + " does not exist."); });
       if (f.onlyIf && !ref(f.onlyIf)) A("Only if", "'" + f.onlyIf + "' must be written like 6.4 · 3b.");
     });
     p.roles.forEach((r) => urdu("Roles", r.__row, r.role, "Role", r.role, r.roleUr));
@@ -120,6 +120,10 @@
     const have = new Set(RB.desigList().map((d) => d.name)), out = [];
     const roles = Array.from(new Set(p.steps.map((s) => s.role).filter(Boolean))).filter((r) => !have.has(r));
     if (roles.length) out.push("These roles are not designations in Team yet, so tasks cannot be given to them until you add them: " + roles.join(", ") + ".");
+    // FLOW1 a step whose Done opens nothing and that no step waits for lets the file run ahead without it.
+    const waited = new Set(p.flow.flatMap((f) => f.waits.match(/\d+\.\d+/g) || []));
+    const dead = p.steps.slice(0, -1).filter((s) => !s.side && !waited.has(s.id) && !p.flow.some((f) => f.from === s.id) && !(s.checklist || []).some((c) => c.opens)).map((s) => s.id);
+    if (dead.length) out.push("These steps open nothing and no step waits for them, so the file can move on without them: " + dead.join(", ") + ". Add a row in the Flow tab, or write \"None · side step\" in Next step(s) if that is on purpose.");
     const nolink = p.forms.filter((f) => !f.link).map((f) => f.code);
     if (nolink.length) out.push("These forms have no Google Drive link yet, so their code cannot open the PDF: " + nolink.join(", ") + ".");
     return out;
