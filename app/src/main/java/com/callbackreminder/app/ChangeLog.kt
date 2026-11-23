@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.57.2", "24 Nov",
+            new = listOf(
+                "Return, Send back and Extend deadline: add voice notes and photos (camera or gallery, with the photo editor and a caption); they all go on the Timeline",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.57.1", "24 Nov",
             new = listOf(
                 "Team list: each person's Google account photo shows once they have signed in",

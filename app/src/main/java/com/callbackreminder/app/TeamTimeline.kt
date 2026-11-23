@@ -573,7 +573,7 @@ private fun TeamComposer(
             quick = listOf("Waiting for material", "Vendor late", "More work than planned", "Site not ready"),
             button = if (free) "Extend" else "Ask ${t.fromFirst}",
             onDismiss = { extendTo = null },
-        ) { reason ->
+        ) { reason, extras ->
             extendTo = null
             if (ms <= t.due) {
                 Toast.makeText(ctx, "Pick a time after ${TeamUi.shortWhen(t.due)}", Toast.LENGTH_SHORT).show()
@@ -581,6 +581,7 @@ private fun TeamComposer(
             }
             val before = t
             val moved = TeamRepo.extend(t, ms, reason)
+            sendExtras(t, extras)
             onExtended(if (moved) "Deadline · ${TeamUi.shortWhen(ms)}" else "Asked ${t.fromFirst} · ${TeamUi.shortWhen(ms)}", before)
         }
     }
@@ -605,8 +606,38 @@ private fun TeamTagButton(label: String, color: Color, on: Boolean, enabled: Boo
  */
 @Composable
 internal fun rememberTeamPhotoPicker(multi: Boolean = false, onPhoto: (ByteArray) -> Unit): () -> Unit {
-    val ctx = LocalContext.current
     var choose by remember { mutableStateOf(false) }
+    val (openCamera, openGallery) = rememberTeamPhotoSources(multi, onPhoto)
+    if (choose) {
+        AlertDialog(
+            onDismissRequest = { choose = false },
+            title = { Text("Add a photo") },
+            text = {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = { choose = false; openCamera() }, modifier = Modifier.weight(1f).height(72.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.PhotoCamera, contentDescription = null)
+                            Text("Camera")
+                        }
+                    }
+                    OutlinedButton(onClick = { choose = false; openGallery() }, modifier = Modifier.weight(1f).height(72.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.Image, contentDescription = null)
+                            Text("Gallery")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choose = false }) { Text("Cancel") } },
+        )
+    }
+    return { choose = true }
+}
+
+/** Camera and Gallery as two separate openers; both go through the markup editor (PHONE2 windows show them as two buttons). */
+@Composable
+internal fun rememberTeamPhotoSources(multi: Boolean = false, onPhoto: (ByteArray) -> Unit): Pair<() -> Unit, () -> Unit> {
+    val ctx = LocalContext.current
     var camUri by remember { mutableStateOf<Uri?>(null) }
     var busy by remember { mutableStateOf<List<Uri>?>(null) }
     var toEdit by remember { mutableStateOf<List<ByteArray>?>(null) }
@@ -632,41 +663,18 @@ internal fun rememberTeamPhotoPicker(multi: Boolean = false, onPhoto: (ByteArray
             done.forEach(onPhoto)
         })
     }
-    if (choose) {
-        AlertDialog(
-            onDismissRequest = { choose = false },
-            title = { Text("Add a photo") },
-            text = {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = {
-                        choose = false
-                        runCatching {
-                            val u = TeamMedia.cameraUri(ctx)
-                            camUri = u
-                            camera.launch(u)
-                        }.onFailure { Toast.makeText(ctx, "No camera app found", Toast.LENGTH_SHORT).show() }
-                    }, modifier = Modifier.weight(1f).height(72.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Rounded.PhotoCamera, contentDescription = null)
-                            Text("Camera")
-                        }
-                    }
-                    OutlinedButton(onClick = {
-                        choose = false
-                        val only = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        if (multi) galleryMany.launch(only) else gallery.launch(only)
-                    }, modifier = Modifier.weight(1f).height(72.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Rounded.Image, contentDescription = null)
-                            Text("Gallery")
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { choose = false }) { Text("Cancel") } },
-        )
+    val camera0: () -> Unit = {
+        runCatching {
+            val u = TeamMedia.cameraUri(ctx)
+            camUri = u
+            camera.launch(u)
+        }.onFailure { Toast.makeText(ctx, "No camera app found", Toast.LENGTH_SHORT).show() }
     }
-    return { choose = true }
+    val gallery0: () -> Unit = {
+        val only = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        if (multi) galleryMany.launch(only) else gallery.launch(only)
+    }
+    return camera0 to gallery0
 }
 
 /** The photo with a caption box before it goes (Send, or Send Done for photo proof). */
@@ -729,7 +737,60 @@ internal fun TeamDoneWithPhoto(t: TeamTask, myTaskId: Long?, onDismiss: () -> Un
 }
 
 /** A photo or voice note added in New follow-up, sent as the task's brief on the Timeline once it is given. */
-data class TeamAttach(val kind: String, val data: ByteArray, val durMs: Long = 0L)
+data class TeamAttach(val kind: String, val data: ByteArray, val durMs: Long = 0L, val caption: String = "")
+
+/** PHONE2: each voice note and photo (with its caption) goes on the task's Timeline, in the order they were added. */
+internal fun sendExtras(t: TeamTask, extras: List<TeamAttach>) =
+    extras.forEach { a -> TeamRepo.send(t, a.kind, a.caption, data = a.data, durMs = a.durMs) }
+
+/**
+ * PHONE2 (mockup v10-return A): 📷 Camera · 🖼 Gallery · the green 🎤 (hold, or tap for hands free) under the reason.
+ * As many voice notes and photos as needed; each photo has a caption, each item a ✕. Used by Return, Send back, Extend deadline.
+ */
+@Composable
+internal fun TeamExtrasBlock(extras: List<TeamAttach>, onChange: (List<TeamAttach>) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var recording by remember { mutableStateOf(false) }
+    val latest = remember { arrayOf(extras) }
+    latest[0] = extras
+    val add: (TeamAttach) -> Unit = { a -> latest[0] = latest[0] + a; onChange(latest[0]) }
+    val (camera, gallery) = rememberTeamPhotoSources(multi = true) { add(TeamAttach(Team.PHOTO, it)) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (extras.isNotEmpty()) Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant) {
+            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                extras.forEachIndexed { i, a ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (a.kind == Team.VOICE) {
+                            VoicePlayer("extra-${System.identityHashCode(a.data)}", a.data, a.durMs, "", cs.onSurface, Modifier.weight(1f), button = 32.dp)
+                        } else {
+                            val bmp = remember(a.data) { TeamMedia.bitmap(a.data)?.asImageBitmap() }
+                            if (bmp != null) Image(bmp, contentDescription = "Photo", contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)))
+                            OutlinedTextField(a.caption, { c -> onChange(extras.mapIndexed { j, x -> if (j == i) x.copy(caption = c) else x }) },
+                                placeholder = { Text("Caption (optional)") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), maxLines = 2)
+                        }
+                        IconButton(onClick = { onChange(extras.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Rounded.Close, contentDescription = if (a.kind == Team.VOICE) "Remove voice note" else "Remove photo", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.FilledTonalButton(onClick = camera, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Camera", maxLines = 1)
+            }
+            androidx.compose.material3.FilledTonalButton(onClick = gallery, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Gallery", maxLines = 1)
+            }
+            TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> add(TeamAttach(Team.VOICE, b, d)) }, size = 44.dp)
+        }
+        Text(
+            if (recording) "🔴 Recording… max 2:00" else "Hold 🎤 to record, or tap it for hands free (same as the Timeline). Add as many voice notes and photos as you need.",
+            fontSize = 12.sp, color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant,
+        )
+    }
+}
 
 /** ATTACH in FOR <NAME>: 📷 photo, hold 🎤 for a voice note; what is added shows as small chips with ✕. */
 @Composable

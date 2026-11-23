@@ -293,7 +293,7 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
         title = "Return to ${s.returnTo}",
         body = "Write what is wrong. The step goes back to the ${s.returnTo}.",
         quick = emptyList(), button = "Return", onDismiss = { returning = false },
-    ) { r -> returning = false; PlotActions.returnStep(t, s, r.trim()) }
+    ) { r, extras -> returning = false; PlotActions.returnStep(t, s, r.trim()); sendExtras(t, extras) }
 }
 
 private fun boldLead(lead: String, rest: String) = buildAnnotatedString {

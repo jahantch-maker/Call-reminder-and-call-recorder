@@ -872,8 +872,7 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
     val cs = MaterialTheme.colorScheme
     var why by remember { mutableStateOf<String?>(null) }
     var more by remember { mutableStateOf("") }
-    var voice by remember { mutableStateOf<Pair<ByteArray, Long>?>(null) }
-    var recording by remember { mutableStateOf(false) }
+    var extras by remember { mutableStateOf<List<TeamAttach>>(emptyList()) }
     var iPick by remember { mutableStateOf(false) }
     var due by remember { mutableStateOf<Long?>(null) }
     val quick = remember { TeamRules.notDoneReasons(ctx) }
@@ -889,16 +888,9 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 quick.forEach { q -> FilterChip(selected = why == q, onClick = { why = if (why == q) null else q }, label = { Text(q) }) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(more, { more = it }, placeholder = { Text("Add details (optional)") }, trailingIcon = voiceMic(more) { more = it },
-                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), maxLines = 3)
-                TeamHoldToRecord(onState = { recording = it }, onRecorded = { b, d -> voice = b to d }, size = 44.dp)
-            }
-            if (recording || voice != null) Text(
-                if (recording) "🔴 Recording…" else "🎤 Voice note ${TeamMedia.duration(voice!!.second)} · goes on the Timeline",
-                fontSize = 12.sp, color = if (recording) Color(0xFFFF5A5A) else cs.onSurfaceVariant,
-                modifier = if (!recording) Modifier.clickable { voice = null } else Modifier,
-            )
+            OutlinedTextField(more, { more = it }, placeholder = { Text("Add details (optional)") }, trailingIcon = voiceMic(more) { more = it },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 3)
+            TeamExtrasBlock(extras) { extras = it }
             ChipHeading("NEW DEADLINE", modifier = Modifier.padding(top = 4.dp))
             TeamWhenBox(myTime = iPick, onChange = { iPick = it })
             androidx.compose.animation.AnimatedVisibility(
@@ -924,7 +916,7 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
                 onClick = {
                     val reason = listOfNotNull(why, more.trim().takeIf { it.isNotEmpty() }).joinToString(" · ")
                     TeamRepo.notDoneYet(t, reason, if (iPick) due ?: 0L else 0L)
-                    voice?.let { (b, d) -> TeamRepo.send(t, Team.VOICE, "", data = b, durMs = d) }
+                    sendExtras(t, extras)
                     TeamSync.giverNotDone(ctx, t, if (iPick) due ?: 0L else 0L)
                     onSent()
                     onDismiss()
@@ -941,14 +933,15 @@ fun TeamNotDoneSheet(t: TeamTask, onSent: () -> Unit = {}, onDismiss: () -> Unit
 @Composable
 internal fun TeamReasonDialog(
     title: String, body: String, quick: List<String>, button: String, onDismiss: () -> Unit,
-    top: (@Composable () -> Unit)? = null, ready: Boolean = true, onSend: (String) -> Unit,
+    top: (@Composable () -> Unit)? = null, ready: Boolean = true, onSend: (String, List<TeamAttach>) -> Unit,
 ) {
     var reason by remember { mutableStateOf("") }
+    var extras by remember { mutableStateOf<List<TeamAttach>>(emptyList()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(body)
                 top?.invoke()
                 if (quick.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -956,9 +949,11 @@ internal fun TeamReasonDialog(
                 }
                 OutlinedTextField(reason, { reason = it }, label = { Text("Reason *") }, trailingIcon = voiceMic(reason) { reason = it },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 3)
+                // PHONE2: voice notes and photos with the reason; they go on the Timeline after it.
+                TeamExtrasBlock(extras) { extras = it }
             }
         },
-        confirmButton = { Button(onClick = { onSend(reason) }, enabled = ready && reason.isNotBlank()) { Text(button) } },
+        confirmButton = { Button(onClick = { onSend(reason, extras) }, enabled = ready && reason.isNotBlank()) { Text(button) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
