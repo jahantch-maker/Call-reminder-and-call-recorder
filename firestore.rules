@@ -62,7 +62,7 @@ service cloud.firestore {
             (request.resource.data.status == 'active' && request.auth.token.email_verified == true
               && request.resource.data.seatId == request.auth.token.email.lower()
               && exists(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower()))))) ||
-          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email', 'signedOut'])) ||
+          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email', 'signedOut', 'photo'])) ||
           // v0.50 A seat holder who signed in on the phone first copies the permissions of his own seat (nothing else, nothing different).
           (uid == me() && resource.data.status == 'active' && resource.data.role == 'member' && resource.data.get('seatId', '') == request.auth.token.email.lower()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['perms'])

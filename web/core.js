@@ -392,6 +392,9 @@
     teamRef.collection("members").onSnapshot((s) => {
       D.members = s.docs.map((d) => Object.assign({ uid: d.id }, d.data()));
       D.me = RB.member(uid) || D.me;
+      // WEB9 keep my Google photo on my member row for the avatars (its own write, so older rules only skip it).
+      const ph = (firebase.auth().currentUser || {}).photoURL || "";
+      if (ph && D.me && D.me.photo !== ph && !RB.photoSent) { RB.photoSent = true; teamRef.collection("members").doc(uid).update({ photo: ph }).catch(() => {}); }
       D.members.forEach((m) => {
         if (D.own[m.uid] !== undefined || m.status !== "active") return;
         D.own[m.uid] = [];

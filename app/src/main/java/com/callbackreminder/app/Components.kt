@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.draw.alpha
 import androidx.compose.runtime.collectAsState
@@ -31,10 +32,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Round badge with the first letter of the caller's name. */
+/** Google photos already downloaded this run, by link (small: a few avatars). */
+private val photoCache = mutableMapOf<String, androidx.compose.ui.graphics.ImageBitmap?>()
+
+/** Round badge with the first letter of the caller's name, or [photo] (a Google account photo link) once it has loaded. */
 @Composable
-fun Avatar(text: String, size: Dp = 44.dp) {
+fun Avatar(text: String, size: Dp = 44.dp, photo: String = "") {
     val initial = text.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "#"
+    val img by androidx.compose.runtime.produceState(photoCache[photo], photo) {
+        if (photo.startsWith("https://") && !photoCache.containsKey(photo)) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { java.net.URL(photo).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull()
+        }.also { photoCache[photo] = it }
+    }
     Box(
         modifier = Modifier
             .size(size)
@@ -42,12 +51,13 @@ fun Avatar(text: String, size: Dp = 44.dp) {
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = initial,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size.value * 0.4f).sp
-        )
+        img?.let { androidx.compose.foundation.Image(it, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+            ?: Text(
+                text = initial,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size.value * 0.4f).sp
+            )
     }
 }
 

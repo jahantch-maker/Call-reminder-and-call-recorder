@@ -72,7 +72,7 @@ fun TeamTree(me: TeamMember, members: List<TeamMember>, tasks: List<TeamTask>) {
                 if (seats.isEmpty()) "The team shows here once it has loaded (needs internet the first time)." else "Nobody matches “$q”.",
                 fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(14.dp),
             )
-            shown.forEach { (s, depth) -> TreeRow(s, depth, mine = s.id == mySeat?.id) { open = s } }
+            shown.forEach { (s, depth) -> TreeRow(s, depth, mine = s.id == mySeat?.id, photo = members.find { it.uid == s.uid }?.photo.orEmpty()) { open = s } }
         }
     }
 
@@ -80,7 +80,7 @@ fun TeamTree(me: TeamMember, members: List<TeamMember>, tasks: List<TeamTask>) {
 }
 
 @Composable
-private fun TreeRow(s: Seat, depth: Int, mine: Boolean, onClick: () -> Unit) {
+private fun TreeRow(s: Seat, depth: Int, mine: Boolean, photo: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 6.dp)
@@ -95,7 +95,7 @@ private fun TreeRow(s: Seat, depth: Int, mine: Boolean, onClick: () -> Unit) {
             }
         }
         Row(Modifier.weight(1f).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(s.name, size = 34.dp)
+            Avatar(s.name, size = 34.dp, photo = photo)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -135,7 +135,7 @@ private fun PersonSheet(s: Seat, me: TeamMember, members: List<TeamMember>, task
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(s.name, size = 48.dp)
+                Avatar(s.name, size = 48.dp, photo = members.find { it.uid == s.uid }?.photo.orEmpty())
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

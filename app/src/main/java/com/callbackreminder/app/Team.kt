@@ -59,6 +59,8 @@ data class TeamMember(
     val setDossier: Boolean = false,
     /** v0.49 The seat (his official Gmail) and designation in the Rafiq Builders portal; blank = not in a seat yet. */
     val seatId: String = "",
+    /** His Google account photo link, saved by his own phone or browser at sign-in; blank = the letter avatar. */
+    val photo: String = "",
     val designation: String = "",
     /** v0.49 The app switches the portal set for him (null = none set yet: the old behaviour). */
     val appPerms: Map<String, Boolean>? = null,
@@ -548,6 +550,10 @@ object TeamRepo {
         if (!force && now - p().getLong("touched", 0L) < 10 * 60_000L) return
         db().collection("teams").document(t).collection("members").document(u).update(mapOf("lastSeen" to now, "signedOut" to false))
             .addOnSuccessListener { p().edit().putLong("touched", now).apply() }
+        // His Google photo for the avatars (web and phone). A write of its own, so older rules never block "last seen".
+        val photo = auth().currentUser?.photoUrl?.toString().orEmpty()
+        if (photo.isNotEmpty() && photo != _me.value?.photo)
+            db().collection("teams").document(t).collection("members").document(u).update("photo", photo)
     }
 
     // ------------------------------------------------------------ sign-in
@@ -1533,6 +1539,7 @@ object TeamRepo {
         ownDossier = s.getBoolean("ownDossier") == true,
         setDossier = s.getBoolean("setDossier") == true,
         seatId = s.getString("seatId").orEmpty(),
+        photo = s.getString("photo").orEmpty(),
         designation = s.getString("designation").orEmpty(),
         appPerms = ((s.get("perms") as? Map<*, *>)?.get("app") as? Map<*, *>)?.entries
             ?.mapNotNull { (k, v) -> (k as? String)?.let { key -> (v as? Boolean)?.let { key to it } } }?.toMap(),
