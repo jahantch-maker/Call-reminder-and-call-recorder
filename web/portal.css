@@ -240,3 +240,19 @@ html[data-theme="dark"] .dayg .hr{border-color:#303236}html[data-theme="dark"] .
 html[data-theme="dark"] .k,html[data-theme="dark"] .ty,html[data-theme="dark"] .avs,html[data-theme="dark"] .k .ck,html[data-theme="dark"] .ck{color:#1B1C1F}
 html[data-theme="dark"] .k .ck{background:#fff}
 .swrow .sub,.swrow .link{white-space:nowrap}
+/* Team › Timetables (23 Nov): tinted cards and rows, never plain white on white; amber = no timetable yet */
+.bd.amb{background:#E8890C;color:#fff}
+.tag.amb,html[data-theme="dark"] .tag.amb{background:#FBEBC8;color:#8A5A00}
+.amb{color:#B86A00;font-size:12.5px;font-weight:700}
+.tt{background:#EEF3FB;border-left:5px solid #1F3A93;border-radius:14px;padding:14px 16px;margin-top:10px}.tt.sel{background:#DCE7FA;box-shadow:inset 0 0 0 2px #1F3A93}.tt.miss{background:#FFF1CC;border-left-color:#E8890C}.tt.miss h4{color:#8A5A00}
+.tth{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tth h4{font-size:16px;margin:0}.tth b{font-size:14px}
+.ttppl{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.ttn{margin-top:8px}
+.ttp{display:inline-flex;align-items:center;gap:6px;background:#fff;border:0;border-radius:16px;padding:3px 10px 3px 3px;font:inherit;font-size:13px;cursor:pointer;color:var(--on)}.ttp:hover{box-shadow:inset 0 0 0 1px #1F3A93}
+.ttp .av{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#1B1C1F}
+.ttpanel h3{margin:0 0 2px}.ttpanel input:not([type=checkbox]){width:100%;background:#F4F4F2;border:1px solid #E2E2DF;font-weight:600}
+.ttrow{display:flex;gap:10px}.ttrow>div{flex:1;min-width:0}
+.ttdays{display:flex;gap:4px;flex-wrap:wrap}.ttd{min-width:36px;padding:0;height:34px;border-radius:10px;border:1px solid #D8D8D5;background:#F4F4F2;font:inherit;font-size:12px;cursor:pointer;color:var(--on)}.ttd.on{background:#1B1C1F;color:#fff;border-color:#1B1C1F}
+.ttck{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#F4F4F2;border-radius:10px;margin-bottom:5px;cursor:pointer}.ttck.on{background:#EEF3FB;box-shadow:inset 4px 0 0 #1F3A93}.ttck input{width:18px;height:18px;flex:none}.ttck .w{flex:1;min-width:0}.ttck .w b{display:block;font-size:14px}.ttck small{color:var(--onv);font-size:12px}
+.ttfoot{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+html[data-theme="dark"] .tt{background:#1E2A44}html[data-theme="dark"] .tt.sel{background:#263759}html[data-theme="dark"] .tt.miss{background:#4A3A12}html[data-theme="dark"] .tt.miss h4{color:#F2CC72}
+html[data-theme="dark"] .ttp,html[data-theme="dark"] .ttck,html[data-theme="dark"] .ttd,html[data-theme="dark"] .ttpanel input:not([type=checkbox]){background:#2A2C31;border-color:#3A3C42;color:#F2F2F0}html[data-theme="dark"] .ttck.on{background:#1E2A44}html[data-theme="dark"] .ttd.on{background:#F2F2F0;color:#1B1C1F}

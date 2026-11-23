@@ -41,9 +41,8 @@
     return v;
   }
 
-  const waiting = () => D.members.filter((m) => m.status === "pending");
-  RB.waiting = waiting;
-  const badge = (k) => (k === "team" && RB.level("team") === "edit" && waiting().length ? waiting().length : 0);
+  // Amber count on Team: people who have no timetable yet (their due times use 11 AM - 9 PM, Friday off until set).
+  const badge = (k) => (k === "team" && RB.level("team") === "edit" && RB.noTimetable ? RB.noTimetable().length : 0);
 
   function tabsFor(sec) {
     const lvl = RB.level(sec);
@@ -71,7 +70,7 @@
     const ownerSeat = RB.seatOfUid(RB.uidOf());
     const hi = "Hi, " + esc(RB.first(meRow.name || (D.team.ownerUid === RB.uidOf() ? "Jahanzaib" : "there")));
     const working = D.seats.filter((s) => s.status === "filled").length;
-    const rail = allowed.map((k) => `<button class="ri-w" data-sec="${k}" title="${NAMES[k]}"><span class="ri ${k === sec ? "on" : ""}">${ICONS[k]}${badge(k) ? `<b class="bd">${badge(k)}</b>` : ""}</span><span class="tip">${NAMES[k]}</span></button>`).join("");
+    const rail = allowed.map((k) => `<button class="ri-w" data-sec="${k}" title="${NAMES[k]}"><span class="ri ${k === sec ? "on" : ""}">${ICONS[k]}${badge(k) ? `<b class="bd amb" title="No timetable">${badge(k)}</b>` : ""}</span><span class="tip">${NAMES[k]}</span></button>`).join("");
     const running = RB.meet.running() && sec !== "meetings" ? `<div class="banner">Meeting running · <a href="#" class="link" data-sec="meetings">back to the meeting</a></div>` : "";
     // Fade in only when the page itself changes (section or tab); a click on the same page redraws without any flash.
     const sig = sec + "/" + tab, anim = sig !== RB._sig; RB._sig = sig;
@@ -102,7 +101,6 @@
   // ------------------------------------------------------------------ notices (bell)
   function noticeList() {
     const out = [], now = Date.now();
-    if (RB.level("team") === "edit" && waiting().length) out.push(["team", "people-waiting", waiting().length + " waiting to join", "Approve or reject in Team › Waiting"]);
     D.docs.filter((d) => d.type === "sop" && d.reviewBy && d.reviewBy < now && (RB.isOwner() || RB.canEdit("docs"))).forEach((d) => out.push(["docs", "sops", "Review due: " + d.title, "The review date has passed"]));
     return out;
   }
@@ -111,7 +109,7 @@
     const l = noticeList(), m = document.getElementById("modal");
     m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">Notices</b>${l.length ? l.map((n, i) => `<div class="arow click" data-n="${i}"><span class="w">${esc(n[2])}<span>${esc(n[3])}</span></span><span class="link">Open ›</span></div>`).join("") : '<div class="muted" style="margin:12px 0">Nothing needs you right now.</div>'}<div style="text-align:right;margin-top:12px"><button class="btnp" id="ok">Close</button></div></div></div>`;
     document.getElementById("ok").onclick = () => (m.innerHTML = "");
-    m.querySelectorAll("[data-n]").forEach((e) => (e.onclick = () => { const n = l[Number(e.dataset.n)]; m.innerHTML = ""; if (n[0] === "team") { S.tab.team = "waiting"; } else if (n[0] === "docs") { S.tab.docs = n[1]; } RB.go(n[0]); }));
+    m.querySelectorAll("[data-n]").forEach((e) => (e.onclick = () => { const n = l[Number(e.dataset.n)]; m.innerHTML = ""; if (n[0] === "docs") { S.tab.docs = n[1]; } RB.go(n[0]); }));
   }
 
   // ------------------------------------------------------------------ dialogs for all pages

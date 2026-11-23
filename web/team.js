@@ -1,4 +1,4 @@
-/* Team: People (one list, each Gmail is a seat) · Chart · Designations · Access · Waiting to join · Offboarding. */
+/* Team: People (one list, each Gmail is a seat) · Chart · Designations · Timetables · Access · Offboarding. */
 (function () {
   "use strict";
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc, first = RB.first;
@@ -29,6 +29,23 @@
     }, 500);
   }
   const saveOverride = (s, label) => lazySave("seat:" + s.id, () => RB.Store.putField("seats", s.id, "override", RB.seat(s.id).override || {}), label);
+  // Timetables (locked 23 Nov) live in config/designations (Team editors already write it): [{ id, name, start, end, off }],
+  // start/end in minutes from midnight, off = week days off (0 Sunday … 6 Saturday). Each seat keeps one timetable id.
+  RB.timetables = () => (D.desig && Array.isArray(D.desig.timetables) ? D.desig.timetables : []);
+  RB.ttOf = (s) => (s && s.timetable ? RB.timetables().find((t) => t.id === s.timetable) : null);
+  RB.noTimetable = () => D.seats.filter((s) => !RB.ttOf(s));
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const hm = (min) => { const h = Math.floor(min / 60); return (h % 12 || 12) + ":" + String(min % 60).padStart(2, "0") + (h < 12 ? " AM" : " PM"); };
+  const offTxt = (t) => (t.off.length ? t.off.map((i) => DAYS[i]).join(", ") + " off" : "No day off");
+  const ttLine = (t) => hm(t.start) + " – " + hm(t.end) + ", " + offTxt(t);
+  const pname = (s) => s.name || s.gmail || "";
+  const onTt = (id) => D.seats.filter((s) => s.timetable === id).sort((a, b) => pname(a).localeCompare(pname(b)));
+  const noTt = (s) => (RB.ttOf(s) ? "" : ' <span class="tag amb">No timetable</span>');
+  /** Seat form options: each timetable with who else is on it. */
+  const ttOpts = (seatId) => [["", "— pick a timetable —"]].concat(RB.timetables().map((t) => {
+    const p = onTt(t.id).filter((s) => s.id !== seatId).map((s) => first(pname(s)));
+    return [t.id, t.name + " · " + ttLine(t) + " · " + (p.length ? p.slice(0, 5).join(", ") + (p.length > 5 ? " +" + (p.length - 5) + " more" : "") : "nobody yet")];
+  }));
   const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
   // ------------------------------------------------------------------ people
@@ -42,8 +59,8 @@
     const pchips = [["az", "A–Z"], ["desig", "Designation"], ["dept", "Department"]].map(([k, l]) => `<button class="sc ${S.psort === k ? "on" : ""}" data-psort="${k}">${l}</button>`).join("");
     const sel = selSeat();
     const row = (s) => s.status === "filled"
-      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
-      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() && s.invited ? `<button class="btnt edit-only" data-wainv="${esc(s.id)}" title="Send the invite on WhatsApp">🟢 Invite</button>` : ""}${ed() ? `<button class="btnt edit-only" data-fill="${esc(s.id)}">${s.invited ? "Edit" : "Fill seat"}</button>` : ""}</div>`;
+      ? `<div class="seatcard ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}"><span class="avs" style="background:${RB.desigColor(s.designation)}">${initial(s)}</span><div class="nm"><b>${esc(s.name)}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}${noTt(s)}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}</div>`
+      : `<div class="seatcard empty" data-seat="${esc(s.id)}"><span class="avs" style="background:#ECECEA">＋</span><div class="nm"><b>${s.invited ? esc(s.name) + " · invited" : "Empty seat"}${noTt(s)}</b><span>${esc(s.gmail)} · ${esc(seatLine(s))}</span></div>${tag(s.designation)}${ed() && s.invited ? `<button class="btnt edit-only" data-wainv="${esc(s.id)}" title="Send the invite on WhatsApp">🟢 Invite</button>` : ""}${ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${s.invited ? "Edit" : "Fill seat"}</button>` : ""}</div>`;
     const html = `<div class="cols"><div class="card" style="flex:2"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${pchips}${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
       <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
@@ -69,49 +86,65 @@
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}</div>
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${initial(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttOf(s).name + " · " + ttLine(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
 
-  function addSeat(prefill) {
-    const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s) + " · " + s.designation]));
-    RB.form("Add seat", [
-      { k: "gmail", label: "OFFICIAL GMAIL", value: (prefill && prefill.gmail) || "", ph: "name@gmail.com" },
-      { k: "designation", label: "DESIGNATION", type: "select", value: (prefill && prefill.designation) || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
-      deptField("DEPARTMENT", prefill && prefill.dept),
-      { k: "reportsTo", label: "REPORTS TO", type: "select", value: (prefill && prefill.reportsTo) || "", options: heads },
-    ], "Add seat", async (v) => {
-      const g = RB.gkey(v.gmail);
-      if (!gmailOk(g)) return "Type a plain Gmail address (name@gmail.com).";
-      if (RB.seat(g)) return "That Gmail already has a seat.";
-      await RB.Store.put("seats", g, { gmail: g, designation: v.designation, dept: v.dept === "__new" ? "" : v.dept, reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
-      S.seatSel = g; await done("Added seat " + g + " (" + v.designation + ")");
-      if (v.dept === "__new") newDeptFor(g);
-    }, "The person joins by signing in to the phone app with this Gmail.");
-    wireDesigDept((prefill && prefill.dept) || "");
+  const phoneOk = (p) => !p || /^\+?[0-9][0-9 -]{6,16}$/.test(p);
+  /** The seat form (locked 23 Nov): Name, Official phone, Official Gmail (new seats only: it is the seat's key), Designation,
+   *  Department (from the designation), Reports to, Timetable. */
+  function seatForm(s, prefill) {
+    const id = s ? s.id : "", p = s || prefill || {};
+    const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.filter((x) => !id || (x.id !== id && !RB.wouldLoop(id, x.id))).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
+    const f = [
+      { k: "name", label: "NAME", value: p.name || "", ph: "Full name" },
+      { k: "phone", label: "OFFICIAL PHONE", value: p.phone || "", ph: "0300 1234567" },
+    ].concat(s ? [] : [{ k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" }]).concat([
+      { k: "designation", label: "DESIGNATION", type: "select", value: p.designation || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
+      deptField("DEPARTMENT", p.dept),
+      { k: "reportsTo", label: "REPORTS TO", type: "select", value: p.reportsTo || "", options: heads },
+      { k: "timetable", label: "TIMETABLE", type: "select", value: (s && RB.ttOf(s) ? s.timetable : ""), options: ttOpts(id) },
+    ]);
+    if (s && RB.isOwner()) f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
+    const check = (v) => {
+      v.name = v.name.trim().replace(/\s+/g, " "); v.phone = v.phone.trim();
+      if (!v.name) return "Type the name.";
+      if (!phoneOk(v.phone)) return "Type the official phone as digits, e.g. 0300 1234567.";
+      if (!v.timetable && (!s || s.timetable)) return RB.timetables().length ? "Pick a timetable." : "Make a timetable first, in Team › Timetables.";
+      return "";
+    };
+    if (!s) {
+      RB.form("Add seat", f, "Add seat", async (v) => {
+        const g = RB.gkey(v.gmail), bad = check(v);
+        if (bad) return bad;
+        if (!gmailOk(g)) return "Type a plain Gmail address (name@gmail.com).";
+        if (RB.seat(g)) return "That Gmail already has a seat.";
+        await RB.Store.put("seats", g, { gmail: g, name: v.name, phone: v.phone, invited: true, designation: v.designation, dept: v.dept === "__new" ? "" : v.dept, reportsTo: v.reportsTo, timetable: v.timetable, role: "member", status: "empty", uid: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
+        S.seatSel = g; await done("Added seat " + g + " for " + v.name + " (" + v.designation + ")");
+        if (v.dept === "__new") newDeptFor(g);
+      }, "The person signs in to the phone app with this Gmail and lands in this seat.");
+    } else {
+      RB.form("Edit seat", f, "Save", async (v) => {
+        const bad = check(v); if (bad) return bad;
+        const patch = { name: v.name, phone: v.phone, designation: v.designation, dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
+        if (v.timetable) patch.timetable = v.timetable;
+        if (s.status !== "filled") patch.invited = true;
+        // The one name shows everywhere, the person now in the seat included.
+        else patch.holders = (s.holders || []).map((h, i, a) => (i === a.length - 1 && !h.to ? Object.assign({}, h, { name: v.name }) : h));
+        if (v.dept === "__new") newDeptFor(id);
+        await RB.Store.put("seats", id, patch, true);
+        const hd = v.reportsTo !== (s.reportsTo || "");
+        if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
+        const ch = [v.name !== (s.name || "") ? "name " + v.name : "", v.phone !== (s.phone || "") ? "phone " + (v.phone || "none") : "", v.timetable && v.timetable !== s.timetable ? "timetable " + RB.ttOf({ timetable: v.timetable }).name : "", hd ? "now reports to " + (v.reportsTo || "nobody") : "", v.role && v.role !== s.role ? "role " + v.role : ""].filter(Boolean);
+        await done("Edited seat " + id + (ch.length ? " · " + ch.join(" · ") : ""));
+      });
+    }
+    wireDesigDept(p.dept || "");
   }
-  function fillSeat(id) {
-    RB.form("Fill seat", [{ k: "name", label: "WHO WILL SIT HERE", value: (RB.seat(id) || {}).name || "", ph: "Name" }], "Save", async (v) => {
-      if (!v.name.trim()) return "Type a name.";
-      await RB.Store.put("seats", id, { name: v.name.trim(), invited: true }, true); await done("Invited " + v.name.trim() + " to seat " + id);
-    }, "He joins from the phone app with this Gmail and lands in this seat.");
-  }
-  function editSeat(id) {
-    const s = RB.seat(id), heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.filter((x) => x.id !== id && !RB.wouldLoop(id, x.id)).map((x) => [x.id, RB.holderName(x) === "Empty seat" ? x.gmail : RB.holderName(x) + " · " + x.designation]));
-    const f = [{ k: "designation", label: "DESIGNATION", type: "select", value: s.designation, options: RB.desigList().map((d) => d.name) }, deptField("DEPARTMENT", s.dept), { k: "reportsTo", label: "REPORTS TO", type: "select", value: s.reportsTo || "", options: heads }];
-    if (RB.isOwner() && s.id !== "") f.push({ k: "role", label: "ROLE", type: "select", value: s.role, options: [["member", "Member"], ["owner", "App owner (sees everyone, gives tasks to anyone)"]] });
-    RB.form("Edit seat", f, "Save", async (v) => {
-      const patch = { designation: v.designation, dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
-      if (v.dept === "__new") newDeptFor(id);
-      await RB.Store.put("seats", id, patch, true);
-      const hd = v.reportsTo !== (s.reportsTo || "");
-      if (hd) { await RB.Store.put("seats", id, { reportsTo: v.reportsTo }, true); }
-      await done("Edited seat " + id + (hd ? " · now reports to " + (v.reportsTo || "nobody") : "") + (v.role && v.role !== s.role ? " · role " + v.role : ""));
-    });
-    wireDesigDept(s.dept || "");
-  }
+  const addSeat = (prefill) => seatForm(null, prefill);
+  const editSeat = (id) => seatForm(RB.seat(id));
 
   // ------------------------------------------------------------------ chart
   const branchNames = (s) => RB.descendants(s.id).map((x) => RB.holderName(x));
@@ -289,7 +322,9 @@
   function wireDesigDept(keepCur) {
     const m = document.getElementById("modal"), ds = m.querySelector('[data-k="designation"]'), dp = m.querySelector('[data-k="dept"]'); if (!ds || !dp) return;
     const fill = (first) => { const cur = first ? keepCur : dp.value; const opts = deptOpts(ds.value, first ? cur : ""); dp.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""); const own = dDepts(RB.desigOf(ds.value)); dp.value = first && cur && opts.some((o) => o[0] === cur) ? cur : own.length === 1 ? own[0] : opts.some((o) => o[0] === cur) ? cur : opts[0][0]; };
-    ds.addEventListener("change", () => fill(false)); fill(true);
+    // One department: filled in and locked. Several: only that designation's departments (never typed).
+    const lab = dp.previousElementSibling, lock = () => { dp.disabled = dDepts(RB.desigOf(ds.value)).length === 1; if (lab) lab.textContent = dp.disabled ? "DEPARTMENT · 🔒 FROM THE DESIGNATION" : "DEPARTMENT"; };
+    ds.addEventListener("change", () => { fill(false); lock(); }); fill(true); lock();
   }
   const deptField = (label, value) => ({ k: "dept", label, type: "select", value: value || "", options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])).concat(value && !RB.deptList().includes(value) ? [[value, value + " (not in list)"]] : []).concat([["__new", "+ New department…"]]) });
   /** "+ New department…" picked in a seat form: ask the name once the form has closed, add it to the list, then put it on the seat. */
@@ -410,39 +445,10 @@
     draw(""); count(); m.querySelector("#cpq").focus();
   }
 
-  // ------------------------------------------------------------------ waiting
-  function waiting() {
-    const w = RB.waiting();
-    const html = `<div class="card" style="max-width:760px"><h3>Waiting to join</h3><div class="hint">These Gmails signed in to the phone app and tapped “Join Rafiq Builders” but have no seat yet.</div>
-      ${w.map((m) => `<div class="docrow"><span class="avs">${esc(first(m.name)[0] || "?")}</span><div class="w"><b>${esc(m.name || m.email || "Unknown")}</b><span>${esc(m.email || "")}</span></div>${ed() ? `<button class="btnp edit-only" data-approve="${esc(m.uid)}">Approve</button><button class="btnt edit-only" data-reject="${esc(m.uid)}">Reject</button>` : ""}</div>`).join("") || '<div class="muted" style="padding:10px 0">Nobody is waiting.</div>'}</div>`;
-    return { html };
-  }
-  function approve(uid) {
-    const m = RB.member(uid), empties = D.seats.filter((s) => s.status === "empty");
-    const heads = [["", "— none (top) —"]].concat(boardOpt()).concat(D.seats.map((s) => [s.id, RB.holderName(s) === "Empty seat" ? s.gmail : RB.holderName(s)]));
-    RB.form("Approve " + (m.name || "request"), [
-      { k: "seat", label: "SEAT", type: "select", value: "new", options: [["new", "New seat for " + (m.email || "this Gmail")]].concat(empties.map((s) => [s.id, s.gmail + " · " + s.designation])) },
-      { k: "designation", label: "DESIGNATION (new seat)", type: "select", value: RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
-      Object.assign(deptField("DEPARTMENT (new seat)", ""), { options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])) }),
-      { k: "reportsTo", label: "REPORTS TO (new seat)", type: "select", value: "", options: heads },
-    ], "Approve", async (v) => {
-      let id = v.seat;
-      if (id === "new") {
-        id = RB.gkey(m.email || ""); if (!gmailOk(id)) return "This request has no Gmail, so a new seat cannot be made.";
-        if (RB.seat(id)) return "That Gmail already has a seat. Choose it from the list.";
-        await RB.Store.put("seats", id, { gmail: id, designation: v.designation, dept: v.dept, reportsTo: v.reportsTo, role: "member", status: "empty", uid: "", name: "", extraGivers: [], override: {}, holders: [] });
-      }
-      await RB.Store.put("members", uid, { status: "active", seatId: id }, true);
-      await fillFrom(RB.member(uid), RB.seat(id));
-      await done("Approved " + (m.name || m.email) + " into seat " + id);
-    });
-    wireDesigDept("");
-  }
-
   /** A member whose Gmail has a seat takes the seat; caretaker tasks that belong to the seat go back to him (unless kept). */
   async function fillFrom(m, s) {
     if (!m || !s || s.status === "filled") return;
-    const name = m.name || s.name || s.gmail;
+    const name = s.name || m.name || s.gmail;   // the seat name wins (locked 23 Nov)
     const holders = (s.holders || []).concat({ uid: m.uid, name, from: Date.now() });
     await RB.Store.put("seats", s.id, { status: "filled", uid: m.uid, name, invited: false, holders }, true);
     const seat = RB.seat(s.id);
@@ -522,12 +528,91 @@
     }, true);
   }
 
+  // ------------------------------------------------------------------ timetables
+  function timetables() {
+    const tts = RB.timetables(), miss = RB.noTimetable(), E = S.ttEdit;
+    const chip = (s, pick) => `<button class="ttp" ${pick && ed() ? `data-ttpick="${esc(s.id)}" title="Pick a timetable"` : `data-ttseat="${esc(s.id)}" title="Open seat"`}><span class="av" style="background:${RB.desigColor(s.designation)}">${esc((pname(s)[0] || "?").toUpperCase())}</span>${esc(pname(s))}</button>`;
+    const card = (t) => { const p = onTt(t.id); return `<div class="tt ${E && E.id === t.id ? "sel" : ""}"><div class="tth"><h4>${esc(t.name)}</h4><div class="sp"></div><b>${hm(t.start)} – ${hm(t.end)}</b><span class="sub">· ${esc(offTxt(t))}</span>${ed() ? `<button class="btnt edit-only" data-ttedit="${esc(t.id)}">Edit</button>` : ""}</div>${p.length ? `<div class="ttppl">${p.map((x) => chip(x)).join("")}</div>` : ""}<div class="sub ttn">${p.length ? p.length + (p.length === 1 ? " person" : " people") : "Nobody yet"}</div></div>`; };
+    const html = `<div class="card"><div class="subhead"><h3>Timetables · ${tts.length}</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="ttnew">+ New timetable</button>' : ""}</div>
+      <div class="hint">Each person works on one timetable. Change a timetable here and everyone on it gets the new time. Steps already started keep their due time. Holidays are in Settings › Holidays.</div>
+      ${miss.length ? `<div class="tt miss"><div class="tth"><h4>⚠ No timetable · ${miss.length}</h4><div class="sp"></div><span class="sub">${ed() ? "Tap a name to pick. " : ""}Until then: 11:00 AM – 9:00 PM, Friday off</span></div><div class="ttppl">${miss.map((x) => chip(x, true)).join("")}</div></div>` : ""}
+      ${tts.map(card).join("") || '<div class="muted">No timetables yet.</div>'}</div>`;
+    return { html, side: E ? ttPanel(E) : "" };
+  }
+  const t2m = (v) => { const m = String(v || "").match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
+  const m2t = (n) => String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
+  const moves = (E) => E.people.filter((id) => RB.seat(id) && RB.seat(id).timetable !== E.id).length;
+  const saveLbl = (E) => { const n = moves(E); return "Save" + (n ? " · moves " + n + (n === 1 ? " person" : " people") : ""); };
+  /** Edit panel (right side). The draft lives in S.ttEdit so a redraw from a live update keeps what was typed. */
+  function ttPanel(E) {
+    const t = RB.timetables().find((x) => x.id === E.id), now = t ? onTt(t.id) : [];
+    const list = D.seats.slice().sort((a, b) => Number(RB.ttOf(b) && RB.ttOf(b).id === E.id) - Number(RB.ttOf(a) && RB.ttOf(a).id === E.id) || pname(a).localeCompare(pname(b)));
+    const row = (s) => { const cur = RB.ttOf(s), mine = cur && cur.id === E.id, on = E.people.includes(s.id);
+      return `<label class="ttck ${on ? "on" : ""}" ${mine ? 'title="Already on this timetable. To move, tick them on another timetable or edit their seat."' : ""}><input type="checkbox" data-ttck="${esc(s.id)}" ${on ? "checked" : ""} ${mine ? "disabled" : ""}><span class="w"><b>${esc(pname(s))}</b><small>${esc(s.designation || "")}</small></span><span class="${cur ? "sub" : "amb"}">${cur ? esc(cur.name) : "now: none"}</span></label>`; };
+    return `<div class="ttpanel"><h3>${t ? esc(t.name) : "New timetable"}</h3><div class="sub">${t ? now.length + (now.length === 1 ? " person" : " people") + " on this timetable" : "Name it, set the hours and days off, then add people."}</div>
+      <div class="lbl">NAME</div><input id="ttname" value="${esc(E.name)}" placeholder="Office">
+      <div class="ttrow"><div><div class="lbl">STARTS</div><input type="time" id="ttstart" value="${m2t(E.start)}"></div><div><div class="lbl">CLOSES</div><input type="time" id="ttend" value="${m2t(E.end)}"></div></div>
+      <div class="lbl">DAYS OFF</div><div class="ttdays">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<button class="ttd ${E.off.includes(i) ? "on" : ""}" data-ttoff="${i}" aria-pressed="${E.off.includes(i)}" title="${DAYS[i]}">${DAYS[i].slice(0, 3)}</button>`).join("")}</div>
+      <div class="lbl">PEOPLE · ADD PEOPLE</div>${list.map(row).join("") || '<div class="muted">No seats yet.</div>'}
+      <div class="err" id="tterr"></div>
+      <div class="ttfoot">${t ? (now.length ? `<button class="link off" disabled title="${now.length} on it. Move them to another timetable first.">Delete</button>` : '<button class="link" id="ttdel">Delete</button>') : ""}<div class="sp"></div><button class="link" id="ttcancel">Cancel</button><button class="btnp" id="ttsave">${saveLbl(E)}</button></div></div>`;
+  }
+  async function ttSave(btn) {
+    const E = S.ttEdit, err = (t) => { const e = document.getElementById("tterr"); if (e) e.textContent = t; };
+    const name = E.name.trim().replace(/\s+/g, " ");
+    if (!name) return err("Type a name.");
+    if (RB.timetables().some((x) => x.id !== E.id && x.name.toLowerCase() === name.toLowerCase())) return err("Another timetable has that name.");
+    if (!(E.start >= 0 && E.end > E.start)) return err("Closing time must be after the starting time.");
+    if (E.off.length > 6) return err("Leave at least one working day.");
+    const id = E.id || "tt" + Date.now().toString(36), row = { id, name, start: E.start, end: E.end, off: E.off.slice().sort() };
+    const old = RB.timetables().find((x) => x.id === id);
+    const list = old ? RB.timetables().map((x) => (x.id === id ? row : x)) : RB.timetables().concat(row);
+    const mv = E.people.filter((sid) => RB.seat(sid) && RB.seat(sid).timetable !== id);
+    btn.disabled = true; RB.hold = true;
+    try {
+      await RB.Store.put("config", "designations", { timetables: list, updatedAt: Date.now() }, true);
+      for (const sid of mv) await RB.Store.put("seats", sid, { timetable: id }, true);
+      S.ttEdit = null;
+      await done((old ? "Edited" : "Added") + " timetable " + name + " (" + ttLine(row) + ")" + (mv.length ? " · moved " + mv.map((x) => pname(RB.seat(x))).join(", ") : ""));
+    } catch (e) { btn.disabled = false; err("Couldn't save: " + (e.message || e)); }
+    finally { RB.hold = false; RB.render(); }
+  }
+  function ttPick(seatId) {
+    const s = RB.seat(seatId); if (!s) return;
+    if (!RB.timetables().length) return RB.alertBox("Make a timetable first: + New timetable.");
+    RB.form("Timetable for " + pname(s), [{ k: "tt", label: "TIMETABLE", type: "select", value: "", options: ttOpts(seatId) }], "Save", async (v) => {
+      if (!v.tt) return "Pick a timetable.";
+      await RB.Store.put("seats", seatId, { timetable: v.tt }, true);
+      await done(pname(s) + " is now on timetable " + RB.ttOf({ timetable: v.tt }).name);
+    });
+  }
+  function ttBind(root, side) {
+    const nw = root.querySelector("#ttnew"); if (nw) nw.onclick = () => { S.ttEdit = { id: "", name: "", start: 11 * 60, end: 21 * 60, off: [5], people: [] }; RB.render(); };
+    root.querySelectorAll("[data-ttedit]").forEach((b) => (b.onclick = () => { const t = RB.timetables().find((x) => x.id === b.dataset.ttedit); if (t) { S.ttEdit = { id: t.id, name: t.name, start: t.start, end: t.end, off: t.off.slice(), people: onTt(t.id).map((s) => s.id) }; RB.render(); } }));
+    root.querySelectorAll("[data-ttpick]").forEach((b) => (b.onclick = () => ttPick(b.dataset.ttpick)));
+    root.querySelectorAll("[data-ttseat]").forEach((b) => (b.onclick = () => { S.seatSel = b.dataset.ttseat; S.tab.team = "people"; RB.render(); }));
+    const E = S.ttEdit, P = side && side.querySelector(".ttpanel"); if (!E || !P) return;
+    const sv = P.querySelector("#ttsave"), lbl = () => (sv.textContent = saveLbl(E));
+    P.querySelector("#ttname").oninput = (e) => (E.name = e.target.value);
+    P.querySelector("#ttstart").oninput = (e) => (E.start = t2m(e.target.value));
+    P.querySelector("#ttend").oninput = (e) => (E.end = t2m(e.target.value));
+    P.querySelectorAll("[data-ttoff]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.ttoff); E.off = E.off.includes(i) ? E.off.filter((x) => x !== i) : E.off.concat(i); b.classList.toggle("on"); b.setAttribute("aria-pressed", E.off.includes(i)); }));
+    P.querySelectorAll("[data-ttck]").forEach((c) => (c.onchange = () => { const id = c.dataset.ttck; E.people = c.checked ? E.people.concat(id) : E.people.filter((x) => x !== id); c.closest(".ttck").classList.toggle("on", c.checked); lbl(); }));
+    P.querySelector("#ttcancel").onclick = () => { S.ttEdit = null; RB.render(); };
+    sv.onclick = () => ttSave(sv);
+    const dl = P.querySelector("#ttdel"); if (dl) dl.onclick = () => RB.confirm("Delete the timetable “" + esc(E.name) + "”? Nobody is on it.", "Delete", async () => {
+      if (onTt(E.id).length) return RB.alertBox("Someone was just put on it. Move them first.");
+      const n = E.name; await RB.Store.put("config", "designations", { timetables: RB.timetables().filter((x) => x.id !== E.id), updatedAt: Date.now() }, true);
+      S.ttEdit = null; await done("Deleted timetable " + n);
+    }, true);
+  }
+
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.concat([["access", "Access"]]).filter((t) => ok.includes(t[0])).map((t) => (t[0] === "waiting" ? ["waiting", "Waiting" + (RB.waiting().length ? " (" + RB.waiting().length + ")" : "")] : t)); },
+    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.concat([["access", "Access"]]).filter((t) => ok.includes(t[0])); },
     render(tab) {
       RB.reconcile();
-      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "waiting" ? waiting() : people();
+      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "timetables" ? timetables() : people();
       p.title = "Team"; p.sub = tab === "access" ? "Changes reach the phone in a few seconds · off buttons are hidden" : "Seats, chart, designations and access";
       return p;
     },
@@ -541,7 +626,6 @@
       });
       const ad = root.querySelector("#addseat"); if (ad) ad.onclick = () => addSeat();
       const mg = root.querySelector("#migrate"); if (mg) mg.onclick = () => { mg.disabled = true; migrate().then(RB.render); };
-      both("[data-fill]", (e) => fillSeat(e.dataset.fill));
       // WhatsApp invite: opens WhatsApp with a short ready message; he picks the person and sends it himself.
       both("[data-wainv]", (e) => {
         const st = RB.seat(e.dataset.wainv); if (!st) return;
@@ -638,9 +722,8 @@
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
       const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { const s = RB.seat(S.accSeat); s.override = {}; saveOverride(s, RB.holderName(s) + ": access reset to default"); });
-      // waiting
-      on(root, "[data-approve]", (e) => approve(e.dataset.approve));
-      on(root, "[data-reject]", (e) => RB.confirm("Reject this request? The person can ask again.", "Reject", async () => { const m = RB.member(e.dataset.reject); await RB.Store.del("members", e.dataset.reject); await RB.log("Rejected join request from " + (m.name || m.email)); }, true));
+      // timetables
+      ttBind(root, side);
     },
   };
   RB.team = { addSeat, offboard, moveSeat, migrate };

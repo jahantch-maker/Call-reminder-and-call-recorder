@@ -26,7 +26,6 @@
     const now = Date.now(), all = C.items(), [a, b] = C.range(S.period, now), R = C.red();
     const ppl = C.people().filter(matches);
     const f = C.facts(all, null, a, b, now);
-    const wait = RB.waiting().length, canApprove = RB.canEdit("team");
     const rows = ppl.map((p) => ({ p, f: C.facts(all, p.uid, a, b, now) }));
     const key = { overdue: "overdue", late: "late", moved: "moved", nodate: "noDate" }[S.sort];
     if (key) rows.sort((x, y) => y.f[key] - x.f[key] || first(x.p.name).localeCompare(first(y.p.name)));
@@ -37,7 +36,7 @@
       <div class="k" style="background:var(--lil)"><div class="l">Team on time</div><div class="n">${f.pct == null ? "–" : f.pct + "%"}</div><button class="ck" data-kpi="reasons">Check</button></div>
       <div class="k" style="background:var(--blu)"><div class="l">Due · ${S.period === "month" ? "last 30 days" : "last 7 work days"}</div><div class="n">${f.due}</div><button class="ck" data-kpi="due">Check</button></div>
       <div class="k" style="background:var(--yel)"><div class="l">Still overdue</div><div class="n">${f.overdue}</div><button class="ck" data-kpi="overdue">Check</button></div>
-      ${canApprove ? `<div class="k" style="background:var(--peach)"><div class="l">Waiting to join</div><div class="n">${wait}</div><button class="ck" data-kpi="waiting">Approve</button></div>` : `<div class="k" style="background:var(--peach)"><div class="l">No date</div><div class="n">${f.noDate}</div><button class="ck" data-kpi="nodate">Check</button></div>`}</div>
+      <div class="k" style="background:var(--peach)"><div class="l">No date</div><div class="n">${f.noDate}</div><button class="ck" data-kpi="nodate">Check</button></div></div>
       <div class="card"><div class="subhead" style="margin-bottom:6px"><h3>Team · ${S.period === "month" ? "last 30 days" : "last 7 work days"}</h3><div class="sp"></div>${chips}${periodSeg()}</div>
       <div class="tablewrap"><table id="ptable"><tr><th>Person</th><th>Seat</th><th class="c">Due</th><th class="c">On time</th><th class="c">Moved</th><th>Status</th><th>Next deadline</th></tr>
       ${rows.map(({ p, f }) => { const st = statusOf(f, R), nd = nextDeadline(all, p.uid, now); return `<tr class="click ${p.uid === sel ? "sel" : ""}" data-pick="${p.uid}"><td><b>${esc(first(p.name))}</b>${p.uid === (D.team && D.team.ownerUid) ? ' <span class="sub">· you</span>' : ""}</td><td>${seatTag(p)}</td><td class="c">${f.due}</td><td class="c">${f.onTime}</td><td class="c">${f.moved}×</td><td class="st" style="color:var(--${st[0]})"><i class="dot" style="background:var(--${st[0]})"></i>${st[1]}</td><td>${nd ? fmtWhen(nd).replace(/^(\w+) (\d+ \w+), /, "$1 $2, ") : "–"}</td></tr>`; }).join("")}</table></div>
@@ -188,7 +187,7 @@
     bind(root, side) {
       const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e, ev); }));
       on(root, "[data-pick]", (e) => { S.selUid = e.dataset.pick; RB.render(); });
-      on(root, "[data-kpi]", (e) => { const k = e.dataset.kpi; if (k === "reasons") RB.go("app", "reasons"); else if (k === "waiting") { S.tab.team = "waiting"; RB.go("team"); } else { S.sort = k === "due" ? "az" : k; RB.render(); } });
+      on(root, "[data-kpi]", (e) => { const k = e.dataset.kpi; if (k === "reasons") RB.go("app", "reasons"); else { S.sort = k === "due" ? "az" : k; RB.render(); } });
       on(root, "[data-cv]", (e) => { S.calView = e.dataset.cv; if (S.calView === "day" && S.calPerson === "all") S.calPerson = defPerson(); RB.render(); });
       on(root, "[data-cd]", (e) => { const v = Number(e.dataset.cd); S.calDay = v === 0 ? 0 : S.calDay + v; RB.render(); });
       const dw = root.querySelector(".dayw");

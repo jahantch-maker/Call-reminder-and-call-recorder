@@ -53,7 +53,9 @@ window.DEMO_DATA = {
     const desig = { list: [
       { name: "GM", app: { approveJoins: true, setDossier: true, editReasons: true, seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view" } },
       { name: "Site Manager", app: { setDossier: true }, portal: { app: "view" } }, { name: "Admin", app: { seeNumbers: true }, portal: {} }, { name: "Surveyor", app: {}, portal: {} },
-      { name: "Asst Admin", app: {}, portal: {} }, { name: "Asst Manager", app: {}, portal: {} }, { name: "Store Keeper", app: {}, portal: {} }, { name: "Supervisor", app: {}, portal: {} } ] };
+      { name: "Asst Admin", app: {}, portal: {} }, { name: "Asst Manager", app: {}, portal: {} }, { name: "Store Keeper", app: {}, portal: {} }, { name: "Supervisor", app: {}, portal: {} } ],
+      timetables: [{ id: "office", name: "Office", start: 660, end: 1260, off: [5] }, { id: "site", name: "Site", start: 540, end: 1080, off: [5] }] };
+    seats.forEach((s, i) => { if (i < 4) s.timetable = i % 2 ? "site" : "office"; });
     const docs = [
       { id: "jd-sur", type: "jd", title: "Job description · Surveyor", url: "https://drive.google.com/file/d/demo-jd-surveyor/view", designations: ["Surveyor"], version: 2 },
       { id: "jd-sm", type: "jd", title: "Job description · Site Manager", url: "https://drive.google.com/file/d/demo-jd-sm/view", designations: ["Site Manager"], version: 1 },
