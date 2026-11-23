@@ -609,6 +609,34 @@ private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
     }
 }
 
+/** His numbers as picked: the ticked ones, ⭐ [main] (calls and SMS) and 🟢 [wa] (WhatsApp). */
+data class MemberNumbers(val rows: List<Row>, val main: String, val wa: String) {
+    data class Row(val number: String, val from: String, val ticked: Boolean = true, val onWa: Boolean = false)
+
+    val ticked: List<String> get() = rows.filter { it.ticked }.map { it.number }
+
+    companion object {
+        fun of(m: TeamMember) = MemberNumbers(
+            m.numbers.map { Row(it, "") }, m.phone, m.wa.takeIf { it.isNotBlank() && it != m.phone }.orEmpty(),
+        )
+    }
+
+    /** Adds numbers (a contact's, or typed); the first one ticked becomes ⭐ Main, a WhatsApp one 🟢 WA. */
+    fun plus(new: List<Row>): MemberNumbers {
+        val add = new.filter { n -> rows.none { SmsStore.sameNumber(it.number, n.number) } }
+        val all = rows + add
+        val m = main.ifBlank { all.firstOrNull { it.ticked }?.number.orEmpty() }
+        val w = wa.ifBlank { all.firstOrNull { it.ticked && it.onWa && it.number != m }?.number.orEmpty() }
+        return MemberNumbers(all, m, w)
+    }
+
+    fun tick(n: String, on: Boolean): MemberNumbers {
+        val r = rows.map { if (it.number == n) it.copy(ticked = on) else it }
+        val left = r.filter { it.ticked }.map { it.number }
+        return MemberNumbers(r, if (main in left) main else left.firstOrNull().orEmpty(), if (wa in left) wa else "")
+    }
+}
+
 /**
  * NUMBERS: contacts named like him are suggested; 📇 Pick from contacts, ＋ Type number. Each number has a tick,
  * ⭐ Main (calls and SMS) and 🟢 WA (WhatsApp, found by itself when the contact shows it). A green line says what moves.
