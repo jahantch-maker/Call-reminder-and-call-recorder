@@ -275,18 +275,22 @@ html[data-theme="dark"] .ttp,html[data-theme="dark"] .ttck,html[data-theme="dark
 
 /* WEB12 Plot file page top: back, header with Now with, stages, Steps/Timeline. */
 .plfix{display:flex;flex-direction:column;gap:14px;padding-bottom:14px}.plfix>*{margin-top:0;margin-bottom:0}.plfix>.plback{align-self:flex-start}
-/* WEB16 Slim top (locked 24 Nov). Once a page is scrolled its title folds to one line and the help notes under card titles fold
-   away, smoothly. On a plot file the page title goes and one slim line slides in once the file's header has scrolled away;
-   it sits on top of the steps and takes no room, so nothing jumps. Desktop only (on phones the whole page scrolls). */
-.pc .top h1,.pc .top .s,.pc>.tabs,.stickhead>.hint{transition:font-size .25s ease,max-height .25s ease,opacity .2s ease,margin .25s ease,padding .25s ease}
+/* WEB16 Slim top (locked 24 Nov). The moment a page is scrolled, its top folds smoothly: the page title to one line, the
+   help notes under card titles away. On a plot file the page title and the big header fold away while one slim line grows in
+   their place, together, so the steps glide up with no gap and no jump. Desktop only (on phones the whole page scrolls). */
+.pc .top h1,.pc .top .s,.pc>.tabs,.pc>.top,.stickhead>.hint,.plfix,.plslimw{transition:font-size .3s ease,max-height .3s ease,opacity .25s ease,margin .3s ease,padding .3s ease}
 .pc .top .s,.pc>.tabs,.stickhead>.hint{max-height:120px}
 .pc.slim .top h1{font-size:20px}.pc.slim .top .s,.pc.slim .stickhead>.hint{max-height:0;opacity:0;margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0;overflow:hidden}
-.pc.pfpage>.top{max-height:80px;transition:max-height .25s ease,opacity .2s ease,margin .25s ease}
+.pc.pfpage>.top{max-height:80px}
 .pc.slim.pfpage>.tabs,.pc.slim.pfpage>.top{max-height:0;opacity:0;overflow:hidden;margin-top:-14px}
 .pc.notr *,.pc.notr{transition:none!important}
-.plslimw{position:sticky;top:0;z-index:6;height:0}
-.plslim{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:12px;background:var(--sf);border-radius:16px;padding:8px 10px 8px 14px;box-shadow:0 4px 14px rgba(0,0,0,.07);white-space:nowrap;overflow:hidden;opacity:0;transform:translateY(-14px);pointer-events:none;transition:opacity .25s ease,transform .25s ease}
-.pc.pfslim .plslim{opacity:1;transform:none;pointer-events:auto}
+.plfix{max-height:var(--pfh,900px)}
+.pc.slim .plfix{max-height:0;opacity:0;overflow:hidden;padding-bottom:0}
+.plslimw{position:sticky;top:0;z-index:6;max-height:0;opacity:0;overflow:hidden;background:var(--bg)}
+.pc.slim .plslimw{max-height:70px;opacity:1;padding-bottom:10px}
+.plfix,.plslimw{transition:max-height .3s ease,opacity .25s ease,padding .3s ease,visibility 0s .3s}
+.pc.slim .plfix,.plslimw{visibility:hidden}.pc.slim .plslimw,.pc:not(.slim) .plfix{visibility:visible;transition-delay:0s}
+.plslim{display:flex;align-items:center;gap:12px;background:var(--sf);border-radius:16px;padding:8px 10px 8px 14px;box-shadow:0 4px 14px rgba(0,0,0,.07);white-space:nowrap;overflow:hidden}
 .plslim .link{font-weight:600}.plslim .plav.sm{width:30px;height:30px;font-size:13px}.plslim .pn{font-size:16px}.plslim .nm{font-weight:600}
 .plslim .dv{width:1px;height:22px;background:var(--ol);flex:none}.plslim .mut{color:var(--onv)}.plslim .sp{flex:1}
 .plslim .stg{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis}

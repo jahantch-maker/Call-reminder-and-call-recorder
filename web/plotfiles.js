@@ -13,7 +13,7 @@
 (function () {
   "use strict";
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc, DAY = RB.DAY;
-  Object.assign(S, { pfFile: null, pfTab: "steps", pfChip: "open", pfSort: ["due", 1], pfq: "", pfOpen: null, pfStages: {} });
+  Object.assign(S, { pfFile: null, pfTab: "steps", pfChip: "active", pfSt: "", pfSort: ["due", 1], pfq: "", pfOpen: null, pfStages: {} });
   const X = () => (RB.plotSop && RB.plotSop.x ? RB.plotSop.x() : null);
   const M = {};   // task id -> its Timeline messages (loaded when needed)
   const MA = {};  // task id -> its lastMsgAt when those messages were loaded
@@ -93,17 +93,24 @@
   const withName = (t) => (t.test && t.toUid === ownerUid() ? "on your phone" : esc(first(t.toName)));
 
   // ------------------------------------------------------------------ list (mockup A)
-  const CHIPS = [["open", "Open", "blu"], ["today", "Due today", "peach"], ["late", "Late", "red"], ["wait", "Waiting for plot owner", "yel"], ["build", "Construction started", "grn"], ["closed", "Closed", ""]];
-  const inChip = (c, st) => (c === "open" ? st !== "build" && st !== "closed" : c === st);
+  // WEB19: row 1 = where the file is (tabs), row 2 = its status (filters, counted inside the chosen tab).
+  const TABS = [["active", "All active"], ["open", "Open"], ["build", "Construction started"], ["closed", "Closed"]];
+  const STATUS = [["today", "Due today", "peach"], ["late", "Late", "red"], ["wait", "Waiting for plot owner", "yel"]];
+  const inTab = (k, st) => (k === "active" ? st !== "closed" : k === "open" ? st !== "build" && st !== "closed" : k === st);
   const COLS = [["plot", "Plot"], ["size", "Size"], ["name", "Plot owner"], ["step", "Stage and step"], ["with", "Now with"], ["due", "Due"], ["status", "Status"]];
   const ORDER = { late: 0, wait: 1, today: 2, ontime: 3, build: 4, closed: 5 };
   function list() {
     const now = Date.now(), x = X(), own = RB.isOwner();
     const files = (D.plot || []).filter((f) => own || !f.test).map((f) => { const t = current(f), s = t && step(t.step); return { f, t, s, st: stateOf(f, now) }; });
-    const counted = files.filter((r) => !r.f.test);
-    const chips = CHIPS.map(([k, l, c]) => `<button class="plchip ${c} ${S.pfChip === k ? "on" : ""}" data-pfchip="${k}" aria-pressed="${S.pfChip === k}"><b>${counted.filter((r) => inChip(k, r.st)).length}</b>${l}</button>`).join("");
+    if (!TABS.some((t) => t[0] === S.pfChip)) S.pfChip = "active";
+    if (S.pfChip === "closed") S.pfSt = "";
+    // WEB18: test files never count; the owner sees "+N test" beside a number.
+    const num = (rs) => { const n = rs.filter((r) => !r.f.test).length, t = rs.length - n; return `<b>${n}</b>${t ? `<small class="pltest">+${t} test</small>` : ""}`; };
+    const inTabRows = files.filter((r) => inTab(S.pfChip, r.st));
+    const tabs = TABS.map(([k, l]) => `<button role="tab" class="${S.pfChip === k ? "on" : ""}" data-pfchip="${k}" aria-selected="${S.pfChip === k}">${l} ${num(files.filter((r) => inTab(k, r.st)))}</button>`).join("");
+    const sts = S.pfChip === "closed" ? "" : `<div class="plsts"><span class="sub">Show only</span>${STATUS.map(([k, l, c]) => `<button class="plst ${c} ${S.pfSt === k ? "on" : ""}" data-pfst="${k}" aria-pressed="${S.pfSt === k}">${num(inTabRows.filter((r) => r.st === k))}${l}</button>`).join("")}</div>`;
     const q = (S.pfq + " " + S.q).trim().toLowerCase(), qd = digits(q);
-    let rows = files.filter((r) => inChip(S.pfChip, r.st) && (!q || [r.f.plotNo, r.f.name].some((v) => String(v || "").toLowerCase().includes(q)) || (qd.length >= 3 && [r.f.cnic, r.f.wa, r.f.sim2].some((v) => digits(v).includes(qd)))));
+    let rows = inTabRows.filter((r) => (!S.pfSt || r.st === S.pfSt) && (!q || [r.f.plotNo, r.f.name].some((v) => String(v || "").toLowerCase().includes(q)) || (qd.length >= 3 && [r.f.cnic, r.f.wa, r.f.sim2].some((v) => digits(v).includes(qd)))));
     const [col, dir] = S.pfSort, key = {
       plot: (r) => [Number(digits(r.f.plotNo)) || 0, String(r.f.plotNo)], size: (r) => Number(r.f.size) || 0, name: (r) => String(r.f.name || "").toLowerCase(),
       step: (r) => (r.s ? [Number(r.s.stage), r.s.id.split(".").map(Number)[1]] : [99, 0]), with: (r) => (r.s ? r.s.role : "~"),
@@ -119,10 +126,10 @@
       <div class="plc">${s ? `${esc(s.role)}<span>${withName(t)}</span>` : ""}</div><div class="plc due">${dueText(t, now)}</div><div class="plc">${badge(st)}</div></div>`).join("");
     const empty = !x ? "Plot files opens once the Plot files SOP is published (Docs › SOPs)." : !files.length ? "No plot files yet. New files are opened on the Front Desk phone." : "No file matches.";
     return `<div class="card pllist"><div class="subhead"><h3>Plot files</h3><div class="sp"></div><span class="sub">New files are opened on the Front Desk phone</span></div>
-      <div class="plchips">${chips}</div>
+      <div class="plseg" role="tablist" aria-label="Plot files">${tabs}</div>${sts}
       <label class="plsearch"><span aria-hidden="true">⌕</span><input id="pfq" placeholder="Search plot number, plot owner, CNIC or phone" value="${esc(S.pfq)}" autocomplete="off" aria-label="Search plot files"></label>
       <div class="pltable"><div class="plhead">${head}</div>${body || `<div class="muted" style="padding:16px 8px">${empty}</div>`}</div>
-      <div class="sub" style="padding:10px 8px 0">Showing ${pl(rows.length, (CHIPS.find((c) => c[0] === S.pfChip) || CHIPS[0])[1].toLowerCase() === "open" ? "open file" : "file")} · click any column name to sort it, click again to flip the order${own ? " · test files are only seen by you and never counted in the chips" : ""}</div></div>`;
+      <div class="sub" style="padding:10px 8px 0">Showing ${pl(rows.length, "file")} · click any column name to sort it, click again to flip the order${own ? " · test files are only seen by you and counted apart as +test" : ""}</div></div>`;
   }
 
   // ------------------------------------------------------------------ one file (mockups B1-B4)
@@ -156,11 +163,11 @@
     const done = (g) => inStage(g).filter((y) => { const k = taskOf(f.id, y.id); return k && k.doneAt; }).length;
     const g = (x.stages || []).find((y) => String(y.no) === cur);
     const dots = (x.stages || []).map((y) => { const n = inStage(y).length; return `<i class="${String(y.no) === cur ? "c" : n && done(y) === n ? "d" : ""}"></i>`; }).join("");
-    return `<div class="plslimw" aria-hidden="true"><div class="plslim"><button class="link" data-pfback="1" tabindex="-1">← All files</button><span class="dv"></span>
+    return `<div class="plslimw"><div class="plslim"><button class="link" data-pfback="1">← All files</button><span class="dv"></span>
       <span class="plav sm">${esc((f.name || "?").trim().charAt(0).toUpperCase())}</span><b class="pn">Plot ${esc(f.plotNo)}</b>${f.test ? '<span class="tag yel">TEST</span>' : ""}<span class="nm">${esc(f.name || "—")}</span>
       ${t ? `<span class="dv"></span><span class="mut">Now with</span><b>${esc(s ? s.role : "")} · ${withName(t)}</b>` : ""}${badge(stateOf(f, now))}
       ${g ? `<span class="dv"></span><span class="stg"><span class="dots">${dots}</span><span class="mut">Stage ${esc(g.no)} ·</span><b>${esc(g.name)}</b><span class="mut">${done(g)} of ${inStage(g).length} done</span></span>` : ""}
-      <span class="sp"></span>${tabs.replace(/<button /g, '<button tabindex="-1" ')}</div></div>`;
+      <span class="sp"></span>${tabs}</div></div>`;
   }
 
   /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
@@ -272,7 +279,7 @@
   function filePage(f) {
     const x = X(), t = current(f), cur = t && step(t.step), nextIds = cur ? cur.next || [] : [];
     // WEB12 the file's top (back, header with Now with, stages, Steps/Timeline) stays in place while the steps scroll.
-    // WEB16 once the header has scrolled away, one slim line slides in over the steps (it takes no room, so nothing moves).
+    // WEB16 scrolled down, the header folds away and this slim line grows in its place (shell.js slimTop).
     const top = () => slimLine(f, tabs) + `<div class="plfix">${header(f)}${tabs}</div>`;
     const tabs = `<div class="tabs pltabs"><button data-pftab="steps" class="${S.pfTab === "steps" ? "on" : ""}">Steps</button><button data-pftab="timeline" class="${S.pfTab === "timeline" ? "on" : ""}">Timeline</button></div>`;
     if (S.pfTab === "timeline") return top() + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;
@@ -432,6 +439,7 @@
       const on = (sel, fn) => root.querySelectorAll(sel).forEach((e) => { e.onclick = (ev) => { if (ev.target.closest("a,input,textarea,.plpanel")) return; ev.preventDefault(); fn(e); }; if (e.getAttribute("role") === "button") e.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(e); } }; });
       const top = () => { const c = document.getElementById("content"); if (c) c.scrollTop = 0; };
       on("[data-pfchip]", (e) => { S.pfChip = e.dataset.pfchip; RB.render(); });
+      on("[data-pfst]", (e) => { S.pfSt = S.pfSt === e.dataset.pfst ? "" : e.dataset.pfst; RB.render(); });
       on("[data-pfsort]", (e) => { const k = e.dataset.pfsort; S.pfSort = [k, S.pfSort[0] === k ? -S.pfSort[1] : 1]; RB.render(); });
       on("[data-pffile]", (e) => { S.pfFile = e.dataset.pffile; S.pfTab = "steps"; S.pfOpen = null; S.pfStages = {}; S.pfDraft = ""; S.pfPicked = []; RB.render(); top(); });
       on("[data-pfback]", () => { S.pfFile = null; RB.render(); top(); });
