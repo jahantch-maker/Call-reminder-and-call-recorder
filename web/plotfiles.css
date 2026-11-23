@@ -62,6 +62,7 @@
 .plpanel .card{background:#fff;min-width:0}.plpanel .subhead{flex-wrap:wrap;gap:6px 10px}
 .plcl{display:flex;gap:10px;padding:9px 0;border-top:1px solid #F0F0EE;font-size:14px}.plcl.opt{padding-left:28px}.plcl>div{flex:1;min-width:0}.plcl span:not(.plbox){display:block;font-size:12px;color:#1F6B3B;margin-top:2px}.plcl.on>div{color:var(--onv)}
 .plbox{flex:none;width:20px;height:20px;border:2px solid #C8C8C4;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:#fff}.plcl.on .plbox{background:#3E9B5F;border-color:#3E9B5F}
+.plcl.pick{font-weight:600;color:var(--onv);padding-bottom:3px}.plcl.skip>div,.plcl.skip span:not(.plbox){color:#A8AAB0}.plcl.skip .plbox{border-style:dashed;opacity:.6}
 .plev{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;padding:10px 2px;border-top:1px solid #F0F0EE;font-size:14px;line-height:1.45}.pltime{color:var(--onv);font-size:13px}.plev>div{min-width:0;overflow-wrap:anywhere}
 .pltl .plev{grid-template-columns:96px minmax(0,1fr)}
 .plday{text-align:center;margin:10px 0 2px}.plday span{background:#F0F0EE;border-radius:10px;padding:3px 12px;font-size:13px;font-weight:600;color:var(--onv)}

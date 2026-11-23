@@ -96,12 +96,28 @@
     gq.oninput = () => { S.q = gq.value; RB.render(); const n = document.getElementById("gq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     document.getElementById("bell").onclick = notices;
     const content = document.getElementById("content");
+    slimTop(root.querySelector(".pc"), content);
     if (wait) return;
     if (sec === "app" || sec === "meetings") RB.meet.bind(content);
     if (RB.sections[sec].bind) RB.sections[sec].bind(content, document.getElementById("side"));
     if (page.afterBind) page.afterBind();
     RB.stickHeads(content);
   };
+  /** WEB16 Slim top (locked 24 Nov): scrolled down, the page title folds to one line (a plot file shows its slim line instead).
+   *  Two different points to fold and unfold, so it never flickers at the edge. A redraw keeps the state with no animation. */
+  function slimTop(pc, content) {
+    if (!pc || !content) return;
+    const set = () => {
+      const y = content.scrollTop, fix = content.querySelector(".plfix");
+      pc.classList.toggle("slim", pc.classList.contains("slim") ? y > 8 : y > 60);
+      pc.classList.toggle("pfpage", !!fix);
+      pc.classList.toggle("pfslim", !!fix && fix.getBoundingClientRect().bottom < content.getBoundingClientRect().top + 12);
+    };
+    pc.classList.add("notr"); set();
+    requestAnimationFrame(() => requestAnimationFrame(() => pc.classList.remove("notr")));
+    content.addEventListener("scroll", set, { passive: true });
+  }
+
   /** Frozen top bars (locked 23 Nov, WEB7): in every page card, the title bar (count, buttons, filters), the help note
    *  under it and the column names stay in place while the list scrolls. Done once here for every section. */
   RB.stickHeads = (content) => {
