@@ -272,3 +272,11 @@ html[data-theme="dark"] .k .ck{background:#fff}
 .ttfoot{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
 html[data-theme="dark"] .tt{background:#1E2A44}html[data-theme="dark"] .tt.sel{background:#263759}html[data-theme="dark"] .tt.miss{background:#4A3A12}html[data-theme="dark"] .tt.miss h4{color:#F2CC72}
 html[data-theme="dark"] .ttp,html[data-theme="dark"] .ttck,html[data-theme="dark"] .ttd,html[data-theme="dark"] .ttpanel input:not([type=checkbox]){background:#2A2C31;border-color:#3A3C42;color:#F2F2F0}html[data-theme="dark"] .ttck.on{background:#1E2A44}html[data-theme="dark"] .ttd.on{background:#F2F2F0;color:#1B1C1F}
+
+/* WEB12 Plot file page: its top stays in place while the steps scroll (not on short or phone screens, where it would fill them). */
+.plfix{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;flex-direction:column;gap:14px;padding-bottom:14px}.plfix>*{margin-top:0;margin-bottom:0}.plfix>.plback{align-self:flex-start}
+@media (max-width:640px),(max-height:640px){.plfix{position:static}}
+/* WEB13 under the due time: which earlier steps open this one (✓ = done) */
+.plright .plafter{font-size:11.5px;color:var(--onv);margin-top:3px;white-space:nowrap}.plright .plafter b{font-weight:600;color:var(--on)}.plright .plafter b.plok{color:var(--grn)}
+/* WEB14 a step this file does not need (a choice went the other way) */
+.plstep.plskip{opacity:.55}
