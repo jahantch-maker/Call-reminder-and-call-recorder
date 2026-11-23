@@ -176,16 +176,15 @@ fun SettingsScreen(
         val teamUser by TeamRepo.user.collectAsState()
         val team by TeamRepo.team.collectAsState()
         val teamMe by TeamRepo.me.collectAsState()
-        val teamMembers by TeamRepo.members.collectAsState()
         // Who is signed in, below it; tap = Team.
         AccountCard(
-            name = teamUser?.displayName?.takeIf { it.isNotBlank() } ?: teamMe?.name,
+            // The seat name from the website is the one name (locked 23 Nov); Google's name only before joining.
+            name = teamMe?.name?.takeIf { it.isNotBlank() } ?: teamUser?.displayName,
             email = teamUser?.email,
             line = when {
                 teamUser == null -> null
-                teamMe?.pending == true -> "Waiting for approval"
-                team != null && teamMe?.active == true -> "👥 ${team!!.name} · ${teamMe!!.roleLabel}" +
-                    teamMembers.count { it.pending }.let { if (it > 0 && teamMe!!.role == Team.OWNER) " · $it waiting" else "" }
+                teamMe?.pending == true -> "Not added yet"
+                team != null && teamMe?.active == true -> "👥 ${team!!.name} · " + teamMe!!.designation.ifBlank { teamMe!!.roleLabel }
                 else -> "Not in a team yet"
             },
             onClick = onOpenTeam,
@@ -197,7 +196,7 @@ fun SettingsScreen(
         BadgeGroup("GENERAL") {
             BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
             BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
-            BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays), onOpenOffDays)
+            BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · Set by your manager" else "", onOpenOffDays)
         }
         BadgeGroup("CALLS & TEXTS") {
             BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)

@@ -432,27 +432,28 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
         when {
             user == null -> SectionCard(
                 title = "Team",
-                subtitle = "Give tasks to your staff on their own phones: they pick a date, you see Seen and Done. Sign in once with Google.",
+                subtitle = "Sign in with the Gmail your manager added for you. Nothing to type: your name and details come from the website.",
             ) {
+                TeamRepo.signedOutNote()?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
                 Button(onClick = {
                     ctx.findActivity()?.let { act -> go { TeamRepo.signIn(act) } }
                 }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Signing in…" else "Sign in with Google") }
             }
-            joined == null -> TeamStart(busy = busy, go = { go(it) })
+            // Locked 23 Nov: no join form and no request. A Gmail with a seat joins at once; any other is told to ask.
+            joined == null || m?.pending == true -> SectionCard(title = "Not added yet", subtitle = "Signed in as ${user?.email.orEmpty()}") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(TeamRepo.NOT_ADDED)
+                    Button(onClick = { go { TeamRepo.autoJoin() } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (busy) "Checking…" else "Try again")
+                    }
+                }
+            }
             m == null -> SectionCard(title = "Connecting…", subtitle = "Needs mobile data or Wi-Fi the first time.") {
                 TextButton(onClick = { go { TeamRepo.leave() } }) { Text("Cancel") }
             }
-            m.pending -> SectionCard(title = "Join a team", subtitle = "Waiting for approval") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("✓  Signed in with Google · ${user?.email.orEmpty()}")
-                    Text("✓  Asked to join" + (t?.name?.let { " $it" } ?: ""))
-                    Text("⏳  Waiting for your manager to approve. You'll see the team here once he does.")
-                    TextButton(onClick = { go { TeamRepo.leave() } }) { Text("Cancel request", color = MaterialTheme.colorScheme.error) }
-                }
-            }
             t != null -> TeamActive(t, m, members, tasks, busy, go = { go(it) })
         }
-        msg?.let { Text(it, color = if (it.startsWith("Moved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+        msg?.takeIf { it != TeamRepo.NOT_ADDED }?.let { Text(it, color = if (it.startsWith("Moved")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
         if (user != null) {
             TeamSignOut(inTeam = m != null && m.active && t != null)
             if (m != null && m.active && t != null) TeamRestoreOffer()
@@ -460,53 +461,9 @@ fun TeamSettingsScreen(onBack: () -> Unit) {
     }
 }
 
-/** Not in a team yet: one "Ask to join Rafiq Builders" (no code); join with a code only if it can't be found. */
-@Composable
-private fun TeamStart(busy: Boolean, go: (suspend () -> String?) -> Unit) {
-    val ctx = LocalContext.current
-    var code by remember { mutableStateOf("") }
-    var joinName by remember { mutableStateOf(TeamRepo.user.value?.displayName.orEmpty()) }
-    var home by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var looked by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { home = TeamRepo.findHomeTeam(); looked = true }
-    val h = home
-    SectionCard(
-        title = if (h != null) "Join ${h.second}" else "Join a team",
-        subtitle = if (h != null) "Your manager approves you, then tasks come to your phone." else if (looked) "Ask your manager for the 6-letter code." else "Looking for your team…",
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (h == null && looked) OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(6) }, label = { Text("Team code") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
-            OutlinedTextField(joinName, { joinName = it }, label = { Text("Your name") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text("No phone number to type: your manager links your numbers when he approves you.",
-                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
-            }
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text(
-                    "Before you join: your manager will see your work tasks and follow-ups. Tap 🔒 Private on any task to keep it " +
-                        "private (he sees only how many).",
-                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp)
-                )
-            }
-            Button(onClick = {
-                when {
-                    joinName.isBlank() -> Toast.makeText(ctx, "Add your name", Toast.LENGTH_SHORT).show()
-                    h != null -> go { TeamRepo.joinTeam(h.first, joinName, "") }
-                    else -> go { TeamRepo.join(code, joinName, "") }
-                }
-            }, enabled = !busy && looked && (h != null || code.length == 6), modifier = Modifier.fillMaxWidth()) {
-                Text(if (h != null) "Ask to join ${h.second}" else "Ask to join")
-            }
-        }
-    }
-}
-
 /**
- * In the team. The Owner (and Admins) see Waiting for you, the chart with Edit and the date rules; a Member sees
- * only his place in the team and Leave. Date rules show to anyone with people under him.
+ * In the team (locked 23 Nov): who you are, the whole team as the website chart (read only; the chart, names and phones
+ * are set on the website), then the late reasons, date rules and documents.
  */
 @Composable
 private fun TeamActive(
@@ -515,15 +472,7 @@ private fun TeamActive(
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val admin = me.role == Team.OWNER || me.role == Team.ADMIN
-    // v0.49 the portal's "Approve people waiting to join" switch lets a head approve too.
-    val canApprove = admin || me.can("approveJoins", false)
     var showDocs by remember { mutableStateOf(false) }
-    val active = members.filter { it.active }
-    val waiting = members.filter { it.pending }
-    val hasReports = active.any { me.uid in it.managers && it.uid != me.uid }
-    var approving by remember { mutableStateOf<TeamMember?>(null) }
-    var editing by remember { mutableStateOf<TeamMember?>(null) }
     LaunchedEffect(me.role, members.size) { if (me.role == Team.OWNER) runCatching { TeamRepo.adminsToMembers() } }
 
     TeamCard {
@@ -531,115 +480,12 @@ private fun TeamActive(
             Text(t.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TeamTag("You · ${me.roleLabel}")
         }
-        // v0.49 joined his seat straight away, or already has a designation from the portal.
-        (TeamRepo.welcome()?.let { d -> "Welcome to Rafiq Builders" + if (d.isNotBlank()) " · $d" else "" }
-            ?: me.designation.takeIf { it.isNotBlank() }?.let { "Rafiq Builders · $it" })?.let {
-            Text(it, fontWeight = FontWeight.SemiBold)
-        }
-        val boss = active.firstOrNull { it.uid == me.reportsTo }
-        Text(
-            if (admin) "${active.size} member${if (active.size == 1) "" else "s"}. Nobody joins until ${if (me.role == Team.OWNER) "you approve" else "the owner approves"}."
-            else "Tasks from your manager come to My tasks." + (boss?.let { " Your Dossier is set by ${active.firstOrNull { m -> m.role == Team.OWNER }?.first ?: it.first}." } ?: ""),
-            style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant
-        )
+        Text(TeamRepo.welcome() ?: (me.name + me.designation.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()), fontWeight = FontWeight.SemiBold)
+        Text("Names, phones, the chart and working hours are set by your manager on the website.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
     }
 
-    if (canApprove && waiting.isNotEmpty()) {
-        TeamHeading("Waiting for you · ${waiting.size}")
-        waiting.forEach { w ->
-            TeamCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(w.name.ifBlank { w.email }, size = 36.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(w.name.ifBlank { "New member" }, fontWeight = FontWeight.Bold)
-                        Text("${w.phone} · ${Fmt.dueLabel(w.joinedAt)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
-                    }
-                    OutlinedButton(onClick = { go { TeamRepo.decline(w) } }, enabled = !busy, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                        Text("Decline", color = cs.error)
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    Button(onClick = { approving = w }, enabled = !busy, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Approve") }
-                }
-            }
-        }
-    }
-
-    val showNumbers = me.can("seeNumbers", false)
-
-    @Composable
-    fun NumberChip(text: String, red: Boolean) {
-        Text(
-            text, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (red) cs.onErrorContainer else cs.onSurface,
-            modifier = Modifier.padding(horizontal = 3.dp)
-                .background(if (red) cs.errorContainer else cs.surfaceVariant, RoundedCornerShape(7.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-
-    @Composable
-    fun Node(m: TeamMember, depth: Int, byBoss: Map<String, List<TeamMember>>, only: Set<String>?) {
-        val canSee = me.uid in m.managers && me.can("seeDay", true)
-        val openFromMe = tasks.count { it.toUid == m.uid && it.fromUid == me.uid && it.open }
-        Row(
-            Modifier.fillMaxWidth().padding(start = (depth * 18).dp)
-                .clickable(enabled = canSee) { TeamUi.openDay(m.uid) }
-                .padding(vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Avatar(m.name, size = 34.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(m.first, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(6.dp))
-                    OnlineDot(m.onlineNow())
-                }
-                val who = when {
-                    m.uid == me.uid -> "you"
-                    m.uid == me.reportsTo -> "your manager"
-                    else -> TeamUi.lastSeenLabel(m).replaceFirstChar { it.lowercase() }.removePrefix("🟢 ")
-                }
-                Text(m.roleLabel + " · " + who + (if (openFromMe > 0) " · $openFromMe open from you" else ""), fontSize = 12.sp, color = cs.onSurfaceVariant)
-            }
-            // v0.50 "See how my people are doing": late and due-today counts of the tasks I gave him (switch on the portal).
-            if (showNumbers && m.uid != me.uid) {
-                val now = System.currentTimeMillis()
-                val dayEnd = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                val given = tasks.filter { it.fromUid == me.uid && it.toUid == m.uid && it.open && it.due > 0L }
-                val late = given.count { it.due < now }
-                val today = given.count { it.due in now until dayEnd }
-                if (late > 0) NumberChip("$late late", true)
-                if (today > 0) NumberChip("$today today", false)
-            }
-            if (admin && m.uid != me.uid && m.role != Team.OWNER) TextButton(onClick = { editing = m }) { Text("Edit") }
-            if (canSee) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "His day", tint = cs.onSurfaceVariant)
-        }
-        byBoss[m.uid].orEmpty().filter { only == null || it.uid in only }.forEach { Node(it, depth + 1, byBoss, only) }
-    }
-
-    val byBoss = active.groupBy { it.reportsTo }
-    val ids = active.map { it.uid }.toSet()
-    if (admin) {
-        TeamHeading("Team chart")
-        TeamCard {
-            active.filter { it.reportsTo.isEmpty() || it.reportsTo !in ids }.forEach { Node(it, 0, byBoss, null) }
-        }
-    } else {
-        // His place: the people above him, him, and anyone under him.
-        TeamHeading("Your place in the team")
-        val only = (me.managers + me.uid + active.filter { me.uid in it.managers }.map { it.uid }).toSet()
-        TeamCard {
-            active.filter { it.uid in only && (it.reportsTo.isEmpty() || it.reportsTo !in only) }.forEach { Node(it, 0, byBoss, only) }
-        }
-        if (!showNumbers && active.any { me.uid in it.managers }) {
-            Text(
-                "How many are late or due today is off for you. You can still give tasks and see their replies.",
-                style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
-    }
+    TeamHeading("Team")
+    TeamTree(me, members, tasks)
 
     // v0.50 Only with the portal's "Edit late-reason list" switch (the owner always can).
     if (me.can("editReasons", false)) {
@@ -719,17 +565,6 @@ private fun TeamActive(
         TextButton(onClick = { go { TeamRepo.leave() } }, modifier = Modifier.fillMaxWidth()) { Text("Leave the team", color = cs.error) }
     }
 
-    approving?.let { w ->
-        TeamApproveDialog(w, me, active, onDismiss = { approving = null }) { nums, boss, role ->
-            approving = null
-            go { TeamRepo.approve(ctx, w, nums, boss, role) }
-        }
-    }
-    editing?.let { m ->
-        TeamChartDialog(m, active, tasks, onDismiss = { editing = null },
-            onSave = { boss, role, nums, own, set -> editing = null; go { TeamRepo.setChart(ctx, m, boss, role, nums, own, set) } },
-            onRemove = { to -> editing = null; go { TeamRepo.remove(ctx, m, to) } })
-    }
 }
 
 /** Settings › Team › Not done reasons: the WHY chips of ↩ Not done yet. Add, rename, move up, delete. */
@@ -762,18 +597,6 @@ private fun NotDoneReasonsDialog(start: List<String>, onDismiss: () -> Unit, onS
     )
 }
 
-/** One ACCESS switch in Team › edit person. */
-@Composable
-private fun AccessSwitch(label: String, sub: String?, on: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!on) }, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(label, fontWeight = FontWeight.SemiBold)
-            if (sub != null) Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = on, onCheckedChange = onChange)
-    }
-}
-
 /** A slim date-rule row: name, value on the right. */
 @Composable
 private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
@@ -783,82 +606,6 @@ private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
     ) {
         Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-    }
-}
-
-/** Reports to (radio list) and role chips, shared by Approve and Edit. */
-@Composable
-private fun TeamChartFields(
-    m: TeamMember, active: List<TeamMember>, boss: String, onBoss: (String) -> Unit, role: String, onRole: (String) -> Unit,
-) {
-    Text("Reports to", fontWeight = FontWeight.Bold)
-    active.filter { it.uid != m.uid && m.uid !in it.managers }.forEach { b ->
-        Row(Modifier.fillMaxWidth().clickable { onBoss(b.uid) }, verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = boss == b.uid, onClick = { onBoss(b.uid) })
-            Text(b.name + " · " + b.roleLabel)
-        }
-    }
-    Text("Role", fontWeight = FontWeight.Bold)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(Team.ADMIN, Team.MEMBER).forEach { r ->
-            FilterChip(selected = role == r, onClick = { onRole(r) }, label = { Text(r.replaceFirstChar { it.uppercase() }) })
-        }
-    }
-}
-
-/** Approve: who he reports to, his role, then his NUMBERS from your contacts (his open follow-ups under all of them move). */
-@Composable
-private fun TeamApproveDialog(
-    w: TeamMember, me: TeamMember, active: List<TeamMember>, onDismiss: () -> Unit, onApprove: (MemberNumbers, String, String) -> Unit,
-) {
-    var nums by remember { mutableStateOf(MemberNumbers.of(w)) }
-    var boss by remember { mutableStateOf(me.uid) }
-    var role by remember { mutableStateOf(Team.MEMBER) }
-    val first = Names.first(w.name) ?: w.name.ifBlank { "him" }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${w.name.ifBlank { w.email }} wants to join") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (w.email.isNotBlank()) Text(w.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TeamChartFields(w, active, boss, { boss = it }, role, { role = it })
-                TeamNumbersEditor(w.name, nums) { nums = it }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onApprove(nums, boss, role) }, enabled = nums.main.isNotBlank(), modifier = Modifier.height(48.dp)) {
-                Text(if (nums.main.isBlank()) "Pick a number first" else "Approve $first", maxLines = 1)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-/** His numbers as picked: the ticked ones, ⭐ [main] (calls and SMS) and 🟢 [wa] (WhatsApp). */
-data class MemberNumbers(val rows: List<Row>, val main: String, val wa: String) {
-    data class Row(val number: String, val from: String, val ticked: Boolean = true, val onWa: Boolean = false)
-
-    val ticked: List<String> get() = rows.filter { it.ticked }.map { it.number }
-
-    companion object {
-        fun of(m: TeamMember) = MemberNumbers(
-            m.numbers.map { Row(it, "") }, m.phone, m.wa.takeIf { it.isNotBlank() && it != m.phone }.orEmpty(),
-        )
-    }
-
-    /** Adds numbers (a contact's, or typed); the first one ticked becomes ⭐ Main, a WhatsApp one 🟢 WA. */
-    fun plus(new: List<Row>): MemberNumbers {
-        val add = new.filter { n -> rows.none { SmsStore.sameNumber(it.number, n.number) } }
-        val all = rows + add
-        val m = main.ifBlank { all.firstOrNull { it.ticked }?.number.orEmpty() }
-        val w = wa.ifBlank { all.firstOrNull { it.ticked && it.onWa && it.number != m }?.number.orEmpty() }
-        return MemberNumbers(all, m, w)
-    }
-
-    fun tick(n: String, on: Boolean): MemberNumbers {
-        val r = rows.map { if (it.number == n) it.copy(ticked = on) else it }
-        val left = r.filter { it.ticked }.map { it.number }
-        return MemberNumbers(r, if (main in left) main else left.firstOrNull().orEmpty(), if (wa in left) wa else "")
     }
 }
 
@@ -950,76 +697,6 @@ fun TeamNumbersEditor(name: String, nums: MemberNumbers, editing: Boolean = fals
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TeamChartDialog(
-    m: TeamMember, active: List<TeamMember>, tasks: List<TeamTask>, onDismiss: () -> Unit,
-    onSave: (String, String, MemberNumbers, Boolean, Boolean) -> Unit,
-    onRemove: (TeamMember?) -> Unit,
-) {
-    var nums by remember { mutableStateOf(MemberNumbers.of(m)) }
-    var ownDossier by remember { mutableStateOf(m.ownDossier) }
-    var setDossier by remember { mutableStateOf(m.setDossier) }
-    var boss by remember { mutableStateOf(m.reportsTo) }
-    var role by remember { mutableStateOf(m.role) }
-    var confirmRemove by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text(m.name)
-                if (m.typed.isNotBlank() && m.typed != m.name) Text("Typed when joining: ${m.typed}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TeamChartFields(m, active, boss, { boss = it }, role, { role = it })
-                // What he may add to Dossiers; once added, blocks never change and only you delete them.
-                ChipHeading("ACCESS")
-                AccessSwitch("✏ Adds his own Dossier", null, ownDossier) { ownDossier = it }
-                val under = remember(active) { active.filter { m.uid in it.managers }.joinToString(", ") { it.first } }
-                AccessSwitch("✏ Sets Dossier of people under him", if (under.isBlank()) "Nobody under him yet" else "Now: $under", setDossier) { setDossier = it }
-                TeamNumbersEditor(m.typed.ifBlank { m.name }, nums, editing = true) { nums = it }
-                TextButton(onClick = { confirmRemove = true }) { Text("Remove member", color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = { Button(onClick = { onSave(boss, role, nums, ownDossier, setDossier) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-    if (confirmRemove) {
-        // Who takes his open tasks from you: someone else (same task, Timeline and deadline), or back to you.
-        val open = tasks.count { it.toUid == m.uid && it.fromUid == TeamRepo.uid && it.open }
-        val others = remember(active) { TeamRepo.belowMe().filter { it.uid != m.uid } }
-        var to by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
-            onDismissRequest = { confirmRemove = false },
-            title = { Text("Remove ${m.first}?") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("His access ends now. His own tasks stay on his phone.")
-                    if (open > 0) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("Give his $open open task${if (open == 1) "" else "s"} to someone else, or back to you?", fontWeight = FontWeight.Bold)
-                        others.forEach { o ->
-                            Row(Modifier.fillMaxWidth().clickable { to = o.uid }, verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = to == o.uid, onClick = { to = o.uid })
-                                Text("👤 ${o.name}")
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth().clickable { to = null }, verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = to == null, onClick = { to = null })
-                            Text("↩ Back to me (my To schedule)")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = { confirmRemove = false; onRemove(others.firstOrNull { it.uid == to }) }, modifier = Modifier.height(48.dp)) { Text("Remove") }
-            },
-            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
-        )
     }
 }
 
