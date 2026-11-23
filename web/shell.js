@@ -111,7 +111,7 @@
       let head = card.firstElementChild;
       if (!head) return;
       if (!head.classList.contains("stickhead")) {
-        if (!head.classList.contains("subhead")) return;
+        if (!head.classList.contains("subhead") && head.tagName !== "H3") return;   // WEB12 a plain heading counts too
         const w = document.createElement("div"); w.className = "stickhead";
         card.insertBefore(w, head);
         while (w.nextElementSibling && (w.childElementCount === 0 || /\b(hint|plchips|plsearch)\b/.test(w.nextElementSibling.className))) w.appendChild(w.nextElementSibling);

@@ -37,10 +37,12 @@
   const tasksOf = (fid) => (D.plotTasks || []).filter((t) => t.plotId === fid);
   /** The latest task of one step in one file (a returned step gets a new task). */
   const taskOf = (fid, sid) => tasksOf(fid).filter((t) => t.step === sid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-  const isLate = (t, now) => !t.doneAt && !t.waitAt && t.due && now > t.due;
+  /** A step given back with Return: closed (white), no longer "now"; the cloud opens the earlier step again. */
+  const ret = (t) => !!t && !t.doneAt && t.status === "returned";
+  const isLate = (t, now) => !t.doneAt && !ret(t) && !t.waitAt && t.due && now > t.due;
   /** The open step the file is waiting on: the most late one when several run at once. */
   function current(f) {
-    const open = tasksOf(f.id).filter((t) => !t.doneAt);
+    const open = tasksOf(f.id).filter((t) => !t.doneAt && !ret(t));
     return open.sort((a, b) => (a.waitAt ? 1 : 0) - (b.waitAt ? 1 : 0) || (a.due || 9e15) - (b.due || 9e15))[0] || null;
   }
   /** open | late | today | wait | ontime | build (construction started) | closed */
@@ -141,11 +143,12 @@
   /** One step row (and its checklist + Timeline when opened in place). */
   function stepRow(f, s, nextIds) {
     const now = Date.now(), t = taskOf(f.id, s.id), done = t && t.doneAt, open = S.pfOpen === s.id;
-    const state = done ? "done" : t ? "cur" : "later";
+    const back = ret(t), state = done ? "done" : t && !back ? "cur" : "later";
     const who = `<span class="plwho">👤 ${esc(s.role)}${t ? " · " + withName(t) : ""}</span>`;
-    const when = done ? "Done " + RB.fmtDay(t.doneAt) : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtDay(t.waitAt) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
+    const when = done ? "Done " + RB.fmtDay(t.doneAt) : back ? `Returned to ${esc(t.returnTo || "the earlier step")} ${RB.fmtWhen(t.updatedAt || t.createdAt || now)} · “${esc(t.reason || "")}”` : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtDay(t.waitAt) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
     let right = "";
     if (done) { const n = t.due && t.doneAt > t.due ? days(t.due, t.doneAt) : -1; right = n < 0 ? '<span class="plok">On time</span>' : `<span class="pllate">${n ? pl(n, "day") + " late" : "Late"}</span>`; }
+    else if (back) right = '<span class="plgrey">Returned</span>';
     else if (t) right = dueText(t, now) || '<span class="plgrey">No due time</span>';
     else if (nextIds.includes(s.id)) right = '<span class="plgrey">Next</span>';
     return `<div class="plstep ${state} ${open ? "open" : ""}"><div class="plsr" data-pfstep="${esc(s.id)}" role="button" tabindex="0" aria-expanded="${open}">
@@ -156,13 +159,13 @@
   function inPlace(f, s, t) {
     const ticks = (t && t.ticks) || {}, cl = s.checklist || [], counted = cl.filter((c) => c.type !== "Option");
     const lines = cl.map((c) => { const k = ticks[c.no]; return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : ""}</div></div>`; }).join("");
-    const canNote = t && !t.doneAt && RB.canEdit("plot");
+    const canNote = t && !t.doneAt && !ret(t) && RB.canEdit("plot");
     return `<div class="plpanel"><div class="card plchk"><div class="subhead"><h3>Checklist</h3><span class="sub">${counted.filter((c) => ticks[c.no]).length} of ${counted.length} ticked</span><div class="sp"></div><span class="tag">View only · ticked on the phone</span></div>
         ${lines || '<div class="muted">This step has no checklist.</div>'}
         <button class="btnt" data-pfhow="${esc(s.id)}" style="margin-top:12px">📖 How to do this</button><div class="sub" style="margin-top:4px">Opens the ${esc(s.role)} SOP for this step, English | اردو</div></div>
       <div class="card pltl"><div class="subhead"><h3>Timeline of step ${esc(s.id)}</h3><span class="sub">only this step</span></div>
         ${t ? timeline([t], false) : '<div class="muted">Not started yet.</div>'}
-        ${canNote ? noteBox(s) : t && t.doneAt ? '<div class="sub" style="margin-top:10px">This step is done, so its Timeline is closed. Write a remark in the current step and mention this one (for example "about ' + esc(s.id) + '").</div>' : ""}</div></div>`;
+        ${canNote ? noteBox(s) : t && (t.doneAt || ret(t)) ? '<div class="sub" style="margin-top:10px">This step is ' + (t.doneAt ? "done" : "returned") + ', so its Timeline is closed. Write a remark in the current step and mention this one (for example "about ' + esc(s.id) + '").</div>' : ""}</div></div>`;
   }
 
   const noteBox = (s) => `<div class="plnote"><div class="plnin"><textarea id="pfnote" rows="2" placeholder="Write a note… type @ to ask someone" aria-label="Note for step ${esc(s.id)}">${esc(S.pfDraft || "")}</textarea>
@@ -193,8 +196,10 @@
 
   function filePage(f) {
     const x = X(), t = current(f), cur = t && step(t.step), nextIds = cur ? cur.next || [] : [];
+    // WEB12 the file's top (back, header with Now with, stages, Steps/Timeline) stays in place while the steps scroll.
+    const top = () => `<div class="plfix">${header(f)}${tabs}</div>`;
     const tabs = `<div class="tabs pltabs"><button data-pftab="steps" class="${S.pfTab === "steps" ? "on" : ""}">Steps</button><button data-pftab="timeline" class="${S.pfTab === "timeline" ? "on" : ""}">Timeline</button></div>`;
-    if (S.pfTab === "timeline") return header(f) + tabs + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;
+    if (S.pfTab === "timeline") return top() + `<div class="card"><div class="hint">This is the whole file, all steps, newest first. To write a note, open the step in the <b>Steps</b> tab.</div>${timeline(tasksOf(f.id), true, f)}</div>`;
     const groups = Array.from(new Set(x.steps.map((s) => String(s.stage))));
     const body = groups.map((g) => {
       const ss = x.steps.filter((s) => String(s.stage) === g), started = ss.some((s) => taskOf(f.id, s.id)), nd = ss.filter((s) => { const k = taskOf(f.id, s.id); return k && k.doneAt; }).length;
@@ -202,7 +207,7 @@
       if (!openG) return `<div class="plgrp" data-pfstage="${esc(g)}" role="button" tabindex="0" aria-expanded="false"><span class="pfn">${esc(g)}</span><b>${esc(stageOf(g).name)}</b><span class="sub">${pl(ss.length, "step")} · ${nd === ss.length ? "done" : nd ? nd + " done" : "not started"}</span></div>`;
       return `<div class="plgh" data-pfstage="${esc(g)}" role="button" tabindex="0" aria-expanded="true">STAGE ${esc(g)} · ${esc(String(stageOf(g).name).toUpperCase())} · ${nd} OF ${ss.length} DONE</div>${ss.map((s) => stepRow(f, s, nextIds)).join("")}`;
     }).join("");
-    return header(f) + tabs + `<div class="card plsteps">${body}</div>`;
+    return top() + `<div class="card plsteps">${body}</div>`;
   }
 
   // ------------------------------------------------------------------ actions
