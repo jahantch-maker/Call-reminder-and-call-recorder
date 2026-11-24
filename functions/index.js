@@ -88,7 +88,9 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
   const from = members.find((m) => m.uid === after.toUid) || { uid: after.toUid, name: after.toName || "", managers: [] };
   const doerOf = (role) => {
     if (file.test && !(file.testRoles || []).includes(role)) return members.find((m) => m.uid === ownerUid);
-    return members.find((m) => m.designation === role && m.uid === from.uid) || members.find((m) => m.designation === role);
+    // WEB21 "Also does" on the seat: a person may cover other jobs too; a main designation holder comes first.
+    const does = (m) => m.designation === role || (m.also || []).includes(role);
+    return members.find((m) => does(m) && m.uid === from.uid) || members.find((m) => m.designation === role) || members.find(does);
   };
 
   /** Creates one step task with a fixed id; an id that already exists means it was made already. */

@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.58.2", "24 Nov",
+            new = listOf(
+                "Plot files: one person can cover more than one job. Steps and Call lists for an \"Also does\" job on the website seat come to that person too",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.58.1", "24 Nov",
             new = emptyList(),
             fixed = listOf(

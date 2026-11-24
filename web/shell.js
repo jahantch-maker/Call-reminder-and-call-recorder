@@ -204,13 +204,14 @@
   RB.form = (title, fields, yes, fn, note) => {
     const m = document.getElementById("modal");
     const f = (x) => x.type === "select" ? `<select data-k="${x.k}">${x.options.map((o) => { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return `<option value="${esc(v)}" ${String(x.value) === String(v) ? "selected" : ""}>${esc(l)}</option>`; }).join("")}</select>`
+      : x.type === "chips" ? `<div class="chk" data-k="${x.k}" data-multi="1">${x.options.map((o) => `<label><input type="checkbox" value="${esc(o)}" ${(x.value || []).includes(o) ? "checked" : ""}> ${esc(o)}</label>`).join("")}</div>${x.hint ? `<div class="sub">${esc(x.hint)}</div>` : ""}`
       : x.type === "textarea" ? `<textarea data-k="${x.k}" rows="4" placeholder="${esc(x.ph || "")}">${esc(x.value || "")}</textarea>`
       : x.type === "phone" || x.type === "cnic" ? `<input data-k="${x.k}" data-dig="${x.type}" type="text" inputmode="numeric" autocomplete="off" value="${esc(RB.digitsFmt(x.value, x.type))}" placeholder="${esc(x.ph || (x.type === "cnic" ? "35202-1234567-1" : "0300 1234567"))}">`
       : `<input data-k="${x.k}" type="${x.type || "text"}" value="${esc(x.value || "")}" placeholder="${esc(x.ph || "")}">`;
     m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">${esc(title)}</b>${note ? `<div class="foot">${note}</div>` : ""}${fields.map((x) => `<div class="lbl">${esc(x.label)}</div>${f(x)}`).join("")}<div class="err" id="ferr"></div><div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="fc">Cancel</button><button class="btnp" id="fy">${esc(yes)}</button></div></div></div>`;
     document.getElementById("fc").onclick = () => (m.innerHTML = "");
     document.getElementById("fy").onclick = async () => {
-      const v = {}; m.querySelectorAll("[data-k]").forEach((e) => (v[e.dataset.k] = e.value));
+      const v = {}; m.querySelectorAll("[data-k]").forEach((e) => (v[e.dataset.k] = e.dataset.multi ? Array.from(e.querySelectorAll("input:checked")).map((i) => i.value) : e.value));
       try { const r = await fn(v); if (typeof r === "string" && r) { document.getElementById("ferr").textContent = r; return; } } catch (e) { document.getElementById("ferr").textContent = String(e.message || e); return; }
       m.innerHTML = ""; RB.render();
     };

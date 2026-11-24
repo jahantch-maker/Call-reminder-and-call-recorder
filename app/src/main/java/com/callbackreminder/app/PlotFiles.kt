@@ -150,11 +150,11 @@ object PlotFiles {
 
     /** The owner, and whoever does the first step (Front Desk), see "New plot file" in Settings. */
     fun canOpen(me: TeamMember?, team: TeamInfo?, sop: Sop?): Boolean =
-        me != null && me.active && (team?.ownerUid == me.uid || (me.designation.isNotBlank() && sop?.first?.any { it.role == me.designation } == true))
+        me != null && me.active && (team?.ownerUid == me.uid || sop?.first?.any { me.does(it.role) } == true)
 
-    /** Who does a step: you when it is your designation, else the first active member with that designation. */
+    /** Who does a step: you when it is your job, else the first active member with that designation, else one who also does it. */
     fun doerOf(role: String, me: TeamMember, members: List<TeamMember>): TeamMember? =
-        if (me.designation == role) me else members.firstOrNull { it.active && it.designation == role }
+        if (me.does(role)) me else members.firstOrNull { it.active && it.designation == role } ?: members.firstOrNull { it.active && role in it.also }
 
     /**
      * When a step is due (his rules, 23 Nov; written for everyone in the sheet's "Time rules" tab), from his own working

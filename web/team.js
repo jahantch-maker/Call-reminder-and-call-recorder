@@ -73,7 +73,7 @@
         <div class="pcl">${s.phone ? `<b class="pph">📞 ${esc(s.phone)}</b>` : '<b class="pph none">📞 —</b>'}<span class="pem">✉ ${esc(s.gmail)}</span></div>
         <div class="pcl"><b>${esc(s.dept || "—")}</b><span>${headName(s) ? "Head: <b>" + esc(headName(s)) + "</b>" : s.role === "owner" ? "Top of the chart" : "No head"}</span></div>
         <div class="pcl">${tt ? `<b>${esc(RB.ttName(tt))}</b>` : '<span>—</span>'}</div>
-        <div class="pcl">${tag(s.designation)}</div>
+        <div class="pcl"><span class="tys">${tag(s.designation)}${(s.also || []).map((a) => `<span class="ty" style="background:${RB.desigColor(a)}" title="Also does">+ ${esc(a)}</span>`).join("")}</span></div>
         <div class="pend">${miss}${btn}</div></div>`;
     };
     const html = `<div class="cols"><div class="card pcard" style="flex:2"><div class="stickhead"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
@@ -101,7 +101,7 @@
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div><div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
@@ -118,6 +118,8 @@
       { k: "gmail", label: "OFFICIAL GMAIL", value: p.gmail || "", ph: "name@gmail.com" },
     ].concat([
       { k: "designation", label: "DESIGNATION", type: "select", value: p.designation || RB.desigList()[0].name, options: RB.desigList().map((d) => d.name) },
+      // WEB21 Other jobs this person covers: plot steps, the SOP warning and his role SOP count them; the chart shows only the designation.
+      { k: "also", label: "ALSO DOES · OTHER JOBS THIS PERSON COVERS (OPTIONAL)", type: "chips", value: p.also || [], options: alsoOpts(p), hint: "Plot file steps for these jobs also come to this person. The main designation above still shows everywhere." },
       deptField("DEPARTMENT", p.dept),
       { k: "reportsTo", label: "REPORTS TO", type: "select", value: p.reportsTo || "", options: heads },
       { k: "timetable", label: "TIMETABLE", type: "select", value: (s && RB.ttOf(s) ? s.timetable : ""), options: ttOpts(id) },
@@ -136,7 +138,7 @@
         if (bad) return bad;
         if (!gmailOk(g)) return "Type a plain Gmail address (name@gmail.com).";
         if (RB.seat(g)) return "That Gmail already has a seat.";
-        await RB.Store.put("seats", g, { gmail: g, name: v.name, phone: v.phone, invited: true, designation: v.designation, dept: v.dept === "__new" ? "" : v.dept, reportsTo: v.reportsTo, timetable: v.timetable, role: "member", status: "empty", uid: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
+        await RB.Store.put("seats", g, { gmail: g, name: v.name, phone: v.phone, invited: true, designation: v.designation, also: v.also.filter((a) => a !== v.designation), dept: v.dept === "__new" ? "" : v.dept, reportsTo: v.reportsTo, timetable: v.timetable, role: "member", status: "empty", uid: "", extraGivers: [], override: {}, holders: [], addedAt: Date.now() });
         S.seatSel = g; await done("Added seat " + g + " for " + v.name + " (" + v.designation + ")");
         if (v.dept === "__new") newDeptFor(g);
       }, "The person signs in to the phone app with this Gmail and lands in this seat.");
@@ -149,7 +151,7 @@
           if (RB.seat(g)) return "That Gmail already has a seat.";
           if (s.role === "owner" || (s.uid && s.uid === RB.uidOf())) return "This Gmail can't be changed here: it would sign out the app owner or you.";
         }
-        const patch = { name: v.name, phone: v.phone, designation: v.designation, dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
+        const patch = { name: v.name, phone: v.phone, designation: v.designation, also: v.also.filter((a) => a !== v.designation), dept: v.dept === "__new" ? s.dept || "" : v.dept, role: v.role || s.role };
         if (v.timetable) patch.timetable = v.timetable;
         if (s.status !== "filled") patch.invited = true;
         // The one name shows everywhere, the person now in the seat included.
@@ -369,6 +371,12 @@
     const lab = dp.previousElementSibling, lock = () => { dp.disabled = dDepts(RB.desigOf(ds.value)).length === 1; if (lab) lab.textContent = dp.disabled ? "DEPARTMENT · 🔒 FROM THE DESIGNATION" : "DEPARTMENT"; };
     ds.addEventListener("change", () => { fill(false); lock(); }); fill(true); lock();
   }
+  /** WEB21 "Also does" choices: the designations the published plot SOP uses (all designations if none), plus any already ticked. */
+  const alsoOpts = (p) => {
+    const x = RB.plotSop && RB.plotSop.x ? RB.plotSop.x() : null, all = RB.desigList().map((d) => d.name).filter((n) => n !== "Owner");
+    const used = x ? new Set(x.steps.flatMap((s) => [s.role].concat(...Object.values(s.notify || {})))) : null;
+    return all.filter((n) => !used || used.has(n) || (p.also || []).includes(n));
+  };
   const deptField = (label, value) => ({ k: "dept", label, type: "select", value: value || "", options: [["", "— none —"]].concat(RB.deptList().map((d) => [d, d])).concat(value && !RB.deptList().includes(value) ? [[value, value + " (not in list)"]] : []).concat([["__new", "+ New department…"]]) });
   /** "+ New department…" picked in a seat form: ask the name once the form has closed, add it to the list, then put it on the seat. */
   function newDeptFor(seatId) {
