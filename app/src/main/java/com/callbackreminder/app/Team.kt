@@ -575,7 +575,15 @@ object TeamRepo {
             if (teamId == null) autoJoin() else null
         } else "Google sign-in didn't return an account."
     } catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) {
-        "Sign-in cancelled."
+        // Google also reports some real failures as a "cancel" (e.g. "[16] Account reauth failed" when this
+        // app's signing key isn't registered in Firebase), so only a cancel by the user reads as cancelled.
+        val m = e.message.orEmpty()
+        when {
+            m.contains("reauth", ignoreCase = true) ->
+                "Couldn't sign in: Google didn't accept this copy of the app. Ask your manager to check the app's key in Firebase. ($m)"
+            m.isBlank() || m.contains("by the user", ignoreCase = true) -> "Sign-in cancelled."
+            else -> "Couldn't sign in: $m"
+        }
     } catch (e: Exception) {
         "Couldn't sign in: ${e.message ?: e.javaClass.simpleName}"
     }

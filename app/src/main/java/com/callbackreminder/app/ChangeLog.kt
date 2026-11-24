@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.57.3", "24 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Team sign-in: when Google refuses the sign-in, the app now shows the real reason instead of \"Sign-in cancelled\"",
+            ),
+        ),
+        Entry(
             "0.57.2", "24 Nov",
             new = listOf(
                 "Return, Send back and Extend deadline: add voice notes and photos (camera or gallery, with the photo editor and a caption); they all go on the Timeline",
