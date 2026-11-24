@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.58.1", "24 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Plot files: a step given after closing time with 1 working day is now due at closing time the next working day, not the morning after",
+            ),
+        ),
+        Entry(
             "0.58.0", "24 Nov",
             new = listOf(
                 "New name and icon: the app is now RB360",
