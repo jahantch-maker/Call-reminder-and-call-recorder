@@ -80,6 +80,8 @@
     // WEB20 A redraw (cloud data, a click) keeps every scroll spot: the list, the side panel, and on narrow screens
     // (under 900px) the whole page, which scrolls .pmain instead of the list.
     const oldC = document.getElementById("content"), oldS = document.getElementById("side"), oldM = root.querySelector(".pmain");
+    // The top keeps its folded (slim) state through the redraw; else the scroll spot lands on the taller unfolded page.
+    const oldPc = !anim && root.querySelector(".pc"), pcCls = oldPc ? oldPc.className : "";
     const keepC = !anim && oldC ? oldC.scrollTop : 0, keepS = !anim && oldS ? oldS.scrollTop : 0, keepM = !anim && oldM ? oldM.scrollTop : 0;
     root.innerHTML = `<div class="app${anim ? "" : " still"}"><nav class="rail"><div class="rl"><img src="logo.svg" alt="Rafiq Builders"></div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
       <div class="pmain"><div class="pc">
@@ -89,6 +91,7 @@
         <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div>
         <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
+    if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
     if (keepC) { const c = document.getElementById("content"); if (c) c.scrollTop = keepC; }
     if (keepS) { const sd = document.getElementById("side"); if (sd) sd.scrollTop = keepS; }
     if (keepM) { const pm = root.querySelector(".pmain"); if (pm) pm.scrollTop = keepM; }
