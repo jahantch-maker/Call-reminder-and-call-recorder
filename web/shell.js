@@ -77,8 +77,12 @@
     const running = RB.meet.running() && sec !== "meetings" ? `<div class="banner">Meeting running · <a href="#" class="link" data-sec="meetings">back to the meeting</a></div>` : "";
     // Fade in only when the page itself changes (section or tab); a click on the same page redraws without any flash.
     const sig = sec + "/" + tab, anim = sig !== RB._sig; RB._sig = sig;
-    const oldC = document.getElementById("content"), oldS = document.getElementById("side");
-    const keepC = !anim && oldC ? oldC.scrollTop : 0, keepS = !anim && oldS ? oldS.scrollTop : 0;
+    // WEB20 A redraw (cloud data, a click) keeps every scroll spot: the list, the side panel, and on narrow screens
+    // (under 900px) the whole page, which scrolls .pmain instead of the list.
+    const oldC = document.getElementById("content"), oldS = document.getElementById("side"), oldM = root.querySelector(".pmain");
+    // The top keeps its folded (slim) state through the redraw; else the scroll spot lands on the taller unfolded page.
+    const oldPc = !anim && root.querySelector(".pc"), pcCls = oldPc ? oldPc.className : "";
+    const keepC = !anim && oldC ? oldC.scrollTop : 0, keepS = !anim && oldS ? oldS.scrollTop : 0, keepM = !anim && oldM ? oldM.scrollTop : 0;
     root.innerHTML = `<div class="app${anim ? "" : " still"}"><nav class="rail"><div class="rl"><img src="logo.svg" alt="Rafiq Builders"></div>${rail}<div class="grow"></div><button class="ri-w out" id="signout" title="Sign out"><span class="ri">⇥</span><span class="tip">Sign out</span></button></nav>
       <div class="pmain"><div class="pc">
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
@@ -87,8 +91,10 @@
         <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div>
         <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
+    if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
     if (keepC) { const c = document.getElementById("content"); if (c) c.scrollTop = keepC; }
     if (keepS) { const sd = document.getElementById("side"); if (sd) sd.scrollTop = keepS; }
+    if (keepM) { const pm = root.querySelector(".pmain"); if (pm) pm.scrollTop = keepM; }
     root.querySelectorAll("[data-sec]").forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); RB.go(e.dataset.sec); }));
     root.querySelectorAll("[data-tab]").forEach((e) => (e.onclick = () => { setTab(sec, e.dataset.tab); RB.render(); }));
     const so = document.getElementById("signout"); if (so) so.onclick = () => (RB.DEMO ? RB.alertBox("Sign out is off in the sample preview.") : firebase.auth().signOut().then(() => location.reload()));
