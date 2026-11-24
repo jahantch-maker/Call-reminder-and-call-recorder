@@ -302,3 +302,9 @@ html[data-theme="dark"] .ttp,html[data-theme="dark"] .ttck,html[data-theme="dark
 .plright .plafter{font-size:11.5px;color:var(--onv);margin-top:3px;white-space:nowrap}.plright .plafter b{font-weight:600;color:var(--on)}.plright .plafter b.plok{color:var(--grn)}
 /* WEB14 a step this file does not need (a choice went the other way) */
 .plstep.plskip{opacity:.55}
+/* WEB21 "Also does": extra job chips in People rows, tick chips in the seat form */
+.prow .pcl>.tys{display:flex;gap:6px}
+.chk{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chk label{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:13px;background:#F1F1EF;border:1.5px solid transparent;cursor:pointer}
+.chk label:has(input:checked){background:#EEF3FB;border-color:#1F3A93;font-weight:600}
+html[data-theme="dark"] .chk label{background:#2A2B2F}html[data-theme="dark"] .chk label:has(input:checked){background:#1F2A44;border-color:#8FA8E8}

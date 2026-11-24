@@ -149,7 +149,7 @@ object PlotUi {
             Who(t.ownerName.ifBlank { "Plot owner" }, "Plot owner", t.ownerWa).takeIf { t.ownerWa.isNotBlank() },
             Who(t.ownerName.ifBlank { "Plot owner" }, "Plot owner · 2nd SIM", t.ownerSim2).takeIf { !whatsApp && t.ownerSim2.isNotBlank() },
         )
-        else TeamRepo.members.value.filter { it.active && it.designation == r && it.uid != TeamRepo.uid }
+        else TeamRepo.members.value.filter { it.active && it.does(r) && it.uid != TeamRepo.uid }
             .map { Who(it.first, r, if (whatsApp) it.waNumber else it.phone) }.filter { it.number.isNotBlank() }
     }
 

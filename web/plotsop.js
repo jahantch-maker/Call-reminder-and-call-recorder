@@ -19,7 +19,11 @@
   const stage = (n) => (X().stages || []).find((g) => String(g.no) === String(n)) || { no: n, name: "" };
   const stagesOf = (steps) => Array.from(new Set(steps.map((s) => String(s.stage))));
   /** The seat's own role(s). Staff see only these; the owner sees every role. */
-  const myRoles = () => { const d = (D.me && D.me.designation) || (RB.seatOfUid ? (RB.seatOfUid(RB.uidOf()) || {}).designation : ""); return (X().roles || []).filter((r) => r.role === d).map((r) => r.role); };
+  const myRoles = () => {
+    const seat = RB.seatOfUid ? RB.seatOfUid(RB.uidOf()) || {} : {}, d = (D.me && D.me.designation) || seat.designation || "";
+    const mine = [d].concat((D.me && D.me.also) || seat.also || []);   // WEB21 plus the jobs he also does
+    return (X().roles || []).filter((r) => mine.includes(r.role)).map((r) => r.role);
+  };
   const mySteps = () => (own() ? X().steps : X().steps.filter((s) => myRoles().includes(s.role)));
 
   /** Every RG-xx code in a text opens its Drive PDF (locked 21 Nov: every form code anywhere is clickable). plain = print: no links. */
@@ -181,10 +185,10 @@
     const head = `<div class="sxhead"><button class="link" data-sxback="1">‹ All SOPs</button><div class="sxtitle"><h2>${esc(x ? sopName() : "New SOP")}</h2>${ver() ? `<span class="tag grn">Live v${ver()}</span>` : '<span class="tag">Not published yet</span>'}</div>
       <div class="tabs sxtabs">${tabs.map(([k, t]) => `<button data-sxtab="${k}" class="${k === S.sopTab ? "on" : ""}">${t}</button>`).join("")}</div>
       ${d && S.sopTab !== "versions" ? `<div class="sxdraft"><b>Draft v${d.version} · ${n} change${n === 1 ? "" : "s"}${(d.problems || []).length ? " · " + d.problems.length + " problems" : ""}</b><button class="link" data-sxtab="versions"><span class="sxlong">Open Versions to review and publish ›</span><span class="sxshort">Review ›</span></button></div>` : ""}</div>`;
-    // FLOW7 A step goes to the joined person whose designation is exactly its role: warn about roles nobody holds.
-    const held = (r) => D.seats.some((s) => s.designation === r && s.status === "filled" && s.uid && (RB.member(s.uid) || {}).status === "active");
+    // FLOW7 A step goes to the joined person whose designation (or "Also does", WEB21) is exactly its role: warn about roles nobody holds.
+    const held = (r) => D.seats.some((s) => (s.designation === r || (s.also || []).includes(r)) && s.status === "filled" && s.uid && (RB.member(s.uid) || {}).status === "active");
     const nobody = x && own() ? Array.from(new Set(x.steps.flatMap((s) => [s.role].concat(...Object.values(s.notify || {}))))).filter((r) => r && !held(r)) : [];
-    const warn = nobody.length ? `<div class="hint warn" style="color:var(--er)">⚠ Nobody who has joined holds ${nobody.map((r) => "“" + esc(r) + "”").join(", ")}. Steps for ${nobody.length === 1 ? "this role" : "these roles"} cannot reach a phone. In Team, give a joined person exactly this designation, or rename the role in the sheet.</div>` : "";
+    const warn = nobody.length ? `<div class="hint warn" style="color:var(--er)">⚠ Nobody who has joined holds ${nobody.map((r) => "“" + esc(r) + "”").join(", ")}. Steps for ${nobody.length === 1 ? "this role" : "these roles"} cannot reach a phone. In Team, give a joined person exactly this designation (or tick it under “Also does”), or rename the role in the sheet.</div>` : "";
     const t = S.sopTab, ro = own() && t !== "versions" && t !== "roles" ? RO : "";
     const b = t === "versions" ? RB.plotSync.versionsTab() + (x ? '<div style="height:12px"></div>' + RB.plotSync.deleteCard() : "")
       : t === "settings" ? settingsTab() : t === "forms" ? formsTab() : t === "roles" ? rolesTab()

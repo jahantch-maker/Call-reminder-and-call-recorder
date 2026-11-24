@@ -62,6 +62,8 @@ data class TeamMember(
     /** His Google account photo link, saved by his own phone or browser at sign-in; blank = the letter avatar. */
     val photo: String = "",
     val designation: String = "",
+    /** 0.58.2 Other jobs this person covers ("Also does" on the website seat): plot steps for them come to him too. */
+    val also: List<String> = emptyList(),
     /** v0.49 The app switches the portal set for him (null = none set yet: the old behaviour). */
     val appPerms: Map<String, Boolean>? = null,
     /** v0.49 Whom the chart lets him give tasks to (uids); null = everyone, as before. */
@@ -76,6 +78,8 @@ data class TeamMember(
     val numbers: List<String> get() = (listOf(phone) + more).filter { it.isNotBlank() }.distinctBy { it.filter(Char::isDigit).takeLast(9) }
     val waNumber: String get() = wa.ifBlank { phone }
     val active: Boolean get() = status == Team.ACTIVE
+    /** His designation or one of his "Also does" jobs is this SOP role. */
+    fun does(role: String): Boolean = designation == role || role in also
     val pending: Boolean get() = status == Team.PENDING
     val first: String get() = Names.first(name) ?: name.ifBlank { "Member" }
     /** v0.49.3 The app owner shows with the seat's designation ("GM · App owner"); the real company owners are just a designation. */
@@ -1549,6 +1553,7 @@ object TeamRepo {
         seatId = s.getString("seatId").orEmpty(),
         photo = s.getString("photo").orEmpty(),
         designation = s.getString("designation").orEmpty(),
+        also = strings(s.get("also")),
         appPerms = ((s.get("perms") as? Map<*, *>)?.get("app") as? Map<*, *>)?.entries
             ?.mapNotNull { (k, v) -> (k as? String)?.let { key -> (v as? Boolean)?.let { key to it } } }?.toMap(),
         giveTo = (s.get("canGiveTo") as? List<*>)?.mapNotNull { it as? String },
