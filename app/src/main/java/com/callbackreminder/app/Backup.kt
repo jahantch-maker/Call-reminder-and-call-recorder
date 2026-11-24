@@ -250,9 +250,9 @@ object Backup {
         val root = try {
             JSONObject(text)
         } catch (e: Exception) {
-            return "That isn't a Callback Reminder backup"
+            return "That isn't an RB360 backup"
         }
-        val all = root.optJSONObject("prefs") ?: return "That isn't a Callback Reminder backup"
+        val all = root.optJSONObject("prefs") ?: return "That isn't an RB360 backup"
         // Everything not in the file is cleared too, so the app matches the backup exactly.
         prefsNames(ctx).forEach { name ->
             if (!all.has(name)) ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
@@ -353,7 +353,7 @@ object Backup {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Backup failed")
             .setContentText(why)
             .setStyle(NotificationCompat.BigTextStyle().bigText(why))

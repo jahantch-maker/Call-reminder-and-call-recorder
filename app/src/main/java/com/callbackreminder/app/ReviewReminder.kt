@@ -219,7 +219,7 @@ object ReviewReminder {
             flags
         )
         val b = NotificationCompat.Builder(ctx, channel)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Time to review")
             .setContentText(counts.summary)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

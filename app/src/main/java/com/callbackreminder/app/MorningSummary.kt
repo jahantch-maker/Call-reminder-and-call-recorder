@@ -171,7 +171,7 @@ object MorningSummary {
         )
         val open = openDay(ctx, NOTIF_ID)
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(day.countsLine)
             .setContentText(text)
             .setSubText("Morning summary")

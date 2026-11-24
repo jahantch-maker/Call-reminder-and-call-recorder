@@ -424,7 +424,7 @@ object CallerCard {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = NotificationCompat.Builder(ctx, Notifier.CH_POSTCALL)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("${info.name}: ${info.pending} pending" + if (info.overdue > 0) " · ${info.overdue} overdue" else "")
             .setContentText(info.lines.firstOrNull().orEmpty())
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

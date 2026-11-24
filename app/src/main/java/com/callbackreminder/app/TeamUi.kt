@@ -317,7 +317,7 @@ object TeamUi {
     }
 
     fun shareCode(c: Context, team: TeamInfo) {
-        val text = "Join ${team.name} on Callback Reminder: Settings › Team › Join, code ${team.code}"
+        val text = "Join ${team.name} on RB360: Settings › Team › Join, code ${team.code}"
         val wa = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text).setPackage("com.whatsapp")
         try {
             c.startActivity(wa.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

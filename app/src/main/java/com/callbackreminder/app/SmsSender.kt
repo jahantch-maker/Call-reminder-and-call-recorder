@@ -579,7 +579,7 @@ object SmsNotifier {
             if (index >= 0) "text ${index + 1} of ${r.burstCount} sent" else "sent ✓",
         ).joinToString(" · ")
         val b = NotificationCompat.Builder(ctx, CH_SMS_SENT)
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(r.message)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text).setBigContentTitle(r.message))
@@ -596,7 +596,7 @@ object SmsNotifier {
         if (!Notifier.canNotify(ctx)) return
         val text = "$reason. \"${r.message}\""
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Couldn't send text to ${r.title}")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -615,7 +615,7 @@ object SmsNotifier {
     fun showTapToSend(ctx: Context, r: SmsReminder, text: String) {
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(r.message)
             .setContentText("Tap to text ${r.title} now")
             .setStyle(NotificationCompat.BigTextStyle().bigText("Tap to text ${r.title} now:\n$text"))
@@ -652,7 +652,7 @@ object SmsNotifier {
         val notDone = if (replied) action(ctx, r, SmsActionReceiver.ACTION_NOT_DONE, 300_000)
         else openMessages(ctx, r.id, editId = r.id)
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -714,7 +714,7 @@ object SmsQuota {
         p(ctx).edit().putBoolean("tip_shown", true).apply()
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Some texts are waiting a few minutes")
             .setContentText("Android limits how many texts an app sends. If it asks, tick \"Always allow\".")
             .setStyle(NotificationCompat.BigTextStyle().bigText(

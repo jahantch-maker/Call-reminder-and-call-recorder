@@ -103,7 +103,7 @@ object TaskAlarms {
             t.personTitle.takeIf { t.hasPerson }?.let { "with $it" },
         ).joinToString(" · ")
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(t.title)
             .setContentText(text)
             .setSubText("Reminder before")
@@ -132,7 +132,7 @@ object TaskAlarms {
             FLAGS
         )
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(t.title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -223,7 +223,7 @@ object TaskAlarms {
             FLAGS
         )
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(t.title)
             .setContentText(text)
             .setSubText("Dossier")
@@ -240,7 +240,7 @@ object TaskAlarms {
     fun showDossierBefore(ctx: Context, t: DossierTask) {
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("${t.title} at ${t.timeLabel}")
             .setContentText("Reminder before your dossier task")
             .setSubText("Dossier")
@@ -291,7 +291,7 @@ object TaskAlarms {
         val text = if (left == 0) "Every task due so far is ticked."
         else "Tick them, or say why not. Today locks at 3:00 AM."
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

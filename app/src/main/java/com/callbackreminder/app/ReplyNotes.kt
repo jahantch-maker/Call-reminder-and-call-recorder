@@ -82,7 +82,7 @@ object ReplyNotes {
         )
         val body = "“$text”" + if (task.isNotBlank()) "\n$task" else ""
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Read ${Names.possessive(who, "the")} reply")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

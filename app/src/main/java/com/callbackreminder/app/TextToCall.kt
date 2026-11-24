@@ -109,7 +109,7 @@ object TextToCall {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("${r.title} texted back $code")
             .setContentText("The call task is waiting in To review")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

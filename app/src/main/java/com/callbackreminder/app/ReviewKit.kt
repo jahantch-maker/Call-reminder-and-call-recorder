@@ -915,7 +915,7 @@ object ReviewSession {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = NotificationCompat.Builder(ctx, Notify.CH_QUIET)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Continue review · ${s.total - s.handled} left")
             .setContentText(nextName(ctx)?.let { "Next: $it" } ?: "Tap to resume")
             .setOngoing(true)
@@ -945,7 +945,7 @@ object ReviewSession {
         }
         if (!Notifier.canNotify(ctx)) return
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Resume your review session?")
             .setContentText("Paused · ${s.handled} of ${s.total} done")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
