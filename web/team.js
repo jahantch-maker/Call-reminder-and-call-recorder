@@ -64,7 +64,7 @@
     const headName = (s) => { const h = RB.headOf(s); return h ? (h.status === "filled" ? h.name : h.name || first(h.gmail)) : ""; };
     const row = (s) => {
       const joined = s.status === "filled", tt = RB.ttOf(s);
-      const status = joined ? '<span class="pst on">● Joined</span>' : s.invited ? '<span class="pst">Invited, not joined</span>' : '<span class="pst">Nobody invited yet</span>';
+      const status = signedOut(s) ? '<span class="pst out">● Signed out · must sign in again</span>' : joined ? '<span class="pst on">● Joined</span>' : s.invited ? '<span class="pst">Invited, not joined</span>' : '<span class="pst">Nobody invited yet</span>';
       const miss = [s.phone ? "" : '<span class="tag amb">No phone number</span>', tt ? "" : '<span class="tag amb">No timetable</span>'].join("");
       const btn = ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${joined || s.invited ? "Edit" : "Fill seat"}</button>` : "";
       return `<div class="prow ${joined ? "on" : "off"} ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}" role="button" tabindex="0">
@@ -96,12 +96,15 @@
     if (skipped.length) RB.alertBox("These people have no Gmail on file, so they got no seat yet: " + esc(skipped.join(", ")));
   }
 
+  /** Seat still linked to an account that was removed (offboarded or signed out): tasks can't reach it. */
+  const signedOut = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return !!m && m.status !== "active"; };
+
   function seatPanel(s) {
     if (!s) return "";
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${signedOut(s) ? '<div class="s pst out">● Signed out · must sign in again<br>Tasks can\'t reach this person until they sign in on the phone.</div>' : ""}${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
