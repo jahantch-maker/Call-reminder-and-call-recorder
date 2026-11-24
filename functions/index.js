@@ -42,7 +42,8 @@ function dueOf(timer, days, hours, from, cal) {
   const end = at(day, END), n = Number(days) || 0, h = Number(hours) || 0, HR = 3600000;
   // The sheet's "Time rules" tab says the same in simple English (locked 23 Nov).
   if (/working hours/i.test(timer || "") && h > 0) return end - start >= h * HR ? start + h * HR : Math.min(at(next(day), START) + h * HR, at(next(day), END));
-  if (n > 0) { const clock = start - day; for (let i = 0; i < n; i++) day = next(day); return day + clock; }
+  // FLOW8 (24 Nov): landing exactly at opening time reads as closing time of the working day before (same working time).
+  if (n > 0) { const clock = start - day; let prev = day; for (let i = 0; i < n; i++) { prev = day; day = next(day); } return clock === START * 60000 ? at(prev, END) : day + clock; }
   return end;
 }
 

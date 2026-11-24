@@ -161,7 +161,8 @@ object PlotFiles {
      * hours and weekly off day (his timetable on the website) and the company holidays. The clock starts when the step is made; outside working hours it starts when work starts
      * on the next working day.
      * Working hours (N in Hours): N hours later if that many are left today, else N hours after work starts next working day.
-     * Working days (N in Days): the same clock time N working days later.
+     * Working days (N in Days): the same clock time N working days later; landing exactly at opening time, the closing time
+     * of the working day before (FLOW8, 24 Nov).
      * Only these two timer types exist (23 Nov: Same visit and Same day were removed). Anything else: closing time that day.
      */
     fun dueOf(c: Context, timer: String, days: Int?, hours: Int?, from: Long): Long {
@@ -195,8 +196,11 @@ object PlotFiles {
             }
             n > 0 -> {
                 val clock = Instant.ofEpochMilli(start).atZone(z).toLocalTime()
-                repeat(n) { day = nextWorkDay(day) }
-                day.atTime(clock).atZone(z).toInstant().toEpochMilli()
+                var prev = day
+                repeat(n) { prev = day; day = nextWorkDay(day) }
+                val due = day.atTime(clock).atZone(z).toInstant().toEpochMilli()
+                // FLOW8: due exactly at opening time reads as closing time of the working day before (same working time).
+                if (due == win(day)?.first) win(prev)?.second ?: due else due
             }
             else -> end
         }
