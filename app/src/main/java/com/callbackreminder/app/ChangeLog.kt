@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.58.0", "24 Nov",
+            new = listOf(
+                "New name and icon: the app is now RB360",
+                "Notifications show the RB logo in the status bar",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.57.3", "24 Nov",
             new = emptyList(),
             fixed = listOf(

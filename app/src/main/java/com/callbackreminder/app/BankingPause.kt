@@ -83,12 +83,12 @@ object BankingPause {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val n = NotificationCompat.Builder(ctx, Notifier.CH_REC_OFF)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Call recording is off")
             .setContentText("Done with your bank app? Tap to switch recording back on.")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "Done with your bank app? Tap, then switch on Callback Reminder call recording " +
+                    "Done with your bank app? Tap, then switch on RB360 call recording " +
                         "so your calls are recorded again."
                 )
             )

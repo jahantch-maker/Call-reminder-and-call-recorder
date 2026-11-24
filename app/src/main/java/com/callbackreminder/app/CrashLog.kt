@@ -101,7 +101,7 @@ object CrashLog {
             .setPositiveButton("Share") { _, _ ->
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
-                    .putExtra(Intent.EXTRA_SUBJECT, "Callback Reminder problem report")
+                    .putExtra(Intent.EXTRA_SUBJECT, "RB360 problem report")
                     .putExtra(Intent.EXTRA_TEXT, text)
                 runCatching { activity.startActivity(Intent.createChooser(send, "Share the problem report")) }
             }

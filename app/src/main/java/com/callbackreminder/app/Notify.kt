@@ -190,7 +190,7 @@ object Notify {
         }.getOrDefault(0) + 1
         if (shown < 2) return
         val b = NotificationCompat.Builder(ctx, channel ?: CH_QUIET)
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setColor(kind.color)
             .setContentTitle("${kind.emoji} ${kind.label} · $shown new")
             .setSubText(kind.label)

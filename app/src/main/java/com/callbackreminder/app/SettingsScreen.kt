@@ -436,7 +436,7 @@ fun SetupSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
             PermissionRow(
                 icon = Icons.Rounded.Chat,
                 title = "Notification access",
-                description = "Needed for the popup after WhatsApp calls. Find Callback Reminder in the list and switch it on.",
+                description = "Needed for the popup after WhatsApp calls. Find RB360 in the list and switch it on.",
                 ok = status.notificationAccess,
                 onAllow = {
                     ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -601,7 +601,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
             PermissionRow(
                 icon = Icons.Rounded.Accessibility,
                 title = "Accessibility service",
-                description = "Open Accessibility → Installed apps → Callback Reminder call recording, and switch it on. " +
+                description = "Open Accessibility → Installed apps → RB360 call recording, and switch it on. " +
                     "Without it Android silences the microphone during calls. It does not read your screen.",
                 ok = status.accessibility,
                 actionLabel = "Turn on",
@@ -630,10 +630,10 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
             val paused = BankingPause.isPaused(ctx) && !status.accessibility
             Text(
                 if (paused) {
-                    "Recording is off for banking. When you're done, switch Callback Reminder call recording " +
+                    "Recording is off for banking. When you're done, switch RB360 call recording " +
                         "back on. You'll get a reminder every 10 minutes until you do."
                 } else {
-                    "Tap below, then switch off Callback Reminder call recording. Calls are not recorded while " +
+                    "Tap below, then switch off RB360 call recording. Calls are not recorded while " +
                         "it's off, so you'll get a reminder every 10 minutes until you switch it back on."
                 },
                 style = MaterialTheme.typography.bodySmall,

@@ -93,9 +93,9 @@ object RecNotif {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(ctx, Notifier.CH_RECORDING)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Recording call")
-            .setContentText("Callback Reminder is recording this call")
+            .setContentText("RB360 is recording this call")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)

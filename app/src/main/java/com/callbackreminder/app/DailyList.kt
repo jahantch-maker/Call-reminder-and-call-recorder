@@ -356,7 +356,7 @@ object DailyList {
             .format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
         val smsPart = if (r.sms.isNotEmpty()) " · ${r.sms.size} SMS sent" else ""
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Daily lists ready · $time")
             .setContentText("${left.size} on WhatsApp: $who$smsPart")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -409,7 +409,7 @@ object DailyList {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-                .setSmallIcon(R.drawable.ic_stat_sms)
+                .setSmallIcon(R.drawable.ic_stat_rb)
                 .setContentTitle("Send the daily list to $name")
                 .setContentText("SMS permission is off. Tap to send it from Messages.")
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -450,7 +450,7 @@ object DailyList {
             p(ctx).edit().putLong("sent_$key", System.currentTimeMillis()).apply()
             mark(ctx, "sms_sent", key)
             val b = NotificationCompat.Builder(ctx, Notify.CH_QUIET)
-                .setSmallIcon(R.drawable.ic_stat_sms)
+                .setSmallIcon(R.drawable.ic_stat_rb)
                 .setContentTitle("Sent the list to $name")
                 .setContentText("All their open tasks")
                 .setAutoCancel(true)
@@ -463,7 +463,7 @@ object DailyList {
     private fun failed(ctx: Context, key: String, name: String, reason: String) {
         mark(ctx, "sms_failed", key)
         val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Couldn't send the daily list to $name")
             .setContentText(reason)
             .setCategory(NotificationCompat.CATEGORY_ERROR)

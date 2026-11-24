@@ -141,7 +141,7 @@ object Notifier {
         val text = listOfNotNull(r.title, r.personDetail()).joinToString(" · ")
 
         val b = NotificationCompat.Builder(ctx, if (quiet) CH_MISSED else bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(r.headline())
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -195,7 +195,7 @@ object Notifier {
         }
 
         val b = NotificationCompat.Builder(ctx, CH_RINGING)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -236,7 +236,7 @@ object Notifier {
         if (!canNotify(ctx)) return
         val pi = PendingIntent.getActivity(ctx, 7, Intent(popup), FLAGS)
         val n = NotificationCompat.Builder(ctx, CH_POSTCALL)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("Set a follow-up call?")
             .setContentText("Tap to choose when to call back")
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

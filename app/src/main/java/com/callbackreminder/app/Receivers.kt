@@ -123,7 +123,7 @@ object PhoneOff {
         )
         val what = if (tasks.isEmpty()) "follow-ups" else if (calls.isEmpty()) "tasks" else "follow-ups and tasks"
         val b = androidx.core.app.NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle("$total $what came due while your phone was off")
             .setContentText((calls.map { it.note.ifBlank { "Call back" } } + tasks.map { it.title }).take(4).joinToString(" · "))
             .setCategory(androidx.core.app.NotificationCompat.CATEGORY_REMINDER)

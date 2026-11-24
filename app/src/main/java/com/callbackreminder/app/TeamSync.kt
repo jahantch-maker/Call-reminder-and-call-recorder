@@ -439,7 +439,7 @@ object TeamSync {
         if (waited < after || !SmsSender.hasPermission(c)) return
         val ok = runCatching {
             SmsSender.managerForDefaultSim(c).first.sendTextMessage(
-                t.toPhone, null, "Reminder from ${t.fromFirst}: please set your deadline for: ${t.title.take(90)}. Open Callback Reminder.", null, null
+                t.toPhone, null, "Reminder from ${t.fromFirst}: please set your deadline for: ${t.title.take(90)}. Open RB360.", null, null
             )
         }.isSuccess
         if (ok) {
@@ -472,7 +472,7 @@ object TeamSync {
                 SmsSender.managerForDefaultSim(c).first.sendTextMessage(
                     t.toPhone, null,
                     (if (second) "Reminder: new task from ${t.fromFirst}: " else "New task from ${t.fromFirst}: ") +
-                        "${t.title.take(90)}. Please open Callback Reminder.", null, null
+                        "${t.title.take(90)}. Please open RB360.", null, null
                 )
             }.isSuccess
             if (ok) TeamRepo.note(t, if (second) "Still not seen: second text sent to ${t.toFirst}" else "Not seen in ${TeamRules.label(smsMin)}: text sent to ${t.toFirst}")
@@ -834,7 +834,7 @@ object TeamSync {
         else intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM)
         val tap = PendingIntent.getActivity(c, NotifIds.team(key), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = NotificationCompat.Builder(c, Notifier.bannerChannel(c))
-            .setSmallIcon(R.drawable.ic_stat_task)
+            .setSmallIcon(R.drawable.ic_stat_rb)
             .setContentTitle(title)
             .setContentText(text.lineSequence().first())
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
