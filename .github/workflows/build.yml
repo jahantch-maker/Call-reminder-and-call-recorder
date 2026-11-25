@@ -119,10 +119,19 @@ jobs:
               -f content="$(printf '# Callback Reminder builds\n\nOnly the app files. The Update button in the app reads from here.\n' | base64 -w0)"
           CODE=$(grep -m1 'versionCode' app/build.gradle.kts | tr -dc '0-9')
           NAME=$(grep -m1 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          # v0.59 The newest "What's new" lines go with the version, for the app's "Update required" page.
+          NOTES=$(python3 - <<'PY'
+          import json, re
+          s = open("app/src/main/java/com/callbackreminder/app/ChangeLog.kt", encoding="utf-8").read()
+          m = re.search(r'Entry\(\s*"[^"]*",\s*"[^"]*",\s*new = listOf\((.*?)\),\s*fixed', s, re.S)
+          lines = [x.replace('\\"', '"') for x in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))] if m else []
+          print(json.dumps(lines))
+          PY
+          )
           publish() {  # channel, apk, version name
             mkdir -p "out/$1"
             cp "$2" "out/$1/app.apk"
-            printf '{"versionCode":%s,"versionName":"%s"}' "$CODE" "$3" > "out/$1/version.json"
+            printf '{"versionCode":%s,"versionName":"%s","notes":%s}' "$CODE" "$3" "$NOTES" > "out/$1/version.json"
             gh release delete "$1" --repo "$REPO" --yes --cleanup-tag || true
             gh release create "$1" "out/$1/app.apk" "out/$1/version.json" --repo "$REPO" \
               --title "$1 $3" --notes "Build #${{ github.run_number }}"

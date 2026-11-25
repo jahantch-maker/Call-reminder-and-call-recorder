@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.59.0", "25 Nov",
+            new = listOf(
+                "The app always stays on the latest version: when a new one is out, the app asks you to update before you carry on",
+                "Your follow-ups, Google meetings and Dossier days now show on the website's Team Performance page for the whole week",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.58.2", "24 Nov",
             new = listOf(
                 "Plot files: one person can cover more than one job. Steps and Call lists for an \"Also does\" job on the website seat come to that person too",
