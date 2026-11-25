@@ -436,7 +436,9 @@
     };
     if (seeAllPol) snap("reading", (s) => s.docs.forEach((d) => (D.reading[d.id] = d.data())));
     on(teamRef.collection("changelog").orderBy("at", "desc").limit(200), "changelog", (s) => { D.changelog = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    const tq = RB.isOwner() ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
+    // v0.59.1 Team Performance for everyone (rules seesAll): the whole list, view only.
+    const allTp = RB.level("app") !== "none" && ((D.me && D.me.perms && D.me.perms.portal) || {}).appScope === "all";
+    const tq = RB.isOwner() || allTp ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     on(tq, "tasks", (s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
     on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.

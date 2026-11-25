@@ -1478,7 +1478,8 @@ object TeamRepo {
     fun uploadDay(c: Context) {
         val m = _me.value ?: return
         val t = teamId ?: return
-        if (!m.active || m.managers.isEmpty()) return
+        // v0.59.1 every active member sends his day (an owner has no managers but Team Performance still shows him).
+        if (!m.active) return
         val map = TeamSync.dayMap(c, m.managers)
         db().collection("teams").document(t).collection("days").document(m.uid).set(map)
     }

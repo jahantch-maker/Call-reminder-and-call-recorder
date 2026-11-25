@@ -16,6 +16,16 @@
     tpCalView: S.tpCalView || "day", tpCalFit: S.tpCalFit !== false, tpCalDay: 0, tpCalWeek: 0,
   });
   const msgs = {};   // task id -> its Timeline talk (loaded when the Timeline opens)
+  const players = {};   // message id -> its Audio, kept through redraws so a playing voice note keeps playing
+  const b64 = (b) => { if (!b) return ""; if (typeof b === "string") return b; try { if (typeof b.toBase64 === "function") return b.toBase64(); if (b._byteString && b._byteString.toBase64) return b._byteString.toBase64(); } catch (e) {} return ""; };
+  const findMsg = (id) => Object.values(msgs).filter(Array.isArray).flat().find((m) => m.id === id);
+  /** A Timeline note: text, a photo you can open, or a voice note you can play (same look as Plot files). */
+  function msgHtml(m) {
+    const who = `<b>${esc(first(m.fromName))}</b>`, d = m.kind === "photo" || m.kind === "voice" ? b64(m.data) : "";
+    if (m.kind === "photo") return `${who} added a photo${m.text ? ": " + esc(m.text) : ""}${d ? `<button class="plimg" data-tpimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${d}"><span>🔍 Click to open</span></button>` : ' <i class="tp-hint">(photo cleared)</i>'}`;
+    if (m.kind === "voice") { const sec = Math.round((m.durMs || 0) / 1000), a = players[m.id]; return `${who} sent a voice note${d ? `<div class="plvoice" data-tpvoice="${esc(m.id)}"><button class="plplay" aria-label="Play">${a && !a.paused ? "❚❚" : "▶"}</button><span class="plwave" aria-hidden="true"></span><span class="pldur">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}</span><button class="plspeed" aria-label="Speed">${a ? a.playbackRate : 1}x</button></div>` : ' <i class="tp-hint">(voice note cleared)</i>'}`; }
+    return `${who}${m.text ? ": " + esc(m.text) : ""}`;
+  }
   const clock = (t) => new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const dshort = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const dday = (t) => new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
@@ -250,7 +260,7 @@
     else (x.reasons || []).forEach((r) => L.push({ at: r.at, tag: ["red", r.k === "move" ? "Moved" : "Reason"], h: `Why: <b>${esc(r.r)}</b>${r.o || x.outside ? ' <span class="tp-hint">(outside)</span>' : ""}${r.n ? ` <i class="tp-hint">“${esc(r.n)}”</i>` : ""}` }));
     if (x.taskId) {
       if (!msgs[x.taskId]) { msgs[x.taskId] = "loading"; RB.Store.msgs(x.taskId).then((l) => { msgs[x.taskId] = l || []; RB.soft(); }).catch(() => { msgs[x.taskId] = []; }); }
-      if (Array.isArray(msgs[x.taskId])) msgs[x.taskId].forEach((m) => L.push({ at: m.at, tag: ["blu", "Note"], h: `<b>${esc(first(m.fromName))}</b>${m.kind === "photo" ? " added a photo" : m.kind === "voice" ? " sent a voice note" : ""}${m.text ? ": " + esc(m.text) : ""}` }));
+      if (Array.isArray(msgs[x.taskId])) msgs[x.taskId].forEach((m) => L.push({ at: m.at, tag: ["blu", m.kind === "photo" ? "Photo" : m.kind === "voice" ? "Voice" : "Note"], h: msgHtml(m) }));
     }
     L.sort((a, b) => b.at - a.at);
     const t0 = T.sod(now); let last = null;
@@ -385,6 +395,16 @@
       if (db) { db.scrollTop = S._tpCalScroll || 0; db.onscroll = () => (S._tpCalScroll = db.scrollTop); }
       const sel = (id, k) => { const e = root.querySelector(id); if (e) e.onchange = () => { S[k] = e.value; RB.render(); }; };
       sel("#tpdoneper", "tpDonePer"); sel("#tpdosper", "tpDosPer");
+      root.querySelectorAll("[data-tpvoice]").forEach((v) => {
+        const id = v.dataset.tpvoice, m = findMsg(id); if (!m) return;
+        const play = v.querySelector(".plplay"), sp = v.querySelector(".plspeed"), R = [1, 1.5, 2];
+        const a = players[id] || (players[id] = new Audio("data:audio/mp4;base64," + b64(m.data)));
+        a.onplay = () => { const b = document.querySelector(`[data-tpvoice="${id}"] .plplay`); if (b) b.textContent = "❚❚"; };
+        a.onpause = a.onended = () => { const b = document.querySelector(`[data-tpvoice="${id}"] .plplay`); if (b) b.textContent = "▶"; };
+        play.onclick = (ev) => { ev.stopPropagation(); Object.entries(players).forEach(([k, o]) => k !== id && o.pause()); a.paused ? a.play() : a.pause(); };
+        sp.onclick = (ev) => { ev.stopPropagation(); a.playbackRate = R[(R.indexOf(a.playbackRate) + 1) % R.length]; sp.textContent = a.playbackRate + "x"; };
+      });
+      root.querySelectorAll("[data-tpimg]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); const m = findMsg(b.dataset.tpimg); if (m && RB.photoView) RB.photoView("data:image/jpeg;base64," + b64(m.data)); }));
       root.onclick = (ev) => {
         const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday]");
         if (!e || !root.contains(e)) return;
