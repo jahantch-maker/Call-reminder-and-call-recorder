@@ -103,8 +103,8 @@ object TeamDossier {
 
     fun ownerIsMe(): Boolean = TeamRepo.uid != null && TeamRepo.team.value?.ownerUid == TeamRepo.uid
 
-    /** In a team, a member's dossier is set on the website only: the phone sees and ticks it (the Owner's own phone keeps its own). */
-    fun webOnly(): Boolean = TeamRepo.activeNow && !ownerIsMe()
+    /** In a team, everyone's dossier (the Owner's too, J19) is set on the website only: the phone sees and ticks it. */
+    fun webOnly(): Boolean = TeamRepo.activeNow
 
     /** Your own blocks as they came from online. */
     @Volatile var mine: List<TeamBlock> = emptyList()
@@ -185,8 +185,7 @@ object TeamDossier {
 
     /** His Dossier changed online: add, change or remove the blocks in his own Dossier. */
     fun apply(c: Context, blocks: List<TeamBlock>) {
-        val me = TeamRepo.me.value ?: return
-        if (me.role == Team.OWNER) return
+        TeamRepo.me.value ?: return
         mine = blocks
         DossierStore.init(c)
         synchronized(this) {
