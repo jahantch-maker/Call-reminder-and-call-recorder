@@ -433,7 +433,7 @@
     const tabsOn = (key, all) => (Array.isArray(e.portal[key]) ? e.portal[key] : []).filter((t) => all.some((a) => a[0] === t));
     const teamOn = tabsOn("teamTabs", RB.TEAM_TABS), setOn = tabsOn("settingsTabs", RB.SET_TABS);
     const mid = `<div class="card" style="flex:1.25"><div class="mh2">IN THE PORTAL</div>
-      ${row("App view", 'See tasks, calendar and late reasons from phones. Read only. “How far” decides whose.', stag("portal.app", "portal.appScope"), lv("app", [["none", "Off"], ["view", "On"]]),
+      ${row("Team Performance", 'See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.', stag("portal.app", "portal.appScope"), lv("app", [["none", "Off"], ["view", "On"]]),
         e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : "")}
       ${row("Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", stag("portal.meetings"), lv("meetings", NVE))}
       ${row("Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments, approving joins). The People list follows “How far”.", stag("portal.team", "portal.teamTabs"), lv("team", NVE),

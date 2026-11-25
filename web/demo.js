@@ -39,6 +39,26 @@ window.DEMO_DATA = {
       }
       if (i % 3 === 1) own[uid].push({ id: uid + "-nd", title: "Arrange site visit", createdAt: now - 2 * DAY, dueAt: 0, firstDueAt: 0, moves: 0, done: false, doneAt: 0, reasons: [], events: [] });
     });
+    // Team Performance (phone 0.59+ day doc): follow-ups, dossier days and Google events for each person.
+    const days = {}, DOS = [["Site photos to group", 600, 615], ["Attendance sheet", 660, 670], ["Material stock count", 900, 930], ["Daily report to head", 1080, 1095]];
+    const iso = (t) => { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+    const callers = ["Mr Asif", "Nadeem", "Plot 14 buyer", "Rana sahib", "Tile vendor", "Mrs Saima"];
+    names.forEach((n, i) => {
+      const uid = "m" + i, skill = [0.95, 0.9, 0.8, 0.85, 0.45, 0.65, 0.8, 0.93, 0.7][i], fuAll = [], dosDays = [];
+      for (let k = 0; k < 14; k++) {
+        const due = at(Math.floor(rnd() * 10) - 6, 11 + Math.floor(rnd() * 8) + (rnd() < 0.5 ? 0.5 : 0)), done = due < now - 3600000 && rnd() < skill + 0.05;
+        const moved = rnd() > skill ? [{ at: due - DAY, from: due - DAY, to: due, r: reasons[Math.floor(rnd() * 3)] }] : [];
+        fuAll.push({ id: uid + "f" + k, title: "Call back", name: callers[Math.floor(rnd() * callers.length)], created: due - 2 * DAY, due, first: moved.length ? due - DAY : due, done, doneAt: done ? due - 300000 : 0, star: false, moves: moved, events: [{ at: due - 2 * DAY, text: "Follow-up added" }] });
+      }
+      if (i === 4) for (let k = 0; k < 3; k++) fuAll.push({ id: uid + "fx" + k, title: "Call back", name: callers[k], created: at(0, 9), due: at(0, 15) + k * 900000, first: at(0, 15) + k * 900000, done: false, doneAt: 0, moves: [], events: [] });
+      for (let d = 20; d >= 0; d--) {
+        const t = at(-d, 0), wd = new Date(t).getDay(); if (wd === 5) continue;
+        dosDays.push({ d: iso(t), i: DOS.map(([title, m, e]) => { const due = sod(t) + m * 60000; const s = d === 0 && due > now ? "O" : rnd() < skill ? "D" : "M"; return { t: title, m, e, s, at: s === "D" ? due + 300000 : 0, r: s === "M" ? (rnd() < 0.5 ? "Was on site" : "") : "", p: s === "D" && title.startsWith("Site") }; }) });
+      }
+      days[uid] = { fuAll, dosDays: i === 8 ? [] : dosDays, googleWeek: [{ title: "Client meeting", start: at(0, 14), end: at(0, 15) }, { title: "Bank visit", start: at(2, 12), end: at(2, 13) }] };
+    });
+    tasks.push({ id: "t-urg", title: "Fix water leak at Block B", fromUid: "owner", fromName: "Jahanzaib", toUid: "m4", toName: "Imran", viewers: ["owner", "m4"], createdAt: at(-2), due: at(0, 14.5), firstDue: at(0, 14.5), urgent: true, status: "dated", doneAt: 0, lateReasons: [], events: [{ at: at(-2), text: "Given by Jahanzaib" }] });
+    tasks.push({ id: "t-plot", title: "Possession letter signed", plot: "p14", plotNo: "14", step: "1.8", fromUid: "owner", fromName: "Jahanzaib", toUid: "m4", toName: "Imran", viewers: ["owner", "m4"], createdAt: at(-5), due: at(-2, 12), firstDue: at(-2, 12), status: "dated", doneAt: 0, lateReasons: [], events: [{ at: at(-5), text: "Given by Jahanzaib" }] });
     const m1 = "meet1";
     const a1 = { id: "a1", title: "Weekly material order list every Monday", fromUid: "owner", fromName: "Jahanzaib", toUid: "m2", toName: "Faisal", meeting: true, meetingFrom: "From reason: Material late", due: at(-3), firstDue: at(-3), status: "checked", doneAt: at(-4), createdAt: at(-6), events: [] };
     const a2 = { id: "a2", title: "1 PM check-in calls with site staff", fromUid: "owner", fromName: "Jahanzaib", toUid: "m5", toName: "Kamran", meeting: true, meetingFrom: "From person: Kamran", due: at(-2), firstDue: at(-2), status: "dated", doneAt: 0, createdAt: at(-6), events: [] };
@@ -70,6 +90,6 @@ window.DEMO_DATA = {
     ];
     const reading = { m0: { done: { "jd-sur": { at: at(-3), version: 2 }, "sop-site": { at: at(-1), version: 3 } } }, m1: {} };
     const changelog = [{ id: "c1", at: at(-1, 15), by: "owner", byName: "Jahanzaib", text: "Moved Imran under Kamran" }, { id: "c2", at: at(-2, 10), by: "owner", byName: "Jahanzaib", text: "Site Manager default: Set Dossier ON" }];
-    return { plot: [], team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, reasons: null, cfg: null, meetings };
+    return { plot: [], team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, days, reasons: null, cfg: null, meetings };
   },
 };

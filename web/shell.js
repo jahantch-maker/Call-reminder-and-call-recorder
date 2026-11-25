@@ -4,7 +4,7 @@
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   RB.sections = {};
   const ICONS = { app: "▦", meetings: "◷", team: "♙", plot: "▣", docs: "▤", settings: "⚙" };
-  const NAMES = { app: "App view", meetings: "Meetings", team: "Team", plot: "Plot files", docs: "Docs", settings: "Settings" };
+  const NAMES = { app: "Team Performance", meetings: "Meetings", team: "Team", plot: "Plot files", docs: "Docs", settings: "Settings" };
   S.sec = null; S.tab = { team: "people", plot: "files", docs: "reading", settings: "reasons" }; S.views = { app: "people", meetings: "home" }; S.q = "";
 
   /** Sections this person may open. Docs is open to everyone with access; staff see their reading list. */
@@ -46,7 +46,7 @@
 
   function tabsFor(sec) {
     const lvl = RB.level(sec);
-    if (sec === "app") return [["people", "Overview"], ["person", "Person"], ["calendar", "Calendar"], ["reasons", "Late reasons"]];
+    if (sec === "app") return [["people", "Overview"], ["person", "Person"]];
     if (sec === "meetings") return lvl === "edit" ? [["home", "Start meeting"], ["actions", "Actions"], ["minutes", "Minutes"]] : [["actions", "Actions"], ["minutes", "Minutes"]];
     return RB.sections[sec] ? RB.sections[sec].tabs() : [];
   }
