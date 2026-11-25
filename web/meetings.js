@@ -436,4 +436,20 @@
     bind(root) { $app = root; bind(); },
     newAction, openActions, actionStatus, minutesText, fullTimeline, rangeLabel, trendSvg, reasonBars, itemChips, timelineOf, personItems,
   };
+
+  // Meetings page (moved here from the old App view file).
+  RB.sections.meetings = {
+    render(view) {
+      const owner = RB.isOwner(), view_ = RB.level("meetings") !== "edit" && !owner;
+      let html;
+      if (view_) {
+        // Access "View": only the meetings he was in and the actions on him, no task details.
+        const sd = D.meetings, st = D.tasks, me = RB.uidOf();
+        D.meetings = sd.filter((m) => m.closedAt && m.attendance && m.attendance[me]);
+        D.tasks = st.filter((t) => t.meeting && t.toUid === me);
+        try { html = RB.meet.html(view === "minutes" ? "minutes" : "actions"); } finally { D.meetings = sd; D.tasks = st; }
+      } else html = RB.meet.html(view);
+      return { html, title: "Meetings", sub: "Daily and weekly meetings, actions and minutes" };
+    },
+  };
 })();

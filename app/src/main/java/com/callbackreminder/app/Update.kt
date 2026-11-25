@@ -4,6 +4,23 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -75,6 +92,18 @@ object AppUpdate {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
 
+    private val _required = MutableStateFlow<Latest?>(null)
+    /**
+     * v0.59 A newer version found online just now: the app can't be used until it is installed (the owner's rule, so
+     * nobody is left on an old version). Only a check that reached the server sets it, so without internet the app
+     * opens as usual.
+     */
+    val required: StateFlow<Latest?> = _required
+
+    /** The new version's "What's new" lines, sent with version.json. */
+    fun notes(c: Context): List<String> =
+        (prefs(c).getString("notes", "") ?: "").split('\n').filter { it.isNotBlank() }
+
     fun installedCode(c: Context): Long = try {
         PackageInfoCompat.getLongVersionCode(c.packageManager.getPackageInfo(c.packageName, 0))
     } catch (e: Exception) {
@@ -97,6 +126,13 @@ object AppUpdate {
         scope.launch { fetch(app, quiet = true) }
     }
 
+    /** Every time the app comes to the front: check now, whatever the 6 hours, and lock the app if a newer one is out. */
+    fun checkOnOpen(c: Context) {
+        val app = c.applicationContext
+        if (_state.value is State.Downloading) return
+        scope.launch { fetch(app, quiet = true) }
+    }
+
     /** Settings: check now and say what happened. */
     fun checkNow(c: Context) {
         val app = c.applicationContext
@@ -110,9 +146,12 @@ object AppUpdate {
             val text = open("$BASE/${channel(c)}/version.json").use { it.readBytes().decodeToString() }
             val j = JSONObject(text)
             val code = j.getLong("versionCode")
+            val notes = j.optJSONArray("notes")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
             prefs(c).edit().putLong("code", code).putString("name", j.optString("versionName"))
+                .putString("notes", notes.joinToString("\n"))
                 .putLong("checked", System.currentTimeMillis()).apply()
             load(c)
+            _required.value = _newer.value
             if (!quiet) _state.value = if (code > installedCode(c)) State.Idle else State.UpToDate
         } catch (e: Exception) {
             if (!quiet) _state.value = State.Failed("Couldn't check. Is your internet on?")
@@ -235,6 +274,108 @@ fun UpdateCard(onWhatsNew: () -> Unit) {
                     TextButton(onClick = onWhatsNew) { Text("What's new ›") }
                 }
             }
+        }
+    }
+}
+
+/**
+ * v0.59 The full-screen "Update required" page over the whole app: no Back, no close, only Update now. Reminders,
+ * call recording and alarms keep running underneath; only the screens can't be used until the new version is in.
+ */
+@Composable
+fun UpdateRequiredScreen(latest: AppUpdate.Latest) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val state by AppUpdate.state.collectAsState()
+    val notes = androidx.compose.runtime.remember(latest.code) { AppUpdate.notes(ctx) }
+    androidx.activity.compose.BackHandler(enabled = true) { }
+    val s = state
+    val busy = s is AppUpdate.State.Downloading
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(cs.background)
+            // Taps never reach the app underneath.
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+    ) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(64.dp))
+            Box(
+                Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                // The launcher icon's two layers, cropped the way Android shows them.
+                Image(painterResource(R.mipmap.ic_launcher_background), null, Modifier.requiredSize(144.dp), contentScale = ContentScale.Crop)
+                Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.requiredSize(144.dp), contentScale = ContentScale.Crop)
+            }
+            Spacer(Modifier.height(22.dp))
+            Text(
+                if (busy) "Updating…" else "Update required",
+                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (busy) "Downloading version ${latest.name}" else "A new version of ${ctx.getString(R.string.app_name)} is ready.\nPlease update to keep using the app.",
+                fontSize = 15.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, lineHeight = 22.sp
+            )
+            Spacer(Modifier.height(22.dp))
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = cs.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    if (s is AppUpdate.State.Downloading) {
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("Downloading", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text("${s.percent}%", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = cs.primary)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(10.dp))
+                        Text("Keep the app open. Android will ask you to tap Update once.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                    } else {
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("Your version", fontSize = 14.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(BuildConfigVersion.name(ctx), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("New version", fontSize = 14.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(latest.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.primary)
+                        }
+                        if (notes.isNotEmpty()) {
+                            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = cs.outlineVariant)
+                            Text("What's new", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            Spacer(Modifier.height(4.dp))
+                            notes.forEach { Text("• $it", fontSize = 13.sp, color = cs.onSurfaceVariant, lineHeight = 19.sp) }
+                        }
+                    }
+                }
+            }
+            if (s is AppUpdate.State.Failed) {
+                Spacer(Modifier.height(12.dp))
+                Text(s.why, color = cs.error, fontSize = 14.sp, textAlign = TextAlign.Center)
+            }
+            Spacer(Modifier.height(28.dp))
+            if (!busy) {
+                Button(
+                    onClick = { if (s is AppUpdate.State.Ready && s.file.exists()) AppUpdate.install(ctx, s.file) else AppUpdate.download(ctx) },
+                    shape = RoundedCornerShape(26.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) { Text("Update now", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Your reminders and call recording keep working in the background.",
+                fontSize = 12.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(18.dp))
         }
     }
 }

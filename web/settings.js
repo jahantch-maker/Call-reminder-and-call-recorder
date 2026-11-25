@@ -4,6 +4,24 @@
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   /** The five tabs the owner can tick per person (RB.SET_TABS); Change log is for owners, Updates and Appearance for everyone. */
   const TABS = RB.SET_TABS;
+  /** Team Performance settings (config/meeting.perf, read by tpcalc.js). */
+  function perfHtml() {
+    const c = RB.tp.cfg(), num = (id, val, lbl, unit, hint) => `<div class="rrow"><span class="n" style="flex:1;min-width:200px">${lbl}${hint ? `<br><span class="sub">${hint}</span>` : ""}</span><input class="num" type="number" id="${id}" value="${val}"><span style="width:52px;flex:none">${unit || ""}</span></div>`;
+    const SHOW = [["oldOver", "Oldest overdue tasks"], ["oldUns", "Not scheduled list"], ["moved", "Moved " + c.movedN + "+ list"], ["needs", "Needs help box"], ["trend", "Score line (weeks)"], ["dosBars", "Dossier day bars"], ["byType", "By task type"]];
+    const tick = (k, i) => (c.show[k][i] === null ? '<span class="sub">–</span>' : `<input type="checkbox" data-tpshow="${k}:${i}" ${c.show[k][i] ? "checked" : ""} aria-label="${k}">`);
+    const ppl = RB.tp.people(true);
+    return `<div class="card" style="max-width:720px"><h3>Team Performance</h3><div class="hint">These numbers decide how Team Performance counts and colours. Changes show for everyone at once.</div>
+      ${num("tpwon", c.wOn, "Score weight: tasks on time", "%")}${num("tpwdos", c.wDos, "Score weight: dossier", "%", "Score = on time % × this + dossier % × this, divided by both added")}
+      ${num("tpgrace", c.grace, "Not scheduled counts after", "days", "a task with no date for longer than this")}${num("tpolder", c.older, "Oldest overdue list shows tasks over", "days")}
+      ${num("tpmoved", c.movedN, "Moved list: date moved at least", "times")}${num("tpred", c.redBelow, "Red row when the score is under", "%")}${num("tpweak", c.weakDay, "Red dossier day when under", "%")}
+      ${num("tpweeks", c.weeks, "Score line shows the last", "weeks")}${num("tpoldn", c.oldOverN, "Oldest overdue: rows before Show all", "rows")}${num("tpneedn", c.needsN, "Needs help: people shown", "people")}
+      <div class="rrow"><span class="n" style="flex:1">Period when the page opens</span><select id="tpperiod">${RB.tp.PERIODS.map(([k, l]) => `<option value="${k}" ${c.period === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <h3 style="margin-top:16px">Show or hide</h3><table style="width:100%"><tr><th style="text-align:left">Part</th><th>Main screen</th><th>Person report</th></tr>${SHOW.map(([k, l]) => `<tr><td>${l}</td><td style="text-align:center">${tick(k, 0)}</td><td style="text-align:center">${tick(k, 1)}</td></tr>`).join("")}</table>
+      <h3 style="margin-top:16px">Hide people</h3><div class="hint">Ticked people are left out of Team Performance (for example the owner or a driver).</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px">${ppl.map((m) => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-tphide="${esc(m.uid)}" ${c.hidden.includes(m.uid) ? "checked" : ""}>${esc(RB.first(m.name))}</label>`).join("")}</div>
+      <button class="btnp edit-only" id="tpsave" style="margin-top:14px">Save</button>
+      <div class="tp-box" style="margin-top:14px"><b>How the numbers work</b><div class="hint" style="line-height:1.6;margin-top:4px">· <b>On time %</b> = done on time ÷ (on time + late + overdue + not scheduled). The first due date counts; moving a date later doesn't reset it. Late with an outside reason (material, payment, client) counts nowhere.<br>· Tasks given by a manager use their current deadline, because only the giver or a manager can change it.<br>· <b>Dossier %</b> = ticked ÷ due over the days. Today never pulls it down until the day ends. No dossier counts as 0.<br>· <b>Score</b> = both together by the weights above; the rank always follows the score.<br>· The week starts on Saturday. Weekly off days come from each person's timetable, holidays from Settings › Holidays.</div></div></div>`;
+  }
   RB.sections.settings = {
     tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
     render(tab) {
@@ -33,7 +51,8 @@
       } else if (tab === "docs") {
         const days = (D.cfg && D.cfg.readingDays) || 7;
         html = `<div class="card" style="max-width:560px"><h3>Reading list deadline</h3><div class="rrow"><span class="n">New people finish their reading in</span><input class="num" type="number" min="1" max="60" id="rdays" value="${days}"> days</div><button class="btnp edit-only" id="rsave" style="margin-top:12px">Save</button><div class="foot">Counted from the day he starts in the seat. The phone reminds him before it.</div></div>`;
-      } else { S.settingsTab = tab; html = RB.meet.html("settings"); }
+      } else if (tab === "perf") html = perfHtml();
+      else { S.settingsTab = tab; html = RB.meet.html("settings"); }
       return { html, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root) {
@@ -56,7 +75,19 @@
         hsave({ dates }, "Holiday added: " + d + (name ? " (" + name + ")" : ""));
       };
       root.querySelectorAll("[data-hdel]").forEach((b) => (b.onclick = () => { const d = b.dataset.hdel; hsave({ dates: ((D.holidays && D.holidays.dates) || []).filter((h) => h.d !== d) }, "Holiday removed: " + d); }));
-      if (!["log", "docs", "updates", "look", "holidays"].includes(S.tab.settings)) RB.meet.bind(root);
+      const ps = root.querySelector("#tpsave");
+      if (ps) ps.onclick = async () => {
+        const v = (id, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(root.querySelector(id).value)) || 0));
+        const show = {}; root.querySelectorAll("[data-tpshow]").forEach((b) => { const [k, i] = b.dataset.tpshow.split(":"); (show[k] = show[k] || [])[Number(i)] = b.checked; });
+        const perf = { wOn: v("#tpwon", 0, 100), wDos: v("#tpwdos", 0, 100), grace: v("#tpgrace", 1, 60), older: v("#tpolder", 1, 60), movedN: v("#tpmoved", 1, 20), redBelow: v("#tpred", 0, 100), weakDay: v("#tpweak", 0, 100),
+          weeks: v("#tpweeks", 4, 26), oldOverN: v("#tpoldn", 1, 20), needsN: v("#tpneedn", 1, 20), period: root.querySelector("#tpperiod").value, show,
+          hidden: [...root.querySelectorAll("[data-tphide]")].filter((b) => b.checked).map((b) => b.dataset.tphide) };
+        if (perf.wOn + perf.wDos === 0) return RB.alertBox("At least one weight must be more than 0.");
+        await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { perf }));
+        await RB.log("Team Performance settings changed");
+        RB.alertBox("Saved. Team Performance uses the new numbers now.");
+      };
+      if (!["log", "docs", "updates", "look", "holidays", "perf"].includes(S.tab.settings)) RB.meet.bind(root);
     },
   };
 })();

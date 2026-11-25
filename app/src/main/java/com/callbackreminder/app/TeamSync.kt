@@ -772,9 +772,50 @@ object TeamSync {
                 "afterReview" to d.afterReview,
             )
         }
+        // v0.59 Team Performance on the website: every open follow-up and the done ones of the last 9 weeks (with their
+        // moves), the Google meetings of last week to two weeks ahead, and each Dossier day of the last 9 weeks.
+        val now = System.currentTimeMillis()
+        val keepFrom = now - 63 * 86_400_000L
+        val fuAll = ReminderStore.items.value
+            .filter { !it.done || it.doneAt >= keepFrom }
+            .sortedByDescending { it.dueAt }
+            .take(400)
+            .map { r ->
+                mapOf(
+                    "id" to r.id.toString(), "title" to r.note.ifBlank { "Call back" }, "name" to r.title, "created" to r.createdAt,
+                    "due" to r.dueAt, "first" to (r.delays.firstOrNull()?.wasDue ?: r.dueAt), "done" to r.done, "doneAt" to r.doneAt,
+                    "star" to r.starred,
+                    "moves" to r.delays.map { d -> mapOf("at" to d.at, "from" to d.wasDue, "to" to d.newDue, "r" to d.reason) },
+                    "events" to r.events.takeLast(20).map { e -> mapOf("at" to e.at, "text" to e.label, "note" to e.note) },
+                )
+            }
+        val googleWeek = (0..20).flatMap { i -> GoogleCal.events(c, today.minusDays(7).plusDays(i.toLong())).filter { !it.allDay } }
+            .distinctBy { it.id to it.start }
+            .take(200)
+            .map { e -> mapOf("title" to e.title, "start" to e.start, "end" to e.end) }
+        val dosDays = (0..62).mapNotNull { back ->
+            val d = open.minusDays(back.toLong())
+            val on = DossierStore.tasks.value.filter { it.isOn(d) }.sortedBy { it.minute }
+            if (on.isEmpty()) return@mapNotNull null
+            mapOf(
+                "d" to d.toString(),
+                "i" to on.map { t ->
+                    val rec = DossierStore.record(t.id, d)
+                    mapOf(
+                        "t" to t.title, "m" to t.minute, "e" to t.endMinute,
+                        "s" to (if (rec?.done == true) "D" else if (Dossier.isLocked(d, now)) "M" else "O"),
+                        "at" to (rec?.doneAt ?: 0L), "r" to (rec?.reason ?: ""),
+                        "p" to TeamDossier.sent(c, t.id, d, TeamDossier.PHOTO),
+                    )
+                },
+            )
+        }
         return mapOf(
             "managers" to managers,
             "updatedAt" to System.currentTimeMillis(),
+            "fuAll" to fuAll,
+            "googleWeek" to googleWeek,
+            "dosDays" to dosDays,
             "tasks" to tasks,
             "followUps" to fus,
             "google" to google,

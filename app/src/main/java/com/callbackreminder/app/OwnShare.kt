@@ -75,6 +75,8 @@ object OwnShare {
         "person" to t.personTitle,
         "createdAt" to t.createdAt,
         "dueAt" to t.dueAt,
+        // v0.59 the block's length, for the website's Team Performance calendar.
+        "durationMin" to t.length,
         "firstDueAt" to (t.firstDueAt.takeIf { it > 0L } ?: t.dueAt),
         "moves" to t.moves,
         "done" to t.done,

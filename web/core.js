@@ -57,11 +57,11 @@
     ["callRec", "Call recording", "Stays on his phone", false],
     ["seeMoney", "See money details", "Plot files: cheques, amounts, discounts and PCC dues. Only you can turn it on", false],
   ];
-  RB.SECTIONS = [["app", "App view"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];
+  RB.SECTIONS = [["app", "Team Performance"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
   /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
   RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["timetables", "Timetables"]];
-  RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"]];
+  RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"], ["perf", "Team Performance"]];
   RB.SCOPES = [["own", "Own only"], ["team", "Own + team below"], ["all", "Whole RB"]];
   const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", plot: "none", settingsTabs: [] };
   /** Access checks made before this moment do not count: the new settings (how far, tab ticks) need one look from the owner. */

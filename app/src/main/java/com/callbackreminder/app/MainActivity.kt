@@ -172,6 +172,9 @@ class MainActivity : ComponentActivity() {
                 MeetingShareNotice()
                 // v0.51 "✓ Saved · View · Edit" after a new task or follow-up.
                 SavedChipHost()
+                // v0.59 A newer version is out: the whole app waits behind "Update required" until it is installed.
+                val mustUpdate by AppUpdate.required.collectAsState()
+                mustUpdate?.let { UpdateRequiredScreen(it) }
               }
             }
         }
@@ -369,6 +372,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         TeamRepo.onForeground(this, true)
         resumeTick.intValue = resumeTick.intValue + 1
+        AppUpdate.checkOnOpen(this)
     }
 }
 
