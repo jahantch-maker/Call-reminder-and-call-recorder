@@ -17,6 +17,8 @@ service cloud.firestore {
     function portalEdit(t, sec) { return isActive(t) && (isOwner(t) || lvl(t, sec) == 'edit'); }
     function portalSee(t, sec) { return isActive(t) && (isOwner(t) || lvl(t, sec) in ['view', 'edit']); }
     function appSw(t, k) { return member(t).get('perms', {}).get('app', {}).get(k, false) == true; }
+    // v0.59.1 Team Performance with "how far" = everyone (an auditor, a GM outside the chart): reads everyone's phone data, view only.
+    function seesAll(t) { return isActive(t) && lvl(t, 'app') != 'none' && member(t).get('perms', {}).get('portal', {}).get('appScope', 'own') == 'all'; }
     function otherMember(t, u) { return get(/databases/$(database)/documents/teams/$(t)/members/$(u)).data; }
 
     // Join codes: anyone signed in can look one up; made once with the team.
@@ -132,7 +134,7 @@ service cloud.firestore {
       // Team tasks: seen by the giver, the person it is for, and everyone above either of them.
       match /tasks/{task} {
         // v0.48 the owner also reads every task, for the team meeting web app.
-        allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t));
+        allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t) || seesAll(t));
         allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
         allow update: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t))
           && request.resource.data.fromUid == resource.data.fromUid
@@ -150,7 +152,7 @@ service cloud.firestore {
         // Timeline talk: text, voice notes and photos, seen by the same people as the task.
         // Only the sender writes a message; anyone who sees it may clear old media (after 90 days).
         match /msgs/{m} {
-          allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t));
+          allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t) || seesAll(t));
           allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
           allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
             && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text'])
@@ -190,7 +192,7 @@ service cloud.firestore {
       // "Sets Dossier of people under him" and the member himself with "Adds his own Dossier", but they can only
       // add blocks (never remove one): only the Owner deletes.
       match /dossier/{uid} {
-        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || me() in resource.data.viewers);
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || seesAll(t) || me() in resource.data.viewers);
         allow write: if signedIn() && isActive(t) && (isOwner(t) || (
           ((uid == me() && member(t).get('ownDossier', false) == true) ||
            (member(t).get('setDossier', false) == true &&
@@ -209,7 +211,7 @@ service cloud.firestore {
       match /own/{uid}/tasks/{task} {
         allow write: if signedIn() && uid == me() && isActive(t);
         // v0.49 and the people above him, when they have App view access in the portal.
-        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || (lvl(t, 'app') != 'none' && me() in otherMember(t, uid).get('managers', [])));
+        allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || seesAll(t) || (lvl(t, 'app') != 'none' && me() in otherMember(t, uid).get('managers', [])));
       }
 
       // v0.48 Late reasons, red lines and meeting steps: the owner sets them in the web app; every member reads them.
@@ -232,7 +234,7 @@ service cloud.firestore {
       // Each person's day (tasks, follow-ups, dossier ticks; 🔒 private ones only counted), for the people above.
       match /days/{uid} {
         allow write: if signedIn() && uid == me() && isActive(t);
-        allow read: if signedIn() && isActive(t) && (uid == me() || me() in resource.data.managers);
+        allow read: if signedIn() && isActive(t) && (uid == me() || me() in resource.data.managers || isOwner(t) || seesAll(t));
       }
     }
   }

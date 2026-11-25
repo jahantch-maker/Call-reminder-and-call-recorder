@@ -416,6 +416,7 @@
     root.querySelector("#pfphoto").onchange = async (e) => { const file = e.target.files[0]; if (!file) return; try { go(await shrink(file)); } catch (x) { err.textContent = x.message; } };
   }
 
+  RB.photoView = viewer;   // Team Performance Timeline opens photos in the same viewer
   function bindVoice(root) {
     root.querySelectorAll("[data-pfvoice]").forEach((v) => {
       const m = Object.values(M).flat().find((x) => x.id === v.dataset.pfvoice); if (!m) return;
