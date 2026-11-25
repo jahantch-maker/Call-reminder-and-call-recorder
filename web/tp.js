@@ -93,8 +93,8 @@
     const now = Date.now(), c = T.cfg(), p = period(), all = T.board(p, now), rows = all.filter((r) => matchQ(r.m));
     rows.forEach((r) => (r.tr = T.trend(r.uid, now, c.weeks)));
     if (S.tpSel && !all.some((r) => r.uid === S.tpSel)) S.tpSel = null;
-    const head = `<div class="subhead tp-head"><div class="tp-hint">${S.tpSel ? "Esc or Close to go back to the table" : "Click a person to open their report · click a heading to sort"}</div><div class="sp"></div>${periodChips(p, "tpper")}</div>`;
-    if (S.tpSel) return { html: head + report(all, now, p) };
+    const tabsExtra = periodChips(p, "tpper");   // the period chips sit in the page tab row (shell.js tabsExtra)
+    if (S.tpSel) return { html: report(all, now, p), tabsExtra };
     // cards: this period, with the change since the period before
     const [pa, pb] = T.prevRange(p, now), prev = sumFacts(T.people().map((m) => ({ f: T.facts(m.uid, pa, pb, pb) }))), cur = sumFacts(all);
     const tot = cur.onTime + cur.late + cur.overdue + cur.uns, ptot = prev.onTime + prev.late + prev.overdue + prev.uns;
@@ -102,9 +102,8 @@
     const onP = tot ? Math.round((cur.onTime / tot) * 100) : 0, onPp = ptot ? Math.round((prev.onTime / ptot) * 100) : 0;
     const kpi = (lbl, n, cls, sub) => `<div class="tp-kpi ${cls}"><i>${lbl}</i><b>${n}</b><i>${sub}</i></div>`;
     const teamTr = Array.from({ length: c.weeks }, (_, i) => T.avg(all.map((r) => (T.trend(r.uid, now, c.weeks)[i]))));
-    const teamNow = teamTr.filter((x) => x != null).pop();
-    const cards = `<div class="card tp-cwrap"><div class="tp-cards">${kpi("Overdue now", cur.overdue, "r", "past first due date " + ch(cur.overdue, prev.overdue, false))}${kpi("Done on time", cur.onTime, "g", onP + "% of all counted " + ch(onP, onPp, true, true))}${kpi("Done late", cur.late, "a", "after first due date " + ch(cur.late, prev.late, false))}${kpi("Not scheduled", cur.uns, "n", "no date, over " + c.grace + " days")}
-      <div class="tp-kpi chart b"><span class="tp-ktxt"><i>Team score</i><b>${pc(teamNow == null ? null : Math.round(teamNow))}</b><i>last ${c.weeks} weeks</i></span><span class="tp-kspark">${line(300, 46, teamTr, [], "#1F3A93", { fill: 1 })}</span></div></div></div>`;
+    const cards = `<div class="card tp-cwrap tp-split"><div class="tp-cards two">${kpi("Overdue now", cur.overdue, "r", "past first due date " + ch(cur.overdue, prev.overdue, false))}${kpi("Done on time", cur.onTime, "g", onP + "% of all counted " + ch(onP, onPp, true, true))}${kpi("Done late", cur.late, "a", "after first due date " + ch(cur.late, prev.late, false))}${kpi("Not scheduled", cur.uns, "n", "no date, over " + c.grace + " days")}</div>
+      <div class="tp-kpi chart"><i>Team score · last ${c.weeks} weeks</i>${line(460, 128, teamTr, wkLabels(c.weeks, now), "#1F3A93", { axis: 1, fill: 1 })}</div></div>`;
     // the table
     const [k, dir] = S.tpSort;
     const val = { name: (r) => first(r.m.name).toLowerCase(), on: (r) => r.f.on, over: (r) => r.f.overdue, uns: (r) => r.f.uns, moved: (r) => r.f.moved, dos: (r) => r.dos, score: (r) => r.score }[k] || ((r) => r.score);
@@ -123,7 +122,7 @@
         <span class="tp-c tp-sc"><b class="${red ? "low" : ""}">${pc(r.score)}</b>${rk(r.rank)}</span>${showTr ? `<span class="tp-spark">${line(64, 24, r.tr, [], r.tr[r.tr.length - 1] >= r.tr[0] ? "#1F3A93" : "#D64545")}${arrow(r.tr)}</span>` : ""}</button>`;
     }).join("");
     const table = `<div class="card tp-tcard${S._tpAnim === "close" ? " back" : ""}"><div class="tp-scroll"><div class="tp-table">${band}${hdr}${body || '<div class="muted" style="padding:12px">No people to show.</div>'}</div></div>
-      <div class="tp-hint tp-foot">Score = Tasks on time % × ${c.wOn}% + Dossier % × ${c.wDos}% · rank always follows Score · number on top = dossier tasks done that day · day letters skip each person's weekly off day (from their timetable)</div></div>`;
+      <div class="tp-hint tp-foot">Click a person to open their report · click a heading to sort · Score = Tasks on time % × ${c.wOn}% + Dossier % × ${c.wDos}% · rank always follows Score · number on top = dossier tasks done that day · day letters skip each person's weekly off day (from their timetable)</div></div>`;
     // oldest overdue (+ needs help, off unless switched on in Settings)
     let bottom = "";
     if (c.show.oldOver[0]) {
@@ -137,7 +136,7 @@
       const low = all.filter((r) => r.score != null).sort((a, b) => a.score - b.score).slice(0, c.needsN);
       bottom += `<div class="card tp-needs"><div class="tp-ct">Needs help · ${esc(pName(p).toLowerCase())}</div>${low.map((r) => `<button class="tp-li" data-tpsel="${esc(r.uid)}"><b>${esc(first(r.m.name))}</b><span class="low">${pc(r.f.on)} on time · ${r.f.overdue} overdue · ${r.f.uns} not scheduled</span></button>`).join("")}</div>`;
     }
-    return { html: head + cards + table + (bottom ? `<div class="tp-bottom">${bottom}</div>` : "") };
+    return { html: cards + table + (bottom ? `<div class="tp-bottom">${bottom}</div>` : ""), tabsExtra };
   }
 
   // ------------------------------------------------------------------ the person report (Overview, after a click)
@@ -171,7 +170,7 @@
         ${cur.length > 3 ? `<button class="tp-more" data-tpallold="1">${S.tpAllOld ? "Show less" : "Show all " + cur.length + " ›"}</button>` : ""}</div>`);
     }
     return `<div class="tp-rep${anim ? " in" : ""}"><div class="card tp-plist">${list}</div>
-      <div class="card tp-panel"><div class="tp-ph">${av(m, true)}<b>${esc(first(m.name))}</b>${rk(r.rank)}<span class="tp-hint">of ${all.length} · ${esc(pName(p).toLowerCase())}</span><div class="sp"></div><button class="btnp" data-tpopen="${esc(r.uid)}">Open tasks ›</button><button class="btnt" data-tpclose="1">✕ Close</button></div>
+      <div class="card tp-panel"><div class="tp-ph">${av(m, true)}<b>${esc(first(m.name))}</b>${rk(r.rank)}<span class="tp-hint">of ${all.length} · ${esc(pName(p).toLowerCase())}</span><div class="sp"></div><button class="btnp" data-tpopen="${esc(r.uid)}">Open tasks ›</button><button class="btnt" data-tpclose="1" title="Esc also closes">✕ Close</button></div>
       <div class="tp-cards four">${kpi("Score", pc(r.score), "b", "on time " + pc(r.f.on) + " · dossier " + pc(r.dos))}${kpi("Overdue now", r.f.overdue, "r", "team avg " + avgOver)}${kpi("Not scheduled", r.f.uns, "n", "older than " + c.grace + " days")}${kpi("Moved " + c.movedN + "+", r.f.moved, "a", "tasks")}</div>
       ${parts.join("")}${lower.length ? `<div class="tp-two">${lower.join("")}</div>` : ""}</div></div>`;
   }
@@ -407,9 +406,10 @@
         sp.onclick = (ev) => { ev.stopPropagation(); a.playbackRate = R[(R.indexOf(a.playbackRate) + 1) % R.length]; sp.textContent = a.playbackRate + "x"; };
       });
       root.querySelectorAll("[data-tpimg]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); const m = findMsg(b.dataset.tpimg); if (m && RB.photoView) RB.photoView("data:image/jpeg;base64," + b64(m.data)); }));
+      const tx = document.querySelector(".tabx");   // the period chips live in the shell tab row, outside root
       root.onclick = (ev) => {
         const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday],[data-tpeditdos]");
-        if (!e || !root.contains(e)) return;
+        if (!e || !(root.contains(e) || (tx && tx.contains(e)))) return;
         const ds = e.dataset;
         if (ds.tpper) S.tpPeriod = ds.tpper;
         else if (ds.tpsort) S.tpSort = S.tpSort[0] === ds.tpsort ? [ds.tpsort, -S.tpSort[1]] : [ds.tpsort, ds.tpsort === "name" ? 1 : -1];
@@ -433,6 +433,7 @@
         ev.preventDefault();
         RB.render();
       };
+      if (tx) tx.onclick = root.onclick;
     },
   };
   // Esc closes the person report (when no window is open on top).

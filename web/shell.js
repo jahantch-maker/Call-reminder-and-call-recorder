@@ -88,7 +88,7 @@
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
           <label class="srch"><span>⌕</span><input id="gq" placeholder="Search" value="${esc(S.q)}" autocomplete="off"></label><button class="bell" id="bell" title="Notices">🔔${noticeCount() ? `<b class="bd">${noticeCount()}</b>` : ""}</button></div>
         ${running}
-        <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div>
+        <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}${page.tabsExtra ? `<span class="tabx">${page.tabsExtra}</span>` : ""}</div>
         <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
     if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
