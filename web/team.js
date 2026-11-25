@@ -660,14 +660,15 @@
 
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.concat([["access", "Access"]]).filter((t) => ok.includes(t[0])); },
+    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.filter((t) => ok.includes(t[0])).concat(RB.isOwner() ? [["dossier", "Dossier"]] : []).concat(ok.includes("access") ? [["access", "Access"]] : []); },
     render(tab) {
       RB.reconcile();
-      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "timetables" ? timetables() : people();
+      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "timetables" ? timetables() : tab === "dossier" ? RB.dossierEd.page() : people();
       p.title = "Team"; p.sub = tab === "access" ? "Changes reach the phone in a few seconds · off buttons are hidden" : "Seats, chart, designations and access";
       return p;
     },
     bind(root, side) {
+      if (S.tab.team === "dossier") return RB.dossierEd.bind(root, side);
       const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); fn(e, ev); }));
       const both = (sel, fn) => { on(root, sel, fn); on(side, sel, fn); };
       on(root, "[data-seat]", (e) => {

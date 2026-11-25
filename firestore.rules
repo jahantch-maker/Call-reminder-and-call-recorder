@@ -188,17 +188,14 @@ service cloud.firestore {
         }
       }
 
-      // Each member's Dossier: he and the people above him read it. The Owner sets it; so do a senior with
-      // "Sets Dossier of people under him" and the member himself with "Adds his own Dossier", but they can only
-      // add blocks (never remove one): only the Owner deletes.
+      // Each member's Dossier: he and the people above him read it. Locked 25 Nov: only the Owner sets dossiers (web Team ›
+      // Dossier). His own phone only writes "seen" (he tapped OK on a new or changed task) and, once on update day, "oldOwn"
+      // (the list of the dossier he had made himself, so the owner can re-add the real ones).
       match /dossier/{uid} {
         allow read: if signedIn() && isActive(t) && (uid == me() || isOwner(t) || seesAll(t) || me() in resource.data.viewers);
-        allow write: if signedIn() && isActive(t) && (isOwner(t) || (
-          ((uid == me() && member(t).get('ownDossier', false) == true) ||
-           (member(t).get('setDossier', false) == true &&
-            me() in get(/databases/$(database)/documents/teams/$(t)/members/$(uid)).data.get('managers', []))) &&
-          request.resource != null &&
-          (resource == null || request.resource.data.blocks.size() >= resource.data.blocks.size())));
+        allow write: if signedIn() && isActive(t) && isOwner(t);
+        allow create: if signedIn() && isActive(t) && uid == me() && request.resource.data.keys().hasOnly(['seen', 'oldOwn', 'viewers']);
+        allow update: if signedIn() && isActive(t) && uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen', 'oldOwn']);
       }
 
       // 📷 Dossier photo proofs and "why not done" voice notes: written by him, read by the people above him.
@@ -215,12 +212,12 @@ service cloud.firestore {
       }
 
       // v0.48 Late reasons, red lines and meeting steps: the owner sets them in the web app; every member reads them.
-      // v0.49 designations: Team editors; reasons: Settings editors or a person with "Edit late-reason list"; the rest: Settings editors.
+      // v0.49 designations: Team editors; reasons: Settings editors (locked 25 Nov: the reason list is edited on the web only); the rest: Settings editors.
       match /config/{doc} {
         allow read: if signedIn() && isActive(t);
         allow write: if signedIn() && isActive(t) && (isOwner(t)
           || (doc == 'designations' && lvl(t, 'team') == 'edit')
-          || (doc == 'reasons' && (lvl(t, 'settings') == 'edit' || appSw(t, 'editReasons')))
+          || (doc == 'reasons' && lvl(t, 'settings') == 'edit')
           || (doc == 'meeting' && lvl(t, 'settings') == 'edit'));
         // config/plotsteps (Plot files rules and timing) is written by the owner only (isOwner above).
       }

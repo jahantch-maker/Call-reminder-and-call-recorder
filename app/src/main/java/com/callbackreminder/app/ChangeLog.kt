@@ -29,6 +29,18 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.60.0", "25 Nov",
+            new = listOf(
+                "Dossier is now set on the website by the owner. On your phone you only see it and tick it (with photo proof, a reason if not done, and the star)",
+                "When a dossier task is added, changed or removed for you, you get a notification and a card at the top of My tasks until you tap OK. Tasks you have not seen are marked NEW for the rest of the day",
+                "Dossier tasks always show in time order, earliest first",
+                "The list of late reasons is now edited on the website only. You still pick a reason on your phone as before",
+            ),
+            fixed = listOf(
+                "Dossier tasks you made yourself and ones added on the phone by a manager were cleared on this update. The owner re-adds the real ones on the website",
+            ),
+        ),
+        Entry(
             "0.59.1", "25 Nov",
             new = listOf(
                 "The website's Team Performance page now also shows the owner's day, and follow-ups that have no time yet",

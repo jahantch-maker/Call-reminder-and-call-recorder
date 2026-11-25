@@ -149,14 +149,14 @@
   function noticeList() {
     const out = [], now = Date.now();
     D.docs.filter((d) => d.type === "sop" && d.reviewBy && d.reviewBy < now && (RB.isOwner() || RB.canEdit("docs"))).forEach((d) => out.push(["docs", "sops", "Review due: " + d.title, "The review date has passed"]));
-    return out;
+    return (RB.holNotices ? RB.holNotices() : []).concat(out);
   }
   const noticeCount = () => noticeList().length;
   function notices() {
     const l = noticeList(), m = document.getElementById("modal");
-    m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">Notices</b>${l.length ? l.map((n, i) => `<div class="arow click" data-n="${i}"><span class="w">${esc(n[2])}<span>${esc(n[3])}</span></span><span class="link">Open ›</span></div>`).join("") : '<div class="muted" style="margin:12px 0">Nothing needs you right now.</div>'}<div style="text-align:right;margin-top:12px"><button class="btnp" id="ok">Close</button></div></div></div>`;
+    m.innerHTML = `<div class="back"><div class="dlg"><b style="font-size:19px">Notices</b>${l.length ? l.map((n, i) => `<div class="arow click" data-n="${i}"><span class="w">${esc(n[2])}<span>${esc(n[3])}</span></span><span class="link">${n[4] ? "Review and add ›" : "Open ›"}</span></div>`).join("") : '<div class="muted" style="margin:12px 0">Nothing needs you right now.</div>'}<div style="text-align:right;margin-top:12px"><button class="btnp" id="ok">Close</button></div></div></div>`;
     document.getElementById("ok").onclick = () => (m.innerHTML = "");
-    m.querySelectorAll("[data-n]").forEach((e) => (e.onclick = () => { const n = l[Number(e.dataset.n)]; m.innerHTML = ""; if (n[0] === "docs") { S.tab.docs = n[1]; } RB.go(n[0]); }));
+    m.querySelectorAll("[data-n]").forEach((e) => (e.onclick = () => { const n = l[Number(e.dataset.n)]; m.innerHTML = ""; if (n[4]) return n[4](); RB.go(n[0], n[1]); }));
   }
 
   // ------------------------------------------------------------------ dialogs for all pages

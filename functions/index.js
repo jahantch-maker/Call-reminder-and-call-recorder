@@ -9,7 +9,7 @@
  * New task ids are fixed by what caused them, so a retry or two steps finishing at once never make the same task twice.
  * Nothing of the SOP is in this code.
  */
-const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
@@ -162,5 +162,43 @@ exports.plotNext = onDocumentUpdated({ document: "teams/{team}/tasks/{task}", re
     const to = doerOf(ns.role);
     if (!to) { await note(`⚠ Step ${ns.id} not given: nobody has the designation ${ns.role}. Add it on the web in Team.`); continue; }
     await give(`pf_${ns.id}_${need.sort().join("_")}`.slice(0, 1400), ns, to, { event: `Opened when ${after.step} was Done by ${after.toName || after.role}` });
+  }
+});
+
+// ------------------------------------------------------------------ Import Pakistan holidays (web Settings › Holidays)
+// The browser can't read Google's calendar itself, so the web writes config/holimport { year, askedAt } and this reads
+// Google's public Pakistan holidays calendar and writes back { found: [{ d, name, moon, optional }], doneAt } (or error).
+// Nothing is added to the holiday list here: the owner ticks and adds on the web.
+const PK_ICS = "https://calendar.google.com/calendar/ical/en.pk%23holiday%40group.v.calendar.google.com/public/basic.ics";
+const MOON = /eid|ashura|muharram|milad|rabi|shab|ramadan|ramzan|islamic|hijri|isra|mi'?raj|qadr/i;
+/** Plain iCalendar text -> [{ d: "YYYY-MM-DD", name, optional }]. Long lines are folded with a leading space. */
+function parseIcs(text) {
+  const lines = String(text).replace(/\r?\n[ \t]/g, "").split(/\r?\n/), out = [];
+  let ev = null;
+  for (const l of lines) {
+    if (l === "BEGIN:VEVENT") ev = {};
+    else if (l === "END:VEVENT") { if (ev && ev.d && ev.name) out.push(ev); ev = null; }
+    else if (ev) {
+      const k = l.slice(0, l.indexOf(":")), v = l.slice(l.indexOf(":") + 1);
+      if (k.startsWith("DTSTART")) { const m = v.match(/^(\d{4})(\d{2})(\d{2})/); if (m) ev.d = `${m[1]}-${m[2]}-${m[3]}`; }
+      else if (k.startsWith("SUMMARY")) ev.name = v.replace(/\\,/g, ",").replace(/\;/g, ";").trim();
+      else if (k.startsWith("DESCRIPTION")) ev.optional = /observance|optional/i.test(v);
+    }
+  }
+  return out;
+}
+exports.pkHolidays = onDocumentWritten({ document: "teams/{team}/config/holimport", region: "asia-south1" }, async (event) => {
+  const a = event.data.after.exists ? event.data.after.data() : null;
+  if (!a || !a.askedAt || (a.doneAt || 0) >= a.askedAt) return;
+  const year = String(a.year || ""), ref = event.data.after.ref;
+  try {
+    const res = await fetch(PK_ICS);
+    if (!res.ok) throw new Error("Google calendar answered " + res.status);
+    const found = parseIcs(await res.text()).filter((h) => h.d.startsWith(year + "-"))
+      .map((h) => ({ d: h.d, name: h.name, moon: MOON.test(h.name), optional: !!h.optional }))
+      .sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
+    await ref.set({ found, error: "", doneAt: Date.now() }, { merge: true });
+  } catch (e) {
+    await ref.set({ found: [], error: String(e.message || e), doneAt: Date.now() }, { merge: true });
   }
 });

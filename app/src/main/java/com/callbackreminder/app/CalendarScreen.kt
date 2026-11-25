@@ -406,7 +406,7 @@ fun CalendarScreen(resumeKey: Int, onOpenSearch: () -> Unit, onOpenSettings: () 
                                 snack.currentSnackbarData?.dismiss()
                                 snack.showSnackbar(
                                     if (b.kind == CalBlock.Kind.GOOGLE) "Google events are read only. Change them in Google Calendar."
-                                    else if (b.kind == CalBlock.Kind.DOSSIER) "Dossier blocks are fixed. Tap it › Change times."
+                                    else if (b.kind == CalBlock.Kind.DOSSIER) if (TeamDossier.webOnly()) "Dossier tasks are set on the website." else "Dossier blocks are fixed. Tap it › Change times."
                                     else "Done tasks don't move."
                                 )
                             }
@@ -1646,12 +1646,12 @@ private fun BlockActions(
                                 shape = RoundedCornerShape(14.dp)
                             ) { Text(if (b.done) "Untick" else "✓ Done") }
                         }
-                        OutlinedButton(onClick = onEditDossier, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                        if (!TeamDossier.webOnly() && !TeamDossier.isTeam(LocalContext.current, b.id)) OutlinedButton(onClick = onEditDossier, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
                             Text("Change times")
                         }
                     }
                     Text(
-                        "Dossier blocks are fixed. Change their Start and End in the Dossier task.",
+                        if (TeamDossier.webOnly()) "Dossier tasks are set on the website." else "Dossier blocks are fixed. Change their Start and End in the Dossier task.",
                         fontSize = 12.sp,
                         color = cs.onSurfaceVariant
                     )

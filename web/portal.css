@@ -309,3 +309,49 @@ html[data-theme="dark"] .ttp,html[data-theme="dark"] .ttck,html[data-theme="dark
 .chk label{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:13px;background:#F1F1EF;border:1.5px solid transparent;cursor:pointer}
 .chk label:has(input:checked){background:#EEF3FB;border-color:#1F3A93;font-weight:600}
 html[data-theme="dark"] .chk label{background:#2A2B2F}html[data-theme="dark"] .chk label:has(input:checked){background:#1F2A44;border-color:#8FA8E8}
+
+/* ---------- Team › Dossier (owner sets each person's dossier, locked 25 Nov) ---------- */
+.dz-hd{display:flex;align-items:center;gap:10px}.dz-hd h3{margin:0}
+.dz-colh,.dz-row{display:grid;grid-template-columns:150px minmax(0,1fr) 200px 140px 140px;gap:12px;align-items:center}
+.dz-colh{padding:12px 17px 0;font-size:11px;font-weight:700;color:var(--onv);letter-spacing:.5px}
+.dz-row{background:#EEF3FB;border-left:3px solid #1F3A93;border-radius:12px;padding:10px 14px;margin-top:8px}
+.dz-row.sel{background:#DCE6F8}
+.dz-row .tm,.dz-orow .tm{font-weight:800;font-size:14px}.dz-row .ti{min-width:0}.dz-row .ti b{display:block;font-size:14.5px;overflow-wrap:anywhere}.dz-row .ti small{display:block;color:var(--onv);font-size:12px;overflow-wrap:anywhere}
+.dz-tags{display:flex;flex-wrap:wrap;gap:4px}.dz-row .ti .dz-tags{display:none;margin-top:4px}
+.dz-tag{font-size:11.5px;font-weight:600;background:#fff;border-radius:9px;padding:2px 8px;color:#3A3D44;white-space:nowrap}
+.dz-st{font-size:12px;font-weight:700}.dz-st.ok{color:#2E9E5B}.dz-st.wait{color:#B36B00}
+.dz-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.dz-del{color:#C62828}
+.tp-rk.dz-ns{background:#FFF3D6;color:#B36B00}.dz-nsl{color:#B36B00}
+.dz-old{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FFF3D6;border-left:3px solid #E8A33D;border-radius:12px;padding:10px 14px;margin-top:14px;font-size:13.5px}.dz-old .t{flex:1;min-width:200px}
+.dz-olist{background:#FFFAEE;border-radius:12px;padding:4px 12px 8px;margin-top:4px}
+.dz-orow{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #F1E6CC;font-size:13.5px}.dz-orow:last-child{border-bottom:0}
+/* With the side panel open the list gets narrow: extras move under the title, Delete stays in the row's Edit. */
+.dz.narrow .dz-colh,.dz.narrow .dz-row{grid-template-columns:118px minmax(0,1fr) 112px 64px}
+.dz.narrow .dz-wide,.dz.narrow .dz-del{display:none}.dz.narrow .dz-row .ti .dz-tags{display:flex}
+.dz-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+.dz-chip{padding:6px 12px;border-radius:16px;background:#fff;border:1px solid #DADCE0;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--on)}.dz-chip.on{background:#1B1C1F;color:#fff;border-color:#1B1C1F}
+.dz-chip.dz-free{background:#E3ECFA;color:#1F3A93;border-color:#E3ECFA}
+.dz-step{display:flex;align-items:center;gap:12px;margin:6px 0}
+.dz-sw{display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:9px 12px;margin-top:6px;cursor:pointer}.dz-sw .w{flex:1;min-width:0}.dz-sw b{display:block;font-size:13.5px}.dz-sw small{font-size:11.5px;color:var(--onv)}
+.dz-tg{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:11px;background:#C9CACD;position:relative;flex:none;cursor:pointer;margin:0;transition:background .15s}
+.dz-tg:after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+.dz-tg:checked{background:#1F3A93}.dz-tg:checked:after{transform:translateX(16px)}.dz-tg:focus-visible{outline:2px solid #1F3A93;outline-offset:2px}
+.dz-note{background:#EEF3FB;border-radius:10px;padding:8px 10px;font-size:12px;color:#1F3A93;margin-top:10px}
+@media (max-width:900px){.dz-colh{display:none}.dz-row,.dz.narrow .dz-row{grid-template-columns:minmax(0,1fr) auto}.dz-row .tm{grid-column:1/-1}.dz-row .dz-wide{display:none}.dz-row .ti .dz-tags{display:flex}.dz-orow{grid-template-columns:minmax(0,1fr) auto}.dz-orow .tm{grid-column:1/-1}}
+html[data-theme="dark"] .dz-row{background:#1E2A44}html[data-theme="dark"] .dz-row.sel{background:#263658}html[data-theme="dark"] .dz-tag,html[data-theme="dark"] .dz-sw,html[data-theme="dark"] .dz-chip{background:#2A2C31;color:#F2F2F0;border-color:#3A3C42}
+html[data-theme="dark"] .dz-chip.on{background:#F2F2F0;color:#1B1C1F}html[data-theme="dark"] .dz-old,html[data-theme="dark"] .hz-bar{background:#4A3A12;color:#F2CC72}html[data-theme="dark"] .dz-olist{background:#33290E}html[data-theme="dark"] .dz-note{background:#1E2A44;color:#AFC3F0}
+
+/* ---------- Settings › Holidays (import, moon dates, locked 25 Nov) ---------- */
+.hz-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FFF3D6;border-left:3px solid #E8A33D;border-radius:12px;padding:10px 14px;margin:12px 0 4px;font-size:13.5px}.hz-bar .t{flex:1;min-width:220px}
+.hz-yh{margin-top:14px;font-weight:800;font-size:12px;color:var(--onv)}
+.hz-row{display:grid;grid-template-columns:110px minmax(0,1fr) auto auto;gap:10px;align-items:center;background:#EEF3FB;border-left:3px solid #1F3A93;border-radius:12px;padding:9px 12px;margin-top:6px;font-size:13.5px}.hz-row .d{font-weight:800}.hz-row b{overflow-wrap:anywhere}
+.hz-tag{font-size:11.5px;font-weight:700;border-radius:9px;padding:2px 8px;white-space:nowrap;display:inline-block}
+.hz-tag.moon{background:#FFE7B3;color:#8A5300}.hz-tag.ok{background:#DDF3E5;color:#1E7A45}.hz-tag.fri,.hz-tag.opt{background:#ECEDEF;color:#5B5E66}
+.hz-yr{display:flex;gap:6px;margin:8px 0}
+.hz-p{display:grid;grid-template-columns:22px 96px minmax(0,1fr) 22px;gap:8px;align-items:center;background:#fff;border-radius:12px;padding:7px 10px;margin-top:5px;font-size:13px}
+.hz-p.off{opacity:.6}.hz-p .n{min-width:0}.hz-p .n b{display:block;font-size:13.5px;overflow-wrap:anywhere}.hz-p .n .hz-tag{margin:2px 4px 0 0}
+.hz-p .ed{background:none;border:0;color:#1F3A93;font-weight:700;cursor:pointer;padding:0}.hz-p input[type=date]{grid-column:2/4;padding:5px 8px;font-size:12.5px}
+.hz-tk{display:flex;gap:12px;margin:10px 0 2px;font-size:12.5px;font-weight:700}.hz-tk button{background:none;border:0;color:#1F3A93;font:inherit;cursor:pointer;padding:0}.hz-tk span{margin-left:auto;color:var(--onv)}
+.hz-moonnote{background:#FFF3D6;color:#8A5300;border-radius:10px;padding:8px 10px;font-size:12px}
+@media (max-width:600px){.hz-row{grid-template-columns:minmax(0,1fr) auto}.hz-row .d{grid-column:1/-1}}
+html[data-theme="dark"] .hz-row{background:#1E2A44}html[data-theme="dark"] .hz-p{background:#2A2C31}html[data-theme="dark"] .hz-moonnote{background:#4A3A12;color:#F2CC72}

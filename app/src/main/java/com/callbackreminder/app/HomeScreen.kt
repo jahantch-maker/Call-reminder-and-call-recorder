@@ -268,7 +268,7 @@ fun HomeScreen(
         MyTaskDialog(
             existing = null,
             onDismiss = { newTask = false },
-            onSwitchKind = { newTask = false; onOpenMyTasks(MyTasksUi.DOSSIER) },
+            onSwitchKind = { newTask = false; onOpenMyTasks(MyTasksUi.DOSSIER) }.takeUnless { TeamDossier.webOnly() },
         )
     }
 }

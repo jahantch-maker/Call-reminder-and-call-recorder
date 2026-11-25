@@ -273,7 +273,8 @@
   function dossierTab(uid, now) {
     const c = T.cfg(), [a, b] = T.range(S.tpDosPer, now), days = T.dosDays(uid, a, b, now), d = T.dosPct(days);
     const team = T.avg(T.people().map((m) => T.dosPct(T.dosDays(m.uid, a, b, now)).pct));
-    if (!T.hasDossier(uid)) return `<div class="tp-empty">No dossier days from this person's phone yet. They come with app version 0.59 or later.</div>`;
+    const edit = RB.isOwner() ? `<button class="btnt" data-tpeditdos="${esc(uid)}">Edit dossier ›</button>` : "";
+    if (!T.hasDossier(uid)) return `<div class="tp-empty">No dossier days from this person's phone yet. They come with app version 0.59 or later.${edit ? "<br><br>" + edit : ""}</div>`;
     const pick = days.find((x) => x.t === S.tpDosDay) || days.filter((x) => x.items.length && !x.future).slice(-1)[0] || days[0];
     S.tpDosDay = pick ? pick.t : null;
     const n = days.length, w = Math.max(320, n * 58);
@@ -287,7 +288,7 @@
     const miss = {};
     days.forEach((x) => (x.items || []).forEach((i) => { if (i.s === "O") return; miss[i.t] = miss[i.t] || []; miss[i.t].push(i.s === "M"); }));
     const most = Object.entries(miss).filter((e) => e[1].some(Boolean)).sort((p, q) => q[1].filter(Boolean).length - p[1].filter(Boolean).length).slice(0, 6);
-    return `<div class="tp-dhead"><select class="tp-sel" id="tpdosper" aria-label="Period">${T.PERIODS.map(([k, l]) => `<option value="${k}" ${S.tpDosPer === k ? "selected" : ""}>${l}</option>`).join("")}</select><b>${dshort(a)} – ${dshort(T.addDays(b, -1))}</b>
+    return `<div class="tp-dhead">${edit}<select class="tp-sel" id="tpdosper" aria-label="Period">${T.PERIODS.map(([k, l]) => `<option value="${k}" ${S.tpDosPer === k ? "selected" : ""}>${l}</option>`).join("")}</select><b>${dshort(a)} – ${dshort(T.addDays(b, -1))}</b>
       <span class="tp-dpct">Dossier <span class="${d.pct != null && d.pct < c.weakDay ? "low" : ""}">${pc(d.pct)}</span></span><span class="tp-hint">· ${d.done} of ${d.due} done (days so far) · team average ${pc(team)}</span><span class="sp"></span><span class="tp-hint">Red day = under ${c.weakDay}% · weekly off day from the timetable</span></div>
       <div class="tp-dgrid"><div><div class="tp-dbars">${bars}</div>
       ${pick ? `<div class="tp-dsel"><b>${dday(pick.t)}</b><span class="tp-hint"> · ${pick.done} of ${pick.open && !pick.due ? pick.all : pick.due} done · click any day bar to change</span><span class="sp"></span><span class="tp-hint">📷 = proof photo sent</span></div>${its.map(dosItem).join("") || '<div class="tp-empty">No dossier that day.</div>'}` : ""}</div>
@@ -406,13 +407,14 @@
       });
       root.querySelectorAll("[data-tpimg]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); const m = findMsg(b.dataset.tpimg); if (m && RB.photoView) RB.photoView("data:image/jpeg;base64," + b64(m.data)); }));
       root.onclick = (ev) => {
-        const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday]");
+        const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday],[data-tpeditdos]");
         if (!e || !root.contains(e)) return;
         const ds = e.dataset;
         if (ds.tpper) S.tpPeriod = ds.tpper;
         else if (ds.tpsort) S.tpSort = S.tpSort[0] === ds.tpsort ? [ds.tpsort, -S.tpSort[1]] : [ds.tpsort, ds.tpsort === "name" ? 1 : -1];
         else if (ds.tpsel) { if (!S.tpSel) S._tpAnim = "open"; S.tpSel = ds.tpsel; S.tpAllOld = false; }
         else if (ds.tpclose) { S.tpSel = null; S._tpAnim = "close"; }
+        else if (ds.tpeditdos) { S.dosSel = ds.tpeditdos; S.dosEdit = null; RB.go("team", "dossier"); return; }
         else if (ds.tpopen) { S.tpPerson = ds.tpopen; S.tpTab = "all"; S.tpChip = "all"; S.tpSel = null; RB.go("app", "person"); return; }
         else if (ds.tpreptab) { S.tpRepTab = ds.tpreptab; S.tpAllOld = false; }
         else if (ds.tpallold) S.tpAllOld = !S.tpAllOld;
