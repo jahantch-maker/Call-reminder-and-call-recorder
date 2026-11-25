@@ -487,16 +487,7 @@ private fun TeamActive(
     TeamHeading("Team")
     TeamTree(me, members, tasks)
 
-    // v0.50 Only with the portal's "Edit late-reason list" switch (the owner always can).
-    if (me.can("editReasons", false)) {
-        TeamHeading("Late reasons")
-        var editLate by remember { mutableStateOf(false) }
-        TeamCard(onClick = { editLate = true }) {
-            Text("Edit the list of late reasons", fontWeight = FontWeight.SemiBold)
-            Text("The same list the portal shows. Changes reach everyone's phone.", fontSize = 12.sp, color = cs.onSurfaceVariant)
-        }
-        if (editLate) LateReasonsEditDialog { editLate = false }
-    }
+    // Late reasons are edited on the website only (locked 25 Nov); everyone still picks from the list on the phone.
 
     // Everyone can give tasks, so everyone has these rules for the tasks they give.
     run {
@@ -1175,15 +1166,8 @@ fun TeamDayScreen(onBack: () -> Unit) {
 @Composable
 private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?, reports: List<DayReport> = emptyList()) {
     val cs = MaterialTheme.colorScheme
-    val team by TeamRepo.team.collectAsState()
-    val meNow by TeamRepo.me.collectAsState()
-    val owner = team?.ownerUid == TeamRepo.uid && m.role != Team.OWNER
-    // Who may add: the Owner, a senior you switched on, or he himself when switched on. Only the Owner deletes.
-    val canAdd = remember(team, meNow, m) { TeamDossier.canAdd(m) }
+    val owner = TeamDossier.ownerIsMe() && m.role != Team.OWNER
     var blocks by remember(m.uid) { mutableStateOf<List<TeamBlock>?>(null) }
-    var deleting by remember { mutableStateOf<TeamBlock?>(null) }
-    var adding by remember { mutableStateOf(false) }
-    val pending by TeamDossier.pending.collectAsState()
     var open by remember { mutableStateOf<Pair<TeamBlock?, Map<String, Any?>?>?>(null) }
     DisposableEffect(m.uid) {
         val reg = TeamDossier.watch(m.uid) { blocks = it }
@@ -1243,48 +1227,10 @@ private fun TeamDossierTab(m: TeamMember, today: List<Map<String, Any?>>?, repor
             }
         }
     }
-    pending?.takeIf { it.member.uid == m.uid }?.let { p ->
-        Surface(shape = RoundedCornerShape(12.dp), color = cs.inverseSurface, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Block added · ${p.block.title}", color = cs.inverseOnSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                TextButton(onClick = { TeamDossier.undo() }) { Text("UNDO", color = cs.inversePrimary, fontWeight = FontWeight.Bold) }
-            }
-        }
-    }
-    if (canAdd) {
-        OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-            Text("＋ Add block for ${if (m.uid == TeamRepo.uid) "you" else m.first}", fontWeight = FontWeight.Bold)
-        }
-        Text(
-            if (owner) "Blocks can't be moved or changed once added. Only you can delete one."
-            else "Blocks can't be moved, changed or deleted once added. Only ${TeamDossier.ownerFirst()} can delete one.",
-            fontSize = 12.sp, color = cs.onSurfaceVariant
-        )
-    }
+    Text("Dossier tasks are set on the website, in Team › Dossier.", fontSize = 12.sp, color = cs.onSurfaceVariant)
 
     open?.let { (b, r) ->
-        TeamBlockDayDialog(m, b, r, reports, canEdit = owner && b != null, onEdit = { open = null; deleting = b }) { open = null }
-    }
-    val cur = blocks.orEmpty()
-    if (adding) {
-        DossierTaskDialog(
-            existing = null, onDismiss = { adding = false }, onSwitchKind = null,
-            team = TeamBlockEdit(if (m.uid == TeamRepo.uid) "you" else m.first, null, onSave = { nb -> TeamDossier.addLater(m, cur, nb) }, onDelete = null,
-                others = cur + listOfNotNull(pending?.takeIf { it.member.uid == m.uid }?.block)),
-        )
-    }
-    deleting?.let { b ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("Delete for ${m.first}?") },
-            text = { Text("“${b.title}” leaves ${m.first}'s Dossier from now on. Its past ticks stay in History.") },
-            confirmButton = {
-                TextButton(onClick = { TeamDossier.save(m, cur.filter { it.id != b.id }); deleting = null }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
-        )
+        TeamBlockDayDialog(m, b, r, reports, canEdit = false, onEdit = {}) { open = null }
     }
 }
 

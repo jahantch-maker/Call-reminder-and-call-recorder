@@ -7,13 +7,8 @@ import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
 
@@ -35,6 +30,8 @@ data class TeamBlock(
     /** Who added it (uid) and his name then; blocks never change after that, only the Owner deletes them. */
     val by: String = "",
     val byName: String = "",
+    /** When the owner last added or changed it on the web (0 = set before the web editor): what the "new task" card goes by. */
+    val changedAt: Long = 0L,
 ) {
     /** "Jahanzaib": your name for whoever added it. */
     val byFirst: String get() = TeamRepo.member(by)?.first ?: Names.first(byName) ?: byName
@@ -55,7 +52,7 @@ data class TeamBlock(
     fun toMap(): Map<String, Any> = mapOf(
         "id" to id, "title" to title, "note" to note, "minute" to minute, "endMinute" to endMinute, "days" to days,
         "monthDay" to monthDay, "everyWeeks" to everyWeeks, "onOffDay" to onOffDay, "remindBefore" to remindBefore, "proof" to proof,
-        "afterReview" to afterReview, "by" to by, "byName" to byName,
+        "afterReview" to afterReview, "by" to by, "byName" to byName, "changedAt" to changedAt,
     )
 
     val rangeLabel: String get() = Dossier.timeLabel(minute) + " - " + Dossier.timeLabel(endMinute % (24 * 60))
@@ -73,17 +70,16 @@ data class TeamBlock(
                 endMinute = int("endMinute", minOf(minute + 30, 24 * 60)), days = int("days", Dossier.ALL_DAYS),
                 monthDay = int("monthDay", 0), everyWeeks = int("everyWeeks", 1), onOffDay = m["onOffDay"] == true,
                 remindBefore = int("remindBefore", 0), proof = m["proof"] == true, afterReview = m["afterReview"] == true,
-                by = m["by"] as? String ?: "", byName = m["byName"] as? String ?: "",
+                by = m["by"] as? String ?: "", byName = m["byName"] as? String ?: "", changedAt = (m["changedAt"] as? Number)?.toLong() ?: 0L,
             )
         }
     }
 }
 
 /**
- * Staff Dossier (team edition): the Owner, a senior with "✏ Sets Dossier of people under him" and (with "✏ Adds his
- * own Dossier") the member himself add blocks. Once added a block never moves or changes (Undo for 10 s right after
- * Save); only the Owner deletes one. They arrive in the member's
- * My tasks › Dossier, where he can tick (with the time recorded) but not edit. Blocks with 📷 Photo proof need a
+ * Staff Dossier (team edition, locked 25 Nov): only the Owner adds, changes and deletes dossier tasks, on the website
+ * (Team › Dossier). They arrive in the member's My tasks › Dossier, where he can tick (with the time recorded) but not edit.
+ * A new or changed task also notifies him and shows a card at the top of My tasks until he taps OK ([news], [ack]). Blocks with 📷 Photo proof need a
  * photo before the tick; "Why not done?" can carry a voice note. His ticks, reasons and proofs show in his day.
  *
  * Online: teams/{t}/dossier/{uid} holds his blocks; teams/{t}/proofs/{uid_block_date_kind} holds a photo or voice
@@ -102,61 +98,17 @@ object TeamDossier {
     fun watch(uid: String, onChange: (List<TeamBlock>) -> Unit): ListenerRegistration? =
         team()?.collection("dossier")?.document(uid)?.addSnapshotListener { s, _ -> if (s != null) onChange(blocksOf(s)) }
 
-    /** Who may add blocks to [m]'s Dossier: the Owner; a senior with ✏ Sets Dossier; himself with ✏ Adds his own Dossier. */
-    fun canAdd(m: TeamMember): Boolean {
-        val me = TeamRepo.me.value ?: return false
-        if (!me.active || m.role == Team.OWNER) return false
-        if (ownerIsMe()) return true
-        if (m.uid == me.uid) return me.ownDossier
-        return me.setDossier && me.uid in m.managers
-    }
+    /** Nobody adds blocks on the phone any more (locked 25 Nov): the Owner does it on the website. */
+    fun canAdd(@Suppress("UNUSED_PARAMETER") m: TeamMember): Boolean = false
 
     fun ownerIsMe(): Boolean = TeamRepo.uid != null && TeamRepo.team.value?.ownerUid == TeamRepo.uid
 
-    /** A new block waits 10 s for Undo before it goes online; then it is there for good. */
-    class Pending(val member: TeamMember, val current: List<TeamBlock>, val block: TeamBlock)
-    val pending = MutableStateFlow<Pending?>(null)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var commitJob: Job? = null
+    /** In a team, a member's dossier is set on the website only: the phone sees and ticks it (the Owner's own phone keeps its own). */
+    fun webOnly(): Boolean = TeamRepo.activeNow && !ownerIsMe()
 
-    fun addLater(m: TeamMember, current: List<TeamBlock>, b: TeamBlock) {
-        commitNow()
-        val me = TeamRepo.me.value
-        val myName = me?.let { it.typed.ifBlank { it.name } }.orEmpty()
-        pending.value = Pending(m, current, b.copy(by = me?.uid.orEmpty(), byName = myName))
-        commitJob = scope.launch { delay(UNDO_MS); commitNow() }
-    }
-
-    fun undo() {
-        commitJob?.cancel()
-        pending.value = null
-    }
-
-    fun commitNow() {
-        val p = pending.value ?: return
-        pending.value = null
-        commitJob?.cancel()
-        save(p.member, p.current.filter { it.id != p.block.id } + p.block)
-    }
-
-    const val UNDO_MS = 10_000L
-
-    /** Your own blocks as they came from online (to add one to them). */
+    /** Your own blocks as they came from online. */
     @Volatile var mine: List<TeamBlock> = emptyList()
         private set
-
-    /** Saves a member's whole Dossier (the server rules check who may, and that only the Owner removes blocks). */
-    fun save(m: TeamMember, blocks: List<TeamBlock>) {
-        val t = team() ?: return
-        val owner = TeamRepo.team.value?.ownerUid.orEmpty()
-        val viewers = (listOf(m.uid, owner) + m.managers).filter { it.isNotBlank() }.distinct()
-        t.collection("dossier").document(m.uid).set(
-            mapOf(
-                "blocks" to blocks.sortedBy { it.minute }.map { it.toMap() },
-                "viewers" to viewers, "updatedAt" to System.currentTimeMillis(), "by" to (TeamRepo.uid ?: ""),
-            )
-        )
-    }
 
     private fun blocksOf(s: DocumentSnapshot): List<TeamBlock> =
         (s.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) }?.sortedBy { it.minute } ?: emptyList()
@@ -173,6 +125,64 @@ object TeamDossier {
 
     // ------------------------------------------------------------ member side
 
+    /** One line of the "new dossier task" card: kind is "new", "changed" or "removed". */
+    data class News(val id: String, val kind: String, val title: String, val what: String)
+    val news = MutableStateFlow<List<News>>(emptyList())
+
+    private fun readNews(c: Context): List<News> = TeamLinks.map(c, "dossierNews").entries.mapNotNull { (id, v) ->
+        val p = v.split('\u001f'); if (p.size < 4) null else News(id, p[0], p[1], p[2] + " · " + p[3])
+    }.sortedBy { it.title }
+
+    fun loadNews(c: Context) { news.value = readNews(c) }
+
+    /** He tapped OK: the card goes, the website shows "Seen", and the block keeps a NEW tag for the rest of today. */
+    fun ack(c: Context) {
+        val me = TeamRepo.me.value ?: return
+        val now = System.currentTimeMillis()
+        val items = TeamLinks.map(c, "dossierNews")
+        val tags = TeamLinks.map(c, "dossierTag")
+        val today = LocalDate.now().toString()
+        val seen = items.filter { it.value.startsWith("new") || it.value.startsWith("changed") }.keys
+        seen.forEach { tags[it] = today }
+        TeamLinks.putMap(c, "dossierTag", tags.filterValues { it == today })
+        TeamLinks.putMap(c, "dossierNews", emptyMap())
+        news.value = emptyList()
+        TeamSync.version.value++
+        if (seen.isNotEmpty()) team()?.collection("dossier")?.document(me.uid)
+            ?.set(mapOf("seen" to seen.associateWith { now }), SetOptions.merge())
+    }
+
+    /** A block the owner added or changed today and he has already seen: shows a NEW tag. */
+    fun isNewToday(c: Context, localId: Long): Boolean {
+        val id = blockOf(c, localId) ?: return false
+        return TeamLinks.map(c, "dossierTag")[id] == LocalDate.now().toString()
+    }
+
+    @Volatile private var clearing = false
+
+    /**
+     * Update day (locked 25 Nov): the dossier tasks he made himself are deleted. Before that, the list (title, time, days)
+     * goes online so the website can show it in the Change log and the owner can re-add the real ones. Done once.
+     */
+    private fun clearOwn(c: Context) {
+        if (clearing || TeamLinks.set(c, "dossierCleared").isNotEmpty()) return
+        val me = TeamRepo.me.value ?: return
+        val linked = TeamLinks.map(c, "dossier").values.toSet()
+        val selfMade = DossierStore.tasks.value.filter { it.id.toString() !in linked }
+        fun done() { TeamLinks.putSet(c, "dossierCleared", setOf("1")) }
+        if (selfMade.isEmpty()) return done()
+        val t = team() ?: return
+        clearing = true
+        val list = selfMade.map { d ->
+            TeamBlock(id = "own${d.id}", title = d.title, note = d.note, minute = d.minute, endMinute = d.endMinute, days = d.days, monthDay = d.monthDay,
+                everyWeeks = d.everyWeeks, onOffDay = d.onOffDay, remindBefore = d.remindBefore, afterReview = d.afterReview).toMap() + ("own" to true)
+        }
+        t.collection("dossier").document(me.uid).set(mapOf("oldOwn" to list), SetOptions.merge()).addOnSuccessListener {
+            selfMade.forEach { DossierStore.delete(it.id) }
+            done(); clearing = false; TeamSync.version.value++
+        }.addOnFailureListener { clearing = false }
+    }
+
     /** His Dossier changed online: add, change or remove the blocks in his own Dossier. */
     fun apply(c: Context, blocks: List<TeamBlock>) {
         val me = TeamRepo.me.value ?: return
@@ -185,17 +195,19 @@ object TeamDossier {
             val seen = TeamLinks.set(c, "dossierSeen")
             val first = seen.isEmpty() && links.isEmpty()
             val proof = mutableSetOf<String>()
+            val items = TeamLinks.map(c, "dossierNews")
+            val webBefore = TeamLinks.set(c, "dossierWeb")
+            val US = '\u001f'
+            fun line(kind: String, b: TeamBlock) = "$kind$US${b.title}$US${b.rangeLabel}$US${b.frequency}"
+            var from = ""
             blocks.forEach { b ->
                 val local = links[b.id]?.toLongOrNull()?.let { DossierStore.get(it) }
                 if (local == null) {
                     val t = DossierStore.add(b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, false, b.endMinute, b.everyWeeks, b.onOffDay, b.afterReview)
                     links[b.id] = t.id.toString()
                     if (b.proof) proof += t.id.toString()
-                    // "✏ Basharat added: Stock check · 12:00 - 12:30 pm · Mon-Sat"
-                    if (!first && b.id !in seen && b.by.isNotBlank() && b.by != me.uid) {
-                        TeamSync.notify(c, "dossier:${b.id}", "✏ ${b.byFirst} added to your Dossier",
-                            "${b.title} · ${b.rangeLabel} · ${b.frequency}", mine = null, kind = NotifKind.DOSSIER)
-                    }
+                    // Added on the website: a card at the top of My tasks and a notification.
+                    if (!first && b.id !in seen && b.changedAt > 0) { items[b.id] = line("new", b); from = b.byFirst.ifBlank { ownerFirst() } }
                 } else {
                     val want = b.toTask(local.id)
                     if (local.title != want.title || local.note != want.note || local.minute != want.minute || local.endMinute != want.endMinute ||
@@ -203,19 +215,39 @@ object TeamDossier {
                         local.onOffDay != want.onOffDay || local.remindBefore != want.remindBefore || local.afterReview != want.afterReview
                     ) {
                         DossierStore.edit(local.id, b.title, b.note, b.minute, b.days, b.monthDay, b.remindBefore, null, b.endMinute, b.everyWeeks, b.onOffDay, b.afterReview)
+                        if (b.changedAt > 0) { items[b.id] = line(if (items[b.id]?.startsWith("new") == true) "new" else "changed", b); from = b.byFirst.ifBlank { ownerFirst() } }
                     }
                     if (b.proof) proof += local.id.toString()
                 }
             }
             val keep = blocks.map { it.id }.toSet()
             links.keys.filter { it !in keep }.forEach { id ->
+                val gone = links[id]?.toLongOrNull()?.let { DossierStore.get(it) }
+                if (gone != null && id in webBefore) {
+                    // Removed on the website: it goes from his phone; he is told.
+                    if (items.remove(id)?.startsWith("new") != true) items[id] = "removed$US${gone.title}$US${gone.rangeLabel}$US${gone.frequency}"
+                    from = ownerFirst()
+                }
                 links[id]?.toLongOrNull()?.let { DossierStore.delete(it) }
                 links.remove(id)
             }
             TeamLinks.putMap(c, "dossier", links)
             TeamLinks.putSet(c, "dossierProof", proof)
             TeamLinks.putSet(c, "dossierSeen", keep.ifEmpty { setOf("-") })
+            TeamLinks.putSet(c, "dossierWeb", blocks.filter { it.changedAt > 0 }.map { it.id }.toSet())
+            TeamLinks.putMap(c, "dossierNews", items)
+            val list = readNews(c)
+            val changedNow = from.isNotBlank()
+            news.value = list
+            if (changedNow && list.isNotEmpty()) {
+                // One notification for everything he hasn't tapped OK on yet ("5 new dossier tasks"), so many saves in a row are one.
+                val one = list.singleOrNull()
+                val verb = when (one?.kind) { "removed" -> "removed from"; "changed" -> "changed in"; else -> "added to" }
+                if (one != null) TeamSync.notify(c, "dossier:news", "✏ $from $verb your Dossier", "${one.title} · ${one.what}", mine = null, kind = NotifKind.DOSSIER)
+                else TeamSync.notify(c, "dossier:news", "✏ ${list.size} dossier changes from $from", list.take(3).joinToString(" · ") { it.title }, mine = null, kind = NotifKind.DOSSIER)
+            }
         }
+        clearOwn(c)
         TeamSync.version.value++
     }
 

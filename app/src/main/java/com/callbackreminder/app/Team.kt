@@ -495,7 +495,8 @@ object TeamRepo {
             },
             // His Dossier, as the Owner set it.
             team.collection("dossier").document(me).addSnapshotListener { s, _ ->
-                if (s == null || !s.exists()) return@addSnapshotListener
+                // No document yet: from the server it means he has no blocks (update day still clears his own tasks).
+                if (s == null || (!s.exists() && s.metadata.isFromCache)) return@addSnapshotListener
                 val blocks = (s.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList()
                 scope.launch { CrashLog.guard(appCtx, "Team dossier") { TeamDossier.apply(appCtx, blocks) } }
             },
@@ -1514,7 +1515,7 @@ object TeamRepo {
         TeamSync.apply(c, list, foreground, complete = !snap.metadata.isFromCache)
         runCatching {
             val d = team.collection("dossier").document(u.uid).get().await()
-            if (d.exists()) TeamDossier.apply(c, (d.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList())
+            if (d.exists() || !d.metadata.isFromCache) TeamDossier.apply(c, (d.get("blocks") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.let(TeamBlock::of) } ?: emptyList())
         }
         TeamSync.pushLocal(c)
         uploadDay(c)

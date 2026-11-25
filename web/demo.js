@@ -94,6 +94,11 @@ window.DEMO_DATA = {
     ];
     const reading = { m0: { done: { "jd-sur": { at: at(-3), version: 2 }, "sop-site": { at: at(-1), version: 3 } } }, m1: {} };
     const changelog = [{ id: "c1", at: at(-1, 15), by: "owner", byName: "Jahanzaib", text: "Moved Imran under Kamran" }, { id: "c2", at: at(-2, 10), by: "owner", byName: "Jahanzaib", text: "Site Manager default: Set Dossier ON" }];
-    return { plot: [], team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, days, reasons: null, cfg: null, meetings };
+    // Team › Dossier (owner sets it on the web): Imran with a few tasks, two not seen on his phone yet, and his old dossier.
+    const blk = (id, title, a, b, extra) => Object.assign({ id, title, note: "", minute: a, endMinute: b, days: 127, monthDay: 0, everyWeeks: 1, onOffDay: true, remindBefore: 15, proof: false, afterReview: true, by: "owner", byName: "Jahanzaib", changedAt: at(-1, 9) }, extra || {});
+    const dossier = { m4: { blocks: [blk("b1", "Site photos to WhatsApp group", 660, 690, { note: "All 4 sites, before and after", proof: true }), blk("b2", "Check material register", 720, 750, { days: 63, remindBefore: 0 }), blk("b3", "Visit Block C site", 960, 990, { days: 34, changedAt: now - 600000 }), blk("b4", "Monthly stock count", 1080, 1140, { monthDay: 1, changedAt: now - 300000 })],
+      seen: { b1: at(0, 9), b2: at(0, 9) }, old: [blk("o1", "Morning site round", 600, 660, { byName: "Kamran", changedAt: 0 })], oldOwn: [blk("o2", "Call supplier", 840, 870, { own: true, byName: "", changedAt: 0 })] },
+      m1: { blocks: [blk("b5", "Office opening check", 660, 680)], seen: { b5: at(-1, 10) } } };
+    return { dossier, plot: [], team: { id: "demo", name: "Rafiq Builders (sample)", ownerUid: "owner" }, members, seats, desig, docs, reading, changelog, tasks, own, days, reasons: null, cfg: null, meetings };
   },
 };

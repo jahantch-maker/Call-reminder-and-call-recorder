@@ -47,8 +47,6 @@
   // ------------------------------------------------------------------ switches and access
   RB.APP_SW = [
     ["approveJoins", "Approve people waiting to join", "Join requests", false],
-    ["setDossier", "Set Dossier for own people", "Fixed daily time blocks", false],
-    ["editReasons", "Edit late-reason list", "Reasons shown on late tasks", false],
     ["approveExt", "Approve extension requests", "From own people", true],
     ["seeNumbers", "See how my people are doing", "How many tasks are late or due today, for people he gave tasks to", false],
     ["seeDay", "See own people's day", "People below him in the chart", true],
@@ -71,8 +69,8 @@
   RB.colorOf = (i) => "var(--" + COLORS[i % 4] + ")";
 
   const SEED_DESIG = [
-    { name: "GM", app: { approveJoins: true, setDossier: true, editReasons: true, seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view", settings: "none" } },
-    { name: "Site Manager", app: { setDossier: true }, portal: { app: "view" } },
+    { name: "GM", app: { approveJoins: true, seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view", settings: "none" } },
+    { name: "Site Manager", app: {}, portal: { app: "view" } },
     { name: "Admin", app: { seeNumbers: true }, portal: {} },
     { name: "Surveyor", app: {}, portal: {} },
     { name: "Store Keeper", app: {}, portal: {} },
@@ -173,7 +171,7 @@
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
-        if (coll === "config") { if (id === "holidays") D.holidays = data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
+        if (coll === "config") { if (id === "holimport") { D.holimport = data; RB.demoHolImport && RB.demoHolImport(data); return id; } if (id === "holidays") D.holidays = data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
         const arr = D[COLL[coll]]; const i = arr.findIndex((x) => x.id === id || x.uid === id && coll === "members");
@@ -278,7 +276,7 @@
         // The seat's name is the only name shown anywhere (locked 23 Nov), so the member row follows it.
         name: s.name || (RB.member(s.uid) || {}).name || "",
         seatId: s.id, designation: s.designation || "", dept: s.dept || "", reportsTo: head && head.uid ? head.uid : "", managers: chain,
-        perms: { app: e.app, portal: e.portal }, setDossier: !!e.app.setDossier, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
+        perms: { app: e.app, portal: e.portal }, setDossier: false, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
         role: s.role === "owner" ? "owner" : "member",
         docDesigs: Array.from(new Set([s.designation].concat(RB.descendants(s.id).map((x) => x.designation)).filter(Boolean))),
         also: s.also || [],   // WEB21 other jobs this person covers (plot steps go to them too)
@@ -417,7 +415,7 @@
         teamRef.collection("own").doc(m.uid).collection("tasks").onSnapshot((q) => { D.own[m.uid] = q.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
         if (!(RB.isOwner() || RB.canEdit("docs")) && (m.uid === uid || (m.managers || []).includes(uid))) teamRef.collection("reading").doc(m.uid).onSnapshot((q) => { if (q.exists) D.reading[m.uid] = q.data(); RB.soft(); }, onErr);
         teamRef.collection("days").doc(m.uid).onSnapshot((q) => { if (q.exists) D.days[m.uid] = q.data(); RB.soft(); }, onErr);
-        teamRef.collection("dossier").doc(m.uid).onSnapshot((q) => { if (q.exists) D.dossier[m.uid] = q.data(); RB.soft(); }, onErr);
+        teamRef.collection("dossier").doc(m.uid).onSnapshot((q) => { if (q.exists) { D.dossier[m.uid] = q.data(); RB.dosLegacy && RB.dosLegacy(m.uid); } RB.soft(); }, onErr);
       });
       RB.soft();
     }, (e) => { dMem(); RB.message("Couldn't read the team.", RB.esc(e.message), true); });
@@ -440,7 +438,7 @@
     const allTp = RB.level("app") !== "none" && ((D.me && D.me.perms && D.me.perms.portal) || {}).appScope === "all";
     const tq = RB.isOwner() || allTp ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     on(tq, "tasks", (s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holimport") D.holimport = d.data(); if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     // Plot files: the step tasks of every file (the rules let Plot files access read tasks marked plot: true).

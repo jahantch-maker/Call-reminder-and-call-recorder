@@ -186,6 +186,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         if (t.done) completedOpen = true
         highlightId = id
     }
+    val dossierNews by TeamDossier.news.collectAsState()
+    LaunchedEffect(Unit) { TeamDossier.loadNews(ctx) }
     val showDossierReq by MyTasksUi.showDossier.collectAsState()
     LaunchedEffect(showDossierReq) {
         val id = showDossierReq ?: return@LaunchedEffect
@@ -316,7 +318,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         }
     }
     fun deleteDossier(t: DossierTask) {
-        if (TeamDossier.isTeam(ctx, t.id)) return
+        if (TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id)) return
         val recs = records.filterValues { it.taskId == t.id }
         DossierStore.delete(t.id)
         scope.offerUndo(snack, "Deleted · ${t.title}") { DossierStore.restore(t, recs) }
@@ -415,6 +417,9 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                     onNoTime = onOpenToSchedule,
                 )
             }
+
+            // New or changed by the owner on the website: stays until he taps OK (locked 25 Nov).
+            if (dossierNews.isNotEmpty()) item(key = "dossier-news") { DossierNewsCard(dossierNews) { TeamDossier.ack(ctx) } }
 
             item(key = "sub") {
                 KindTabs(
@@ -581,8 +586,9 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         else EmptyPicture(
                             Icons.Rounded.EventRepeat,
                             "No dossier tasks",
-                            "The tasks you do on set days, like checking the cash book every morning. Tick each one when it's done, or say why not.",
-                            button = "＋ New dossier task",
+                            if (TeamDossier.webOnly()) "Your dossier is set by ${TeamDossier.ownerFirst()} on the website. New tasks show here with a notification."
+                            else "The tasks you do on set days, like checking the cash book every morning. Tick each one when it's done, or say why not.",
+                            button = "＋ New dossier task".takeUnless { TeamDossier.webOnly() },
                             onButton = { newKind = sub }
                         )
                     }
@@ -598,8 +604,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         onTick = { dossierTick(t) },
                         onWhy = { whyFor = t },
                         onOpen = { historyFor = t },
-                        onEdit = { editDossier = t }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
-                        onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
+                        onEdit = { editDossier = t }.takeUnless { TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id) },
+                        onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id) },
                         onStar = { DossierStore.setStar(t.id, !t.starred) },
                         highlighted = -t.id == highlightId,
                     )
@@ -627,8 +633,8 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                             onTick = {},
                             onWhy = {},
                             onOpen = { historyFor = t },
-                            onEdit = { editDossier = t }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
-                            onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.isTeam(ctx, t.id) },
+                            onEdit = { editDossier = t }.takeUnless { TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id) },
+                            onDelete = { deleteDossier(t) }.takeUnless { TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id) },
                             onStar = { DossierStore.setStar(t.id, !t.starred) },
                             highlighted = -t.id == highlightId,
                         )
@@ -642,25 +648,14 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
     }
 
     newKind?.let { kind ->
-        // In a team (not the Owner) your Dossier lives online: you add to it only when switched on, and blocks never change.
-        val teamMe = TeamRepo.me.value?.takeIf { TeamRepo.activeNow && !TeamDossier.ownerIsMe() }
-        if (kind == MyTasksUi.DOSSIER && teamMe != null && !teamMe.ownDossier) {
+        // Locked 25 Nov: in a team, dossiers are set on the website only (by the owner); the phone sees and ticks them.
+        if (kind == MyTasksUi.DOSSIER && TeamDossier.webOnly()) {
             AlertDialog(
                 onDismissRequest = { newKind = null },
                 title = { Text("Your Dossier") },
-                text = { Text("${TeamDossier.ownerFirst()} and the people above you set your Dossier. Ask ${TeamDossier.ownerFirst()} to switch on \"Adds his own Dossier\" for you.") },
+                text = { Text("${TeamDossier.ownerFirst()} sets everyone's Dossier on the website. New tasks show here with a notification.") },
                 confirmButton = { TextButton(onClick = { newKind = MyTasksUi.ONE_TIME }) { Text("New one-time task") } },
                 dismissButton = { TextButton(onClick = { newKind = null }) { Text("OK") } },
-            )
-        } else if (kind == MyTasksUi.DOSSIER && teamMe != null) {
-            DossierTaskDialog(
-                existing = null,
-                onDismiss = { newKind = null },
-                onSwitchKind = { newKind = MyTasksUi.ONE_TIME },
-                team = TeamBlockEdit("you", null, onSave = { nb ->
-                    TeamDossier.addLater(teamMe, TeamDossier.mine, nb)
-                    scope.offerUndoFor(snack, "Block added · ${nb.title}", 10L) { TeamDossier.undo() }
-                }, onDelete = null, others = TeamDossier.mine),
             )
         } else if (kind == MyTasksUi.DOSSIER) {
             DossierTaskDialog(
@@ -672,7 +667,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
             MyTaskDialog(
                 existing = null,
                 onDismiss = { newKind = null },
-                onSwitchKind = { newKind = MyTasksUi.DOSSIER },
+                onSwitchKind = { newKind = MyTasksUi.DOSSIER }.takeUnless { TeamDossier.webOnly() },
                 listId = listSel.takeIf { it >= 0 } ?: MyTaskStore.UNSORTED,
             )
         }
@@ -730,7 +725,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
         DossierHistoryDialog(
             t = dossier.firstOrNull { it.id == t.id } ?: t,
             onDismiss = { historyFor = null },
-            onEdit = { historyFor = null; editDossier = t },
+            onEdit = { historyFor = null; editDossier = t }.takeUnless { TeamDossier.webOnly() || TeamDossier.isTeam(ctx, t.id) },
         )
     }
 
@@ -999,6 +994,7 @@ private fun DossierRow(
             !today -> nextDay(t, day)?.let { add(RowChip("next ${it.format(dayFmt)}", ChipTone.MUTED)) }
         }
         if (proof) add(RowChip(if (done && TeamDossier.sent(ctx, t.id, day, TeamDossier.PHOTO)) "📷 sent" else "📷 proof", ChipTone.MUTED))
+        if (TeamDossier.isNewToday(ctx, t.id)) add(RowChip("NEW", ChipTone.BLUE))
         if (showScore) {
             val (d, total) = DossierStore.monthScore(t, now)
             if (total > 0) add(RowChip("$d of $total this month", if (d * 100 / total >= 80) ChipTone.GREEN else ChipTone.ORANGE))
@@ -1038,6 +1034,31 @@ private fun DossierRow(
                     modifier = Modifier.clickable(onClick = l.onClick).padding(vertical = 6.dp)
                 )
             }
+        }
+    }
+}
+
+/** "🆕 New dossier task from Jahanzaib": what changed, with one OK button. */
+@Composable
+private fun DossierNewsCard(items: List<TeamDossier.News>, onOk: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val from = TeamDossier.ownerFirst()
+    val head = if (items.size == 1) when (items[0].kind) {
+        "removed" -> "Dossier task removed by $from"
+        "changed" -> "Dossier task changed by $from"
+        else -> "🆕 New dossier task from $from"
+    } else "🆕 ${items.size} dossier changes from $from"
+    Surface(shape = RoundedCornerShape(20.dp), color = cs.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(head, fontWeight = FontWeight.Bold, color = cs.onPrimaryContainer)
+            items.take(4).forEach {
+                Text(
+                    (if (it.kind == "removed") "✕ " else if (it.kind == "changed") "✎ " else "＋ ") + it.title + " · " + it.what,
+                    fontSize = 13.sp, color = cs.onPrimaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (items.size > 4) Text("+ ${items.size - 4} more, see Dossier", fontSize = 12.sp, color = cs.onPrimaryContainer)
+            Button(onClick = onOk, modifier = Modifier.padding(top = 4.dp)) { Text("OK, got it") }
         }
     }
 }
@@ -1499,7 +1520,7 @@ internal fun WeekScore(reviewed: Int, days: Int) {
 
 /** A dossier task's History: this month's score and calendar, then every day, ✓ Done or ✕ Missed with the reason. */
 @Composable
-private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: () -> Unit) {
+private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: (() -> Unit)?) {
     val records by DossierStore.records.collectAsState()
     val now = System.currentTimeMillis()
     val history = remember(records, t) { DossierStore.history(t, now) }
@@ -1528,7 +1549,7 @@ private fun DossierHistoryDialog(t: DossierTask, onDismiss: () -> Unit, onEdit: 
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        TextButton(onClick = onEdit) { Text("Edit") }
+                        onEdit?.let { TextButton(onClick = it) { Text("Edit") } }
                     }
                 }
                 if (t.afterReview) item(key = "week") {
