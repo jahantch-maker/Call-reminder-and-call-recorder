@@ -788,6 +788,13 @@ object TeamSync {
                     "moves" to r.delays.map { d -> mapOf("at" to d.at, "from" to d.wasDue, "to" to d.newDue, "r" to d.reason) },
                     "events" to r.events.takeLast(20).map { e -> mapOf("at" to e.at, "text" to e.label, "note" to e.note) },
                 )
+            } + ToScheduleStore.items.value.take(200).map { s ->
+                // v0.59.1 follow-ups still in To schedule (no time yet), e.g. the check-up on a task you gave.
+                mapOf(
+                    "id" to "s${s.id}", "title" to s.note.ifBlank { "Call back" }, "name" to s.title, "created" to s.createdAt,
+                    "due" to 0L, "first" to 0L, "done" to false, "doneAt" to 0L, "star" to s.starred,
+                    "moves" to emptyList<Any>(), "events" to emptyList<Any>(),
+                )
             }
         val googleWeek = (0..20).flatMap { i -> GoogleCal.events(c, today.minusDays(7).plusDays(i.toLong())).filter { !it.allDay } }
             .distinctBy { it.id to it.start }

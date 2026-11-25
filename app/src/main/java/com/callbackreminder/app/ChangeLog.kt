@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.59.1", "25 Nov",
+            new = listOf(
+                "The website's Team Performance page now also shows the owner's day, and follow-ups that have no time yet",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.59.0", "25 Nov",
             new = listOf(
                 "The app always stays on the latest version: when a new one is out, the app asks you to update before you carry on",
