@@ -8,14 +8,17 @@
 .tp-ct{font-size:13px;font-weight:700;color:var(--onv);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* cards */
-.tp-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.6fr);gap:10px;margin-bottom:12px}
-.tp-cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tp-cwrap{margin-bottom:12px;padding:12px}
+.tp-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.6fr);gap:10px}
+.tp-cards.four{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px}
 .tp-kpi{background:var(--card,#fff);border-radius:16px;padding:10px 14px;border-left:5px solid #A9ADB8;min-width:0;animation:tpIn .3s ease both}
 .tp-kpi i{display:block;font-style:normal;font-size:12px;color:var(--onv);font-weight:600}
 .tp-kpi b{display:block;font-size:28px;font-weight:800;line-height:1.15}
 .tp-kpi em{margin-left:4px}
 .tp-kpi.r{border-color:#D64545}.tp-kpi.r b{color:#D64545}.tp-kpi.g{border-color:#2E9E5B}.tp-kpi.a{border-color:#E8A33D}.tp-kpi.n{border-color:#A9ADB8}.tp-kpi.b{border-color:#1F3A93}
-.tp-kpi.chart{border-left:0;padding:8px 12px 4px}
+.tp-kpi.chart{display:flex;align-items:center;gap:12px}
+.tp-kpi.chart .tp-ktxt{min-width:0;flex:none}
+.tp-kpi.chart .tp-kspark{flex:1;min-width:0;display:block}
 .still .tp-kpi{animation:none}
 @keyframes tpIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
@@ -203,7 +206,8 @@ button.tp-wh:hover{background:#F4F6FB}.tp-wh.today{color:#1F3A93;background:#EEF
 .tp-wc .tp-now{left:0}
 
 /* dark mode */
-html[data-theme="dark"] .tp-kpi,html[data-theme="dark"] .tp-chip,html[data-theme="dark"] .tp-tlb{background:#25272B}
+html[data-theme="dark"] .tp-chip,html[data-theme="dark"] .tp-tlb{background:#25272B}
+html[data-theme="dark"] .tp-kpi{background:#2E3035}   /* tiles sit inside a card: keep them a shade apart */
 html[data-theme="dark"] .tp-bar,html[data-theme="dark"] .tp-dbb,html[data-theme="dark"] .tp-tabs button b,html[data-theme="dark"] .tp-day span{background:#383A40}
 html[data-theme="dark"] .tp-bg{fill:#383A40}html[data-theme="dark"] .tp-grid{stroke:#383A40}
 html[data-theme="dark"] .tp-row:hover,html[data-theme="dark"] .tp-pl:hover,html[data-theme="dark"] .tp-db:hover,html[data-theme="dark"] button.tp-wh:hover,html[data-theme="dark"] .tp-th:hover{background:#2E3035}

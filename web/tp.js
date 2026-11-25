@@ -102,8 +102,9 @@
     const onP = tot ? Math.round((cur.onTime / tot) * 100) : 0, onPp = ptot ? Math.round((prev.onTime / ptot) * 100) : 0;
     const kpi = (lbl, n, cls, sub) => `<div class="tp-kpi ${cls}"><i>${lbl}</i><b>${n}</b><i>${sub}</i></div>`;
     const teamTr = Array.from({ length: c.weeks }, (_, i) => T.avg(all.map((r) => (T.trend(r.uid, now, c.weeks)[i]))));
-    const cards = `<div class="tp-cards">${kpi("Overdue now", cur.overdue, "r", "past first due date " + ch(cur.overdue, prev.overdue, false))}${kpi("Done on time", cur.onTime, "g", onP + "% of all counted " + ch(onP, onPp, true, true))}${kpi("Done late", cur.late, "a", "after first due date " + ch(cur.late, prev.late, false))}${kpi("Not scheduled", cur.uns, "n", "no date, over " + c.grace + " days")}
-      <div class="tp-kpi chart"><i>Team score · last ${c.weeks} weeks</i>${line(330, 96, teamTr, wkLabels(c.weeks, now), "#1F3A93", { axis: 1, fill: 1 })}</div></div>`;
+    const teamNow = teamTr.filter((x) => x != null).pop();
+    const cards = `<div class="card tp-cwrap"><div class="tp-cards">${kpi("Overdue now", cur.overdue, "r", "past first due date " + ch(cur.overdue, prev.overdue, false))}${kpi("Done on time", cur.onTime, "g", onP + "% of all counted " + ch(onP, onPp, true, true))}${kpi("Done late", cur.late, "a", "after first due date " + ch(cur.late, prev.late, false))}${kpi("Not scheduled", cur.uns, "n", "no date, over " + c.grace + " days")}
+      <div class="tp-kpi chart b"><span class="tp-ktxt"><i>Team score</i><b>${pc(teamNow == null ? null : Math.round(teamNow))}</b><i>last ${c.weeks} weeks</i></span><span class="tp-kspark">${line(300, 46, teamTr, [], "#1F3A93", { fill: 1 })}</span></div></div></div>`;
     // the table
     const [k, dir] = S.tpSort;
     const val = { name: (r) => first(r.m.name).toLowerCase(), on: (r) => r.f.on, over: (r) => r.f.overdue, uns: (r) => r.f.uns, moved: (r) => r.f.moved, dos: (r) => r.dos, score: (r) => r.score }[k] || ((r) => r.score);
