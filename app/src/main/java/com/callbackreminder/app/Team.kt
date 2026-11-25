@@ -691,7 +691,15 @@ object TeamRepo {
         else {
             val now = System.currentTimeMillis()
             val name = seat.getString("name").orEmpty().ifBlank { u.displayName.orEmpty() }
-            db().collection("teams").document(t).collection("members").document(u.uid).set(
+            val ref = db().collection("teams").document(t).collection("members").document(u.uid)
+            val mine = ref.get(Source.SERVER).await().takeIf { it.exists() }
+            if (mine != null && mine.getString("status") == Team.ACTIVE && mine.getString("seatId") == mail) {
+                // Signed out and back in (or a new phone): his row is already there with his chart and access. Overwriting it
+                // is refused by the rules, so only refresh what a person may change himself, with the seat's latest number.
+                val phone = seat.getString("phone").orEmpty().trim()
+                ref.update(mapOf("lastSeen" to now, "signedOut" to false, "name" to name.trim(), "email" to u.email.orEmpty()) +
+                    (if (phone.isNotEmpty()) mapOf("phone" to phone) else emptyMap())).await()
+            } else ref.set(
                 memberMap(u, seat.getString("phone").orEmpty(), Team.MEMBER, "", emptyList(), Team.ACTIVE, now, name) + mapOf("seatId" to mail)
             ).await()
             p().edit().putString("welcome", "Welcome, $name" + seat.getString("designation").orEmpty().let { if (it.isBlank()) "" else " · $it" }).apply()
@@ -701,7 +709,7 @@ object TeamRepo {
             null
         }
     } catch (e: Exception) {
-        if (e.message?.contains("PERMISSION_DENIED") == true) NOT_ADDED
+        if (e.message?.contains("PERMISSION_DENIED") == true) "Couldn't join your seat just now. Tap Try again; if it repeats, tell your manager."
         else e.message?.takeIf { e is IllegalStateException } ?: "Couldn't join: ${e.message ?: e.javaClass.simpleName}"
     }
 

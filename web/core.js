@@ -280,9 +280,10 @@
         role: s.role === "owner" ? "owner" : "member",
         docDesigs: Array.from(new Set([s.designation].concat(RB.descendants(s.id).map((x) => x.designation)).filter(Boolean))),
         also: s.also || [],   // WEB21 other jobs this person covers (plot steps go to them too)
+        phone: s.phone || "",   // the official phone: the phone app's Call list reads it from the member row, so it follows the seat whenever it changes
       };
       const cur = RB.member(s.uid);
-      if (cur && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs, cur.also || []]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs, data.also])) return;
+      if (cur && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs, cur.also || [], cur.phone || ""]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs, data.also, data.phone])) return;
       writes.push(RB.Store.put("members", s.uid, data, true, true).catch((err) => console.warn("sync", s.uid, err)));
     });
     await Promise.all(writes);
