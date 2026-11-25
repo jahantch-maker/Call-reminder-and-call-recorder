@@ -586,7 +586,7 @@ fun MyTasksScreen(resumeKey: Int, onOpenToSchedule: () -> Unit = {}) {
                         else EmptyPicture(
                             Icons.Rounded.EventRepeat,
                             "No dossier tasks",
-                            if (TeamDossier.webOnly()) "Your dossier is set by ${TeamDossier.ownerFirst()} on the website. New tasks show here with a notification."
+                            if (TeamDossier.webOnly()) (if (TeamDossier.ownerIsMe()) "You set your dossier on the website (Team › Dossier)." else "Your dossier is set by ${TeamDossier.ownerFirst()} on the website.") + " New tasks show here with a notification."
                             else "The tasks you do on set days, like checking the cash book every morning. Tick each one when it's done, or say why not.",
                             button = "＋ New dossier task".takeUnless { TeamDossier.webOnly() },
                             onButton = { newKind = sub }

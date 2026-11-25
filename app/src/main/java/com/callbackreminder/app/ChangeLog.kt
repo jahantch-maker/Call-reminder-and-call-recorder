@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.60.1", "25 Nov",
+            new = listOf(
+                "The owner's own dossier is now also set on the website, like everyone else's. On the phone it is only seen and ticked",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.60.0", "25 Nov",
             new = listOf(
                 "Dossier is now set on the website by the owner. On your phone you only see it and tick it (with photo proof, a reason if not done, and the star)",

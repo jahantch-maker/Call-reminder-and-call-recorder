@@ -25,8 +25,8 @@
   const seenAt = (t) => (new Date(t).toDateString() === new Date().toDateString() ? new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : RB.fmtShort(t));
   const say = (b) => b.title + " · " + range(b) + " · " + freq(b);
 
-  /** Everyone whose dossier the owner sets: active members, not the owner. */
-  RB.dosPeople = () => D.members.filter((m) => m.status === "active" && m.uid !== (D.team && D.team.ownerUid) && m.role !== "owner").sort((a, b) => RB.first(a.name).localeCompare(RB.first(b.name)));
+  /** Everyone whose dossier the owner sets: all active members, the owner too (J19, 25 Nov). */
+  RB.dosPeople = () => D.members.filter((m) => m.status === "active").sort((a, b) => RB.first(a.name).localeCompare(RB.first(b.name)));
   const doc = (uid) => D.dossier[uid] || {};
   const blocks = (uid) => (doc(uid).blocks || []).slice().sort((a, b) => a.minute - b.minute || a.endMinute - b.endMinute);
   const unseen = (uid, b) => !!b.changedAt && !(((doc(uid).seen || {})[b.id] || 0) >= b.changedAt);
