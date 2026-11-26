@@ -151,7 +151,7 @@
       <div class="card plhd"><div class="plcc"><div class="plav" aria-hidden="true">${esc((f.name || "?").trim().charAt(0).toUpperCase())}</div>
         <div class="w"><div class="plttl"><h2>Plot ${esc(f.plotNo)}</h2>${f.size ? `<span class="tag">${esc(f.size)} marla</span>` : ""}${badge(st)}${f.test ? '<span class="tag yel">TEST</span>' : ""}<b class="plnm">${esc(f.name || "—")}</b></div>
           <div class="plfacts">Plot owner · ${facts.join(" · ")}</div></div>
-        <div class="plibs">${ib('data-pfcall="1"', "📞", "Call")}<a class="plib" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}"><i aria-hidden="true">💬</i>WhatsApp</a>${RB.canEdit("plot") ? ib('data-pfedit="1"', "✏️", "Edit") : ""}${f.test && RB.isOwner() ? ib('data-pfdel="1"', "🗑", "Delete test") : ""}</div></div>
+        <div class="plibs">${ib('data-pfcall="1"', "📞", "Call")}<a class="plib" target="_blank" rel="noopener noreferrer" href="https://wa.me/${intl(f.wa)}"><i aria-hidden="true">💬</i>WhatsApp</a>${RB.canEdit("plot") ? ib('data-pfedit="1"', "✏️", "Edit") : ""}${RB.isOwner() ? ib('data-pfdel="1"', "🗑", f.test ? "Delete test" : "Delete file") : ""}</div></div>
         ${t ? `<div class="plnow">Now with <b>${esc(s ? s.role : "")} · ${withName(t)}</b><span>Due <b>${t.due ? RB.fmtDay(t.due) : "—"}</b></span> ${dueText(t, now)}</div>` : ""}</div>
       <div class="card plstcard"><div class="plstages">${stages}</div></div>`;
   }
@@ -170,19 +170,25 @@
       <span class="sp"></span>${tabs}</div></div>`;
   }
 
-  /** Owner only, test files only: removes the file and all its step tasks (they leave every phone too). */
-  function delTest(f) {
-    if (!f.test || !RB.isOwner()) return;
-    RB.confirm("Delete test file Plot " + esc(f.plotNo) + " and all its tasks? They also disappear from every phone. This cannot be undone.", "Delete", async () => {
+  /** Owner only: removes the file and all its step tasks (they leave every phone too). A real file (not a test) is deleted
+   *  only after the owner types its plot number, so a wrong tap cannot remove it. */
+  function delFile(f) {
+    if (!RB.isOwner()) return;
+    const run = async () => {
       const ts = tasksOf(f.id);
       try {
         for (const t of ts) await RB.Store.del("tasks", t.id);
         await RB.Store.del("plotfiles", f.id);
         if (RB.DEMO) D.plotTasks = D.plotTasks.filter((t) => t.plotId !== f.id);
-        await RB.log("Plot files: test file " + f.plotNo + " deleted");
-        S.pfFile = null; RB.toast("Test file deleted");
+        await RB.log("Plot files: " + (f.test ? "test " : "") + "file " + f.plotNo + " deleted");
+        S.pfFile = null; RB.toast(f.test ? "Test file deleted" : "File deleted"); RB.render();
       } catch (e) { RB.toast("Could not delete: " + (e && e.message ? e.message : e)); }
-    }, true);
+    };
+    if (f.test) return RB.confirm("Delete test file Plot " + esc(f.plotNo) + " and all its tasks? They also disappear from every phone. This cannot be undone.", "Delete", run, true);
+    RB.form("Delete file Plot " + f.plotNo, [{ k: "no", label: "TYPE THE PLOT NUMBER TO CONFIRM", ph: "Type " + f.plotNo }], "Delete forever", async (v) => {
+      if (String(v.no || "").trim().toLowerCase() !== String(f.plotNo).trim().toLowerCase()) return "That is not the plot number. Type exactly: " + f.plotNo;
+      await run();
+    }, "This is a <b>real</b> file of <b>" + esc(f.name || "the plot owner") + "</b>. Its file and all its step tasks are removed, and they also disappear from every phone. This cannot be undone. Hint: the plot number is <b>" + esc(f.plotNo) + "</b>.");
   }
 
   /** WEB13 Which earlier steps open this one, from the sheet's Flow tab (+ a pick-one line that opens it), each ticked when Done.
@@ -454,7 +460,7 @@
       const f = fileNow(); if (!f || !X()) return;
       const c = root.querySelector("[data-pfcall]"); if (c) c.onclick = () => callPick(f);
       const ed = root.querySelector("[data-pfedit]"); if (ed) ed.onclick = () => editDetails(f);
-      const dl = root.querySelector("[data-pfdel]"); if (dl) dl.onclick = () => delTest(f);
+      const dl = root.querySelector("[data-pfdel]"); if (dl) dl.onclick = () => delFile(f);
       bindNote(root, f); bindVoice(root);
       const need = S.pfTab === "timeline" ? tasksOf(f.id) : S.pfOpen && taskOf(f.id, S.pfOpen) ? [taskOf(f.id, S.pfOpen)] : [];
       loadMsgs(need);

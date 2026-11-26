@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.60.2", "25 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Signing out and signing in again with your Gmail now always works (it could say \"Gmail isn't added\")",
+                "A phone number set or changed on the website now always reaches the Call and WhatsApp lists, whenever it is added",
+            ),
+        ),
+        Entry(
             "0.60.1", "25 Nov",
             new = listOf(
                 "The owner's own dossier is now also set on the website, like everyone else's. On the phone it is only seen and ticked",
