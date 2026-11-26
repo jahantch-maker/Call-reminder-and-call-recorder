@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.60.3", "27 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "\"Something went wrong last time\" no longer shows when the phone simply stopped a background check (\"Job was cancelled\")",
+            ),
+        ),
+        Entry(
             "0.60.2", "25 Nov",
             new = emptyList(),
             fixed = listOf(

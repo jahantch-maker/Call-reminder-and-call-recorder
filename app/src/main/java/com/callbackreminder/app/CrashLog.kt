@@ -25,7 +25,7 @@ object CrashLog {
         val app = ctx.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            record(app, error, "The app closed")
+            write(app, error, "The app closed") // the app really closed: always kept, whatever the cause
             previous?.uncaughtException(thread, error)
         }
     }
@@ -64,11 +64,32 @@ object CrashLog {
         return false
     }
 
+    /**
+     * v0.60.3 Work that Android stopped on purpose ("Job was cancelled"): the screen closed, the app went to the
+     * background, or the phone stopped a background check (e.g. the internet dropped). Not a crash, so never shown.
+     */
+    fun isStopped(error: Throwable): Boolean {
+        var e: Throwable? = error
+        var depth = 0
+        while (e != null && depth < 8) {
+            if (e is java.util.concurrent.CancellationException) return true // kotlinx "Job was cancelled" is this type too
+            if (e is com.google.firebase.firestore.FirebaseFirestoreException &&
+                e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.CANCELLED) return true
+            e = e.cause
+            depth++
+        }
+        return false
+    }
+
     fun record(ctx: Context, error: Throwable, what: String) {
-        if (isOffline(error)) {
-            android.util.Log.i("CrashLog", "$what · offline, not a crash: ${error.message}")
+        if (isOffline(error) || isStopped(error)) {
+            android.util.Log.i("CrashLog", "$what · offline or stopped, not a crash: ${error.message}")
             return
         }
+        write(ctx, error, what)
+    }
+
+    private fun write(ctx: Context, error: Throwable, what: String) {
         runCatching {
             val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
             val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
