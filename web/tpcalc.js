@@ -86,16 +86,19 @@
       out.push({
         kind: plot ? "plot" : "given", id: "t" + t.id, taskId: t.id, raw: t, title: plot ? "Plot " + (t.plotNo || "") + " · " + (t.title || "") : t.title || "",
         promise: t.due || 0, due: t.due || 0, done: t.status === "done" || t.status === "checked", doneAt: t.doneAt || 0, moves: 0,
-        created: t.createdAt || 0, dur: 30, from: t.fromName || "", urgent: !!t.urgent, stage: plot && t.step ? String(t.step).split(".")[0] : "",
+        created: t.createdAt || 0, dur: 30, from: t.fromName || "", chain: t.passedTo ? [RB.first(t.fromName || ""), RB.first(t.toName || ""), t.passedTo] : null, urgent: !!t.urgent, stage: plot && t.step ? String(t.step).split(".")[0] : "",
         reasons: t.lateReasons || [], outside: outside(t.lateReasons), events: t.events || [],
       });
     });
     const day = D.days[uid] || {};
-    (day.fuAll || []).forEach((f) => out.push({
-      kind: "fu", id: "f" + f.id, raw: f, title: (f.title || "Call back") + (f.name ? " · " + f.name : ""), promise: f.first || f.due || 0, due: f.due || 0,
+    // The team task behind a follow-up (same title, he gave it or got it), newest open first: "Basharat → Husnain (→ Ilyas)".
+    const taskOf = (f) => { const k = (f.title || "").trim(); return k ? D.tasks.filter((t) => (t.title || "").trim() === k && (t.fromUid === uid || t.toUid === uid) && t.status !== "cancelled")
+      .sort((a, b) => (b.status !== "done" && b.status !== "checked") - (a.status !== "done" && a.status !== "checked") || (b.createdAt || 0) - (a.createdAt || 0))[0] : null; };
+    (day.fuAll || []).forEach((f) => { const t = taskOf(f), chain = t ? [RB.first(t.fromName || ""), RB.first(t.toName || "")].concat(t.passedTo ? [t.passedTo] : []) : null; out.push({
+      kind: "fu", id: "f" + f.id, raw: f, chain, title: (f.title || "Call back") + (f.name && !chain ? " · " + f.name : ""), promise: f.first || f.due || 0, due: f.due || 0,
       done: !!f.done, doneAt: f.doneAt || 0, moves: (f.moves || []).length, created: f.created || 0, dur: 15, star: !!f.star,
       reasons: (f.moves || []).map((m) => ({ at: m.at, r: m.r })), outside: false, events: f.events || [],
-    }));
+    }); });
     memo = { uid, key, list: out };
     return out;
   }

@@ -199,6 +199,8 @@
   const cardLegend = `<div class="tp-lg"><span><i class="norm"></i>Normal</span><span><i class="urg"></i>🔴 Urgent</span><span><i class="plot"></i>Plot file</span><span><span class="tp-mv">Moved ${T.cfg().movedN}×</span> date moved ${T.cfg().movedN}+ times</span></div>`;
   function kindLabel(x) {
     const cls = { own: "own", fu: "fu", given: "given", plot: "plot" }[x.kind];
+    // Who it went to, as the phone shows it: "Basharat → Husnain", plus "→ Ilyas" when passed on.
+    if (x.chain && x.kind !== "plot") return `<span class="tp-lbl ch ${cls}">${x.chain.map((n) => `<span>${esc(String(n).trim().split(/\s+/)[0])}</span>`).join(" → ")}</span>`;
     const extra = x.kind === "given" && x.from ? " · by " + first(x.from) : x.kind === "plot" && x.stage ? " · Stage " + x.stage : "";
     return `<span class="tp-lbl ${cls}">${T.KIND[x.kind]}${esc(extra)}</span>`;
   }

@@ -122,6 +122,7 @@ button.tp-li{cursor:pointer}button.tp-li:hover{background:#F0F3FA}
 .tp-task.done{background:#F4F4F2;color:var(--onv);font-weight:600}
 .tp-task.miss{background:#FFF4F4;box-shadow:inset 4px 0 0 #D64545}
 .tp-lbl{font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:6px;white-space:nowrap}
+.tp-lbl.ch{display:inline-block;max-width:100%;white-space:normal}.tp-lbl.ch span{white-space:nowrap}
 .tp-lbl.own{background:#E1E8FF;color:#1E3A8A}.tp-lbl.fu{background:#EDE4FF;color:#3F1F8C}.tp-lbl.given{background:#D9F3EC;color:#0B5A4C}.tp-lbl.plot{background:#E2D8CA;color:#5E4522}.tp-lbl.dos{background:#D8F3E1;color:#1D4C2F}
 .tp-when{font-size:13px;font-weight:700;white-space:nowrap;color:var(--onv)}
 .tp-when.low{color:#D64545}.tp-when.ok,.tp-when.okc{color:#2E9E5B}.tp-when.late{color:#B86A00;white-space:normal;text-align:right;max-width:260px}.tp-when.lowd{color:#9E2B27;white-space:normal;text-align:right;max-width:260px}
