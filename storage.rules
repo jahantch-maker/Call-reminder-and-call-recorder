@@ -8,9 +8,16 @@ service firebase.storage {
         return request.auth != null && request.auth.uid in firestore.get(/databases/(default)/documents/teams/$(t)/tasks/$(task)).data.get('viewers', []);
       }
       function owner() {
-        return request.auth != null && firestore.get(/databases/(default)/documents/teams/$(t)/members/$(request.auth.uid)).data.get('role', '') == 'owner';
+        return request.auth != null && firestore.get(/databases/(default)/documents/teams/$(t)).data.ownerUid == request.auth.uid;
       }
-      allow read, delete: if viewer() || owner();
+      // Same as Firestore seesAll(): Team Performance set to "everyone" (view only).
+      function seesAll() {
+        let m = firestore.get(/databases/(default)/documents/teams/$(t)/members/$(request.auth.uid)).data;
+        return request.auth != null && m.get('status', '') == 'active' && m.get('perms', {}).get('portal', {}).get('app', 'none') != 'none'
+          && m.get('perms', {}).get('portal', {}).get('appScope', 'own') == 'all';
+      }
+      allow read: if viewer() || owner() || seesAll();
+      allow delete: if viewer() || owner();
       allow create: if viewer() && request.resource.size <= 15 * 1024 * 1024;
     }
   }
