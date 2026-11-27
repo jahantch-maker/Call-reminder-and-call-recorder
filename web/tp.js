@@ -191,7 +191,9 @@
     // 27 Nov (S3.3, S4.6) Stuck presses, paused time and dossier reminder skips: counts only, the score doesn't change.
     const mine = D.tasks.filter((t) => t.toUid === uid), stuckN = mine.reduce((n, t) => n + (t.stuckN || 0), 0), pausedMs = mine.reduce((n, t) => n + (t.pausedMs || 0), 0);
     const [wa0] = T.range("week", now), skips = ((RB.member(uid) || {}).dosSkips || []).filter((x) => x >= wa0).length;
-    const facts = [stuckN ? `⚠ Stuck ${stuckN}×${pausedMs ? " · paused " + pausedLbl(pausedMs) : ""}` : "", skips ? `📋 Dossier reminder skipped ${skips}× this week` : ""].filter(Boolean).map((t) => `<span class="tp-fact">${t}</span>`).join("");
+    // N8 Plot owner waits on his plot steps: count and duty time paused (count only, score unchanged).
+    const pw = mine.filter((t) => t.plot).flatMap((t) => t.waits || []), pwMs = pw.reduce((n, x) => n + (x.dutyMs || 0), 0);
+    const facts = [stuckN ? `⚠ Stuck ${stuckN}×${pausedMs ? " · paused " + pausedLbl(pausedMs) : ""}` : "", pw.length ? `⏸ Plot owner waits ${pw.length}×${pwMs ? " · paused " + pausedLbl(pwMs) : ""}` : "", skips ? `📋 Dossier reminder skipped ${skips}× this week` : ""].filter(Boolean).map((t) => `<span class="tp-fact">${t}</span>`).join("");
     const sent = (D.waSent || {})[uid];
     const head = `<div class="tp-ph">${av(r.m, true)}<b>${esc(first(r.m.name))}</b>${rk(r.rank)}<span class="tp-hint">Score this week ${pc(r.score)} · view only</span>${facts}<span class="sp" style="flex:1"></span>
       <div class="tp-wa"><div class="tp-warow"><button class="tp-wabtn" data-tpwa="${esc(uid)}">${WA_LOGO} Send pending list on WhatsApp</button><span class="tp-hov tp-wai" tabindex="0" aria-label="About this button">i<span class="tp-tip left">Sends ${esc(first(r.m.name))} all open tasks from everyone (not dossier). You choose which groups, then press Send in WhatsApp.</span></span></div>
