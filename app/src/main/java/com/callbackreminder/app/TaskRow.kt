@@ -162,7 +162,9 @@ fun SmallChip(c: RowChip) {
             Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(3.dp))
         }
-        Text(c.text, color = fg, fontSize = 12.sp, lineHeight = CHIP_LINE, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        // Same-width digits: "1/7" is as wide as "2/7", so ticking never moves the next chip to another line.
+        Text(c.text, color = fg, fontSize = 12.sp, lineHeight = CHIP_LINE, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            style = androidx.compose.material3.LocalTextStyle.current.copy(fontFeatureSettings = "tnum"))
     }
 }
 

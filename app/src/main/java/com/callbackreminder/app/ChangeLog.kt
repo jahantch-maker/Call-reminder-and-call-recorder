@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.62.1", "27 Nov",
+            new = emptyList(),
+            fixed = listOf(
+                "Task cards no longer jump when a count or time changes: chips keep the same width (e.g. ticking a plot checklist line)",
+            ),
+        ),
+        Entry(
             "0.62.0", "27 Nov",
             new = listOf(
                 "Search bar at the top of Settings",
