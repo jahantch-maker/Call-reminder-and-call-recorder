@@ -279,12 +279,18 @@ object TeamSync {
         val was = statusOf(before)
         val from = t.fromFirst
         when {
-            before == null && t.open && t.status != Team.REOPENED ->
-                tell(c, t, from, (if (t.urgent) "🔴 Urgent · " else "") + if (t.due > 0L) "📅 Deadline ${TeamUi.shortWhen(t.due)}"
-                    else "📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "",
+            before == null && t.open && t.status != Team.REOPENED -> {
+                val line = (if (t.urgent) "🔴 Urgent · " else "") + if (t.due > 0L) "📅 Deadline ${TeamUi.shortWhen(t.due)}"
+                    else "📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else ""
+                tell(c, t, from, line,
                     head = (if (t.urgent) "🔴 Urgent task" else "New task") + " from $from",
                     // 28 Nov A new plot file step has its own row (Full screen by default); other tasks follow "New task".
-                    web = if (t.plot) WebRules.N_PLOT_NEW else WebRules.N_NEW_TASK)
+                    web = if (t.plot) WebRules.N_PLOT_NEW else WebRules.N_NEW_TASK,
+                    plot = if (!t.plot) null else PlotRow(t.id, t.title,
+                        listOf(if (t.plotNo.isBlank()) "" else "Plot ${t.plotNo}", t.ownerName, "Stage ${t.step.substringBefore('.')}").filter { it.isNotBlank() }.joinToString(" · "),
+                        if (t.step.contains('.')) "Step ${t.step.substringAfter('.')}" else "",
+                        line, "From $from" + if (t.fromRole.isBlank()) "" else " · ${t.fromRole}"))
+            }
             was != null && was != t.status && t.status == Team.REOPENED ->
                 tell(c, t, from, "↩ Not done yet" + (if (t.reason.isBlank()) "" else " · “${t.reason}”") + if (t.due == 0L) " · pick a new deadline" else "")
             was != null && was != t.status && t.status == Team.CHECKED -> tell(c, t, from, "✓ Received, thanks")
@@ -874,7 +880,7 @@ object TeamSync {
      * The task's one notification, updated with every new Timeline line: "Basharat · 3 new on Timeline" and the
      * newest lines. Opening the Timeline clears it. ❓ Ask, ⚠ Stuck and 📅 extend requests come on their own.
      */
-    private fun tell(c: Context, t: TeamTask, who: String, line: String, head: String? = null, web: String = WebRules.N_TIMELINE) {
+    private fun tell(c: Context, t: TeamTask, who: String, line: String, head: String? = null, web: String = WebRules.N_TIMELINE, plot: PlotRow? = null) {
         val counts = TeamLinks.map(c, "nc")
         val lines = TeamLinks.map(c, "nl")
         val n = (counts[t.id]?.toIntOrNull() ?: 0) + 1
@@ -888,7 +894,7 @@ object TeamSync {
         val talk = line.startsWith("💬")
         notify(c, "tl:${t.id}", title, t.title + " · " + all.last() + "\n" + all.dropLast(1).reversed().joinToString("\n"), mine = null, taskId = t.id,
             kind = if (talk) NotifKind.MESSAGES else if (t.fromUid == TeamRepo.uid) NotifKind.FOLLOW_UPS else NotifKind.MY_TASKS,
-            open = if (talk) Open.TIMELINE else Open.CARD, web = web)
+            open = if (talk) Open.TIMELINE else Open.CARD, web = web, plot = plot)
     }
 
     /** An @mention of you in a Timeline message (it rings even outside your duty window). */
@@ -938,6 +944,8 @@ object TeamSync {
         web: String = WebRules.N_TIMELINE, style: String? = null,
         /** Something with a set time: it always comes, day or night (S13.1). */
         timed: Boolean = false,
+        /** 28 Nov A new plot file step: its own popup, shared by steps that arrive together. */
+        plot: PlotRow? = null,
     ) {
         val st = style ?: WebRules.style(c, web)
         if (st == WebRules.OFF) return
@@ -973,7 +981,8 @@ object TeamSync {
                 PendingIntent.getActivity(c, NotifIds.team("call:$key"), dial, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
         if (quiet && web == WebRules.N_TIMELINE) b.setSilent(true)
-        if (st == WebRules.FULL && !quiet) TaskAlertActivity.show(c, head = kind.label, title = title, open = intent,
+        if (st == WebRules.FULL && !quiet && plot != null) TaskAlertActivity.showPlot(c, plot, intent, b, NotifIds.team("full:$key"))
+        else if (st == WebRules.FULL && !quiet) TaskAlertActivity.show(c, head = kind.label, title = title, open = intent,
             due = text.lineSequence().first(), call = call, fallback = b, req = NotifIds.team("full:$key"))
         Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
     }

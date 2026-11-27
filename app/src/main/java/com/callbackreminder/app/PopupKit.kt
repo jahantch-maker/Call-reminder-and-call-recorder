@@ -190,6 +190,8 @@ class PopupSound(private val ctx: Context) {
 class TaskAlertActivity : SilenceActivity() {
     private lateinit var sound: PopupSound
     private val silenced = mutableStateOf(false)
+    /** 28 Nov New plot file steps on screen: steps that arrive while it is open join the same popup. */
+    private val plotRows = androidx.compose.runtime.mutableStateListOf<PlotRow>()
 
     override fun onSilence() {
         sound.stop()
@@ -215,17 +217,30 @@ class TaskAlertActivity : SilenceActivity() {
             override fun handleOnBackPressed() = skip()
         })
         if (savedInstanceState == null) sound.start(vibrate = true)
+        savedInstanceState?.getStringArrayList(EXTRA_PLOT)?.let { saved -> plotRows.addAll(saved.mapNotNull { PlotRow.from(it) }) }
+            ?: plotOf(intent)?.let { plotRows += it }
         show()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // 28 Nov A plot step that comes while plot steps are on screen is added to them; anything else replaces the popup.
+        val row = plotOf(intent)
+        if (row == null || plotRows.isEmpty()) plotRows.clear()
+        if (row != null && plotRows.none { it.id == row.id }) plotRows += row
         setIntent(intent)
         silenced.value = false
         sound.stop()
         sound.start(vibrate = true)
         show()
     }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArrayList(EXTRA_PLOT, ArrayList(plotRows.map { it.pack() }))
+    }
+
+    private fun plotOf(i: Intent?): PlotRow? = i?.getStringExtra(EXTRA_PLOT)?.let { PlotRow.from(it) }
 
     private fun show() {
         val i = intent
@@ -240,6 +255,7 @@ class TaskAlertActivity : SilenceActivity() {
                     openLabel = i.getStringExtra(EXTRA_OPEN_LABEL) ?: "↗  Open in app",
                     call = i.getStringExtra(EXTRA_CALL).orEmpty(),
                     dossier = i.getBooleanExtra(EXTRA_DOSSIER, false),
+                    plotRows = plotRows,
                     silenced = silenced.value,
                     onCall = {
                         dial(this, i.getStringExtra(EXTRA_CALL).orEmpty())
@@ -255,7 +271,10 @@ class TaskAlertActivity : SilenceActivity() {
 
     private fun open() {
         @Suppress("DEPRECATION")
-        val go = intent.getParcelableExtra<Intent>(EXTRA_OPEN)
+        val go = if (plotRows.size > 1) Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS)
+        else intent.getParcelableExtra<Intent>(EXTRA_OPEN)
         val km = getSystemService(android.app.KeyguardManager::class.java)
         val run = {
             go?.let { runCatching { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
@@ -294,6 +313,17 @@ class TaskAlertActivity : SilenceActivity() {
         private const val EXTRA_OPEN_LABEL = "open_label"
         private const val EXTRA_CALL = "call"
         private const val EXTRA_DOSSIER = "dossier"
+        private const val EXTRA_PLOT = "plot"
+
+        /** 28 Nov A new plot file step: its own popup look, and steps that arrive together share one popup. */
+        fun showPlot(ctx: Context, row: PlotRow, open: Intent, fallback: NotificationCompat.Builder?, req: Int) {
+            val i = Intent(ctx, TaskAlertActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(EXTRA_PLOT, row.pack()).putExtra(EXTRA_OPEN, open)
+            if (Settings.canDrawOverlays(ctx)) runCatching { ctx.startActivity(i) }
+            else fallback?.setFullScreenIntent(
+                PendingIntent.getActivity(ctx, req, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT), true)
+        }
 
         /**
          * Opens the popup over everything (needs "show over other apps"). 27 Nov: without that permission, [fallback]
@@ -335,7 +365,7 @@ private fun outlined(label: String, onClick: () -> Unit, mod: Modifier) {
 @Composable
 private fun TaskAlertScreen(
     head: String, due: String, title: String, pill: String, lines: List<String>, openLabel: String, call: String,
-    dossier: Boolean, silenced: Boolean, onCall: () -> Unit, onOpen: () -> Unit, onSkip: () -> Unit, onSilence: () -> Unit,
+    dossier: Boolean, plotRows: List<PlotRow> = emptyList(), silenced: Boolean, onCall: () -> Unit, onOpen: () -> Unit, onSkip: () -> Unit, onSilence: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1B2A6B), Color(0xFF0B0E17))))) {
         LazyColumn(
@@ -344,11 +374,11 @@ private fun TaskAlertScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            item {
+            if (plotRows.isNotEmpty()) item { PlotAlertBody(plotRows) } else item {
                 Text(head.uppercase(), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
                     color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
             }
-            item {
+            if (plotRows.isEmpty()) item {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (due.isNotBlank()) Text(due, color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                     Spacer(Modifier.height(10.dp))
@@ -401,6 +431,65 @@ private fun TaskAlertScreen(
                     SilenceButton(silenced, onSilence)
                 }
             }
+        }
+    }
+}
+
+/** 28 Nov One new plot file step for the popup: [plot] "Plot 5.05 · Umair · Stage 1", [step] "Step 2", [due] the deadline line. */
+data class PlotRow(val id: String, val title: String, val plot: String, val step: String, val due: String, val from: String) {
+    fun pack(): String = listOf(id, title, plot, step, due, from).joinToString(SEP)
+
+    companion object {
+        private const val SEP = "\u0001"
+        fun from(s: String): PlotRow? = s.split(SEP).takeIf { it.size == 6 }?.let { PlotRow(it[0], it[1], it[2], it[3], it[4], it[5]) }
+    }
+}
+
+private val AlertYellow = Color(0xFFFFD66B)
+
+/** 28 Nov (his layout) Head, plot line, big step name, yellow deadline, plain "From" line. Several steps: one row each. */
+@Composable
+private fun PlotAlertBody(rows: List<PlotRow>) {
+    val dim = Color.White.copy(alpha = 0.6f)
+    val onePlot = rows.map { it.plot }.distinct().size == 1
+    val oneFrom = rows.map { it.from }.distinct().size == 1
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text((if (rows.size == 1) "New plot file task" else "${rows.size} new plot file tasks").uppercase(),
+            modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+            color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+        Spacer(Modifier.height(18.dp))
+        val r = rows.first()
+        if (rows.size == 1) {
+            Text(listOf(r.plot, r.step).filter { it.isNotBlank() }.joinToString(" · "), color = dim, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(10.dp))
+            Text(r.title, color = Color.White, fontSize = if (r.title.length > 80) 22.sp else 28.sp,
+                lineHeight = if (r.title.length > 80) 28.sp else 34.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            if (r.due.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(r.due, color = AlertYellow, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            }
+        } else {
+            if (onePlot && r.plot.isNotBlank()) {
+                Text(r.plot, color = dim, fontSize = 14.sp, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(10.dp))
+            }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AlertGlass).padding(horizontal = 16.dp, vertical = 6.dp)) {
+                rows.take(8).forEachIndexed { n, it ->
+                    if (n > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+                    Column(Modifier.padding(vertical = 10.dp)) {
+                        if (!onePlot) Text(it.plot, color = dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(it.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(listOf(it.due, it.step).filter { s -> s.isNotBlank() }.joinToString(" · "),
+                            color = AlertYellow, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!oneFrom && it.from.isNotBlank()) Text(it.from, color = dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (rows.size > 8) Text("+ ${rows.size - 8} more", color = dim, fontSize = 14.sp, modifier = Modifier.padding(bottom = 10.dp))
+            }
+        }
+        if (oneFrom && r.from.isNotBlank()) {
+            Spacer(Modifier.height(18.dp))
+            Text(r.from, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         }
     }
 }

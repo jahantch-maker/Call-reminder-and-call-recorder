@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.62.3", "28 Nov",
+            new = listOf(
+                "Plot files: new step popup shows the plot, the step name in big text, the deadline and who sent it",
+            ),
+            fixed = listOf(
+                "Plot files: when several steps reach you at once, one popup now lists them all (before, only the last one showed)",
+            ),
+        ),
+        Entry(
             "0.62.2", "28 Nov",
             new = listOf(
                 "Plot files: a new step given to you rings full screen (Settings › Notifications › New plot step)",
