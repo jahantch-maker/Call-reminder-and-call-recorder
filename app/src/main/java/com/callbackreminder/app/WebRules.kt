@@ -81,6 +81,8 @@ object WebRules {
         // Times may have moved: the alarms follow at once.
         runCatching { ReviewReminder.schedule(c) }
         runCatching { TaskAlarms.scheduleNudge(c) }
+        // Plot steps' heads-up follows the newest "Heads-up before due".
+        runCatching { MyTaskStore.init(c); MyTaskStore.items.value.filter { !it.done }.forEach { TaskAlarms.scheduleTask(c, it) } }
         // Text messages switched back on: the paused texts start again.
         runCatching { if (smsOn(c)) SmsScheduler.rescheduleAll(c) }
         // Widgets hide or show texts with the switch.

@@ -1,5 +1,6 @@
 package com.callbackreminder.app
 
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationCompat
 
 /**
  * 27 Nov (S14) Every full-screen popup: the phone's side buttons (volume up/down) or the screen going off (power)
@@ -293,21 +295,25 @@ class TaskAlertActivity : SilenceActivity() {
         private const val EXTRA_CALL = "call"
         private const val EXTRA_DOSSIER = "dossier"
 
-        /** Opens the popup over everything (needs "show over other apps"; otherwise the notification is all there is). */
+        /**
+         * Opens the popup over everything (needs "show over other apps"). 27 Nov: without that permission, [fallback]
+         * (the notification about to be posted) gets Android's full-screen alert instead, so the popup still opens on
+         * the lock screen or a dark screen (Android 14+: "Full-screen notifications" allowed) and shows as a banner
+         * while the phone is in use. Call it before posting [fallback]; [req] keeps each popup's own extras.
+         */
         fun show(
             ctx: Context, head: String, title: String, open: Intent, due: String = "", pill: String = "",
             lines: List<String> = emptyList(), call: String? = null, openLabel: String? = null, dossier: Boolean = false,
+            fallback: NotificationCompat.Builder? = null, req: Int = 0,
         ) {
-            if (!Settings.canDrawOverlays(ctx)) return
-            runCatching {
-                ctx.startActivity(
-                    Intent(ctx, TaskAlertActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra(EXTRA_HEAD, head).putExtra(EXTRA_TITLE, title).putExtra(EXTRA_DUE, due).putExtra(EXTRA_PILL, pill)
-                        .putExtra(EXTRA_LINES, lines.toTypedArray()).putExtra(EXTRA_OPEN, open).putExtra(EXTRA_CALL, call)
-                        .putExtra(EXTRA_OPEN_LABEL, openLabel).putExtra(EXTRA_DOSSIER, dossier)
-                )
-            }
+            val i = Intent(ctx, TaskAlertActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(EXTRA_HEAD, head).putExtra(EXTRA_TITLE, title).putExtra(EXTRA_DUE, due).putExtra(EXTRA_PILL, pill)
+                .putExtra(EXTRA_LINES, lines.toTypedArray()).putExtra(EXTRA_OPEN, open).putExtra(EXTRA_CALL, call)
+                .putExtra(EXTRA_OPEN_LABEL, openLabel).putExtra(EXTRA_DOSSIER, dossier)
+            if (Settings.canDrawOverlays(ctx)) runCatching { ctx.startActivity(i) }
+            else fallback?.setFullScreenIntent(
+                PendingIntent.getActivity(ctx, req, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT), true)
         }
     }
 }

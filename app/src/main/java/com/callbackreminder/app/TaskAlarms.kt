@@ -74,9 +74,24 @@ object TaskAlarms {
             am(ctx).cancel(taskAlarm(ctx, t.id))
             return
         }
-        val at = (t.remindBefore.map { t.dueAt - it * 60_000L } + t.dueAt).filter { it > now }.min()
+        val at = (before(ctx, t).map { t.dueAt - it * 60_000L } + t.dueAt).filter { it > now }.min()
         setAlarm(ctx, at, taskAlarm(ctx, t.id, at, before = at != t.dueAt), MainActivity.OPEN_MY_TASKS)
     }
+
+    /** A plot file step: one of his My tasks made from it (Settings › Notifications › Plot files decides its alerts). */
+    private fun plot(ctx: Context, t: MyTask) = t.id.toString() in TeamLinks.set(ctx, "plotLocal")
+
+    /** 27 Nov A plot step's heads-up always follows the office's newest "Heads-up before due" (Off, or how long before). */
+    private fun before(ctx: Context, t: MyTask): List<Int> =
+        if (!plot(ctx, t)) t.remindBefore
+        else if (WebRules.style(ctx, WebRules.N_PLOT_HEADS) == WebRules.OFF) emptyList()
+        else listOf(WebRules.int(ctx, "plotHeadsMin")).filter { it > 0 }
+
+    /** The plot step's full-screen popup (Full screen on the website), opening its task in My tasks. */
+    private fun plotPopup(ctx: Context, t: MyTask, head: String, b: NotificationCompat.Builder?, req: Int) =
+        TaskAlertActivity.show(ctx, head, t.title,
+            Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, t.id),
+            due = "Due ${Fmt.dueLabel(t.dueAt)}", fallback = b, req = req)
 
     fun cancelTask(ctx: Context, id: Long) = am(ctx).cancel(taskAlarm(ctx, id))
 
@@ -125,6 +140,8 @@ object TaskAlarms {
     /** The heads-up before a one-time task is due. */
     @SuppressLint("MissingPermission")
     fun showTaskBefore(ctx: Context, t: MyTask) {
+        val style = if (plot(ctx, t)) WebRules.style(ctx, WebRules.N_PLOT_HEADS) else WebRules.NORMAL
+        if (style == WebRules.OFF) return
         if (!Notifier.canNotify(ctx)) return
         val text = listOfNotNull(
             "Due ${Fmt.dueLabel(t.dueAt)}",
@@ -139,17 +156,20 @@ object TaskAlarms {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openApp(ctx, MainActivity.OPEN_MY_TASKS, TASK_BEFORE_BASE + t.id.toInt(), t.id))
             .setAutoCancel(true)
+        if (style == WebRules.FULL) plotPopup(ctx, t, "Plot file step soon", b, TASK_BEFORE_BASE + 70_000 + t.id.toInt())
         Notify.post(ctx, NotifType.MY_TASK, NotifIds.taskBefore(t.id), b)
     }
 
     @SuppressLint("MissingPermission")
     fun showTask(ctx: Context, t: MyTask) {
-        // 27 Nov (S2.1) A plot file step that is due: the full-screen popup with ring (the office's choice, Full screen by default).
-        if (t.id.toString() in TeamLinks.set(ctx, "plotLocal") && WebRules.style(ctx, WebRules.N_PLOT_DUE) == WebRules.FULL)
-            TaskAlertActivity.show(ctx, "Plot file step due", t.title,
-                Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, t.id),
-                due = "Due ${Fmt.timeOnly(t.dueAt)}")
-        if (!Notifier.canNotify(ctx)) return
+        // 27 Nov (S2.1) A plot file step that is due follows the office's "Step due": Full screen (default) = the ringing
+        // popup with its notification, Normal = the notification, Off = nothing.
+        val style = if (plot(ctx, t)) WebRules.style(ctx, WebRules.N_PLOT_DUE) else WebRules.NORMAL
+        if (style == WebRules.OFF) return
+        if (!Notifier.canNotify(ctx)) {
+            if (style == WebRules.FULL) plotPopup(ctx, t, "Plot file step due", null, 0)
+            return
+        }
         NotificationManagerCompat.from(ctx).cancel(NotifIds.taskBefore(t.id))
         val text = listOfNotNull(
             t.note.takeIf { it.isNotBlank() },
@@ -186,6 +206,7 @@ object TaskAlarms {
             b.addAction(0, "Call ${t.personTitle}", call)
         }
         b.addAction(0, "Done", done)
+        if (style == WebRules.FULL) plotPopup(ctx, t, "Plot file step due", b, TASK_BASE + 70_000 + t.id.toInt())
         Notify.post(ctx, NotifType.MY_TASK, NotifIds.task(t.id), b)
     }
 
@@ -354,19 +375,17 @@ object TaskAlarms {
         if (left.isEmpty()) return
         val open = Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_DOSSIER_REVIEW)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        if (Notifier.canNotify(ctx)) {
-            val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
-                .setSmallIcon(R.drawable.ic_stat_rb)
-                .setContentTitle("Dossier: ${left.size} not ticked")
-                .setContentText("Tick them, or say why not. Today locks at 3:00 AM.")
-                .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER_REVIEW, NUDGE_ID))
-                .setAutoCancel(true)
-            NotificationManagerCompat.from(ctx).notify(NUDGE_ID, b.build())
-        }
+        val b = if (!Notifier.canNotify(ctx)) null else NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+            .setSmallIcon(R.drawable.ic_stat_rb)
+            .setContentTitle("Dossier: ${left.size} not ticked")
+            .setContentText("Tick them, or say why not. Today locks at 3:00 AM.")
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER_REVIEW, NUDGE_ID))
+            .setAutoCancel(true)
         TaskAlertActivity.show(ctx, "Dossier reminder", "${left.size} dossier task" + (if (left.size == 1) "" else "s") + " not ticked",
-            open, due = "Tick them, or say why not", lines = left.map { it.title }, dossier = true)
+            open, due = "Tick them, or say why not", lines = left.map { it.title }, dossier = true, fallback = b, req = NUDGE_ID + 1)
+        b?.let { NotificationManagerCompat.from(ctx).notify(NUDGE_ID, it.build()) }
     }
 
     /** After a restart, an app update or on opening the app: set every task alarm again. */

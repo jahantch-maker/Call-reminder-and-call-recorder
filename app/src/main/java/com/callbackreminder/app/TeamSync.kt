@@ -971,9 +971,9 @@ object TeamSync {
                 PendingIntent.getActivity(c, NotifIds.team("call:$key"), dial, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
         if (quiet && web == WebRules.N_TIMELINE) b.setSilent(true)
-        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
         if (st == WebRules.FULL && !quiet) TaskAlertActivity.show(c, head = kind.label, title = title, open = intent,
-            due = text.lineSequence().first(), call = call)
+            due = text.lineSequence().first(), call = call, fallback = b, req = NotifIds.team("full:$key"))
+        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
     }
 }
 
