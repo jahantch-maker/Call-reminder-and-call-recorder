@@ -242,6 +242,10 @@
   const refOf = (txt) => { const m = String(txt || "").trim().match(/^(\d+\.\d+)\s*[·.\-]\s*(\d+)(\w*)$/); return m ? { step: m[1], line: m[2], opt: m[2] + m[3] } : null; };
   const letter = (o) => String(o).replace(/^\d+/, "");
 
+  /** N10 The photos added to a 📷 line on the phone (click = full size), or "📷 Photo needed". */
+  const linePhotos = (t, c) => { const ph = ((t && M[t.id]) || []).filter((m) => m.kind === "photo" && m.checkLine === String(c.no) && b64(m.data));
+    return ph.length ? `<div class="plthumbs">${ph.map((m) => `<button class="plimg plthumb" data-pfimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${b64(m.data)}"></button>`).join("")}<span>${pl(ph.length, "photo")}</span></div>` : '<span class="plneed">📷 Photo needed before this line can be ticked</span>'; };
+
   function inPlace(f, s, t) {
     const ticks = (t && t.ticks) || {}, cl = s.checklist || [], picks = filePicks(f);
     // FLOW3 a "Shown only if" line whose option was not picked: grey "Not needed (6.1 picked b)", left out of the count.
@@ -253,7 +257,7 @@
     const lines = cl.map((c) => { const skip = skipOf(c);
       if (c.type === "Pick one") return `<div class="plcl pick ${skip ? "skip" : ""}"><div>${esc(c.en)}${skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`;
       const k = skip ? null : tickOf(c);
-      return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""} ${skip ? "skip" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value && c.type !== "Option" ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`; }).join("");
+      return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""} ${skip ? "skip" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value && c.type !== "Option" ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : skip ? `<span>${esc(skip)}</span>` : ""}${c.photo && !skip ? linePhotos(t, c) : ""}</div></div>`; }).join("");
     const nTicked = counted.filter((c) => (c.type === "Pick one" ? ticks[c.no] : tickOf(c))).length;
     const canNote = t && !t.doneAt && !ret(t) && RB.canEdit("plot");
     return `<div class="plpanel"><div class="card plchk"><div class="subhead"><h3>Checklist</h3><span class="sub">${nTicked} of ${counted.length} ticked</span><div class="sp"></div><span class="tag">View only · ticked on the phone</span></div>

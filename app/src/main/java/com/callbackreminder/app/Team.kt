@@ -290,6 +290,8 @@ data class TeamMsg(
     val pending: Boolean = false,
     /** A voice note's wave, one digit (1-9) per bar ("" for notes from before v0.42). */
     val wave: String = "",
+    /** N10 Plot files: the checklist line this photo proves ("" = a normal message). */
+    val checkLine: String = "",
 ) {
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
     /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
@@ -1401,7 +1403,7 @@ object TeamRepo {
             .addOnFailureListener { logFail(it, "Undo message") }
     }
 
-    fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L): Boolean {
+    fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L, checkLine: String = ""): Boolean {
         val u = auth().currentUser ?: return false
         val me = _me.value ?: return false
         if (teamId == null) return false
@@ -1412,6 +1414,7 @@ object TeamRepo {
         )
         if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
         if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
+        if (checkLine.isNotEmpty()) doc["checkLine"] = checkLine
         val ref = msgs(t.id).document()
         lastSentId = ref.id
         ref.set(doc).addOnFailureListener { if (::appCtx.isInitialized) CrashLog.record(appCtx, it, "Timeline · Send") }
@@ -1568,6 +1571,7 @@ object TeamRepo {
                     playedBy = longs(d.get("playedBy")),
                     pending = d.metadata.hasPendingWrites(),
                     wave = d.getString("wave").orEmpty(),
+                    checkLine = d.getString("checkLine").orEmpty(),
                 )
             }.sortedBy { it.at })
         }

@@ -4,6 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -240,8 +250,22 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
     var returning by remember { mutableStateOf(false) }
     var startWait by remember { mutableStateOf(false) }
     val shown = PlotUi.shown(t, s)
+    // N10 Photos added to 📷 lines (Timeline photo messages that name their line).
+    var msgs by remember(t.id) { mutableStateOf<List<TeamMsg>>(emptyList()) }
+    if (shown.any { it.photo }) DisposableEffect(t.id) {
+        val reg = TeamRepo.watchMsgs(t.id) { all -> msgs = all.filter { it.kind == Team.PHOTO && it.checkLine.isNotEmpty() && it.data != null && !it.isDeleted } }
+        onDispose { reg?.remove() }
+    }
+    var photoLine by remember { mutableStateOf<PlotFiles.Line?>(null) }
+    val addPhoto = rememberTeamPhotoPicker(multi = true) { bytes ->
+        photoLine?.let { l -> TeamRepo.send(t, Team.PHOTO, "Line ${l.no} · ${l.en}".take(120), tag = Team.PROOF, data = bytes, checkLine = l.no) }
+    }
     fun tick(l: PlotFiles.Line, value: String?) {
         if (!open) return
+        if (l.photo && value != null && msgs.none { it.checkLine == l.no }) {
+            Toast.makeText(ctx, "Add a photo first, then tick this line", Toast.LENGTH_SHORT).show()
+            return
+        }
         val f: Map<String, Any> = if (value == null) mapOf("ticks.${l.no}" to com.google.firebase.firestore.FieldValue.delete())
         else mapOf("ticks.${l.no}" to mapOf("at" to System.currentTimeMillis(), "name" to (me?.name ?: ""), "value" to value))
         TeamRepo.plotUpdate(t, f, null)
@@ -270,8 +294,18 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
                         .onFocusLeft { if (v != mark?.value.orEmpty()) tick(l, v.takeIf { it.isNotBlank() }) },
                 )
             }
-            else -> PlotLineRow(l, open, onHelp = { help = l }, onClick = { tick(l, if (mark == null) "" else null) }) {
-                Checkbox(checked = mark != null, onCheckedChange = if (open) ({ tick(l, if (it) "" else null) }) else null)
+            else -> {
+                val photos = if (l.photo) msgs.filter { it.checkLine == l.no } else emptyList()
+                PlotLineRow(l, open, onHelp = { help = l }, onClick = { tick(l, if (mark == null) "" else null) }) {
+                    // N10 A 📷 line stays faded until it has a photo.
+                    Checkbox(checked = mark != null, onCheckedChange = if (open) ({ tick(l, if (it) "" else null) }) else null,
+                        modifier = if (l.photo && photos.isEmpty() && mark == null) Modifier.alpha(0.4f) else Modifier)
+                }
+                if (l.photo) PlotLinePhotos(t, photos, open, onAdd = { photoLine = l; addPhoto() }) { m ->
+                    TeamRepo.deleteMsgId(t, m.id)
+                    // The last photo gone: the line is not proved any more.
+                    if (photos.size == 1 && mark != null) tick(l, null)
+                }
             }
         }
     }
@@ -345,6 +379,50 @@ private fun PlotLineRow(l: PlotFiles.Line, open: Boolean, onHelp: () -> Unit, on
             Icons.Rounded.Info, contentDescription = "How to do this line", tint = Tones.amber.fg,
             modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onHelp).padding(8.dp).size(18.dp),
         )
+    }
+}
+
+/**
+ * N10 Under a 📷 line: "Photo needed" + 📷 Add photo, or the photos (44dp, like the task brief) with a small × each
+ * (only the person who added it, only until Done), + for more, and "N photos · name · time". Tap opens full screen.
+ */
+@Composable
+private fun PlotLinePhotos(t: TeamTask, photos: List<TeamMsg>, open: Boolean, onAdd: () -> Unit, onRemove: (TeamMsg) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var viewAt by remember { mutableStateOf<Int?>(null) }
+    if (photos.isEmpty()) {
+        Column(Modifier.padding(start = 40.dp, bottom = 4.dp)) {
+            Text("📷 Photo needed before you can tick this line", fontSize = 12.5.sp, color = Tones.amber.fg)
+            if (open) PlotLink("📷 Add photo", onAdd)
+        }
+        return
+    }
+    val me = TeamRepo.me.collectAsState().value?.uid
+    Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant, modifier = Modifier.padding(start = 40.dp, bottom = 6.dp)) {
+        Row(Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            photos.forEachIndexed { i, m ->
+                val bmp = remember(m.id) { m.data?.let { TeamMedia.bitmap(it)?.asImageBitmap() } }
+                Box {
+                    if (bmp != null) Image(bmp, contentDescription = "Photo ${i + 1}", contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).clickable { viewAt = i })
+                    if (open && m.fromUid == me) Box(
+                        Modifier.align(Alignment.TopEnd).padding(2.dp).size(18.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f))
+                            .clickable { onRemove(m) },
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Rounded.Close, contentDescription = "Remove photo", tint = Color.White, modifier = Modifier.size(12.dp)) }
+                }
+            }
+            if (open) Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, cs.outline, RoundedCornerShape(10.dp)).clickable(onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Add, contentDescription = "Add another photo", tint = cs.onSurfaceVariant) }
+            val last = photos.last()
+            Text("${photos.size} photo" + (if (photos.size == 1) "" else "s") + "\n${last.fromFirst} · ${TeamUi.shortWhen(last.at)}",
+                fontSize = 11.5.sp, lineHeight = 14.sp, color = cs.onSurfaceVariant)
+        }
+    }
+    viewAt?.let { start ->
+        PhotoViewer(photos.mapNotNull { it.data }, start = start, onDismiss = { viewAt = null }) { i -> photos.getOrNull(i)?.let { TeamRepo.markPlayed(t.id, it) } }
     }
 }
 

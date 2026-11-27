@@ -80,7 +80,8 @@ import java.time.ZoneId
  */
 object PlotFiles {
     /** One checklist line: Tick, Pick one (its Option lines follow it), Option or Number box. */
-    data class Line(val no: String, val type: String, val en: String, val ur: String, val onlyIf: String, val detail: String, val detailUr: String)
+    /** [photo] N10: the sheet's "Photo needed" column; the line can't be ticked until a photo is added to it. */
+    data class Line(val no: String, val type: String, val en: String, val ur: String, val onlyIf: String, val detail: String, val detailUr: String, val photo: Boolean = false)
 
     data class Step(
         val id: String, val stage: String, val role: String, val title: String, val timer: String, val days: Int?,
@@ -130,7 +131,7 @@ object PlotFiles {
                 call = strs(m["call"]), wa = strs(m["wa"]), waMsg = str(m["waMsg"]), forms = strs(m["forms"]),
                 wrongShort = str(m["wrongShort"]), wrongShortUr = str(m["wrongShortUr"]),
                 lines = (m["checklist"] as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }.map { c ->
-                    Line(str(c["no"]), str(c["type"]), str(c["en"]), str(c["ur"]), str(c["onlyIf"]), str(c["detail"]), str(c["detailUr"]))
+                    Line(str(c["no"]), str(c["type"]), str(c["en"]), str(c["ur"]), str(c["onlyIf"]), str(c["detail"]), str(c["detailUr"]), c["photo"] == true)
                 },
             )
         }
