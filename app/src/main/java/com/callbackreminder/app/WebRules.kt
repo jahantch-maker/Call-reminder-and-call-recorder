@@ -76,6 +76,8 @@ object WebRules {
         runCatching { TaskAlarms.scheduleNudge(c) }
         // Text messages switched back on: the paused texts start again.
         runCatching { if (smsOn(c)) SmsScheduler.rescheduleAll(c) }
+        // Widgets hide or show texts with the switch.
+        runCatching { WidgetSync.refresh(c) }
     }
 
     /** Set by the office: a team member in a seat (not the owner). These rows are then read only on the phone. */

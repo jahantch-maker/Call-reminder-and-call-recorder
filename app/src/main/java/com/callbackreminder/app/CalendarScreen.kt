@@ -516,7 +516,7 @@ private fun rememberDay(date: LocalDate, now: Long): DayData {
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val g by GoogleCal.version.collectAsState()
     val wh by WorkHours.version.collectAsState()
     val off by OffDays.mask.collectAsState()

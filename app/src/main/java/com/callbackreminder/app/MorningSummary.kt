@@ -35,7 +35,7 @@ object MorningSummary {
     ) {
         val total: Int get() = calls + texts + myTasks + dossier
         val countsLine: String
-            get() = "Today: $calls ${if (calls == 1) "call" else "calls"} · $texts ${if (texts == 1) "text" else "texts"} · " +
+            get() = "Today: $calls ${if (calls == 1) "call" else "calls"} · " + (if (texts == 0) "" else "$texts ${if (texts == 1) "text" else "texts"} · ") +
                 "$myTasks my ${if (myTasks == 1) "task" else "tasks"} · $dossier dossier"
     }
 
@@ -86,7 +86,7 @@ object MorningSummary {
         val open = Work.open(
             now,
             ReminderStore.items.value,
-            SmsStore.items.value,
+            SmsStore.shown(ctx),
             MyTaskStore.items.value,
             DossierStore.tasks.value,
             DossierStore.records.value,

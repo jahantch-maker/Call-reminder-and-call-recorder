@@ -893,6 +893,8 @@ object TeamSync {
     }
 
     /** 27 Nov (S13.2) Automatic notifications outside the duty window wait here, then come as ONE notification. */
+    fun holdLine(c: Context, line: String) = hold(c, line)
+
     private fun hold(c: Context, line: String) {
         val p = c.getSharedPreferences("team_held", Context.MODE_PRIVATE)
         val all = (p.getString("lines", "").orEmpty().split('\n').filter { it.isNotBlank() } + line.take(100)).takeLast(30)

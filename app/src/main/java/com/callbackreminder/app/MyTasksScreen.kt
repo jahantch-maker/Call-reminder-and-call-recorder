@@ -1696,7 +1696,7 @@ fun DossierReviewScreen(
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val now = rememberNow(resumeKey)
     var whyFor by remember { mutableStateOf<DossierTask?>(null) }
     val myTasks by MyTaskStore.items.collectAsState()

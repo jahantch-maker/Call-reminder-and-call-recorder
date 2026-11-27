@@ -20,6 +20,8 @@ object SmsStore {
     private lateinit var appCtx: Context
     private val _items = MutableStateFlow<List<SmsReminder>>(emptyList())
     val items: StateFlow<List<SmsReminder>> = _items.asStateFlow()
+    /** What lists, counts, widgets and the calendar show: nothing while the office has Text messages off (S6.1). The texts stay saved. */
+    fun shown(c: Context = appCtx, l: List<SmsReminder> = items.value): List<SmsReminder> = if (WebRules.smsOn(c)) l else emptyList()
 
     @Synchronized
     fun init(context: Context) {

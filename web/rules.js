@@ -10,6 +10,7 @@
       ["Duty hours", "Each person's duty hours come from their timetable (Team › Timetables). No timetable = 11 AM to 9 PM. The weekly off day and Settings › Holidays have no duty hours.", "Timetable 10 AM to 7 PM, Friday off: Friday has no duty hours at all.", "0.61.0"],
       ["Notification window", "Automatic team notifications, reminders and texts to staff only come from 30 minutes before duty starts until 1 hour after it ends.", "Duty 11 AM to 9 PM: automatic ones come 10:30 AM to 10 PM.", "0.61.0"],
       ["Night bundle", "Automatic notifications outside the window wait. When the window opens they come as ONE notification: “8 updates while you were off”.", "Three “Done, check it” at 11 PM arrive at 10:30 AM as “3 updates while you were off”.", "0.61.0"],
+      ["Text info waits too", "For team members, info about texts (sent, failed, to review, a reply, daily list sent) outside the window also waits for the bundle.", "“Sent to Ali ✓” at 11:40 PM comes in the morning bundle.", "0.61.1"],
       ["Night Timeline messages", "Outside the window, Timeline messages still show, but silently. An @mention of you still rings.", "At midnight “@Ali please check” rings on Ali's phone; a plain message is silent.", "0.61.0"],
       ["Set times always ring", "Anything with a set time (call-back reminder, My task, follow-up, plot step due) always comes at its time, day or night.", "A call-back set for 11:30 PM rings at 11:30 PM.", "0.61.0"],
       ["Working time counts", "Every “after N hours” rule counts only working hours: nights, the off day and holidays don't count.", "Task given 8 PM, rule “after 2 h”, duty ends 9 PM, starts 11 AM: it fires at 12 noon next day.", "0.61.0"],
@@ -54,7 +55,7 @@
       ["Per SIM", "A SIM can be switched off; its calls stay quiet unless the number has an open task.", "", "0.44"],
     ]],
     ["Texts and WhatsApp lists", [
-      ["Text messages switch", "Off (Access › Calls and texts): every SMS part disappears from the phone and scheduled texts pause. They start again when it is on. Team SMS are not affected.", "", "0.61.0"],
+      ["Text messages switch", "Off (Access › Calls and texts): every SMS part disappears from the phone, including home lists, widgets, the calendar, reviews and the morning summary. Scheduled texts pause and nothing is deleted; they come back when it is on. Team SMS are not affected.", "Switched off: texts vanish from Home, the widget and the calendar. Switched on again: they all come back.", "0.61.1"],
       ["Task list message", "Lists go in groups: 🔴 Late, ⏳ No time yet, 📅 Today, 🗓 Later, numbered, with a blank line after each task. WhatsApp shows the headings in bold.", "*Ali, your open tasks (27 Nov)* … 1. Send the map / Due 25 Nov, 5:00 pm · T-12", "0.61.0"],
       ["Send which tasks?", "Before sending, you tick the groups. Late, No time yet and Today are ticked; Later isn't. The daily list sends the first three.", "", "0.61.0"],
       ["Pending list from the website", "Team Performance › Person › Send pending list on WhatsApp: all open tasks from everyone (not dossier); “Last sent” shows who sent it last.", "", "0.61.0"],
@@ -74,12 +75,13 @@
     ]],
   ];
 
+  const LATEST = "0.61.1";   // bump with each build: rules changed in it get the green tag
   RB.rulesHtml = () => {
     const n = RB.RULES.reduce((t, [, rs]) => t + rs.length, 0);
     return `<div class="card rules" style="max-width:900px"><div class="subhead"><h3 style="margin:0">Rules</h3><div class="sp"></div><span class="sub" id="rulesn">${n} rules</span></div>
       <div class="hint">How every rule of the app and the website works, in plain words. Read only. Updated with every new version.</div>
       <input id="rulesq" class="rulesq" placeholder="🔍 Search rules, e.g. urgent, SMS, dossier" aria-label="Search rules">
-      ${RB.RULES.map(([h, rs]) => `<div class="rulesg"><div class="mh2 rulesh">${esc(h.toUpperCase())}</div>${rs.map((r) => { const [t, w, ex, v] = r; return `<div class="rule" data-t="${esc((h + " " + r.join(" ")).toLowerCase())}"><div class="ruleh"><b>${esc(t)}</b>${v ? `<span class="tag ${v === "0.61.0" ? "grn" : ""}">Changed in version ${esc(v)}</span>` : ""}</div><div>${esc(w)}</div>${ex ? `<div class="rulex">Example: ${esc(ex)}</div>` : ""}</div>`; }).join("")}</div>`).join("")}
+      ${RB.RULES.map(([h, rs]) => `<div class="rulesg"><div class="mh2 rulesh">${esc(h.toUpperCase())}</div>${rs.map((r) => { const [t, w, ex, v] = r; return `<div class="rule" data-t="${esc((h + " " + r.join(" ")).toLowerCase())}"><div class="ruleh"><b>${esc(t)}</b>${v ? `<span class="tag ${v === LATEST ? "grn" : ""}">Changed in version ${esc(v)}</span>` : ""}</div><div>${esc(w)}</div>${ex ? `<div class="rulex">Example: ${esc(ex)}</div>` : ""}</div>`; }).join("")}</div>`).join("")}
       <div class="muted" id="rulesnone" style="margin-top:12px;display:none">No rule matches.</div></div>`;
   };
   // Filters in place (no redraw), so typing never makes the page jump.

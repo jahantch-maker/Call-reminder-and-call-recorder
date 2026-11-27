@@ -29,6 +29,14 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.61.1", "27 Nov",
+            new = listOf(
+                "When the office turns Text messages off, texts also leave the home lists, widgets, calendar, reviews and the morning summary",
+                "Text info (sent, failed, replies, daily list) that comes after duty hours waits for the morning bundle",
+            ),
+            fixed = listOf(),
+        ),
+        Entry(
             "0.61.0", "27 Nov",
             new = listOf(
                 "Team settings now come from the website and keep working with no internet: task rules, reminders and notifications",

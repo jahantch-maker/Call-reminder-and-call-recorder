@@ -250,7 +250,7 @@ internal object WidgetData {
     fun followUps(filter: Int, now: Long): List<FuSection> {
         val zone = ZoneId.systemDefault()
         val endOfToday = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val open = entries(ReminderStore.items.value, SmsStore.items.value)
+        val open = entries(ReminderStore.items.value, SmsStore.shown())
             .filter { it.open && !it.hidden && !it.inReview }
             .sortedBy { it.at }
         val overdue = open.filter { it.callPending && it.at <= now }

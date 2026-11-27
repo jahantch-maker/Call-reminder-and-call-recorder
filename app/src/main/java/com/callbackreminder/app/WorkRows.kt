@@ -50,7 +50,7 @@ internal fun WorkBlock(
     val scope = rememberCoroutineScope()
     val my = remember(host) { MyCardActions(scope, host) }
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val records by DossierStore.records.collectAsState()
     val stars by FuStars.keys.collectAsState()
     LaunchedEffect(Unit) { FuStars.load(ctx) }
