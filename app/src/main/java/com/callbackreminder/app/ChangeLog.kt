@@ -35,6 +35,7 @@ object ChangeLog {
                 "Locked settings keep working with no internet, after a restart and in battery saver",
                 "Not done reasons can now be set by the office too",
             ),
+            fixed = emptyList(),
         ),
         Entry(
             "0.62.4", "28 Nov",

@@ -12,15 +12,15 @@ object PhoneSettings {
     private class Spec(val id: String, val get: (Context) -> Any, val set: (Context, Any) -> Unit, var lock: String = id)
 
     private fun b(id: String, get: (Context) -> Boolean, set: (Context, Boolean) -> Unit) =
-        Spec(id, get) { c, v -> (v as? Boolean)?.let { set(c, it) } }
+        Spec(id, get, set = { c, v -> (v as? Boolean)?.let { set(c, it) } })
     private fun i(id: String, get: (Context) -> Int, set: (Context, Int) -> Unit) =
-        Spec(id, get) { c, v -> (v as? Number)?.toInt()?.let { set(c, it) } }
+        Spec(id, get, set = { c, v -> (v as? Number)?.toInt()?.let { set(c, it) } })
     private fun s(id: String, get: (Context) -> String, set: (Context, String) -> Unit) =
-        Spec(id, get) { c, v -> (v as? String)?.let { set(c, it) } }
+        Spec(id, get, set = { c, v -> (v as? String)?.let { set(c, it) } })
     private fun il(id: String, get: (Context) -> List<Int>, set: (Context, List<Int>) -> Unit) =
-        Spec(id, { get(it) }) { c, v -> (v as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { (a.opt(it) as? Number)?.toInt() } }?.takeIf { it.isNotEmpty() }?.let { set(c, it) } }
+        Spec(id, { get(it) }, set = { c, v -> (v as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { (a.opt(it) as? Number)?.toInt() } }?.takeIf { it.isNotEmpty() }?.let { set(c, it) } })
     private fun sl(id: String, get: (Context) -> List<String>, set: (Context, List<String>) -> Unit) =
-        Spec(id, { get(it) }) { c, v -> (v as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }?.takeIf { it.isNotEmpty() }?.let { set(c, it) } }
+        Spec(id, { get(it) }, set = { c, v -> (v as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }?.takeIf { it.isNotEmpty() }?.let { set(c, it) } })
 
     private val SPECS: List<Spec> = listOf(
         // General
