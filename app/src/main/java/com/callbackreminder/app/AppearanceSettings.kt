@@ -68,7 +68,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
     val black = v.let { Appearance.pureBlack(ctx) }
 
     SettingsPage(title = "Appearance", onBack = onBack) {
-        SectionCard(title = "Theme", subtitle = "System follows your phone. The change fades in smoothly.") {
+        SectionCard(title = "Theme", subtitle = "System follows your phone. The change fades in smoothly.", lock = "theme") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ThemeChoice(Icons.Rounded.Contrast, "System", mode == Appearance.SYSTEM, Modifier.weight(1f), split = true, Color(0xFFF3F4FA), Color.White) {
                     Appearance.setMode(ctx, Appearance.SYSTEM)
@@ -81,7 +81,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        SectionCard(title = "Accent colour", subtitle = "Buttons, the selected tab and highlights use it.") {
+        SectionCard(title = "Accent colour", subtitle = "Buttons, the selected tab and highlights use it.", lock = "accent") {
             val items = ACCENTS.indices.toList() + if (Appearance.wallpaperSupported()) listOf(Appearance.WALLPAPER) else emptyList()
             items.chunked(4).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -92,14 +92,14 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        SectionCard(title = "Dark mode", subtitle = "Pure black saves battery on OLED screens.") {
+        SectionCard(title = "Dark mode", subtitle = "Pure black saves battery on OLED screens.", lock = "pureBlack") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Pure black", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 Switch(checked = black, onCheckedChange = { Appearance.setPureBlack(ctx, it) })
             }
         }
         val size = v.let { Appearance.displaySize(ctx) }
-        SectionCard(title = "Display size", subtitle = "This app only. Smaller fits more tasks on each screen.") {
+        SectionCard(title = "Display size", subtitle = "This app only. Smaller fits more tasks on each screen.", lock = "size") {
             BoxTabs(Appearance.SIZES.map { it.first.replace(" ", "\n") }, size, { Appearance.setDisplaySize(ctx, it) }, compact = true)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -967,7 +967,8 @@ fun TimePickerSettingsScreen(onBack: () -> Unit) {
     SettingsPage(title = "Time picker", onBack = onBack) {
         SectionCard(
             title = "Time grid",
-            subtitle = "The time chips you see when setting a time for calls, texts and My tasks."
+            subtitle = "The time chips you see when setting a time for calls, texts and My tasks.",
+            lock = "timeGrid"
         ) {
             Column {
                 SettingValueRow("First time", TimeGrid.clock(start)) { editing = "start" }

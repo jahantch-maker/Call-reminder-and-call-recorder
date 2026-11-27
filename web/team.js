@@ -456,29 +456,6 @@
       ["app", "giveDown", "Give tasks down his branch", "", "On: he can give tasks to anyone below him in the chart. Off: he can't give tasks down.", "sw", null, false, "GIVING TASKS"],
       ["app", "giveSide", "Give tasks sideways", "Colleagues with the same head", "On: he can give tasks to colleagues who have the same head. Off: not to them."],
     ] },
-    { id: "dates", title: "Task rules", grp: "phone", phone: "Task rules", isNew: true, col: 0, note: "He sees these in phone Settings › Task rules but can't change them. Times count working hours only (nights, his off day and holidays don't count).", rows: [
-      ["set", "noDate", "No deadline picked · remind him after", "Tasks he gave", "When he gives a task and the other person hasn't picked a deadline after this many working hours, he gets a reminder. Example: 4 h, task given at 10 AM, reminder at 2 PM.", "sel", MINS([60, 120, 240, 480, 1440]), false, "TASKS HE GIVES"],
-      ["set", "smsMin", "Not seen · send SMS after", "Tasks he gave", "If the person hasn't opened his task after this many working hours, his phone sends them an SMS. Off: no SMS.", "sel", MINS([0, 60, 120, 240])],
-      ["set", "locked", "Deadline locked", "Once set, only “Extend” can change it", "On: once the person picks a deadline on a task he gave, they can only ask him to extend it. Off: they can change it themselves.", "sw"],
-      ["set", "freeExt", "Extend without asking", "On tasks he gave", "How many times the person may move their own deadline without asking him. Never = always asks.", "sel", [[0, "Never"], [1, "1×"], [2, "2×"], [3, "3×"]]],
-      ["set", "urgHours", "Urgent, no deadline · first reminder after", "Tasks he gets", "An urgent task he gets with no deadline: the first reminder comes after this many working hours. The task giver is told each time too. Stops as soon as a deadline is set. Example: 2 h, given at 11 AM, reminders at 1 PM, 3 PM, 5 PM.", "sel", [1, 2, 3, 4, 6, 8].map((h) => [h, h + " h"]), false, "TASKS HE GETS · URGENT, NO DEADLINE"],
-      ["set", "urgTimes", "Urgent, no deadline · repeat", "Each with the same gap", "How many reminders in all for an urgent task with no deadline (same gap each time). If the task never reached his phone, the giver's phone sends him one SMS instead.", "sel", [1, 2, 3, 4, 5, 6].map((n) => [n, n + "×"])],
-      ["set", "urgStyle", "Urgent, no deadline · how it shows", "On his phone", "Full screen: a ringing popup like a call-back reminder. Normal: a notification. Off: no reminders to him (the giver is still told).", "seg", STY],
-    ] },
-    { id: "calls", title: "Calls and texts", grp: "phone", phone: "Call recording, Text messages, After-call popup", col: 0, rows: [
-      ["app", "callRec", "Call recording", "Stays on his phone", "On: call recording is allowed; he still has to turn it on in his own phone. Recordings never leave his phone. Off: no call recording."],
-      ["app", "sms", "Text messages", "His own SMS follow-ups", "On: he can send SMS follow-ups from his phone. Off: every SMS part disappears from his phone (Settings › Text messages, text options on tasks, Texts links, Search). Texts already scheduled pause and start again when it is back on. The automatic team SMS is not affected."],
-      ["app", "popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", "On: he can turn “After-call popup only in duty hours” on or off himself. Off: it stays on and shows “Set by your manager”. Calls from numbers with an open task always ask."],
-    ] },
-    { id: "plot", title: "Plot files", grp: "phone", phone: "New plot file (under the account card)", col: 0, rows: [
-      ["app", "openPlot", "Can open new plot files", "Shows “New plot file” in his phone", "On: his phone shows “New plot file” in Settings. Off: it is hidden (until set, the owner and whoever does the first step have it).", "sw", null, true],
-    ] },
-    { id: "rem", title: "Dossier and review popups", grp: "phone", phone: "My day › Dossier reminder and Review", isNew: true, col: 0, note: "Set from his duty end (his timetable, else 11 AM - 9 PM). Never on his off day or a holiday. Full-screen popup, works with no internet.", rows: [
-      ["set", "dos1", "Dossier reminder 1", "Only if a dossier task is unticked", "A full-screen popup listing his unticked dossier tasks, with Open dossier and Skip. Each Skip shows in his Team Performance report.", "rem", null, false, "DOSSIER"],
-      ["set", "dos2", "Dossier reminder 2", "", "A second dossier popup, the same way.", "rem"],
-      ["set", "rev1", "Review reminder 1", "Only if something is waiting", "The review popup (calls overdue or to review, texts to review), with Snooze and Skip.", "rem", null, false, "REVIEW"],
-      ["set", "rev2", "Review reminder 2", "", "A second review popup. Example: lunch time = 4 h before duty end.", "rem"],
-    ] },
     { id: "portal", title: "In the portal", grp: "perm", col: 1, rows: [
       ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't.", null, null, false, "TEAM PAGES"],
       ["portal", "meetings", "Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", "None: no Meetings page. View: reads minutes of meetings he was in and his own actions. Edit: runs meetings."],
@@ -488,26 +465,6 @@
       ["portal", "settings", "Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", "None: no Settings page. View: reads the ticked tabs. Edit: changes them."],
       ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
       ["app", "seeRules", "See Rules", "Settings › Rules: how every rule works", "On: he sees Settings › Rules (read only). Owners always see it."],
-    ] },
-    { id: "style", title: "Reminder style", grp: "phone", phone: "Reminder style", col: 1, note: "He sees these in phone Settings › Reminder style but can't change them. He can still pick his own ringtones.", rows: [
-      ["set", "remStyle", "Call-back reminder", "Full screen until he reacts, full screen then a notification, or a banner", "Until he reacts: full screen, rings and stays on screen until he taps Call back, Snooze or Done. Then notification: rings on full screen for the seconds below, then moves to his notifications. Banner only: a normal notification, no popup. He can't change this on his phone.", "seg", [["full", "Until he reacts"], ["timed", "Then notification"], ["banner", "Banner only"]], true, "CALL-BACK REMINDERS"],
-      ["set", "remSecs", "Full screen for", "Only with “Then notification”", "How long the full-screen call-back reminder stays before it moves to his notifications.", "sel", [10, 15, 30, 60].map((n) => [n, n + " seconds"]), true],
-      ["set", "remRepeat", "Popup sound repeats until he reacts", "Off = plays once", "On: the popup sound plays again and again (up to 1 minute) until he reacts. Off: it plays one time and vibrates 3 times. Either way the popup stays on screen. He can still pick his own ringtone.", "sw", null, true],
-    ] },
-    { id: "notif", title: "Notifications", grp: "phone", phone: "Notifications", band0: "QUIET HOURS", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after (unless his Quiet hours switch is off). Anything with a set time always rings. He can't change the rows below on his phone.", rows: [
-      ["app", "quietHours", "Can change quiet hours", "His “Quiet hours” switch", "On: he can turn “Quiet hours” on or off himself in phone Settings › Notifications (off = automatic notifications come at any time, at night and on off days too). Off: it stays on and shows “Set by your manager”. The owner can always change it.", "sw", null, true, "QUIET HOURS"],
-      ["set", "n_plotNew", "New plot step", "When a step is given to him", "Full screen: a ringing popup when a plot file step is given to him (only in his notification window, unless his Quiet hours switch is off). Normal: a notification. Off: nothing.", "seg", STY, false, "PLOT FILES"],
-      ["set", "n_plotDue", "Step due", "At the SOP due time", "Full screen: a ringing popup at the step's due time (like a call-back reminder). Normal: a notification. Off: nothing.", "seg", STY],
-      ["set", "n_plotHeads", "Heads-up before due", "", "A notification before a plot step is due. The time picks how long before.", "seg", STY],
-      ["set", "n_plotWait", "Waiting for plot owner", "Once a working day", "When a step waits for the plot owner, a reminder once a working day to call them.", "seg", STY],
-      ["set", "n_plotFollow", "Updates on plots he follows", "", "Started, late and done on plot steps he is told about.", "seg", STY],
-      ["set", "n_newTask", "New task for him", "", "A new task (not a plot step: that is “New plot step”), or a task taken back or given to someone else.", "seg", STY, false, "TEAM TASKS"],
-      ["set", "n_mention", "Someone @mentioned him", "Rings even at night", "A Timeline message with @his name.", "seg", STY],
-      ["set", "n_noDate", "No date / not seen reminders", "", "“Pick your deadline”, “X hasn't set a date”, not seen and SMS problems.", "seg", STY],
-      ["set", "n_doneCheck", "Done, check it", "", "Someone finished a task he gave; or a task he did was received.", "seg", STY],
-      ["set", "n_extend", "Asks to extend", "", "Someone asks for more time on a task he gave.", "seg", STY],
-      ["set", "n_timeline", "Timeline messages", "Silent at night", "Messages and changes on a task's Timeline.", "seg", STY],
-      ["set", "n_dossier", "New dossier task", "", "A dossier task added or changed for him by the office.", "seg", STY, false, "DOSSIER"],
     ] },
   ];
   const ACC_IC = { team: "people", dates: "cal", style: "bell", calls: "phone", plot: "folder", rem: "alarm", portal: "screen", notif: "bell" };
@@ -570,7 +527,7 @@
       <div class="stcols${parts.length === 1 ? " one" : ""}">${cards}</div>${sec.id === "portal" ? '<div class="st-note">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}${sec.id === "team" ? '<div class="st-note">Always on for everyone: 📷 photo proof on tasks he gives, 🔒 private tasks, ⏰ his own reminders, tasks, widgets and calendar. Only owners remove someone from RB; staff can only sign out.</div>' : ""}`;
     };
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
-      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b><span class="sub">${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span>`;
+      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b>${((t) => `<span class="sub" title="${esc(t)}">${esc(t)}</span>`)(s.designation + (s.dept ? " · " + s.dept : "") + (RB.headOf(s) ? " · head: " + first(RB.holderName(RB.headOf(s))) : ""))}`;
     const cur = S.accDesig && RB.desigOf(S.accDesig);
     const bar = `<div class="accbar"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div>
       ${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}
@@ -579,9 +536,65 @@
       ${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset</button>' : ""}
       ${ed() ? '<button class="btnp edit-only" data-acccopy="all">⧉ Copy all…</button>' : ""}</div>
       ${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}`;
+    // 28 Nov (B5) A phone Settings page: 🔒 Locked / 📱 His choice on each row (the owner's own seat too).
+    if (S.phSec) {
+      const pg = RB.PHONE.find((x) => x.id === S.phSec) || RB.PHONE[0];
+      const owner = mode === "person" && s && s.role === "owner", canP = ed();
+      const disP = canP ? "" : "pointer-events:none;opacity:.6";
+      const ownHint = owner ? `<div class="hint">${s.ownerLock ? "Your phone follows these rows like the team's (🔒 Lock my phone like the team is on)." : "Your phone doesn't follow these yet: turn on “🔒 Lock my phone like the team” at the top of the menu."}</div>` : "";
+      return { html: phWrap("ph_" + pg.id, `<div class="ghead"><h2>${esc(pg.title)}</h2><p>${esc(pg.desc)}<span class="phtag">📱 On the phone: Settings › ${esc(pg.title)}</span></p></div>${bar.replace(/<div class="hint">The app owner can do everything[^<]*<\/div>/, "")}${ownHint}
+        ${canP ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="ph:${pg.id}">⧉ Copy this section to…</button></div>` : ""}
+        <div class="hint warn st-wide phkey"><span><b>🔒 Locked</b> = you set it here, his phone can't change it</span><span><b>📱 His choice</b> = he sets it on his phone</span><span class="sp"></span><span>Click the tag to switch</span></div>
+        <div class="phcards">${pg.cards.map(([h, rows]) => `<div class="card st-card phcard"><h4 class="st-h">${esc(h)}</h4>${rows.map((r) => phRow(r, e, mode, disP, info)).join("")}</div>`).join("")}</div>`), side: "" };
+    }
     if (!RB.ACC.some((x) => x.id === S.accSec)) S.accSec = RB.ACC[0].id;
     const cs = RB.ACC.find((x) => x.id === S.accSec);
-    return { html: `${bar}${card(cs)}`, side: "" };
+    return { html: phWrap("acc_" + cs.id, `<div class="ghead"><h2>${esc(cs.title)}</h2><p>${ACC_DESC[cs.id]}</p></div>${bar}${card(cs)}`), side: "" };
+  }
+
+  const hm = (m) => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  const PDAYS = ["M", "T", "W", "T", "F", "S", "S"];
+  /** Every value key a phone row holds ("set.x", "app.x"), and its lock key. */
+  const phKeys = (r) => r.k === "po" || r.k === "tt" ? [] : r.k === "inv" ? ["app." + r.inv] : r.c === "rem" ? ["set." + r.id + "On", "set." + r.id + "Min", "lock." + (r.l || r.id)] : [(r.g || "set") + "." + r.id].concat(r.k === "lock" ? ["lock." + (r.l || r.id)] : []);
+  const phAllKeys = (pg) => Array.from(new Set(pg.cards.flatMap((c) => c[1].flatMap(phKeys))));
+  /** One row: name + ⓘ | the value (or what his phone does) | the tag. */
+  function phRow(r, e, mode, dis, info) {
+    const g = r.g || "set", key = g + "." + r.id, val = getK(e, key), lid = r.l || r.id;
+    const chg = mode === "person" && phKeys(r).some((k) => e.changed[k]) ? `<span class="tag chg" title="Different from the designation">✎ changed</span>` : "";
+    let state, tag, v;
+    if (r.k === "po") { state = "free"; tag = '<span class="ptag po">Phone only</span>'; v = `<span class="pfree">${esc(r.v)}</span>`; }
+    else if (r.k === "tt") { state = "free"; tag = '<span class="ptag po">Timetable</span>'; v = '<span class="pfree">From his timetable (Team › Timetables)</span>'; }
+    else if (r.k === "inv") { const mine = e.app[r.inv] !== false; state = mine ? "free" : ""; tag = `<button class="ptag ${mine ? "fr" : "pl"}" data-pinv="${r.inv}" style="${dis}">${mine ? "📱 His choice" : "🔒 Locked"}</button>`; v = mine ? '<span class="pfree">📱 He sets this on his phone</span>' : "<b>Always on</b>"; }
+    else {
+      const locked = r.k === "web" || e.lock[lid] === true;
+      state = locked ? "" : "free";
+      tag = r.k === "web" ? '<span class="ptag web" title="Always set here: his phone has no switch for it">🔒 Set here</span>' : `<button class="ptag ${locked ? "pl" : "fr"}" data-plock="${lid}" style="${dis}">${locked ? "🔒 Locked" : "📱 His choice"}</button>`;
+      v = locked ? phCtl(r, g, val, e, dis) : '<span class="pfree">📱 He sets this on his phone</span>';
+    }
+    return `<div class="phrow ${state}"><div class="w"><b>${esc(r.t)}${info(r.d)}</b>${chg}</div><div class="pv">${v}</div>${tag}</div>`;
+  }
+  /** The control for one locked value. Values travel as JSON so numbers stay numbers. */
+  function phCtl(r, g, val, e, dis) {
+    const k = g + "." + r.id, J = (x) => esc(JSON.stringify(x));
+    if (r.c === "sw") return `<div class="sw ${val ? "on" : ""}" data-psw="${k}" role="switch" aria-checked="${!!val}" style="${dis}"></div>`;
+    if (r.c === "seg") return `<div class="lvl" style="${dis}">${r.o.map(([x, l]) => `<button data-pv="${k}" data-v="${J(x)}" class="${val === x ? "on" : ""}">${esc(l)}</button>`).join("")}</div>`;
+    if (r.c === "sel") return `<select data-psel="${k}" style="${dis}">${r.o.map(([x, l]) => `<option value="${J(x)}" ${JSON.stringify(val) === JSON.stringify(x) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    if (r.c === "time") return `<input type="time" data-ptime="${k}" value="${hm(Number(val) || 0)}" style="${dis}">`;
+    if (r.c === "days") return `<div class="pdays" style="${dis}">${PDAYS.map((d, i) => `<button data-pday="${k}" data-v="${i}" class="${val & (1 << i) ? "on" : ""}" aria-label="${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i]}">${d}</button>`).join("")}</div>`;
+    if (r.c === "times") return `<div class="ptimes" style="${dis}">${(val || []).map((m, i) => `<span class="sc on">${hm(m)}<button data-ptdel="${k}" data-v="${i}" aria-label="Remove ${hm(m)}">✕</button></span>`).join("")}<input type="time" data-ptadd="${k}" aria-label="Add a time"></div>`;
+    if (r.c === "text" || r.c === "lines") return `<textarea data-ptext="${k}" data-lines="${r.c === "lines" ? 1 : ""}" rows="${r.c === "lines" ? 5 : 3}" style="${dis}">${esc(r.c === "lines" ? (val || []).join("\n") : val || "")}</textarea>`;
+    if (r.c === "rem") {
+      const on = getK(e, "set." + r.id + "On"), m = getK(e, "set." + r.id + "Min");
+      return `<div class="prem"><div class="sw ${on ? "on" : ""}" data-psw="set.${r.id}On" role="switch" aria-checked="${!!on}" style="${dis}"></div>${on ? `<select data-psel="set.${r.id}Min" style="${dis}">${OFFS.map((x) => `<option value="${x}" ${x === m ? "selected" : ""}>${offLbl(x)}</option>`).join("")}</select>` : ""}</div>`;
+    }
+    return "";
+  }
+  /** The second menu (phone pages or permissions) beside the page, as locked 28 Nov (his idea). */
+  function phWrap(tab, inner) {
+    const items = tab.startsWith("ph_")
+      ? RB.PHONE.map((p, i, a) => (i === 0 || a[i - 1].grp !== p.grp ? `<div class="phsub">${esc(p.grp)}</div>` : "") + `<button data-tab="ph_${p.id}" class="${tab === "ph_" + p.id ? "on" : ""}"><span class="mi" style="--t:${p.tone}">${p.ic}</span><span>${esc(p.title)}</span></button>`).join("")
+      : RB.ACC.map((x) => `<button data-tab="acc_${x.id}" class="${tab === "acc_" + x.id ? "on" : ""}">${RB.lineIcon(ACC_IC[x.id])}<span>${esc(x.title)}</span></button>`).join("");
+    return `<div class="phwrap"><nav class="phnav" aria-label="${tab.startsWith("ph_") ? "Phone app settings" : "Permissions"}">${items}</nav><div class="phmain">${inner}</div></div>`;
   }
 
   /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
@@ -596,7 +609,7 @@
     }
     return Promise.resolve();
   }
-  const rowTitle = (k) => { for (const sec of RB.ACC) for (const r of sec.rows) if (r[1] === k || r[1] + "On" === k || r[1] + "Min" === k) return r[2]; return k === "plotHeadsMin" ? "Heads-up time" : k; };
+  const rowTitle = (k) => { for (const sec of RB.ACC) for (const r of sec.rows) if (r[1] === k || r[1] + "On" === k || r[1] + "Min" === k) return r[2]; for (const p of RB.PHONE) for (const c of p.cards) for (const r of c[1]) if (r.id === k || r.l === k || r.inv === k || r.id + "On" === k || r.id + "Min" === k) return r.t; return k; };
   const setSwitch = (k, val) => setVal("app", k, val, rowTitle(k) + " " + (val ? "ON" : "OFF"));
   const setLevel = (k, v) => setVal("portal", k, v, "portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
 
@@ -605,9 +618,11 @@
    * (People mode). Each one shows "✓ Same as <source>" or "N rows different"; "Show only different" hides the same ones.
    */
   function copyAccess(secId) {
-    const secs = secId === "all" ? RB.ACC : RB.ACC.filter((x) => x.id === secId);
-    const keys = secs.flatMap(secKeys), src = srcEff(), person = S.accMode === "person" && RB.seat(S.accSeat);
-    const srcName = person ? RB.holderName(person) : S.accDesig, what = secId === "all" ? "all access" : secs[0].title;
+    // 28 Nov (B5) "ph:<page>" copies one phone page; "all" copies permissions and every phone page.
+    const ph = secId.startsWith("ph:") ? RB.PHONE.find((x) => x.id === secId.slice(3)) : null;
+    const secs = secId === "all" ? RB.ACC : ph ? [] : RB.ACC.filter((x) => x.id === secId);
+    const keys = secs.flatMap(secKeys).concat(ph ? phAllKeys(ph) : secId === "all" ? RB.PHONE.flatMap(phAllKeys) : []), src = srcEff(), person = S.accMode === "person" && RB.seat(S.accSeat);
+    const srcName = person ? RB.holderName(person) : S.accDesig, what = secId === "all" ? "all access" : ph ? ph.title + " settings" : secs[0].title;
     const items = person ? D.seats.filter((x) => x.status === "filled" && x.id !== person.id && x.role !== "owner").map((x) => ({ id: x.id, name: RB.holderName(x), group: x.designation || "No designation", e: RB.effective(x) }))
       : RB.desigList().filter((d) => d.name !== S.accDesig).map((d) => ({ id: d.name, name: d.name, group: "", e: RB.defaultsOf(d.name) }));
     items.forEach((it) => (it.diff = keys.filter((k) => JSON.stringify(getK(it.e, k)) !== JSON.stringify(getK(src, k))).length));
@@ -646,7 +661,7 @@
           const now = Date.now();
           const list = RB.desigList().map((d) => {
             if (!pick.has(d.name)) return d.name === S.accDesig ? Object.assign({}, d, { checkedAt: now }) : d;
-            const c = Object.assign({}, d, { app: Object.assign({}, d.app), portal: Object.assign({}, d.portal), set: Object.assign({}, d.set), checkedAt: now });
+            const c = Object.assign({}, d, { app: Object.assign({}, d.app), portal: Object.assign({}, d.portal), set: Object.assign({}, d.set), lock: Object.assign({}, d.lock), checkedAt: now });
             keys.forEach((key) => { const [g, k] = key.split("."); c[g][k] = getK(src, key); });
             return c;
           });
@@ -951,6 +966,20 @@
       on(root, "[data-aseg]", (e) => { if (!ed()) return; const [key, v] = e.dataset.aseg.split(":"), k = key.split(".")[1]; setVal("set", k, v, rowTitle(k) + " " + e.textContent).then(RB.render); });
       root.querySelectorAll("[data-aset]").forEach((el) => (el.onchange = () => { if (!ed()) return; const k = el.dataset.aset.split(".")[1], v = Number(el.value); setVal("set", k, v, rowTitle(k) + " " + el.options[el.selectedIndex].text).then(RB.render); }));
       on(root, "[data-acccopy]", (e) => copyAccess(e.dataset.acccopy));
+      // 28 Nov (B5) Phone settings pages: the tag switches 🔒 Locked / 📱 His choice; the controls set the locked value.
+      const gk = (key) => key.split(".");
+      const pset = (key, v, what) => { if (!ed()) return; const [g, k] = gk(key); setVal(g, k, v, rowTitle(k) + " " + what).then(RB.render); };
+      on(root, "[data-plock]", (e) => { const id = e.dataset.plock, now = srcEff().lock[id] === true; pset("lock." + id, !now, now ? "📱 his choice" : "🔒 locked"); });
+      on(root, "[data-pinv]", (e) => { if (!ed()) return; const k = e.dataset.pinv, mine = srcEff().app[k] !== false; setSwitch(k, !mine).then(RB.render); });
+      on(root, "[data-psw]", (e) => pset(e.dataset.psw, !e.classList.contains("on"), e.classList.contains("on") ? "OFF" : "ON"));
+      on(root, "[data-pv]", (e) => pset(e.dataset.pv, JSON.parse(e.dataset.v), e.textContent));
+      on(root, "[data-pday]", (e) => { const key = e.dataset.pday, cur = Number(getK(srcEff(), key)) || 0, next = cur ^ (1 << Number(e.dataset.v)); if (next) pset(key, next, "days"); });
+      on(root, "[data-ptdel]", (e) => { const key = e.dataset.ptdel, cur = (getK(srcEff(), key) || []).slice(); cur.splice(Number(e.dataset.v), 1); if (cur.length) pset(key, cur, "times"); });
+      const mins = (t) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
+      root.querySelectorAll("[data-psel]").forEach((el) => (el.onchange = () => pset(el.dataset.psel, JSON.parse(el.value), el.options[el.selectedIndex].text)));
+      root.querySelectorAll("[data-ptime]").forEach((el) => (el.onchange = () => { if (el.value) pset(el.dataset.ptime, mins(el.value), el.value); }));
+      root.querySelectorAll("[data-ptadd]").forEach((el) => (el.onchange = () => { if (!el.value) return; const key = el.dataset.ptadd, cur = getK(srcEff(), key) || []; pset(key, Array.from(new Set(cur.concat(mins(el.value)))).sort((a, b) => a - b), "times"); }));
+      root.querySelectorAll("[data-ptext]").forEach((el) => (el.onchange = () => { const v = el.dataset.lines ? el.value.split("\n").map((x) => x.trim()).filter(Boolean) : el.value; if (el.dataset.lines ? v.length : v.trim()) pset(el.dataset.ptext, v, "changed"); }));
       on(root, "[data-info]", (e) => accInfo(e));
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
@@ -959,7 +988,9 @@
   RB.infoPop = accInfo;
   const MENU_ORDER = ["dates", "style", "notif", "calls", "rem", "plot", "team", "portal"];
   RB.access = {
-    page: (id) => { RB.reconcile(); S.accSec = id; return access(); },
+    page: (id) => { RB.reconcile(); S.accSec = id; S.phSec = null; return access(); },
+    /** 28 Nov (B5) One phone Settings page ("ph_<id>"). */
+    phone: (id) => { RB.reconcile(); S.phSec = id; const r = access(); S.phSec = null; return r; },
     bind: accBind,
     /** Settings left menu rows: [tab, label, icon, one line]. */
     // Phone sections in the order the phone's Settings lists them.

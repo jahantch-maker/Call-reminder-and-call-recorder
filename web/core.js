@@ -121,14 +121,17 @@
     const app = Object.assign({}, DEF_APP, ds.app || {}, ov.app || {});
     const portal = Object.assign({}, DEF_PORTAL, ds.portal || {}, ov.portal || {});
     const set = Object.assign({}, DEF_SET, ds.set || {}, ov.set || {});
+    // 28 Nov (B5) Which phone settings the office locks (🔒) or leaves as his choice (📱).
+    const lock = Object.assign({}, RB.DEF_LOCK || {}, ds.lock || {}, ov.lock || {});
     if (owner) { Object.keys(app).forEach((k) => (app[k] = k === "callRec" ? false : true)); RB.SECTIONS.forEach(([k]) => (portal[k] = k === "app" ? "view" : "edit")); portal.appScope = "all"; portal.teamTabs = RB.TEAM_TABS.map((t) => t[0]); portal.settingsTabs = RB.SET_TABS.map((t) => t[0]); }
     const changed = {};
     Object.keys(ov.app || {}).forEach((k) => { if ((ov.app[k]) !== (Object.assign({}, DEF_APP, ds.app || {})[k])) changed["app." + k] = 1; });
     Object.keys(ov.portal || {}).forEach((k) => { if (JSON.stringify(ov.portal[k]) !== JSON.stringify(Object.assign({}, DEF_PORTAL, ds.portal || {})[k])) changed["portal." + k] = 1; });
-    Object.keys(ov.set || {}).forEach((k) => { if (ov.set[k] !== Object.assign({}, DEF_SET, ds.set || {})[k]) changed["set." + k] = 1; });
-    return { app, portal, set, changed, owner };
+    Object.keys(ov.set || {}).forEach((k) => { if (JSON.stringify(ov.set[k]) !== JSON.stringify(Object.assign({}, DEF_SET, ds.set || {})[k])) changed["set." + k] = 1; });
+    Object.keys(ov.lock || {}).forEach((k) => { if (ov.lock[k] !== Object.assign({}, RB.DEF_LOCK || {}, ds.lock || {})[k]) changed["lock." + k] = 1; });
+    return { app, portal, set, lock, changed, owner };
   };
-  RB.defaultsOf = (name) => { const ds = RB.desigOf(name) || { app: {}, portal: {} }; return { app: Object.assign({}, DEF_APP, ds.app || {}), portal: Object.assign({}, DEF_PORTAL, ds.portal || {}), set: Object.assign({}, DEF_SET, ds.set || {}) }; };
+  RB.defaultsOf = (name) => { const ds = RB.desigOf(name) || { app: {}, portal: {} }; return { app: Object.assign({}, DEF_APP, ds.app || {}), portal: Object.assign({}, DEF_PORTAL, ds.portal || {}), set: Object.assign({}, DEF_SET, ds.set || {}), lock: Object.assign({}, RB.DEF_LOCK || {}, ds.lock || {}) }; };
   RB.countOn = (name) => Object.values(RB.defaultsOf(name).app).filter(Boolean).length;
 
   const seatOfUid = (u) => D.seats.find((s) => s.uid === u && s.status === "filled");
@@ -293,7 +296,7 @@
     D.seats.forEach((s) => {
       // Every seat keeps its permissions on itself, so whoever signs in (phone or web) gets them at once.
       if (s.role !== "owner" && s.gmail) {
-        const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal, set: e0.set };
+        const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal, set: e0.set, lock: e0.lock };
         if (JSON.stringify(s.perms) !== JSON.stringify(p0)) writes.push(RB.Store.put("seats", s.id, { perms: p0 }, true, true).catch((err) => console.warn("sync seat", s.id, err)));
       }
       if (s.status !== "filled" || !s.uid) return;
@@ -305,7 +308,8 @@
         // The seat's name is the only name shown anywhere (locked 23 Nov), so the member row follows it.
         name: s.name || (RB.member(s.uid) || {}).name || "",
         seatId: s.id, designation: s.designation || "", dept: s.dept || "", reportsTo: head && head.uid ? head.uid : "", managers: chain,
-        perms: { app: e.app, portal: e.portal, set: e.set }, setDossier: false, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
+        // 28 Nov (B3) ownerLock: the owner's own phone follows these like the team's ("Lock my phone like the team").
+        perms: Object.assign({ app: e.app, portal: e.portal, set: e.set, lock: e.lock }, s.role === "owner" ? { ownerLock: s.ownerLock === true } : {}), setDossier: false, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
         role: s.role === "owner" ? "owner" : "member",
         docDesigs: Array.from(new Set([s.designation].concat(RB.descendants(s.id).map((x) => x.designation)).filter(Boolean))),
         also: s.also || [],   // WEB21 other jobs this person covers (plot steps go to them too)

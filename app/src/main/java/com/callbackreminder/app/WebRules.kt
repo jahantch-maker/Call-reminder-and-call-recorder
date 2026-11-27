@@ -58,11 +58,24 @@ object WebRules {
     fun save(c: Context, perms: Any?, member: Boolean) {
         val m = perms as? Map<*, *>
         fun part(k: String) = JSONObject(((m?.get(k) as? Map<*, *>).orEmpty()).entries.associate { (a, b) -> a.toString() to b })
-        val json = JSONObject().put("set", part("set")).put("app", part("app")).toString()
+        val json = JSONObject().put("set", part("set")).put("app", part("app")).put("lock", part("lock")).toString()
         if (json == p(c).getString("json", null) && member == managed(c)) return
         p(c).edit().putString("json", json).putBoolean("member", member).apply()
+        cache = null
+        // 28 Nov (B5) Locked phone settings take the office's value now, so they work offline from here on.
+        runCatching { PhoneSettings.apply(c) }
         changed(c)
     }
+
+    /** 28 Nov (B5) The office's values for this person ("set"), or null before the website has sent any. */
+    fun setJson(c: Context): JSONObject? = json(c).optJSONObject("set")
+
+    /** Settings the website locked before 28 Nov stay locked until the office says otherwise; the rest start as his choice. */
+    private val DEF_LOCK = setOf("noDate", "smsMin", "locked", "freeExt", "remStyle", "remSecs", "remRepeat", "review", "dossier")
+
+    /** 28 Nov (B5) "🔒 Locked" on the website: the office's value applies and the row is read only on his phone. */
+    fun locked(c: Context, id: String): Boolean =
+        managed(c) && (json(c).optJSONObject("lock")?.opt(id) as? Boolean ?: (id in DEF_LOCK))
 
     /** N3 The website's time stamp of the settings this phone holds, and when they arrived. */
     fun stamp(c: Context): Long = p(c).getLong("stamp", 0L)
@@ -92,7 +105,7 @@ object WebRules {
         runCatching { WidgetSync.refresh(c) }
     }
 
-    /** Set by the office: a team member in a seat (not the owner). These rows are then read only on the phone. */
+    /** Set by the office: a team member in a seat, or the owner with "Lock my phone like the team" on (28 Nov, B3). */
     fun managed(c: Context): Boolean = p(c).getBoolean("member", false)
 
     @Volatile private var cache: JSONObject? = null
@@ -100,6 +113,11 @@ object WebRules {
         cache ?: (runCatching { JSONObject(p(c).getString("json", "{}") ?: "{}") }.getOrNull() ?: JSONObject()).also { cache = it }
 
     private fun raw(c: Context, key: String): Any? = json(c).optJSONObject("set")?.opt(key)?.takeIf { managed(c) } ?: DEFAULTS[key]
+
+    /** 28 Nov (B5) The office's value when the row is locked, else the phone's own [mine]. */
+    fun intOr(c: Context, key: String, mine: () -> Int): Int = if (locked(c, key)) int(c, key) else mine()
+    fun boolOr(c: Context, key: String, mine: () -> Boolean): Boolean = if (locked(c, key)) bool(c, key) else mine()
+    fun strOr(c: Context, key: String, mine: () -> String): String = if (locked(c, key)) str(c, key) else mine()
 
     fun int(c: Context, key: String): Int = (raw(c, key) as? Number)?.toInt() ?: (DEFAULTS[key] as? Int) ?: 0
     fun bool(c: Context, key: String): Boolean = raw(c, key) as? Boolean ?: (DEFAULTS[key] as? Boolean) ?: false

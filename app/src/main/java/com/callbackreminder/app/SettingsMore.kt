@@ -109,7 +109,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
             NotifKind.values().forEachIndexed { i, k ->
                 if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 val level = tick.let { Notify.kindLevel(ctx, k) }
-                Column(Modifier.fillMaxWidth()) {
+                LockArea(rememberLocked("nk_${k.name}")) { Column(Modifier.fillMaxWidth()) {
                     Text("${k.emoji} ${k.label}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -117,16 +117,18 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                             FilterChip(selected = level == l, onClick = { Notify.setKindLevel(ctx, k, l); tick++ }, label = { Text(l.label) })
                         }
                     }
-                }
+                } }
             }
         }
         NotifType.values().groupBy { it.group }.forEach { (group, types) ->
             SectionCard(title = group, subtitle = "") {
                 types.forEachIndexed { i, t ->
                     if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                    NotifRow(t, tick.let { Notify.level(ctx, t) }) { l ->
-                        Notify.setLevel(ctx, t, l)
-                        tick++
+                    LockArea(rememberLocked("nt_${t.name}")) {
+                        NotifRow(t, tick.let { Notify.level(ctx, t) }) { l ->
+                            Notify.setLevel(ctx, t, l)
+                            tick++
+                        }
                     }
                 }
             }
@@ -241,7 +243,8 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
         SectionCard(
             title = "Send times",
             subtitle = "The same times for everyone. Each list has all their open tasks with the task number, " +
-                "late ones first. SMS ones go by themselves; WhatsApp ones wait in a notification for you to send."
+                "late ones first. SMS ones go by themselves; WhatsApp ones wait in a notification for you to send.",
+            lock = "dlTimes"
         ) {
             times.forEachIndexed { i, m ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -259,7 +262,7 @@ fun DailyListSettingsScreen(onBack: () -> Unit, onOpenPeople: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             FilledTonalButton(onClick = { editIndex = -1 }, modifier = Modifier.fillMaxWidth()) { Text("+ Add time") }
         }
-        SectionCard(title = "Days", subtitle = "Sends on ${ReviewReminder.daysLabel(days)}. Nothing is sent to someone with no open tasks.") {
+        SectionCard(title = "Days", subtitle = "Sends on ${ReviewReminder.daysLabel(days)}. Nothing is sent to someone with no open tasks.", lock = "dlDays") {
             DaysRow(days) {
                 days = it
                 DailyList.setDays(ctx, it)
@@ -505,13 +508,13 @@ fun VoiceTypingSettingsScreen(onBack: () -> Unit) {
             subtitle = "Adds a 🎤 to every note and message box. It uses your phone's voice typing (Google), " +
                 "so it works in English and Urdu. Your keyboard's own mic key does the same thing."
         ) {
-            SwitchRow("Show the 🎤 button", on) {
+            SwitchRow("Show the 🎤 button", on, lock = "vtOn") {
                 on = it
                 VoiceTyping.setEnabled(ctx, it)
             }
         }
         if (on) {
-            SectionCard(title = "Language", subtitle = "What you speak into the 🎤.") {
+            SectionCard(title = "Language", subtitle = "What you speak into the 🎤.", lock = "vtLang") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     VoiceTyping.Lang.values().forEach { l ->
                         FilterChip(selected = lang == l, onClick = {

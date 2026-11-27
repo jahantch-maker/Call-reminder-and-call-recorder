@@ -61,7 +61,8 @@ fun WhatsAppSettingsScreen(onBack: () -> Unit) {
     SettingsPage(title = "WhatsApp", onBack = onBack) {
         SectionCard(
             title = "Open in",
-            subtitle = "The WA buttons open the person's chat in this app with the message typed. You press Send yourself."
+            subtitle = "The WA buttons open the person's chat in this app with the message typed. You press Send yourself.",
+            lock = "waApp"
         ) {
             apps.forEach { pkg ->
                 Row(
@@ -76,7 +77,7 @@ fun WhatsAppSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        SectionCard(title = "Message", subtitle = "Write it your way. Tap a word below to add it.") {
+        SectionCard(title = "Message", subtitle = "Write it your way. Tap a word below to add it.", lock = "waMsg") {
             OutlinedTextField(
                 value = text,
                 onValueChange = { save(it) },

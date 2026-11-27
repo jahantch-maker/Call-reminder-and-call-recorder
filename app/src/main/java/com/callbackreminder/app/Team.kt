@@ -316,11 +316,10 @@ object TeamRules {
     val SMS_CHOICES = listOf(0, 60, 120, 240)
 
     // 27 Nov: a team member's rules come from the website (Team › Access, saved on the phone in [WebRules]); the owner keeps his own.
-    private fun web(c: Context) = WebRules.managed(c)
-
-    fun noDateMin(c: Context) = if (web(c)) WebRules.int(c, "noDate") else p(c).getInt("no_date", 240)
+    // 28 Nov (B5) Each rule follows the website only while the office keeps it "🔒 Locked".
+    fun noDateMin(c: Context) = WebRules.intOr(c, "noDate") { p(c).getInt("no_date", 240) }
     fun setNoDateMin(c: Context, m: Int) = p(c).edit().putInt("no_date", m).apply()
-    fun smsMin(c: Context) = if (web(c)) WebRules.int(c, "smsMin") else p(c).getInt("sms", 120)
+    fun smsMin(c: Context) = WebRules.intOr(c, "smsMin") { p(c).getInt("sms", 120) }
     fun setSmsMin(c: Context, m: Int) = p(c).edit().putInt("sms", m).apply()
 
     /**
@@ -335,11 +334,11 @@ object TeamRules {
         ((set?.get("urgTimes") as? Number)?.toInt() ?: 3).coerceAtLeast(0), WebRules.NORMAL)
 
     /** Deadline locked: once he sets it he can only 📅 Extend deadline (your Approve, or a free push). */
-    fun deadlineLocked(c: Context) = if (web(c)) WebRules.bool(c, "locked") else p(c).getBoolean("locked", true)
+    fun deadlineLocked(c: Context) = WebRules.boolOr(c, "locked") { p(c).getBoolean("locked", true) }
     fun setDeadlineLocked(c: Context, on: Boolean) = p(c).edit().putBoolean("locked", on).apply()
     /** Extend without asking: how many times he may push it himself (0 = Never). */
     val FREE_EXT_CHOICES = listOf(0, 1, 2, 3)
-    fun freeExt(c: Context) = if (web(c)) WebRules.int(c, "freeExt") else p(c).getInt("free_ext", 0)
+    fun freeExt(c: Context) = WebRules.intOr(c, "freeExt") { p(c).getInt("free_ext", 0) }
     fun setFreeExt(c: Context, n: Int) = p(c).edit().putInt("free_ext", n).apply()
     fun extLabel(n: Int): String = if (n <= 0) "Never" else "${n}×"
 
@@ -520,7 +519,9 @@ object TeamRepo {
                 if (m.active) SignInGate.markJoined(appCtx)
                 Seats.applyMine(appCtx, m.uid, m.seatId)
                 // The website's settings for him, kept on the phone so every alarm works offline (S-OFFLINE).
-                WebRules.save(appCtx, s.get("perms"), member = m.role != Team.OWNER && m.seatId.isNotBlank())
+                // 28 Nov (B3) The owner is treated like the team when his "Lock my phone like the team" is on.
+                WebRules.save(appCtx, s.get("perms"), member = (m.role != Team.OWNER && m.seatId.isNotBlank()) ||
+                    ((s.get("perms") as? Map<*, *>)?.get("ownerLock") == true))
                 // N3 Tell the website which change of his web settings this phone now holds ("Web settings: up to date").
                 val stamp = (s.get("permsAt") as? Number)?.toLong() ?: 0L
                 if (stamp > 0) WebRules.keepStamp(appCtx, stamp)

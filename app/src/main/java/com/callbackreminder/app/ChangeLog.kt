@@ -29,6 +29,15 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.63.0", "28 Nov",
+            new = listOf(
+                "The office can now set any phone setting from the website: a setting marked 🔒 Locked takes the office's value and shows \"🔒 Set by your manager\"; everything else stays your own choice",
+                "Locked settings keep working with no internet, after a restart and in battery saver",
+                "Not done reasons can now be set by the office too",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.62.4", "28 Nov",
             new = listOf(
                 "A full-screen popup now stops ringing after 1 minute if nobody reacts; the popup stays on screen",

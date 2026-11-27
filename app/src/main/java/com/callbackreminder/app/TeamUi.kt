@@ -541,35 +541,37 @@ fun TaskRulesScreen(onBack: () -> Unit) {
     var freeExt by remember(web) { mutableIntStateOf(TeamRules.freeExt(ctx)) }
     val urg = remember(web) { TeamRules.urgentMine(ctx) }
     var rule by remember { mutableIntStateOf(-1) }
-    var reasons by remember { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
+    var reasons by remember(web) { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
     var editReasons by remember { mutableStateOf(false) }
     @Composable
-    fun Rule(label: String, value: String, about: String, onClick: (() -> Unit)?) {
+    fun Rule(label: String, value: String, about: String, id: String?, onClick: (() -> Unit)?) {
+        // 28 Nov (B5) A row the office keeps "🔒 Locked" on the website is read only here.
+        val lk = id == null || remember(web) { WebRules.locked(ctx, id) }
         Column {
-            RuleRow(label, value) { if (onClick != null && !managed) onClick() }
+            RuleRow(if (lk && managed) "🔒 $label" else label, value) { if (onClick != null && !lk) onClick() }
             Text(about, fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
         }
     }
     SettingsPage(title = "Task rules", onBack = onBack) {
-        if (managed) Text("🔒 Set by your manager on the website. They work even with no internet.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+        if (managed) Text("🔒 = set by your manager on the website. They work even with no internet.", fontSize = 13.sp, color = cs.onSurfaceVariant)
         TeamHeading("Tasks you give")
         TeamCard {
             Rule("No deadline picked · remind me", TeamRules.label(noDate),
-                "If he hasn't picked a deadline after this many working hours, you get a reminder.") { rule = 0 }
+                "If he hasn't picked a deadline after this many working hours, you get a reminder.", "noDate") { rule = 0 }
             Rule("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms),
-                "If he hasn't opened the task after this many working hours, your phone sends him an SMS.") { rule = 2 }
+                "If he hasn't opened the task after this many working hours, your phone sends him an SMS.", "smsMin") { rule = 2 }
             Rule("Deadline locked", if (locked) "On" else "Off",
-                "On: once he sets his deadline he can't change it, he can only ask you to extend it.") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
+                "On: once he sets his deadline he can't change it, he can only ask you to extend it.", "locked") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
             Rule("Extend without asking", TeamRules.extLabel(freeExt),
-                "How many times he may move his own deadline without asking you.") { rule = 3 }
+                "How many times he may move his own deadline without asking you.", "freeExt") { rule = 3 }
             Rule("Not done reasons", "${reasons.size}",
-                "The quick reasons you pick from when you send a task back with ↩ Not done yet.", null)
-            TextButton(onClick = { editReasons = true }) { Text("Change reasons") }
+                "The quick reasons you pick from when you send a task back with ↩ Not done yet.", "notDone", null)
+            if (!remember(web) { WebRules.locked(ctx, "notDone") }) TextButton(onClick = { editReasons = true }) { Text("Change reasons") }
         }
         TeamHeading("Tasks you get")
         TeamCard {
             Rule("Urgent, no deadline · remind me", if (urg.times == 0 || urg.style == WebRules.OFF) "Off" else "${TeamRules.label(urg.gapMin)} · ${urg.times}×",
-                "An urgent task with no deadline reminds you after this many working hours, then again with the same gap, this many times. Your manager is told each time.", null)
+                "An urgent task with no deadline reminds you after this many working hours, then again with the same gap, this many times. Your manager is told each time.", null, null)
         }
         Text("Working hours only: nights, your weekly off day and holidays never count. Reminders come 30 min before your duty starts until 1 hour after it ends.",
             fontSize = 12.sp, color = cs.onSurfaceVariant)
