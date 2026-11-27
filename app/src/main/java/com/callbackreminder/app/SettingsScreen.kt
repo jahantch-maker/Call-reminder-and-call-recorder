@@ -91,6 +91,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -213,7 +215,7 @@ fun SettingsScreen(
                 switch = if (status.recordingReady) recOn else null,
                 onSwitch = { recOn = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it) },
             )
-            BadgeRow(Icons.Rounded.Sms, BadgeTone.INDIGO, "Text messages", "${BurstTemplates.load(ctx).size} templates · " +
+            if (WebRules.smsOn(ctx)) BadgeRow(Icons.Rounded.Sms, BadgeTone.INDIGO, "Text messages", "${BurstTemplates.load(ctx).size} templates · " +
                 if (BurstTemplates.stopOnReply(ctx)) "stops on reply" else "reply check off", onOpenTextMessages)
             BadgeRow(Icons.Rounded.Chat, BadgeTone.GREEN, "WhatsApp", remember { WhatsApp.appLabel(WhatsApp.app(ctx)) }, onOpenWhatsApp)
             BadgeRow(Icons.Rounded.Schedule, BadgeTone.BLUE, "Time picker",
@@ -550,6 +552,39 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
                     if (i > 0) HorizontalDivider()
                     var simOn by remember(sim.slot) { mutableStateOf(SimPopup.on(ctx, sim.slot)) }
                     SwitchRow(sim.label, simOn) { simOn = it; SimPopup.set(ctx, sim.slot, it) }
+                }
+            }
+        }
+
+        // 27 Nov (S7.1) Only in duty hours (30 min before to 1 hour after); open tasks always ask.
+        var duty by remember { mutableStateOf(SimPopup.dutyOnly(ctx)) }
+        val dutyLocked = remember { SimPopup.dutyLocked(ctx) }
+        SectionCard(
+            title = "Only in duty hours",
+            subtitle = "Outside ${TeamRules.windowLabel(ctx)} (and on your off day or a holiday) calls stay quiet. " +
+                "A number that still has an open task with you always asks." + if (dutyLocked) "\n🔒 Set by your manager" else ""
+        ) {
+            SwitchRow("After-call popup only in duty hours", duty) { if (!dutyLocked) { duty = it; SimPopup.setDutyOnly(ctx, it) } }
+        }
+
+        // 27 Nov (S15a) Close by itself: a live countdown; any touch keeps it open.
+        var auto by remember { mutableIntStateOf(SimPopup.autoClose(ctx)) }
+        SectionCard(title = "Close by itself", subtitle = "The popup closes after a few seconds if you don't touch it, like Skip (the call stays in Calls).") {
+            SwitchRow("Close by itself", auto > 0) { auto = if (it) 15 else 0; SimPopup.setAutoClose(ctx, auto) }
+            if (auto > 0) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(5, 10, 15, 30, 60).forEach { sec ->
+                    FilterChip(selected = auto == sec, onClick = { auto = sec; SimPopup.setAutoClose(ctx, sec) }, label = { Text("${sec}s") })
+                }
+            }
+        }
+
+        // 27 Nov (S15b) Hold to call: Call again dials only after a press-and-hold (stops calls by mistake).
+        var hold by remember { mutableIntStateOf(SimPopup.holdToCall(ctx)) }
+        SectionCard(title = "Hold to call", subtitle = "\"Call again\" on the popups calls only when you hold it. The full-screen reminder's Call back stays one tap.") {
+            SwitchRow("Hold to call", hold > 0) { hold = if (it) 1 else 0; SimPopup.setHoldToCall(ctx, hold) }
+            if (hold > 0) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(1, 2).forEach { sec ->
+                    FilterChip(selected = hold == sec, onClick = { hold = sec; SimPopup.setHoldToCall(ctx, sec) }, label = { Text("${sec}s") })
                 }
             }
         }

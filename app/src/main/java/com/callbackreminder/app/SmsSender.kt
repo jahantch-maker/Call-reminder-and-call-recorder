@@ -351,6 +351,8 @@ class SmsAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getLongExtra(SmsScheduler.EXTRA_ID, -1L)
         if (id < 0) return
+        // 27 Nov (S6.1) Text messages switched off by the office: paused, kept (they start again when it is back on).
+        if (!WebRules.smsOn(context)) return
         SmsSender.sendDue(context, id)
     }
 }

@@ -74,6 +74,8 @@ object WebRules {
         // Times may have moved: the alarms follow at once.
         runCatching { ReviewReminder.schedule(c) }
         runCatching { TaskAlarms.scheduleNudge(c) }
+        // Text messages switched back on: the paused texts start again.
+        runCatching { if (smsOn(c)) SmsScheduler.rescheduleAll(c) }
     }
 
     /** Set by the office: a team member in a seat (not the owner). These rows are then read only on the phone. */
@@ -88,6 +90,9 @@ object WebRules {
     fun int(c: Context, key: String): Int = (raw(c, key) as? Number)?.toInt() ?: (DEFAULTS[key] as? Int) ?: 0
     fun bool(c: Context, key: String): Boolean = raw(c, key) as? Boolean ?: (DEFAULTS[key] as? Boolean) ?: false
     fun str(c: Context, key: String): String = raw(c, key) as? String ?: (DEFAULTS[key] as? String).orEmpty()
+
+    /** 27 Nov (S6.1) The office's "Text messages" switch: off hides his own SMS follow-ups and pauses scheduled texts. */
+    fun smsOn(c: Context): Boolean = app(c, "sms", true)
 
     /** One of the website's app switches, from the saved copy ([legacy] when the website never set it). Works offline. */
     fun app(c: Context, key: String, legacy: Boolean): Boolean =

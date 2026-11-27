@@ -126,9 +126,7 @@ fun FollowUpSheet(
                     )
                 }
             }
-            IconButton(onClick = onNext) {
-                Icon(Icons.Rounded.Close, contentDescription = "Skip")
-            }
+            SkipX(onNext)
         }
 
         if (!answered) {

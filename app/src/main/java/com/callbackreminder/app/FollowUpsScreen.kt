@@ -797,7 +797,7 @@ internal fun FollowUpCard(
                 if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
                 if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
                 if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
-                if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
+                if (text != null && WebRules.smsOn(ctx)) add(RowLink("Texts", onClick = { onTexts(text) }))
                 add(RowLink("Delete", danger = true, onClick = delete))
             }
         )
