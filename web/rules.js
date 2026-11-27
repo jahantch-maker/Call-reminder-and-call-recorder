@@ -13,6 +13,7 @@
       ["Text info waits too", "For team members, info about texts (sent, failed, to review, a reply, daily list sent) outside the window also waits for the bundle.", "“Sent to Ali ✓” at 11:40 PM comes in the morning bundle.", "0.61.1"],
       ["Night Timeline messages", "Outside the window, Timeline messages still show, but silently. An @mention of you still rings.", "At midnight “@Ali please check” rings on Ali's phone; a plain message is silent.", "0.61.0"],
       ["Set times always ring", "Anything with a set time (call-back reminder, My task, follow-up, plot step due) always comes at its time, day or night.", "A call-back set for 11:30 PM rings at 11:30 PM.", "0.61.0"],
+      ["Quiet hours switch", "Phone Settings › Notifications › Quiet hours. On (default): automatic notifications keep to the window above. Off: they come at any time, also at night, on the off day and on holidays. The office can lock it on (Access › Notifications › “Can change quiet hours”); then the phone shows “Set by your manager”. The owner can always change it.", "Testing on Friday (your off day): turn Quiet hours off and every notification comes at once.", "0.62.0"],
       ["Working time counts", "Every “after N hours” rule counts only working hours: nights, the off day and holidays don't count.", "Task given 8 PM, rule “after 2 h”, duty ends 9 PM, starts 11 AM: it fires at 12 noon next day.", "0.61.0"],
     ]],
     ["Tasks you give", [
@@ -34,6 +35,20 @@
       ["Stuck count", "Team Performance shows how many times each person pressed Stuck. The score doesn't change.", "“⚠ Stuck 3× · paused 5h”.", "0.61.0"],
       ["Ask removed", "The ❓ Ask button is gone: a normal message (or @someone) does the same. Old Ask messages show as normal messages.", "", "0.61.0"],
       ["📅 Extend deadline", "Asks the giver for a new deadline with a reason; the giver approves or keeps the old one.", "", "0.55"],
+    ]],
+    ["Timeline attachments", [
+      ["📎 Attach", "The 📎 in a Timeline has Camera, Gallery, Files (on the phone) and From WhatsApp. Photos are always made small (about 150 KB). Voice notes, documents and videos can be up to 15 MB.", "A 20 MB video: “Too big, share a smaller file”.", "0.62.0"],
+      ["From WhatsApp", "Tap From WhatsApp in the task, then in WhatsApp hold the photo, voice note or file › Share › RB360. It lands in the same task, marked “↪ from WhatsApp”. Sharing to RB360 from any other app asks which open task it is for.", "A plot owner sends his CNIC photo on WhatsApp: share it to RB360 and it goes into his plot step.", "0.62.0"],
+      ["No internet", "Attaching works with no internet. The file shows 🕓 and goes up by itself when data is on.", "", "0.62.0"],
+      ["Opening files", "Tap a document to open it, a video to play it, a voice note's ▶ to play it. The website shows them in the task's Timeline too.", "", "0.62.0"],
+      ["Kept 90 days", "Like photos and voice notes, attached files are removed 90 days after the task closes. The message text stays.", "", "0.62.0"],
+    ]],
+    ["Plot files", [
+      ["Waiting for plot owner: reason", "Pressing Waiting for plot owner opens a window. A reason is needed (type it or use 🎤). You can also pick the day he said he will come, and a time if he gave one. It shows on the step, the Timeline and the website.", "“Out of city · comes Thu 3 Dec”.", "0.62.0"],
+      ["Come-day reminder", "Day only: a reminder at the start of your duty that day. Day and time: a reminder exactly at that time. It works with no internet. Until that day the daily “still waiting” reminder stops. If the day passes and you haven't pressed Plot owner came, the daily reminder starts again the next working day.", "He says he will come Thursday: reminder Thursday at the start of your duty, “⏳ Plot 214 · Ali Raza said he would come today”.", "0.62.0"],
+      ["Waiting for plot owner: how the time pause works", "When you press Waiting for plot owner, the task's clock stops. When you press Plot owner came, the clock starts again, and the due time moves later by exactly the duty hours you waited. Nights, your weekly off day and holidays are not counted.", "A step gets 2 working days. Duty is 9 AM to 6 PM, Friday off. The task comes Monday 10 AM, so it is due Wednesday 10 AM.\n• You press Waiting on Monday 3 PM. The plot owner comes Tuesday 11 AM. You waited 3 duty hours on Monday (3 to 6 PM) and 2 on Tuesday (9 to 11 AM) = 5 hours. New due time: Wednesday 3 PM.\n• You press Waiting on Monday 11 AM. He comes the same day at 5 PM = 6 hours. New due time: Wednesday 4 PM.\n• You press Waiting on Thursday 4 PM. He comes Saturday 10 AM. Thursday 2 hours + Friday 0 (off day) + Saturday 1 hour = 3 hours. The due time moves 3 duty hours later.", "0.62.0"],
+      ["List of waits", "Each step keeps every wait (from, to, duty hours, reason, the day he said). Plot files shows “⏸ 2 waits · 7h paused” on the step; open the step to see each wait. Team Performance › Person shows “⏸ Plot owner waits 4× · paused 12h”. The score doesn't change.", "", "0.62.0"],
+      ["Photo needed lines", "Checklist lines marked “Photo needed” in the SOP sheet show 📷. They can't be ticked until at least one photo is added (Camera or Gallery, then the photo editor). Several photos can be added. A small × on a photo removes it (only the person who added it, and only until Done). Removing the last photo unticks the line. The photos also go on the Timeline and show on the website.", "“RB contractor built 4 corner pillars”: add 3 photos of the pillars, then tick the line.", "0.62.0"],
     ]],
     ["Reminders set by the office", [
       ["Dossier reminder", "Up to 2 per person, each “duty end minus or plus N minutes” (default 1 hour before and at duty end). Full-screen popup with the unticked tasks, Open dossier and Skip. Only when something due is unticked.", "Duty ends 9 PM: popups at 8 PM and 9 PM if a task is unticked.", "0.61.0"],
@@ -63,6 +78,9 @@
     ["Phone and backup", [
       ["Cloud backup", "Each phone backs up every night (7 nights kept). Normally only while charging; if 2 days pass without one, it uploads anyway.", "", "0.61.0"],
       ["Last backup", "Team › People shows each phone's last backup; red after 2 nights.", "", "0.61.0"],
+      ["Web settings received", "Every time the website changes someone's settings it notes the time, and their phone writes back which change it has. Team › People › Phone health shows “✓ Web settings: up to date”, or in red “✗ Web settings: old” with the red dot next to the name. Phones older than 0.62 show nothing new.", "You change Ali's date rules at 5:09 PM while his phone is off: it shows “old” until he opens the app with internet on.", "0.62.0"],
+      ["Settings search", "Phone Settings has a search bar at the top. Type a word and tap the page it is on.", "Type “quiet” → Notifications. Type “theme” → Appearance.", "0.62.0"],
+      ["Voice typing", "The 🎤 in message and note boxes is on for everyone (existing phones were switched on once; anyone can turn it off in Settings › Voice typing). Languages: Urdu (default) and English.", "", "0.62.0"],
       ["Phone health", "Each phone reports its version and permissions when online. People with “See phone health” see a card and a red dot when something is off.", "", "0.61.0"],
       ["Sign-in screen", "New installs start with Sign in with Google or Use without an account (guest, no team parts). After a phone joins the team, Guest never comes back.", "", "0.61.0"],
       ["Look", "New installs start in Light with Small text; existing phones were switched once. Anyone can change it in Settings › Appearance.", "", "0.61.0"],
@@ -75,7 +93,7 @@
     ]],
   ];
 
-  const LATEST = "0.61.1";   // bump with each build: rules changed in it get the green tag
+  const LATEST = "0.62.0";   // bump with each build: rules changed in it get the green tag
   RB.rulesHtml = () => {
     const n = RB.RULES.reduce((t, [, rs]) => t + rs.length, 0);
     return `<div class="card rules" style="max-width:900px"><div class="subhead"><h3 style="margin:0">Rules</h3><div class="sp"></div><span class="sub" id="rulesn">${n} rules</span></div>
