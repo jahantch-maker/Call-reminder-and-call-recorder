@@ -48,6 +48,9 @@
   const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
   // ------------------------------------------------------------------ people
+  /** S1.2 Roughly how much of the free 1 GB the phone backups use: each phone keeps 7 nights of about its last size. */
+  const storageLine = () => { const b = D.members.reduce((n, m) => n + (m.backupBytes || 0) * 7, 0); if (!b) return ""; const mb = b / 1048576;
+    return `<br>☁ Cloud backups use about <b>${mb < 1 ? "under 1" : Math.round(mb)} MB</b> of the free 1 GB (${Math.max(0, Math.round(100 - mb / 10.24))}% left). A backup is red after 2 nights without one.`; };
   function people() {
     const q = (S.q || "").toLowerCase();
     // Sort by a column (locked 23 Nov, WEB8): click a column name, click again to flip. [column, 1 = A→Z / -1 = Z→A]
@@ -69,7 +72,7 @@
       const btn = ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${joined || s.invited ? "Edit" : "Fill seat"}</button>` : "";
       return `<div class="prow ${joined ? "on" : "off"} ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}" role="button" tabindex="0">
         ${avatar(s)}
-        <div class="pcl"><b>${esc(joined ? s.name : s.name || "Empty seat")}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b>${status}</div>
+        <div class="pcl"><b>${esc(joined ? s.name : s.name || "Empty seat")}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}${RB.mySwitch("seeHealth") && healthBad(s).length ? ` <span class="hdot" title="Phone health: ${esc(healthBad(s).join(", "))} off"></span>` : ""}</b>${status}${backupOf(s)}</div>
         <div class="pcl">${s.phone ? `<b class="pph">📞 ${esc(s.phone)}</b>` : '<b class="pph none">📞 —</b>'}<span class="pem">✉ ${esc(s.gmail)}</span></div>
         <div class="pcl"><b>${esc(s.dept || "—")}</b><span>${headName(s) ? "Head: <b>" + esc(headName(s)) + "</b>" : s.role === "owner" ? "Top of the chart" : "No head"}</span></div>
         <div class="pcl">${tt ? `<b>${esc(RB.ttName(tt))}</b>` : '<span>—</span>'}</div>
@@ -77,7 +80,7 @@
         <div class="pend">${miss}${btn}</div></div>`;
     };
     const html = `<div class="cols"><div class="card pcard" style="flex:2"><div class="stickhead"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
-      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>${list.length ? head : ""}</div>
+      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.${storageLine()}</div>${list.length ? head : ""}</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
     return { html, side: seatPanel(sel) };
   }
@@ -97,6 +100,19 @@
   }
 
   /** Seat still linked to an account that was removed (offboarded or signed out): tasks can't reach it. */
+  /** S1 The phone's last cloud backup (written by the phone): red after 2 nights. */
+  const backupOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); if (!m) return ""; const at = m.backupAt || 0, old = !at || Date.now() - at > 2 * DAY;
+    return `<span class="pbk ${old ? "old" : ""}" title="Last cloud backup from this phone">☁ ${at ? "Backup " + fmtShort(at) : "No cloud backup yet"}</span>`; };
+  /** S10.1 Phone health (written by the phone when online): the important items that are off. */
+  const HEALTH = [["notif", "Notifications"], ["full", "Full-screen alerts"], ["alarms", "Exact alarms (Alarms & reminders)"], ["battery", "Battery saver not blocking the app"], ["calls", "Call log (after-call popup)"], ["overlay", "Show over other apps (popups)"], ["sms", "SMS"]];
+  const healthOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return m && m.health ? m.health : null; };
+  const healthBad = (s) => { const h = healthOf(s); return h ? HEALTH.filter(([k]) => k !== "sms" && h[k] === false).map((x) => x[1]) : []; };
+  const healthCard = (s) => {
+    if (!RB.mySwitch("seeHealth") || s.status !== "filled") return "";
+    const h = healthOf(s);
+    if (!h) return '<div class="sec"><h4>Phone health</h4><div class="sub">Nothing from this phone yet. It is sent when the app opens online (version 0.61 or newer).</div></div>';
+    return `<div class="sec"><h4>Phone health</h4><div class="sub">App ${esc(h.v || "?")} · last online ${fmtWhen(h.at || 0)}</div>${HEALTH.map(([k, l]) => `<div class="hrow ${h[k] === false ? "bad" : ""}">${h[k] === false ? "✗" : "✓"} ${l}</div>`).join("")}</div>`;
+  };
   const signedOut = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return !!m && m.status !== "active"; };
 
   function seatPanel(s) {
@@ -106,6 +122,7 @@
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
     return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${signedOut(s) ? '<div class="s pst out">● Signed out · must sign in again<br>Tasks can\'t reach this person until they sign in on the phone.</div>' : ""}${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
+      ${healthCard(s)}
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }

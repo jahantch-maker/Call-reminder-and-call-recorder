@@ -129,6 +129,8 @@
     return (D.me && D.me.perms && D.me.perms.portal && D.me.perms.portal[sec]) || "none";
   };
   RB.canEdit = (sec) => RB.level(sec) === "edit";
+  /** 27 Nov One of the person's own Access switches on the website (See phone health, See Rules); owners always. */
+  RB.mySwitch = (k) => RB.isOwner() || (() => { const s = seatOfUid(uid); return !!(s && RB.effective(s).app[k]); })();
   /** The signed-in person's resolved portal settings (owners: everything). */
   RB.portalOf = () => { if (RB.isOwner()) return RB.effective({ role: "owner" }).portal; const s = seatOfUid(uid); return s ? RB.effective(s).portal : Object.assign({}, DEF_PORTAL, (D.me && D.me.perms && D.me.perms.portal) || {}); };
   /** How far the person sees in App view and the People list: own | team | all. */
@@ -185,7 +187,7 @@
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
-        if (coll === "config") { if (id === "holimport") { D.holimport = data; RB.demoHolImport && RB.demoHolImport(data); return id; } if (id === "holidays") D.holidays = data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
+        if (coll === "config") { if (id === "holimport") { D.holimport = data; RB.demoHolImport && RB.demoHolImport(data); return id; } if (id === "holidays") D.holidays = data; else if (id === "waSent") D.waSent = Object.assign({}, D.waSent || {}, data); else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
         const arr = D[COLL[coll]]; const i = arr.findIndex((x) => x.id === id || x.uid === id && coll === "members");
@@ -453,7 +455,7 @@
     const allTp = RB.level("app") !== "none" && ((D.me && D.me.perms && D.me.perms.portal) || {}).appScope === "all";
     const tq = RB.isOwner() || allTp ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     on(tq, "tasks", (s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holimport") D.holimport = d.data(); if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holimport") D.holimport = d.data(); if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); if (d.id === "waSent") D.waSent = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     // Plot files: the step tasks of every file (the rules let Plot files access read tasks marked plot: true).

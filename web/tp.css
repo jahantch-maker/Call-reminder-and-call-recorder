@@ -247,3 +247,14 @@ html[data-theme="dark"] .tp-av{background:#1F2A3D;color:#9DB3E3}
 }
 @media (prefers-reduced-motion:reduce){.tp-kpi,.tp-task,.tp-tl,.tp-dlist,.tp-rep.in .tp-plist,.tp-rep.in .tp-panel,.tp-body.in,.tp-tcard.back,.tp-tl.in,.tp-dlist.in{animation:none!important}.tp-tip,.tp-bar i,.tp-dbb i{transition:none}}
 .tp-box>.tp-svg{min-width:560px}
+/* 27 Nov Person header: stuck / dossier skip facts and the WhatsApp pending-list button (mockups/wa-pending-list). */
+.tp-ph{flex-wrap:wrap}.tp-fact{font-size:12px;font-weight:700;background:#FBEBC8;color:#8A5A00;border-radius:10px;padding:3px 9px}
+.tp-wa{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.tp-warow{display:flex;align-items:center;gap:6px}
+.tp-wabtn{display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#fff;font-weight:700;border-radius:20px;padding:8px 14px;font-size:14px}
+.tp-wabtn:disabled{opacity:.5}.tp-walogo{width:20px;height:20px;flex:none}
+.tp-wai{position:relative;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--onv);color:var(--onv);font:700 12px/17px serif;font-style:italic;text-align:center;cursor:help}
+.tp-wasent{font-size:12px;color:#25507F;font-weight:600}
+.tp-wagrid{display:grid;grid-template-columns:minmax(220px,1fr) 1.3fr;gap:14px;margin-top:10px}
+.tp-wapv{background:#E7FFDB;border-radius:12px;padding:12px;font-size:13.5px;line-height:1.45;max-height:50vh;overflow:auto;color:#1B1C1F}
+@media (max-width:700px){.tp-wagrid{grid-template-columns:1fr}.tp-wa{align-items:flex-start}}
+html[data-theme="dark"] .tp-wapv{background:#1F3A2A;color:#E6F5EA}html[data-theme="dark"] .tp-fact{background:#4A3A12;color:#F2CC72}html[data-theme="dark"] .tp-wasent{color:#9CC1EE}

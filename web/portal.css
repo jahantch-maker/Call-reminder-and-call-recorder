@@ -370,3 +370,13 @@ html[data-theme="dark"] .hz-row{background:#1E2A44}html[data-theme="dark"] .hz-p
 .lvl button.on.full{background:#C8372D;color:#fff}
 @media (max-width:1000px){.acccols{flex-direction:column;align-items:stretch}.accbar select{max-width:100%;flex:1}}
 html[data-theme="dark"] .accbar{background:#25272B}html[data-theme="dark"] .acccard .accrow{background:#1F2126;border-left-color:#3A3F55}
+/* 27 Nov Team › People: last cloud backup per phone (red after 2 nights) and phone health. */
+.pbk{display:block;font-size:12px;color:var(--onv);margin-top:2px}.pbk.old{color:#C8372D;font-weight:700}
+.hdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#D9534F;vertical-align:middle}
+.hrow{font-size:13px;padding:3px 0;color:#1F6B3B}.hrow.bad{color:#C8372D;font-weight:700}
+html[data-theme="dark"] .hrow{color:#8FD9A8}html[data-theme="dark"] .hrow.bad{color:#F2B8B5}
+/* 27 Nov Settings › Rules */
+.rulesq{width:100%;margin:6px 0 4px;padding:10px 14px;border-radius:14px}
+.rulesh{margin-top:16px}.rule{background:#F2F4FB;border-left:3px solid #C9D0EE;border-radius:12px;padding:10px 12px;margin:6px 0;line-height:1.5;font-size:14px}
+.ruleh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}.ruleh b{font-size:15px}.rulex{color:var(--onv);font-size:13px;margin-top:3px}
+html[data-theme="dark"] .rule{background:#1F2126;border-left-color:#3A3F55}
