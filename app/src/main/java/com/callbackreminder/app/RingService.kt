@@ -129,10 +129,11 @@ class ReminderRingService : Service() {
         const val ACTION_SILENCE = "com.callbackreminder.app.SILENCE"
 
         // Safety net: stop the noise (not the reminder) if nobody reacts for half an hour.
-        private const val MAX_RING_MS = 30 * 60_000L
+        private const val MAX_RING_MS = 60_000L // 28 Nov: no reaction -> quiet after 1 minute; the popup stays
 
         // A short built-in ping repeats with this pause in between, so it does not run together.
         private const val PING_GAP_MS = 1_200L
+        val ONCE_BUZZ = longArrayOf(0, 900, 800, 900, 800, 900)
     }
 
     private var player: MediaPlayer? = null
@@ -354,6 +355,8 @@ class ReminderRingService : Service() {
             }
             mp.prepare()
             mp.start()
+            // 28 Nov Play once: phone ringtones often carry a loop tag that ignores isLooping, so stop after one play.
+            if (!repeat && mp.duration > 0) handler.postDelayed({ if (player === mp) runCatching { mp.stop() } }, mp.duration + 300L)
             mp
         } catch (e: Exception) {
             try {
@@ -379,7 +382,9 @@ class ReminderRingService : Service() {
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         try {
-            v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 900, 800), 0), attrs)
+            // 28 Nov Play once vibrates three times; Repeat keeps vibrating with the sound.
+            if (ReminderSound.repeats(this)) v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 900, 800), 0), attrs)
+            else v.vibrate(VibrationEffect.createWaveform(ONCE_BUZZ, -1), attrs)
         } catch (e: Exception) {
             // Vibration is a bonus; the sound and screen still work.
         }

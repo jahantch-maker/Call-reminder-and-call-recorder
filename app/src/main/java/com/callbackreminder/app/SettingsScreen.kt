@@ -1012,7 +1012,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             StyleRow(
                 title = "Repeat until I react",
-                description = "Keeps playing until you tap Call back, Snooze or Done.",
+                description = "Keeps playing until you react, for up to 1 minute. The reminder stays on screen.",
                 selected = repeatSound,
                 onSelect = {
                     repeatSound = true
@@ -1021,7 +1021,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
             )
             StyleRow(
                 title = "Play once",
-                description = "Plays one time. The reminder stays on screen.",
+                description = "Plays one time and vibrates 3 times. The reminder stays on screen.",
                 selected = !repeatSound,
                 onSelect = {
                     repeatSound = false
