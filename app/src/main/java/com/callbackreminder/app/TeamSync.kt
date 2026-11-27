@@ -282,7 +282,9 @@ object TeamSync {
             before == null && t.open && t.status != Team.REOPENED ->
                 tell(c, t, from, (if (t.urgent) "🔴 Urgent · " else "") + if (t.due > 0L) "📅 Deadline ${TeamUi.shortWhen(t.due)}"
                     else "📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "",
-                    head = (if (t.urgent) "🔴 Urgent task" else "New task") + " from $from", web = WebRules.N_NEW_TASK)
+                    head = (if (t.urgent) "🔴 Urgent task" else "New task") + " from $from",
+                    // 28 Nov A new plot file step has its own row (Full screen by default); other tasks follow "New task".
+                    web = if (t.plot) WebRules.N_PLOT_NEW else WebRules.N_NEW_TASK)
             was != null && was != t.status && t.status == Team.REOPENED ->
                 tell(c, t, from, "↩ Not done yet" + (if (t.reason.isBlank()) "" else " · “${t.reason}”") + if (t.due == 0L) " · pick a new deadline" else "")
             was != null && was != t.status && t.status == Team.CHECKED -> tell(c, t, from, "✓ Received, thanks")
@@ -971,9 +973,9 @@ object TeamSync {
                 PendingIntent.getActivity(c, NotifIds.team("call:$key"), dial, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
         if (quiet && web == WebRules.N_TIMELINE) b.setSilent(true)
-        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
         if (st == WebRules.FULL && !quiet) TaskAlertActivity.show(c, head = kind.label, title = title, open = intent,
-            due = text.lineSequence().first(), call = call)
+            due = text.lineSequence().first(), call = call, fallback = b, req = NotifIds.team("full:$key"))
+        Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
     }
 }
 

@@ -242,8 +242,8 @@ object TeamDossier {
                 // One notification for everything he hasn't tapped OK on yet ("5 new dossier tasks"), so many saves in a row are one.
                 val one = list.singleOrNull()
                 val verb = when (one?.kind) { "removed" -> "removed from"; "changed" -> "changed in"; else -> "added to" }
-                if (one != null) TeamSync.notify(c, "dossier:news", "✏ $from $verb your Dossier", "${one.title} · ${one.what}", mine = null, kind = NotifKind.DOSSIER)
-                else TeamSync.notify(c, "dossier:news", "✏ ${list.size} dossier changes from $from", list.take(3).joinToString(" · ") { it.title }, mine = null, kind = NotifKind.DOSSIER)
+                if (one != null) TeamSync.notify(c, "dossier:news", "✏ $from $verb your Dossier", "${one.title} · ${one.what}", mine = null, kind = NotifKind.DOSSIER, web = WebRules.N_DOSSIER)
+                else TeamSync.notify(c, "dossier:news", "✏ ${list.size} dossier changes from $from", list.take(3).joinToString(" · ") { it.title }, mine = null, kind = NotifKind.DOSSIER, web = WebRules.N_DOSSIER)
             }
         }
         clearOwn(c)

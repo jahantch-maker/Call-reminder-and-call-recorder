@@ -29,6 +29,19 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.62.2", "28 Nov",
+            new = listOf(
+                "Plot files: a new step given to you rings full screen (Settings › Notifications › New plot step)",
+                "Plot files: Heads-up before due can also be a full-screen popup",
+            ),
+            fixed = listOf(
+                "Full-screen popups now also open on the lock screen when \"Display over other apps\" is off",
+                "Plot files: Step due set to Off now really stays quiet",
+                "Plot files: a new heads-up time from the office now applies to steps already on the phone",
+                "New dossier task notifications now follow their own setting",
+            ),
+        ),
+        Entry(
             "0.62.1", "27 Nov",
             new = emptyList(),
             fixed = listOf(
