@@ -380,3 +380,5 @@ html[data-theme="dark"] .hrow{color:#8FD9A8}html[data-theme="dark"] .hrow.bad{co
 .rulesh{margin-top:16px}.rule{background:#F2F4FB;border-left:3px solid #C9D0EE;border-radius:12px;padding:10px 12px;margin:6px 0;line-height:1.5;font-size:14px}
 .ruleh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}.ruleh b{font-size:15px}.rulex{color:var(--onv);font-size:13px;margin-top:3px}
 html[data-theme="dark"] .rule{background:#1F2126;border-left-color:#3A3F55}
+/* N3 "Web settings: up to date / old" line on top of Phone health */
+.hrow.hset{border-top:1px solid var(--ol);border-bottom:1px solid var(--ol);margin:6px 0;padding:8px 0}.hset .hsub{font-weight:400;font-size:12.5px;margin:2px 0 0 14px}

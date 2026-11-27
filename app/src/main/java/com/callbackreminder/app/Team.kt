@@ -481,6 +481,11 @@ object TeamRepo {
                 Seats.applyMine(appCtx, m.uid, m.seatId)
                 // The website's settings for him, kept on the phone so every alarm works offline (S-OFFLINE).
                 WebRules.save(appCtx, s.get("perms"), member = m.role != Team.OWNER && m.seatId.isNotBlank())
+                // N3 Tell the website which change of his web settings this phone now holds ("Web settings: up to date").
+                val stamp = (s.get("permsAt") as? Number)?.toLong() ?: 0L
+                if (stamp > 0) WebRules.keepStamp(appCtx, stamp)
+                if (stamp > 0 && ((s.get("health") as? Map<*, *>)?.get("setAt") as? Number)?.toLong() != stamp)
+                    s.reference.update(mapOf("health.setAt" to stamp, "health.setGot" to WebRules.gotAt(appCtx)))
                 if (m.active && was?.active != true) {
                     listenMembersAndTasks(t, u.uid)
                     TeamWorker.schedule(appCtx)
@@ -607,6 +612,7 @@ object TeamRepo {
                 "v" to appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName.orEmpty(), "at" to now, "notif" to st.notifications, "full" to st.fullScreen, "alarms" to exact,
                 "battery" to st.battery, "calls" to (st.phone && st.callLog), "overlay" to st.overlay,
                 "sms" to granted(android.Manifest.permission.SEND_SMS),
+                "setAt" to WebRules.stamp(appCtx), "setGot" to WebRules.gotAt(appCtx),
             ))
         }
     }

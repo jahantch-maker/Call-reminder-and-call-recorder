@@ -61,6 +61,13 @@ object WebRules {
         changed(c)
     }
 
+    /** N3 The website's time stamp of the settings this phone holds, and when they arrived. */
+    fun stamp(c: Context): Long = p(c).getLong("stamp", 0L)
+    fun gotAt(c: Context): Long = p(c).getLong("gotAt", 0L)
+    fun keepStamp(c: Context, stamp: Long) {
+        if (stamp != stamp(c)) p(c).edit().putLong("stamp", stamp).putLong("gotAt", System.currentTimeMillis()).apply()
+    }
+
     /** Signed out or left the team: the phone's own settings apply again. */
     fun clear(c: Context) {
         if (!managed(c)) return
