@@ -21,22 +21,27 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * The optional 🎤 in note and message boxes (Settings › Voice typing, off to start with). It opens the
+ * The 🎤 in note and message boxes (Settings › Voice typing; 27 Nov N5: on to start with, Urdu first). It opens the
  * phone's own voice typing (Google), so English and Urdu both work and the app needs no internet.
  */
 object VoiceTyping {
-    enum class Lang(val label: String, val tag: String?) {
-        PHONE("Phone's language", null),
-        ENGLISH("English", "en-US"),
+    enum class Lang(val label: String, val tag: String) {
         URDU("Urdu", "ur-PK"),
+        ENGLISH("English", "en-US"),
     }
 
     private var on: MutableState<Boolean>? = null
 
     private fun p(c: Context) = c.getSharedPreferences("voice_typing", Context.MODE_PRIVATE)
 
-    fun state(c: Context): MutableState<Boolean> =
-        on ?: mutableStateOf(p(c).getBoolean("on", false)).also { on = it }
+    /** 27 Nov (N5) Every phone switches it on once with this update; after that his own choice stays. */
+    private const val ON_ONCE = "on_once"
+
+    fun state(c: Context): MutableState<Boolean> = on ?: run {
+        val pr = p(c)
+        if (!pr.getBoolean(ON_ONCE, false)) pr.edit().putBoolean("on", true).putBoolean(ON_ONCE, true).apply()
+        mutableStateOf(pr.getBoolean("on", true))
+    }.also { on = it }
 
     fun setEnabled(c: Context, value: Boolean) {
         p(c).edit().putBoolean("on", value).apply()
@@ -44,7 +49,7 @@ object VoiceTyping {
     }
 
     fun lang(c: Context): Lang =
-        p(c).getString("lang", null)?.let { s -> Lang.values().firstOrNull { it.name == s } } ?: Lang.PHONE
+        p(c).getString("lang", null)?.let { s -> Lang.values().firstOrNull { it.name == s } } ?: Lang.URDU
 
     fun setLang(c: Context, l: Lang) = p(c).edit().putString("lang", l.name).apply()
 
@@ -53,7 +58,7 @@ object VoiceTyping {
     fun intent(c: Context): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
-        .apply { lang(c).tag?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) } }
+        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang(c).tag)
 }
 
 /**

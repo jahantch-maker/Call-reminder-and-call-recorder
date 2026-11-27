@@ -373,7 +373,7 @@ object TeamSync {
         val chase = TeamLinks.map(c, "chaseAt")
         val chaseOnce = TeamLinks.set(c, "chaseOnce")
         // 27 Nov (S11.1) Only inside the notification window (30 min before duty to 1 hour after): nothing at night.
-        val inHours = TeamRules.inWindow(c, now)
+        val inHours = !TeamRules.quietNow(c, now)
         // 27 Nov (S6.2) Urgent with no date: the receiver's own web rule (after N working hours, N times, same gap).
         val urgentDue = mutableListOf<TeamTask>()
         // Plot step tasks have their own rules (the SOP's time allowed): no "no date" reminders or SMS.
@@ -437,6 +437,10 @@ object TeamSync {
         }
         // Plot files: a step waiting for the plot owner whose SOP says "every working day": one reminder a working day, in working hours.
         for (t in tasks.filter { it.toUid == me && it.plot && it.open && it.waitAt > 0 }) {
+            // N6 He said when he would come: that day's reminder instead; the daily one starts again if the day passes.
+            TaskAlarms.scheduleComes(c, t, now)
+            if (t.waitUntil > 0L && now < java.time.Instant.ofEpochMilli(t.waitUntil).atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()) continue
             val every = PlotFiles.sop.value?.step(t.step)?.reminder.orEmpty()
             if (!Regex("every|working day|daily", RegexOption.IGNORE_CASE).containsMatchIn(every)) continue
             val k = "pw:${t.id}"
@@ -935,7 +939,7 @@ object TeamSync {
     ) {
         val st = style ?: WebRules.style(c, web)
         if (st == WebRules.OFF) return
-        val quiet = !timed && !TeamRules.inWindow(c)
+        val quiet = !timed && TeamRules.quietNow(c)
         // Outside the window: Timeline messages come silently, an @mention still rings, the rest wait for the morning.
         if (quiet && web != WebRules.N_TIMELINE && web != WebRules.N_MENTION) return hold(c, title)
         val intent = Intent(c, MainActivity::class.java)
@@ -1007,6 +1011,8 @@ class TeamWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     override suspend fun doWork(): Result {
         runCatching { TeamRepo.fetchOnce(applicationContext) }
             .onFailure { CrashLog.record(applicationContext, it, "Team check") }
+        // N4 Files attached offline go up now.
+        runCatching { TeamFiles.flush(applicationContext) }
         runCatching { ReadingReminders.check(applicationContext) }
             .onFailure { CrashLog.record(applicationContext, it, "Reading reminder") }
         return Result.success()

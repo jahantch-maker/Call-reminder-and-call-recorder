@@ -106,12 +106,18 @@
   /** S10.1 Phone health (written by the phone when online): the important items that are off. */
   const HEALTH = [["notif", "Notifications"], ["full", "Full-screen alerts"], ["alarms", "Exact alarms (Alarms & reminders)"], ["battery", "Battery saver not blocking the app"], ["calls", "Call log (after-call popup)"], ["overlay", "Show over other apps (popups)"], ["sms", "SMS"]];
   const healthOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return m && m.health ? m.health : null; };
-  const healthBad = (s) => { const h = healthOf(s); return h ? HEALTH.filter(([k]) => k !== "sms" && h[k] === false).map((x) => x[1]) : []; };
+  /** N3 Has his phone got the newest web settings? null = can't tell (phone older than 0.62 or no stamp yet). */
+  const setOld = (s) => { const h = healthOf(s), m = RB.member(s.uid); return h && m && m.permsAt && h.setAt !== undefined ? (h.setAt || 0) < m.permsAt : null; };
+  const healthBad = (s) => { const h = healthOf(s); return h ? HEALTH.filter(([k]) => k !== "sms" && h[k] === false).map((x) => x[1]).concat(setOld(s) ? ["Web settings (old)"] : []) : []; };
   const healthCard = (s) => {
     if (!RB.mySwitch("seeHealth") || s.status !== "filled") return "";
     const h = healthOf(s);
     if (!h) return '<div class="sec"><h4>Phone health</h4><div class="sub">Nothing from this phone yet. It is sent when the app opens online (version 0.61 or newer).</div></div>';
-    return `<div class="sec"><h4>Phone health</h4><div class="sub">App ${esc(h.v || "?")} · last online ${fmtWhen(h.at || 0)}</div>${HEALTH.map(([k, l]) => `<div class="hrow ${h[k] === false ? "bad" : ""}">${h[k] === false ? "✗" : "✓"} ${l}</div>`).join("")}</div>`;
+    const old = setOld(s), m = RB.member(s.uid);
+    const got = old === null ? "" : old
+      ? `<div class="hrow bad hset">✗ Web settings: old<div class="hsub">Has settings from ${h.setAt ? fmtWhen(h.setAt) : "before 0.62"}. Newer ones sent ${fmtWhen(m.permsAt)} have not reached this phone. Ask him to open the app with internet on.</div></div>`
+      : `<div class="hrow hset">✓ Web settings: up to date<div class="hsub">Got the latest change ${fmtWhen(h.setGot || h.at || 0)} (sent ${fmtWhen(m.permsAt)})</div></div>`;
+    return `<div class="sec"><h4>Phone health</h4><div class="sub">App ${esc(h.v || "?")} · last online ${fmtWhen(h.at || 0)}</div>${got}${HEALTH.map(([k, l]) => `<div class="hrow ${h[k] === false ? "bad" : ""}">${h[k] === false ? "✗" : "✓"} ${l}</div>`).join("")}</div>`;
   };
   const signedOut = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return !!m && m.status !== "active"; };
 
@@ -475,7 +481,8 @@
       ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
       ["app", "seeRules", "See Rules", "Settings › Rules: how every rule works", "On: he sees Settings › Rules (read only). Owners always see it."],
     ] },
-    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after. Anything with a set time always rings. He can't change these on his phone.", rows: [
+    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after (unless his Quiet hours switch is off). Anything with a set time always rings. He can't change the rows below on his phone.", rows: [
+      ["app", "quietHours", "Can change quiet hours", "His “Quiet hours” switch", "On: he can turn “Quiet hours” on or off himself in phone Settings › Notifications (off = automatic notifications come at any time, at night and on off days too). Off: it stays on and shows “Set by your manager”. The owner can always change it.", "sw", null, true, "QUIET HOURS"],
       ["set", "n_plotDue", "Step due", "At the SOP due time", "Full screen: a ringing popup at the step's due time (like a call-back reminder). Normal: a notification. Off: nothing.", "seg", STY, false, "PLOT FILES"],
       ["set", "n_plotHeads", "Heads-up before due", "", "A notification before a plot step is due. The time picks how long before.", "seg", STY],
       ["set", "n_plotWait", "Waiting for plot owner", "Once a working day", "When a step waits for the plot owner, a reminder once a working day to call them.", "seg", STY],
@@ -655,7 +662,7 @@
   RB.reconcile = async function () {
     if (recBusy || RB.DEMO || !ed()) return;
     const todo = D.members.filter((m) => m.status === "active" && m.seatId && RB.seat(m.seatId) && RB.seat(m.seatId).status === "empty");
-    if (!todo.length) { if (D.seats.some((s) => s.role !== "owner" && s.gmail && !s.perms)) RB.sync(); return; }
+    if (!todo.length) { if (D.seats.some((s) => (s.role !== "owner" && s.gmail && !s.perms) || (s.status === "filled" && s.uid && RB.member(s.uid) && !RB.member(s.uid).permsAt && (s.role !== "owner" || RB.isOwner())))) RB.sync(); return; }
     recBusy = true;
     try { for (const m of todo) { await fillFrom(m, RB.seat(m.seatId)); await RB.log((m.name || m.seatId) + " joined seat " + m.seatId); } await RB.sync(); } finally { recBusy = false; }
   };

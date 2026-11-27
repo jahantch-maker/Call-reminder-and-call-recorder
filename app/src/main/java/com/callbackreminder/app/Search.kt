@@ -206,11 +206,24 @@ val SETTINGS_INDEX = listOf(
     SettingEntry("Review reminder", "review reminder 1 pm 6 pm to review my day", "review"),
     SettingEntry("Dossier reminder", "dossier lock 3 am separate reminder my day", "dossier"),
     SettingEntry("Morning summary", "morning summary 8 am day my day", "morning"),
-    SettingEntry("Notifications", "notifications notification silent sound off alerts", "notifications"),
+    SettingEntry("Notifications", "notifications notification silent sound off alerts quiet hours night duty hours morning", "notifications"),
     SettingEntry("Daily list", "daily list sms people send follow-up list", "daily_list"),
     SettingEntry("Backup", "backup restore share folder", "backup"),
-    SettingEntry("Voice typing", "voice typing mic microphone urdu english speak", "voice"),
+    SettingEntry("Voice typing", "voice typing mic microphone urdu english speak language", "voice"),
+    SettingEntry("Appearance", "appearance theme light dark display size text size font look", "appearance"),
+    SettingEntry("WhatsApp", "whatsapp business message template app", "whatsapp"),
+    SettingEntry("My day", "my day summary review dossier", "my_day"),
+    SettingEntry("Team", "team account sign in sign out google gmail seat designation", "team"),
+    SettingEntry("Task rules", "task rules deadline extend urgent no date sms not seen reminders", "task_rules"),
+    SettingEntry("What's new", "what's new whats new update version changes", "whats_new"),
 )
+
+/** Settings pages this phone shows (Text messages only when the office allows texts; Task rules only in a team). */
+fun settingShown(c: android.content.Context, key: String): Boolean = when (key) {
+    "texts" -> WebRules.smsOn(c)
+    "task_rules" -> TeamRepo.me.value?.active == true
+    else -> true
+}
 
 private class Hit(
     val title: String, val sub: String, val done: Boolean, val icon: ImageVector,
@@ -295,7 +308,7 @@ fun SearchScreen(
 
     val sections: List<Pair<String, List<Hit>>> = if (q.isEmpty()) emptyList() else listOf(
         "Settings" to if (!on.getValue(SearchSource.SETTINGS)) emptyList() else SETTINGS_INDEX
-            .filter { has(it.title) || has(it.words) }
+            .filter { settingShown(ctx, it.key) && (has(it.title) || has(it.words)) }
             .map { s -> Hit(s.title, "Settings › ${s.title}", false, Icons.Rounded.Settings) { onOpenSetting(s.key) } },
         "Calls" to calls.filter { r ->
             task(r.note) || name(r.name) || name(r.title) || num(r.number) || r.delays.any { why(it.reason) }

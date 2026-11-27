@@ -29,6 +29,20 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.62.0", "27 Nov",
+            new = listOf(
+                "Search bar at the top of Settings",
+                "Quiet hours switch in Settings › Notifications (the office can lock it)",
+                "📎 Attach in every Timeline: camera, gallery, files and WhatsApp; RB360 is in the phone's Share menu",
+                "Plot files: Waiting for plot owner asks the reason and the day he will come, with a reminder that day",
+                "Plot files: waiting gives back exactly the duty hours waited",
+                "Plot files: lines marked 📷 need a photo before they can be ticked",
+                "Voice typing 🎤 is on for everyone, Urdu first",
+                "The website can see if each phone has its latest settings",
+            ),
+            fixed = listOf(),
+        ),
+        Entry(
             "0.61.1", "27 Nov",
             new = listOf(
                 "When the office turns Text messages off, texts also leave the home lists, widgets, calendar, reviews and the morning summary",

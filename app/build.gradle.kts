@@ -13,8 +13,8 @@ android {
         applicationId = "com.callbackreminder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 106
-        versionName = "0.61.1"
+        versionCode = 107
+        versionName = "0.62.0"
     }
 
     // Two apps from the same code: "full" is the main app, "cr" is the CR test copy. Only the name, the icon
@@ -93,6 +93,8 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     // 🟢 Online now, live (Realtime Database presence with onDisconnect).
     implementation("com.google.firebase:firebase-database")
+    // N4 Voice notes, documents and videos attached to a task Timeline.
+    implementation("com.google.firebase:firebase-storage")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")

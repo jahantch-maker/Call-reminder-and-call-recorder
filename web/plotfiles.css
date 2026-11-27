@@ -115,3 +115,8 @@ html[data-theme="dark"] .plpanel .card{background:var(--sf)}html[data-theme="dar
 @media(max-width:700px){.plstages>div:not(.cur) span{display:none}.plstages>.cur{flex:3}.plstages small{display:block;margin:0}.plibs{width:100%;justify-content:flex-end}}
 html[data-theme="dark"] .plcc,html[data-theme="dark"] .plstep{background:#2A2E3A}html[data-theme="dark"] .plstep{border-left-color:#7C95E0}
 html[data-theme="dark"] .plst b{color:#A9BDF2}html[data-theme="dark"] .plstep.cur{background:#4A3A15;border-left-color:#E8890C}html[data-theme="dark"] .plib i{border-color:#44474F}html[data-theme="dark"] .plnm{border-left-color:#44474F}
+/* N8 the step's "Waiting for plot owner" list */
+.plwait{font-size:13px;padding:6px 0;border-top:1px solid var(--ol)}.subhead+.plwait{border-top:0}
+/* N10 photos on a 📷 checklist line */
+.plthumbs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px}.plimg.plthumb{margin:0}.plimg.plthumb img{width:44px;height:44px;object-fit:cover;max-width:none;max-height:none}
+.plcl span.plneed{color:#B26A00}html[data-theme="dark"] .plcl span.plneed{color:#F2B866}.plthumbs span{margin:0!important}

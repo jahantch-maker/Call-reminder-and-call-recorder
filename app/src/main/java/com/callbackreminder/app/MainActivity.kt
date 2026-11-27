@@ -383,6 +383,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** The page a [SettingEntry.key] opens (Settings' search bar and the Home search). */
+private fun settingScreen(key: String): Int? = when (key) {
+    "off_days" -> Screen.OFF_DAYS
+    "calendar" -> Screen.CALENDAR_SETTINGS
+    "setup" -> Screen.SETUP
+    "popup" -> Screen.POPUP_SETTINGS
+    "quick_times" -> Screen.QUICK_TIMES
+    "recording" -> Screen.RECORDING_SETTINGS
+    "reminder" -> Screen.REMINDER_SETTINGS
+    "texts" -> Screen.TEXT_SETTINGS
+    "review" -> Screen.REVIEW_SETTINGS
+    "dossier" -> Screen.DOSSIER_SETTINGS
+    "morning" -> Screen.MORNING_SETTINGS
+    "notifications" -> Screen.NOTIFICATION_SETTINGS
+    "daily_list" -> Screen.DAILY_LIST_SETTINGS
+    "backup" -> Screen.BACKUP_SETTINGS
+    "voice" -> Screen.VOICE_SETTINGS
+    "appearance" -> Screen.APPEARANCE
+    "whatsapp" -> Screen.WHATSAPP_SETTINGS
+    "my_day" -> Screen.MY_DAY_SETTINGS
+    "team" -> Screen.TEAM_SETTINGS
+    "task_rules" -> Screen.TASK_RULES
+    "whats_new" -> Screen.WHATS_NEW
+    else -> null
+}
+
 /**
  * The app's screens. HOME is the bottom-bar page (Home, My tasks, Calls, Texts). Recordings, Settings
  * (the icons at the top right) and setting pages slide in over it from the right like a phone's own
@@ -634,6 +660,7 @@ private fun AppRoot(
                     onOpenWhatsNew = { open(Screen.WHATS_NEW) },
                     onOpenNewPlotFile = { open(Screen.NEW_PLOT_FILE) },
                     onOpenTaskRules = { open(Screen.TASK_RULES) },
+                    onOpenSetting = { key -> settingScreen(key)?.let { open(it) } },
                 )
                 Screen.TASK_RULES -> TaskRulesScreen(onBack = { back() })
                 Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
@@ -668,26 +695,7 @@ private fun AppRoot(
                         open(Screen.PERSON)
                     },
                     onOpenRecordings = { open(Screen.RECORDINGS) },
-                    onOpenSetting = { key ->
-                        when (key) {
-                            "off_days" -> Screen.OFF_DAYS
-                            "calendar" -> Screen.CALENDAR_SETTINGS
-                            "setup" -> Screen.SETUP
-                            "popup" -> Screen.POPUP_SETTINGS
-                            "quick_times" -> Screen.QUICK_TIMES
-                            "recording" -> Screen.RECORDING_SETTINGS
-                            "reminder" -> Screen.REMINDER_SETTINGS
-                            "texts" -> Screen.TEXT_SETTINGS
-                            "review" -> Screen.REVIEW_SETTINGS
-                            "dossier" -> Screen.DOSSIER_SETTINGS
-                            "morning" -> Screen.MORNING_SETTINGS
-                            "notifications" -> Screen.NOTIFICATION_SETTINGS
-                            "daily_list" -> Screen.DAILY_LIST_SETTINGS
-                            "backup" -> Screen.BACKUP_SETTINGS
-                            "voice" -> Screen.VOICE_SETTINGS
-                            else -> null
-                        }?.let { open(it) }
-                    },
+                    onOpenSetting = { key -> settingScreen(key)?.let { open(it) } },
                 )
                 Screen.MORNING_SETTINGS -> MorningSummarySettingsScreen(onBack = { back() })
                 Screen.PEOPLE -> PeopleScreen(

@@ -348,6 +348,7 @@
     const bub = (m) => {
       let body = "";
       if (m.text === "\u0001deleted") body = '<i class="grey">🚫 This message was deleted</i>';
+      else if (RB.fileMsg(m)) body = RB.fileMsg(m);
       else if (m.kind === "photo" && m.data) body = `<img src="data:image/jpeg;base64,${blobB64(m.data)}">` + (m.text ? "<div>" + esc(m.text) + "</div>" : "");
       else if (m.kind === "voice" && m.data) body = `<audio controls src="data:audio/mp4;base64,${blobB64(m.data)}"></audio>`;
       else if (m.kind === "photo" || m.kind === "voice") body = `<i class="grey">${m.kind === "photo" ? "📷 Photo" : "🎤 Voice note"} (cleared)</i>`;

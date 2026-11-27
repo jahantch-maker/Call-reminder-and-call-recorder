@@ -10,6 +10,17 @@
   let db = null, teamRef = null, uid = null;
 
   // ------------------------------------------------------------------ small helpers
+  /** N4 A voice note, document or video attached on the phone (kept in Storage): player or link. "" for other messages. */
+  RB.fileMsg = (m) => {
+    if (!m || !m.fname || m.data) return "";
+    const e = RB.esc, kb = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round((b || 0) / 1024)) + " KB");
+    const wa = m.via === "whatsapp" ? '<span class="grey"> · ↪ from WhatsApp</span>' : "";
+    if (!m.url) return `<span class="grey">${m.kind === "video" ? "🎬" : m.kind === "voice" ? "🎤" : "📄"} ${e(m.fname)} · still uploading from the phone</span>${wa}`;
+    const u = e(m.url);
+    if (m.kind === "voice") return `🎤 Voice note${wa}<audio class="rbfile" controls preload="none" src="${u}"></audio>`;
+    if (m.kind === "video") return `🎬 ${e(m.fname)} · ${kb(m.size)}${wa}<video class="rbfile" controls preload="none" src="${u}"></video>`;
+    return `<a class="rbfile" href="${u}" target="_blank" rel="noopener">📄 ${e(m.fname)} · ${kb(m.size)}</a>${wa}`;
+  };
   RB.esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // v0.49.4 Full names everywhere (owner's rule): "first" now gives the whole name.
   RB.first = (n) => String(n || "").trim().replace(/\s+/g, " ") || "Member";
@@ -55,6 +66,7 @@
     ["callRec", "Call recording", "Stays on his phone", false],
     ["sms", "Text messages", "His own SMS follow-ups on the phone", true],
     ["popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", true],
+    ["quietHours", "Can change quiet hours", "His “Quiet hours” switch", true],
     ["openPlot", "Can open new plot files", "Shows “New plot file” in his phone", false],
     ["seeHealth", "See phone health", "Team › People: each phone's permissions", false],
     ["seeRules", "See Rules", "Settings › Rules: how every rule works", false],
@@ -299,7 +311,10 @@
         phone: s.phone || "",   // the official phone: the phone app's Call list reads it from the member row, so it follows the seat whenever it changes
       };
       const cur = RB.member(s.uid);
-      if (cur && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs, cur.also || [], cur.phone || ""]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs, data.also, data.phone])) return;
+      // N3 A time stamp on every change of his web settings; the phone writes back the stamp it holds (health.setAt).
+      const same = cur && JSON.stringify(cur.perms) === JSON.stringify(data.perms);
+      data.permsAt = same && cur.permsAt ? cur.permsAt : Date.now();
+      if (cur && cur.permsAt && JSON.stringify([cur.name, cur.seatId, cur.designation, cur.dept, cur.reportsTo, cur.managers, cur.perms, cur.canGiveTo, cur.role, cur.docDesigs, cur.also || [], cur.phone || ""]) === JSON.stringify([data.name, data.seatId, data.designation, data.dept, data.reportsTo, data.managers, data.perms, data.canGiveTo, data.role, data.docDesigs, data.also, data.phone])) return;
       writes.push(RB.Store.put("members", s.uid, data, true, true).catch((err) => console.warn("sync", s.uid, err)));
     });
     await Promise.all(writes);

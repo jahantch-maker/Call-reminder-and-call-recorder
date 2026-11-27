@@ -81,10 +81,18 @@
   }
   const BADGE = { late: ["red", "Late"], wait: ["yel", "Waiting for plot owner"], today: ["org", "Due today"], ontime: ["grn", "On time"], build: ["grn", "Construction started"], closed: ["", "Closed"] };
   const badge = (st) => `<span class="tag ${BADGE[st][0]}">${BADGE[st][1]}</span>`;
-  /** The "Due" text: days late in red, waiting days, today's time or the date. */
+  /** N6 "Thu 27 Nov" or "Thu 27 Nov, 4:00 PM": the day the plot owner said he would come. */
+  const comes = (t) => (t.waitUntil ? " · comes " + (t.waitTimed ? RB.fmtWhen(t.waitUntil) : RB.fmtDay(t.waitUntil)) : "");
+  /** N8 The step's finished waits: "⏸ 2 waits · 7h paused" (duty hours given back, N7). */
+  const hm = (ms) => { const m = Math.round(ms / 60000), h = Math.floor(m / 60); return h ? h + "h" + (m % 60 ? " " + (m % 60) + "m" : "") : m + "m"; };
+  const waitsOf = (t) => (t && t.waits) || [];
+  const waitSum = (t) => { const w = waitsOf(t); return w.length ? `⏸ ${pl(w.length, "wait")} · ${hm(w.reduce((n, x) => n + (x.dutyMs || 0), 0))} paused` : ""; };
+  const waitLine = (x) => `<div class="plwait">${esc(RB.fmtWhen(x.from))} to ${esc(RB.fmtWhen(x.to))} · <b>${hm(x.dutyMs || 0)}</b>${x.reason ? " · " + esc(x.reason) : ""}${x.comesAt ? " · said he would come " + esc(RB.fmtDay(x.comesAt)) : ""}</div>`;
+
+  /** The "Due" text: days late in red, waiting since when, today's time or the date. */
   function dueText(t, now) {
     if (!t) return "";
-    if (t.waitAt) return `<span class="plgrey">Waiting ${pl(Math.max(0, days(t.waitAt, now)), "day")}</span>`;
+    if (t.waitAt) return `<span class="plgrey">Waiting since ${RB.fmtWhen(t.waitAt)}${esc(comes(t))}</span>`;
     if (!t.due) return "";
     if (isLate(t, now)) { const n = days(t.due, now); return `<span class="pllate">${n ? pl(n, "day") + " late" : "Late today"}</span>`; }
     return sod(t.due) === sod(now) ? "Today, " + time(t.due) : RB.fmtDay(t.due);
@@ -217,7 +225,7 @@
     const skip = !t && notNeeded(f, s.id);
     const back = ret(t), state = done ? "done" : t && !back ? "cur" : skip ? "later plskip" : "later";
     const who = `<span class="plwho">👤 ${esc(s.role)}${t ? " · " + withName(t) : ""}</span>`;
-    const when = skip ? `Not needed for this file (not picked in ${esc(skip.join(", "))})` : done ? "Done " + RB.fmtDay(t.doneAt) : back ? `Returned to ${esc(t.returnTo || "the earlier step")} ${RB.fmtWhen(t.updatedAt || t.createdAt || now)} · “${esc(t.reason || "")}”` : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtDay(t.waitAt) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
+    const when = skip ? `Not needed for this file (not picked in ${esc(skip.join(", "))})` : done ? "Done " + RB.fmtDay(t.doneAt) : back ? `Returned to ${esc(t.returnTo || "the earlier step")} ${RB.fmtWhen(t.updatedAt || t.createdAt || now)} · “${esc(t.reason || "")}”` : t ? (t.waitAt ? "Waiting for plot owner since " + RB.fmtWhen(t.waitAt) + (t.waitReason ? " · " + esc(t.waitReason) : "") + esc(comes(t)) : t.seenAt ? "Received " + RB.fmtWhen(t.seenAt) : "Sent " + RB.fmtWhen(t.createdAt || now) + ", not received yet") : "Not started";
     let right = "";
     if (done) { const n = t.due && t.doneAt > t.due ? days(t.due, t.doneAt) : -1; right = n < 0 ? '<span class="plok">On time</span>' : `<span class="pllate">${n ? pl(n, "day") + " late" : "Late"}</span>`; }
     else if (back) right = '<span class="plgrey">Returned</span>';
@@ -225,7 +233,7 @@
     else if (t) right = dueText(t, now) || '<span class="plgrey">No due time</span>';
     else if (nextIds.includes(s.id)) right = '<span class="plgrey">Next</span>';
     return `<div class="plstep ${state} ${open ? "open" : ""}"><div class="plsr" data-pfstep="${esc(s.id)}" role="button" tabindex="0" aria-expanded="${open}">
-        <span class="plic">${done ? "✓" : skip ? "–" : ""}</span><div class="w"><div class="plst"><b>${esc(s.id)}</b> ${esc(s.title)}</div><div class="plmeta">${who}<b>${when}</b><span>⏱ ${esc(allowed(s) || "—")}</span></div></div>
+        <span class="plic">${done ? "✓" : skip ? "–" : ""}</span><div class="w"><div class="plst"><b>${esc(s.id)}</b> ${esc(s.title)}</div><div class="plmeta">${who}<b>${when}</b><span>⏱ ${esc(allowed(s) || "—")}</span>${waitSum(t) ? `<span class="plgrey">${waitSum(t)}</span>` : ""}</div></div>
         <div class="plright">${right}${startsAfter(f, s)}</div><span class="plchev" aria-hidden="true">${open ? "⌄" : "›"}</span></div>${open ? inPlace(f, s, t) : ""}</div>`;
   }
 
@@ -233,6 +241,10 @@
   const filePicks = (f) => { const p = {}; tasksOf(f.id).forEach((t) => Object.entries(t.ticks || {}).forEach(([l, v]) => { if (v && /^\d+[a-z]+$/i.test(v.value || "")) p[t.step + "·" + l] = v.value; })); return p; };
   const refOf = (txt) => { const m = String(txt || "").trim().match(/^(\d+\.\d+)\s*[·.\-]\s*(\d+)(\w*)$/); return m ? { step: m[1], line: m[2], opt: m[2] + m[3] } : null; };
   const letter = (o) => String(o).replace(/^\d+/, "");
+
+  /** N10 The photos added to a 📷 line on the phone (click = full size), or "📷 Photo needed". */
+  const linePhotos = (t, c) => { const ph = ((t && M[t.id]) || []).filter((m) => m.kind === "photo" && m.checkLine === String(c.no) && b64(m.data));
+    return ph.length ? `<div class="plthumbs">${ph.map((m) => `<button class="plimg plthumb" data-pfimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${b64(m.data)}"></button>`).join("")}<span>${pl(ph.length, "photo")}</span></div>` : '<span class="plneed">📷 Photo needed before this line can be ticked</span>'; };
 
   function inPlace(f, s, t) {
     const ticks = (t && t.ticks) || {}, cl = s.checklist || [], picks = filePicks(f);
@@ -245,12 +257,13 @@
     const lines = cl.map((c) => { const skip = skipOf(c);
       if (c.type === "Pick one") return `<div class="plcl pick ${skip ? "skip" : ""}"><div>${esc(c.en)}${skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`;
       const k = skip ? null : tickOf(c);
-      return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""} ${skip ? "skip" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value && c.type !== "Option" ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : skip ? `<span>${esc(skip)}</span>` : ""}</div></div>`; }).join("");
+      return `<div class="plcl ${c.type === "Option" ? "opt" : ""} ${k ? "on" : ""} ${skip ? "skip" : ""}"><span class="plbox" aria-hidden="true">${k ? "✓" : ""}</span><div>${esc(c.en)}${k && k.value && c.type !== "Option" ? ` <b>${esc(k.value)}</b>` : ""}${k ? `<span>${esc(first(k.name))} · ${esc(RB.fmtDay(k.at).split(" ")[0])} ${time(k.at)}</span>` : skip ? `<span>${esc(skip)}</span>` : ""}${c.photo && !skip ? linePhotos(t, c) : ""}</div></div>`; }).join("");
     const nTicked = counted.filter((c) => (c.type === "Pick one" ? ticks[c.no] : tickOf(c))).length;
     const canNote = t && !t.doneAt && !ret(t) && RB.canEdit("plot");
     return `<div class="plpanel"><div class="card plchk"><div class="subhead"><h3>Checklist</h3><span class="sub">${nTicked} of ${counted.length} ticked</span><div class="sp"></div><span class="tag">View only · ticked on the phone</span></div>
         ${lines || '<div class="muted">This step has no checklist.</div>'}
         <button class="btnt" data-pfhow="${esc(s.id)}" style="margin-top:12px">📖 How to do this</button><div class="sub" style="margin-top:4px">Opens the ${esc(s.role)} SOP for this step, English | اردو</div></div>
+      ${waitsOf(t).length ? `<div class="card plwaits"><div class="subhead"><h3>Waiting for plot owner</h3><span class="sub">${waitSum(t)} · duty hours only</span></div>${waitsOf(t).map(waitLine).join("")}</div>` : ""}
       <div class="card pltl"><div class="subhead"><h3>Timeline of step ${esc(s.id)}</h3><span class="sub">only this step</span></div>
         ${t ? timeline([t], false) : '<div class="muted">Not started yet.</div>'}
         ${canNote ? noteBox(s) : t && (t.doneAt || ret(t)) ? '<div class="sub" style="margin-top:10px">This step is ' + (t.doneAt ? "done" : "returned") + ', so its Timeline is closed. Write a remark in the current step and mention this one (for example "about ' + esc(s.id) + '").</div>' : ""}</div></div>`;
@@ -277,6 +290,7 @@
   const mention = (t) => esc(t).replace(/(^|\s)@([A-Za-z][\w.]*(?: [A-Z][\w.]*)?)/g, '$1<b class="plmen">@$2</b>');
   function msgHtml(m) {
     const who = `<b>${esc(first(m.fromName))}</b>${m.web ? " (note from web)" : ""}`;
+    if (RB.fileMsg(m)) return `${who}: ${RB.fileMsg(m)}`;
     if (m.kind === "photo") { const d = b64(m.data); return `${who} added a photo${m.text ? ": " + mention(m.text) : ""}${d ? `<button class="plimg" data-pfimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${d}"><span>🔍 Click to open</span></button>` : ' <i class="sub">(photo cleared)</i>'}`; }
     if (m.kind === "voice") { const d = b64(m.data), sec = Math.round((m.durMs || 0) / 1000); return `${who} sent a voice note${d ? `<div class="plvoice" data-pfvoice="${esc(m.id)}"><button class="plplay" aria-label="Play">▶</button><span class="plwave" aria-hidden="true"></span><span class="pldur">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}</span><button class="plspeed" aria-label="Speed">1x</button></div>` : ' <i class="sub">(voice note cleared)</i>'}`; }
     return m.line ? esc(m.text) : `${who}: ${mention(m.text)}`;

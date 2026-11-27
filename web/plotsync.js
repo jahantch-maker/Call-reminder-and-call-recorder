@@ -49,7 +49,7 @@
         notify: { start: list(r["Notify on start"]), done: list(r["Notify when done"]), late: list(r["Notify when late"]) },
         lines: r.Lines === "" ? null : Number(r.Lines), call: list(r["Call list"]), wa: list(r["WhatsApp list"]), waMsg: r["WhatsApp message"], forms: list(r["Forms used"]),
         wrong: w["If something goes wrong (English)"] || "", wrongUr: w["If something goes wrong (Urdu)"] || "", wrongShort: w["Short (English)"] || "", wrongShortUr: w["Short (Urdu)"] || "",
-        checklist: chk.filter((c) => c["Step no."] === r["Step no."]).map((c) => ({ no: c.Line, type: c.Type, en: c["Checklist line (English)"], ur: c["Checklist line (Urdu)"], onlyIf: c["Shown only if (step · line+option)"], opens: c["Opens step"], detail: c["Detail (English)"], detailUr: c["Detail (Urdu)"] })),
+        checklist: chk.filter((c) => c["Step no."] === r["Step no."]).map((c) => ({ no: c.Line, type: c.Type, en: c["Checklist line (English)"], ur: c["Checklist line (Urdu)"], onlyIf: c["Shown only if (step · line+option)"], opens: c["Opens step"], detail: c["Detail (English)"], detailUr: c["Detail (Urdu)"], photo: /^\s*yes\s*$/i.test(c["Photo needed"] || "") })),
         row: r.__row,
       };
     });

@@ -1,0 +1,24 @@
+rules_version = '2';
+// N4 (27 Nov) Files attached to a task Timeline (voice notes, documents, videos; photos stay in Firestore).
+// Paste into Firebase console › Storage › Rules. Same people as the task: its viewers, and the team's owners.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /teams/{t}/tasks/{task}/{file} {
+      function viewer() {
+        return request.auth != null && request.auth.uid in firestore.get(/databases/(default)/documents/teams/$(t)/tasks/$(task)).data.get('viewers', []);
+      }
+      function owner() {
+        return request.auth != null && firestore.get(/databases/(default)/documents/teams/$(t)).data.ownerUid == request.auth.uid;
+      }
+      // Same as Firestore seesAll(): Team Performance set to "everyone" (view only).
+      function seesAll() {
+        let m = firestore.get(/databases/(default)/documents/teams/$(t)/members/$(request.auth.uid)).data;
+        return request.auth != null && m.get('status', '') == 'active' && m.get('perms', {}).get('portal', {}).get('app', 'none') != 'none'
+          && m.get('perms', {}).get('portal', {}).get('appScope', 'own') == 'all';
+      }
+      allow read: if viewer() || owner() || seesAll();
+      allow delete: if viewer() || owner();
+      allow create: if viewer() && request.resource.size <= 15 * 1024 * 1024;
+    }
+  }
+}

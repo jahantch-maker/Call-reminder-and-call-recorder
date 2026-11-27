@@ -163,7 +163,7 @@ object Notify {
         }
         // S13.1 Info about texts (sent, failed, review, reply, daily list) waits outside a team member's duty window
         // and comes in the morning bundle; anything with a set time still rings at its time.
-        if (t in HELD_OFF_DUTY && TeamRepo.teamId != null && !TeamRules.inWindow(ctx)) {
+        if (t in HELD_OFF_DUTY && TeamRepo.teamId != null && TeamRules.quietNow(ctx)) {
             val e = b.build().extras
             TeamSync.holdLine(ctx, listOfNotNull(e.getCharSequence(NotificationCompat.EXTRA_TITLE), e.getCharSequence(NotificationCompat.EXTRA_TEXT)).joinToString(" · "))
             return

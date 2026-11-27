@@ -98,6 +98,9 @@ data class TeamMember(
             java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
 }
 
+/** N8 One "Waiting for plot owner": from, to, the duty time it gave back (N7), why, and the day he said he would come. */
+data class PlotWait(val from: Long, val to: Long, val dutyMs: Long, val reason: String, val comesAt: Long)
+
 /**
  * A task one member gave another. [dateBy] is [Team.HIS_DATE] (he picks his date, on or before [deadline]) or
  * [Team.GIVER_DATE] (the giver fixed it; he can only ask for more time). [due] 0 = no date yet.
@@ -180,6 +183,12 @@ data class TeamTask(
     val ticks: Map<String, PlotTick> = emptyMap(),
     /** "Waiting for plot owner" started (0 = not waiting): the timer stops meanwhile. */
     val waitAt: Long = 0L,
+    /** N6 Why he is waiting, and when the plot owner said he would come (0 = not said; [waitTimed] = a clock time too). */
+    val waitReason: String = "",
+    val waitUntil: Long = 0L,
+    val waitTimed: Boolean = false,
+    /** N8 Every finished wait of this step. */
+    val waits: List<PlotWait> = emptyList(),
     /** The role of the step that opened this one ("" for the first step). */
     val fromRole: String = "",
     /** The plot owner, copied from the file, so the card can show and call him without reading the file. */
@@ -242,6 +251,11 @@ object Team {
     const val TEXT = "text"
     const val VOICE = "voice"
     const val PHOTO = "photo"
+    /** N4 A document or a video from the phone or WhatsApp (kept in Firebase Storage; the message holds its link). */
+    const val FILE = "file"
+    const val VIDEO = "video"
+    /** N4 Largest file that can be attached. */
+    const val MAX_FILE = 15L * 1024 * 1024
     const val ASK = "ask"
     const val STUCK = "stuck"
     const val PROOF = "proof"
@@ -281,6 +295,14 @@ data class TeamMsg(
     val pending: Boolean = false,
     /** A voice note's wave, one digit (1-9) per bar ("" for notes from before v0.42). */
     val wave: String = "",
+    /** N10 Plot files: the checklist line this photo proves ("" = a normal message). */
+    val checkLine: String = "",
+    /** N4 A file in Firebase Storage: its link ("" while it uploads), name, size, type, and "whatsapp" when shared from there. */
+    val url: String = "",
+    val fname: String = "",
+    val size: Long = 0L,
+    val mime: String = "",
+    val via: String = "",
 ) {
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
     /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
@@ -355,11 +377,38 @@ object TeamRules {
         return listOf(d.minusDays(1), d).any { day -> duty(c, day)?.let { (s, e) -> now >= s - EARLY && now < e + LATE } == true }
     }
 
+    /**
+     * 27 Nov (N2) "Quiet hours" switch (on to start with): off = notifications come at any time, day or night, off day too.
+     * The office can stop him changing it (website Access "Can change quiet hours"; then it stays on). The owner always can.
+     */
+    private const val QUIET = "quiet_hours"
+    fun quietLocked(c: Context) = !WebRules.app(c, "quietHours", true)
+    fun quietOn(c: Context) = quietLocked(c) || AppSettings.get(c, QUIET, true)
+    fun setQuietOn(c: Context, on: Boolean) = AppSettings.set(c, QUIET, on)
+    /** True when automatic notifications must wait: quiet hours on and outside the window. */
+    fun quietNow(c: Context, now: Long = System.currentTimeMillis()) = quietOn(c) && !inWindow(c, now)
+
     /** The "Automatic ones come 10:30 AM - 10:00 PM" line (today's, else the office's). */
     fun windowLabel(c: Context): String {
         val s = (if (WorkHours.isSet(c)) WorkHours.start(c) else 11 * 60) - 30
         val e = ((if (WorkHours.isSet(c)) WorkHours.end(c) else 21 * 60) + 60) % (24 * 60)
         return Dossier.timeLabel(s.coerceAtLeast(0)) + " - " + Dossier.timeLabel(e)
+    }
+
+    /** N7 [from] moved later by [ms] of duty time (nights, the weekly off day and holidays skipped). */
+    fun addDuty(c: Context, from: Long, ms: Long): Long {
+        if (ms <= 0L) return from
+        var left = ms
+        var day = java.time.Instant.ofEpochMilli(from).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        var guard = 0
+        while (guard++ < 400) {
+            duty(c, day)?.let { (s, e) ->
+                val a = maxOf(s, from)
+                if (e > a) { if (e - a >= left) return a + left; left -= e - a }
+            }
+            day = day.plusDays(1)
+        }
+        return from + left
     }
 
     /** Minutes from [from] to [to], counting only working hours (weekly off day and holidays skipped). */
@@ -441,6 +490,8 @@ object TeamRepo {
             _user.value = auth().currentUser
             listen()
             TeamSync.start(appCtx)
+            // N4 Files attached while offline.
+            TeamFiles.flush(appCtx)
         }
     }
 
@@ -470,6 +521,11 @@ object TeamRepo {
                 Seats.applyMine(appCtx, m.uid, m.seatId)
                 // The website's settings for him, kept on the phone so every alarm works offline (S-OFFLINE).
                 WebRules.save(appCtx, s.get("perms"), member = m.role != Team.OWNER && m.seatId.isNotBlank())
+                // N3 Tell the website which change of his web settings this phone now holds ("Web settings: up to date").
+                val stamp = (s.get("permsAt") as? Number)?.toLong() ?: 0L
+                if (stamp > 0) WebRules.keepStamp(appCtx, stamp)
+                if (stamp > 0 && ((s.get("health") as? Map<*, *>)?.get("setAt") as? Number)?.toLong() != stamp)
+                    s.reference.update(mapOf("health.setAt" to stamp, "health.setGot" to WebRules.gotAt(appCtx)))
                 if (m.active && was?.active != true) {
                     listenMembersAndTasks(t, u.uid)
                     TeamWorker.schedule(appCtx)
@@ -596,6 +652,7 @@ object TeamRepo {
                 "v" to appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName.orEmpty(), "at" to now, "notif" to st.notifications, "full" to st.fullScreen, "alarms" to exact,
                 "battery" to st.battery, "calls" to (st.phone && st.callLog), "overlay" to st.overlay,
                 "sms" to granted(android.Manifest.permission.SEND_SMS),
+                "setAt" to WebRules.stamp(appCtx), "setGot" to WebRules.gotAt(appCtx),
             ))
         }
     }
@@ -1359,7 +1416,11 @@ object TeamRepo {
             .addOnFailureListener { logFail(it, "Undo message") }
     }
 
-    fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L): Boolean {
+    fun send(
+        t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L, checkLine: String = "",
+        /** N4 More fields of a file message (fname, size, mime, via, url). */
+        extra: Map<String, Any> = emptyMap(),
+    ): Boolean {
         val u = auth().currentUser ?: return false
         val me = _me.value ?: return false
         if (teamId == null) return false
@@ -1370,12 +1431,16 @@ object TeamRepo {
         )
         if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
         if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
+        if (checkLine.isNotEmpty()) doc["checkLine"] = checkLine
+        doc.putAll(extra)
         val ref = msgs(t.id).document()
         lastSentId = ref.id
         ref.set(doc).addOnFailureListener { if (::appCtx.isInitialized) CrashLog.record(appCtx, it, "Timeline · Send") }
         val preview = when (kind) {
             Team.VOICE -> "🎤 Voice note"
             Team.PHOTO -> "📷 Photo" + if (text.isNotBlank()) ": ${text.trim()}" else ""
+            Team.FILE -> "📄 " + (extra["fname"] ?: "File")
+            Team.VIDEO -> "🎬 Video"
             else -> text.trim()
         }.take(120)
         val f = mutableMapOf<String, Any>("lastMsgAt" to now, "lastMsgBy" to u.uid, "lastMsgText" to preview)
@@ -1526,6 +1591,12 @@ object TeamRepo {
                     playedBy = longs(d.get("playedBy")),
                     pending = d.metadata.hasPendingWrites(),
                     wave = d.getString("wave").orEmpty(),
+                    checkLine = d.getString("checkLine").orEmpty(),
+                    url = d.getString("url").orEmpty(),
+                    fname = d.getString("fname").orEmpty(),
+                    size = d.getLong("size") ?: 0L,
+                    mime = d.getString("mime").orEmpty(),
+                    via = d.getString("via").orEmpty(),
                 )
             }.sortedBy { it.at })
         }
@@ -1541,7 +1612,11 @@ object TeamRepo {
                 runCatching {
                     msgs(t.id).whereArrayContains("viewers", u).get().await().documents
                         .filter { it.getString("kind") != Team.TEXT }
-                        .forEach { it.reference.update(mapOf("data" to FieldValue.delete(), "text" to (it.getString("text").orEmpty() + " (removed after 90 days)"))) }
+                        .forEach { d ->
+                            // N4 A file kept in Storage goes too.
+                            d.getString("url")?.takeIf { it.isNotBlank() }?.let { url -> runCatching { TeamFiles.delete(url) } }
+                            d.reference.update(mapOf("data" to FieldValue.delete(), "url" to FieldValue.delete(), "text" to (d.getString("text").orEmpty() + " (removed after 90 days)")))
+                        }
                     tasksRef().document(t.id).update("mediaCleared", true).await()
                 }
             }
@@ -1701,6 +1776,14 @@ object TeamRepo {
             (k as? String)?.let { it to PlotTick((m["at"] as? Number)?.toLong() ?: 0L, m["name"]?.toString().orEmpty(), m["value"]?.toString().orEmpty()) }
         }?.toMap() ?: emptyMap(),
         waitAt = s.getLong("waitAt") ?: 0L,
+        waitReason = s.getString("waitReason").orEmpty(),
+        waitUntil = s.getLong("waitUntil") ?: 0L,
+        waitTimed = s.getBoolean("waitTimed") ?: false,
+        waits = (s.get("waits") as? List<*>)?.mapNotNull { v ->
+            val m = v as? Map<*, *> ?: return@mapNotNull null
+            fun n(k: String) = (m[k] as? Number)?.toLong() ?: 0L
+            PlotWait(n("from"), n("to"), n("dutyMs"), m["reason"]?.toString().orEmpty(), n("comesAt"))
+        } ?: emptyList(),
         fromRole = s.getString("fromRole").orEmpty(),
         ownerName = s.getString("ownerName").orEmpty(),
         ownerWa = s.getString("ownerWa").orEmpty(),

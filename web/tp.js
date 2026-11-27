@@ -22,6 +22,7 @@
   /** A Timeline note: text, a photo you can open, or a voice note you can play (same look as Plot files). */
   function msgHtml(m) {
     const who = `<b>${esc(first(m.fromName))}</b>`, d = m.kind === "photo" || m.kind === "voice" ? b64(m.data) : "";
+    if (RB.fileMsg(m)) return `${who}: ${RB.fileMsg(m)}`;
     if (m.kind === "photo") return `${who} added a photo${m.text ? ": " + esc(m.text) : ""}${d ? `<button class="plimg" data-tpimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${d}"><span>🔍 Click to open</span></button>` : ' <i class="tp-hint">(photo cleared)</i>'}`;
     if (m.kind === "voice") { const sec = Math.round((m.durMs || 0) / 1000), a = players[m.id]; return `${who} sent a voice note${d ? `<div class="plvoice" data-tpvoice="${esc(m.id)}"><button class="plplay" aria-label="Play">${a && !a.paused ? "❚❚" : "▶"}</button><span class="plwave" aria-hidden="true"></span><span class="pldur">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}</span><button class="plspeed" aria-label="Speed">${a ? a.playbackRate : 1}x</button></div>` : ' <i class="tp-hint">(voice note cleared)</i>'}`; }
     return `${who}${m.text ? ": " + esc(m.text) : ""}`;
@@ -191,7 +192,9 @@
     // 27 Nov (S3.3, S4.6) Stuck presses, paused time and dossier reminder skips: counts only, the score doesn't change.
     const mine = D.tasks.filter((t) => t.toUid === uid), stuckN = mine.reduce((n, t) => n + (t.stuckN || 0), 0), pausedMs = mine.reduce((n, t) => n + (t.pausedMs || 0), 0);
     const [wa0] = T.range("week", now), skips = ((RB.member(uid) || {}).dosSkips || []).filter((x) => x >= wa0).length;
-    const facts = [stuckN ? `⚠ Stuck ${stuckN}×${pausedMs ? " · paused " + pausedLbl(pausedMs) : ""}` : "", skips ? `📋 Dossier reminder skipped ${skips}× this week` : ""].filter(Boolean).map((t) => `<span class="tp-fact">${t}</span>`).join("");
+    // N8 Plot owner waits on his plot steps: count and duty time paused (count only, score unchanged).
+    const pw = mine.filter((t) => t.plot).flatMap((t) => t.waits || []), pwMs = pw.reduce((n, x) => n + (x.dutyMs || 0), 0);
+    const facts = [stuckN ? `⚠ Stuck ${stuckN}×${pausedMs ? " · paused " + pausedLbl(pausedMs) : ""}` : "", pw.length ? `⏸ Plot owner waits ${pw.length}×${pwMs ? " · paused " + pausedLbl(pwMs) : ""}` : "", skips ? `📋 Dossier reminder skipped ${skips}× this week` : ""].filter(Boolean).map((t) => `<span class="tp-fact">${t}</span>`).join("");
     const sent = (D.waSent || {})[uid];
     const head = `<div class="tp-ph">${av(r.m, true)}<b>${esc(first(r.m.name))}</b>${rk(r.rank)}<span class="tp-hint">Score this week ${pc(r.score)} · view only</span>${facts}<span class="sp" style="flex:1"></span>
       <div class="tp-wa"><div class="tp-warow"><button class="tp-wabtn" data-tpwa="${esc(uid)}">${WA_LOGO} Send pending list on WhatsApp</button><span class="tp-hov tp-wai" tabindex="0" aria-label="About this button">i<span class="tp-tip left">Sends ${esc(first(r.m.name))} all open tasks from everyone (not dossier). You choose which groups, then press Send in WhatsApp.</span></span></div>

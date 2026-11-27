@@ -155,7 +155,8 @@ service cloud.firestore {
           allow read: if signedIn() && isActive(t) && (me() in resource.data.viewers || isOwner(t) || seesAll(t));
           allow create: if signedIn() && isActive(t) && request.resource.data.fromUid == me() && me() in request.resource.data.viewers;
           allow update: if signedIn() && isActive(t) && me() in resource.data.viewers
-            && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text'])
+            // N4 (27 Nov) "url": a file's Storage link, added by its sender once it is up, cleared after 90 days.
+            && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'text', 'url'])
               // ✓✓ Ticks: each person marks only their own seen / played time.
               || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy', 'playedBy'])
               // The giver hands the Timeline on with the task.

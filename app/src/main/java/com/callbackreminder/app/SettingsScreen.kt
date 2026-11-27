@@ -39,6 +39,10 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Palette
@@ -145,6 +149,7 @@ fun SettingsScreen(
     onOpenWhatsNew: () -> Unit = {},
     onOpenNewPlotFile: () -> Unit = {},
     onOpenTaskRules: () -> Unit = {},
+    onOpenSetting: (String) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -176,77 +181,104 @@ fun SettingsScreen(
     var recOn by remember(resumeKey) { mutableStateOf(AppSettings.get(ctx, AppSettings.REC_PHONE)) }
 
     SettingsPage(title = "Settings", onBack = onBack) {
-        val teamUser by TeamRepo.user.collectAsState()
-        val team by TeamRepo.team.collectAsState()
-        val teamMe by TeamRepo.me.collectAsState()
-        // Who is signed in, below it; tap = Team.
-        AccountCard(
-            // The seat name from the website is the one name (locked 23 Nov); Google's name only before joining.
-            name = teamMe?.name?.takeIf { it.isNotBlank() } ?: teamUser?.displayName,
-            email = teamUser?.email,
-            line = when {
-                teamUser == null && SignInGate.guest(ctx) -> "Guest · Sign in for all features · No team"
-                teamUser == null -> null
-                teamMe?.pending == true -> "Not added yet"
-                team != null && teamMe?.active == true -> "👥 ${team!!.name} · " + teamMe!!.designation.ifBlank { teamMe!!.roleLabel }
-                else -> "Not in a team yet"
-            },
-            onClick = onOpenTeam,
+        // 27 Nov (N1) Search bar on top: type a word ("quiet", "theme") and tap the page it is on.
+        var query by rememberSaveable { mutableStateOf("") }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            placeholder = { Text("Search settings") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            trailingIcon = if (query.isNotEmpty()) {
+                { IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear") } }
+            } else voiceMic(query) { query = it },
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth()
         )
-        // Plot files: New plot file, right under the account card (the owner and Front Desk only).
-        PlotFilesSettingsGroup(onOpenNewPlotFile)
-        val look by Appearance.version.collectAsState()
-        val workHours by WorkHours.version.collectAsState()
-        BadgeGroup("GENERAL") {
-            BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
-            BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
-            BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · Set by your manager" else "", onOpenOffDays)
-        }
-        // 27 Nov (S11.2) The rules for tasks you give and get (moved here from the Team page).
-        if (team != null && teamMe?.active == true) BadgeGroup("TEAM TASKS") {
-            BadgeRow(Icons.Rounded.Assignment, BadgeTone.RED, "Task rules",
-                "Deadlines, reminders and texts" + if (WebRules.managed(ctx)) " · Set by your manager" else "", onOpenTaskRules)
-        }
-        BadgeGroup("CALLS & TEXTS") {
-            BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)
-            BadgeRow(Icons.Rounded.Layers, BadgeTone.GREEN, "After-call popup",
-                if (popupTypes.isEmpty()) "Off for all calls" else popupTypes.joinToString(", "), onOpenPopup)
-            BadgeRow(
-                Icons.Rounded.Mic, BadgeTone.RED, "Call recording", recordingSummary, onOpenRecording,
-                switch = if (status.recordingReady) recOn else null,
-                onSwitch = { recOn = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it) },
-            )
-            if (WebRules.smsOn(ctx)) BadgeRow(Icons.Rounded.Sms, BadgeTone.INDIGO, "Text messages", "${BurstTemplates.load(ctx).size} templates · " +
-                if (BurstTemplates.stopOnReply(ctx)) "stops on reply" else "reply check off", onOpenTextMessages)
-            BadgeRow(Icons.Rounded.Chat, BadgeTone.GREEN, "WhatsApp", remember { WhatsApp.appLabel(WhatsApp.app(ctx)) }, onOpenWhatsApp)
-            BadgeRow(Icons.Rounded.Schedule, BadgeTone.BLUE, "Time picker",
-                "${TimeGrid.clock(TimeGrid.start(ctx))} to ${TimeGrid.clock(TimeGrid.end(ctx))} · ${TimeGrid.gap(ctx)} min", onOpenQuickTimes)
-        }
-        BadgeGroup("YOUR DAY") {
-            BadgeRow(Icons.Rounded.WbSunny, BadgeTone.AMBER, "My day", remember(resumeKey) {
-                "Summary ${MorningSummary.summary(ctx)} · Review ${ReviewReminder.summary(ctx)}"
-            }, onOpenMyDay)
-            BadgeRow(Icons.Rounded.Assignment, BadgeTone.TEAL, "Daily list", remember { DailyList.summary(ctx) }, onOpenDailyList)
-            BadgeRow(Icons.Rounded.Notifications, BadgeTone.RED, "Notifications", remember { Notify.summary(ctx) }, onOpenNotifications)
-        }
-        BadgeGroup("PHONE") {
-            BadgeRow(Icons.Rounded.Backup, BadgeTone.BLUE, "Backup", remember(resumeKey) { Backup.summary(ctx) }, onOpenBackup)
-            var silenceCalls by remember(resumeKey) { mutableStateOf(RingerSilence.enabled(ctx)) }
-            val toggleSilence = { on: Boolean ->
-                silenceCalls = on
-                RingerSilence.setEnabled(ctx, on)
-                // One time: Android asks you to allow Do Not Disturb access for the app.
-                if (on && !RingerSilence.hasAccess(ctx)) RingerSilence.openAccessSettings(ctx)
+        val q = query.trim().lowercase()
+        if (q.isNotEmpty()) {
+            val hits = SETTINGS_INDEX.filter { settingShown(ctx, it.key) && (it.title.lowercase().contains(q) || it.words.contains(q)) }
+            if (hits.isEmpty()) Text(
+                "No setting matches \"${query.trim()}\"",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            ) else BadgeGroup("RESULTS") {
+                hits.forEach { h -> BadgeRow(Icons.Rounded.Settings, BadgeTone.BLUE, h.title, "Settings › ${h.title}", { onOpenSetting(h.key) }) }
             }
-            BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) },
-                onClick = { toggleSilence(!silenceCalls) }, switch = silenceCalls, onSwitch = toggleSilence)
-            BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
-            BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
-                if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"
-                else "${setupItems.count { it }} of ${setupItems.size} permissions allowed", onOpenSetup)
         }
-        // Update: this version, Update and What's new, at the end.
-        UpdateCard(onOpenWhatsNew)
+        if (q.isEmpty()) {
+            val teamUser by TeamRepo.user.collectAsState()
+            val team by TeamRepo.team.collectAsState()
+            val teamMe by TeamRepo.me.collectAsState()
+            // Who is signed in, below it; tap = Team.
+            AccountCard(
+                // The seat name from the website is the one name (locked 23 Nov); Google's name only before joining.
+                name = teamMe?.name?.takeIf { it.isNotBlank() } ?: teamUser?.displayName,
+                email = teamUser?.email,
+                line = when {
+                    teamUser == null && SignInGate.guest(ctx) -> "Guest · Sign in for all features · No team"
+                    teamUser == null -> null
+                    teamMe?.pending == true -> "Not added yet"
+                    team != null && teamMe?.active == true -> "👥 ${team!!.name} · " + teamMe!!.designation.ifBlank { teamMe!!.roleLabel }
+                    else -> "Not in a team yet"
+                },
+                onClick = onOpenTeam,
+            )
+            // Plot files: New plot file, right under the account card (the owner and Front Desk only).
+            PlotFilesSettingsGroup(onOpenNewPlotFile)
+            val look by Appearance.version.collectAsState()
+            val workHours by WorkHours.version.collectAsState()
+            BadgeGroup("GENERAL") {
+                BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
+                BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
+                BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · Set by your manager" else "", onOpenOffDays)
+            }
+            // 27 Nov (S11.2) The rules for tasks you give and get (moved here from the Team page).
+            if (team != null && teamMe?.active == true) BadgeGroup("TEAM TASKS") {
+                BadgeRow(Icons.Rounded.Assignment, BadgeTone.RED, "Task rules",
+                    "Deadlines, reminders and texts" + if (WebRules.managed(ctx)) " · Set by your manager" else "", onOpenTaskRules)
+            }
+            BadgeGroup("CALLS & TEXTS") {
+                BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)
+                BadgeRow(Icons.Rounded.Layers, BadgeTone.GREEN, "After-call popup",
+                    if (popupTypes.isEmpty()) "Off for all calls" else popupTypes.joinToString(", "), onOpenPopup)
+                BadgeRow(
+                    Icons.Rounded.Mic, BadgeTone.RED, "Call recording", recordingSummary, onOpenRecording,
+                    switch = if (status.recordingReady) recOn else null,
+                    onSwitch = { recOn = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it) },
+                )
+                if (WebRules.smsOn(ctx)) BadgeRow(Icons.Rounded.Sms, BadgeTone.INDIGO, "Text messages", "${BurstTemplates.load(ctx).size} templates · " +
+                    if (BurstTemplates.stopOnReply(ctx)) "stops on reply" else "reply check off", onOpenTextMessages)
+                BadgeRow(Icons.Rounded.Chat, BadgeTone.GREEN, "WhatsApp", remember { WhatsApp.appLabel(WhatsApp.app(ctx)) }, onOpenWhatsApp)
+                BadgeRow(Icons.Rounded.Schedule, BadgeTone.BLUE, "Time picker",
+                    "${TimeGrid.clock(TimeGrid.start(ctx))} to ${TimeGrid.clock(TimeGrid.end(ctx))} · ${TimeGrid.gap(ctx)} min", onOpenQuickTimes)
+            }
+            BadgeGroup("YOUR DAY") {
+                BadgeRow(Icons.Rounded.WbSunny, BadgeTone.AMBER, "My day", remember(resumeKey) {
+                    "Summary ${MorningSummary.summary(ctx)} · Review ${ReviewReminder.summary(ctx)}"
+                }, onOpenMyDay)
+                BadgeRow(Icons.Rounded.Assignment, BadgeTone.TEAL, "Daily list", remember { DailyList.summary(ctx) }, onOpenDailyList)
+                BadgeRow(Icons.Rounded.Notifications, BadgeTone.RED, "Notifications", remember { Notify.summary(ctx) }, onOpenNotifications)
+            }
+            BadgeGroup("PHONE") {
+                BadgeRow(Icons.Rounded.Backup, BadgeTone.BLUE, "Backup", remember(resumeKey) { Backup.summary(ctx) }, onOpenBackup)
+                var silenceCalls by remember(resumeKey) { mutableStateOf(RingerSilence.enabled(ctx)) }
+                val toggleSilence = { on: Boolean ->
+                    silenceCalls = on
+                    RingerSilence.setEnabled(ctx, on)
+                    // One time: Android asks you to allow Do Not Disturb access for the app.
+                    if (on && !RingerSilence.hasAccess(ctx)) RingerSilence.openAccessSettings(ctx)
+                }
+                BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) },
+                    onClick = { toggleSilence(!silenceCalls) }, switch = silenceCalls, onSwitch = toggleSilence)
+                BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
+                BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
+                    if (setupItems.all { it }) "All ${setupItems.size} permissions allowed"
+                    else "${setupItems.count { it }} of ${setupItems.size} permissions allowed", onOpenSetup)
+            }
+            // Update: this version, Update and What's new, at the end.
+            UpdateCard(onOpenWhatsNew)
+        }
     }
 }
 
