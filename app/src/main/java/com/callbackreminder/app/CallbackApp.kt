@@ -12,6 +12,7 @@ class CallbackApp : Application() {
         SmsStore.init(this)
         OffDays.init(this)
         ReviewPrefs.migrate(this)
+        ReminderSound.migrate(this)
         Notifier.createChannels(this)
         SmsNotifier.createChannel(this)
         WidgetSync.start(this)
