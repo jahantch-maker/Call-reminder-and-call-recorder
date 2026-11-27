@@ -464,7 +464,7 @@ object TeamSync {
         if (!t.hisDate || t.due != 0L || t.stuck || t.toPhone.isBlank() || "dl:${t.id}" in smsDone) return
         val seen = t.seenAt > 0L || Ticks.seen(t)
         if (!seen || !inHours || TeamRules.smsMin(c) <= 0) return
-        val after = if (t.urgent) 2L * TeamRules.repeatMin(c) else TeamRules.dayMin(c)
+        val after = if (t.urgent) 2L * TeamRules.urgentOf(TeamRepo.member(t.toUid)?.setPerms).gapMin else TeamRules.dayMin(c)
         if (waited < after || !SmsSender.hasPermission(c)) return
         val ok = runCatching {
             SmsSender.managerForDefaultSim(c).first.sendTextMessage(
