@@ -290,6 +290,7 @@
   const mention = (t) => esc(t).replace(/(^|\s)@([A-Za-z][\w.]*(?: [A-Z][\w.]*)?)/g, '$1<b class="plmen">@$2</b>');
   function msgHtml(m) {
     const who = `<b>${esc(first(m.fromName))}</b>${m.web ? " (note from web)" : ""}`;
+    if (RB.fileMsg(m)) return `${who}: ${RB.fileMsg(m)}`;
     if (m.kind === "photo") { const d = b64(m.data); return `${who} added a photo${m.text ? ": " + mention(m.text) : ""}${d ? `<button class="plimg" data-pfimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${d}"><span>🔍 Click to open</span></button>` : ' <i class="sub">(photo cleared)</i>'}`; }
     if (m.kind === "voice") { const d = b64(m.data), sec = Math.round((m.durMs || 0) / 1000); return `${who} sent a voice note${d ? `<div class="plvoice" data-pfvoice="${esc(m.id)}"><button class="plplay" aria-label="Play">▶</button><span class="plwave" aria-hidden="true"></span><span class="pldur">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}</span><button class="plspeed" aria-label="Speed">1x</button></div>` : ' <i class="sub">(voice note cleared)</i>'}`; }
     return m.line ? esc(m.text) : `${who}: ${mention(m.text)}`;

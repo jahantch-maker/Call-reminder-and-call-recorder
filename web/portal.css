@@ -382,3 +382,5 @@ html[data-theme="dark"] .hrow{color:#8FD9A8}html[data-theme="dark"] .hrow.bad{co
 html[data-theme="dark"] .rule{background:#1F2126;border-left-color:#3A3F55}
 /* N3 "Web settings: up to date / old" line on top of Phone health */
 .hrow.hset{border-top:1px solid var(--ol);border-bottom:1px solid var(--ol);margin:6px 0;padding:8px 0}.hset .hsub{font-weight:400;font-size:12.5px;margin:2px 0 0 14px}
+/* N4 files attached on the phone */
+.rbfile{display:block;margin-top:6px;max-width:260px}a.rbfile{display:inline-block;padding:8px 10px;border-radius:10px;background:var(--sv);color:var(--on);text-decoration:none;font-weight:600}video.rbfile{max-height:200px;border-radius:10px}

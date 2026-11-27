@@ -22,6 +22,7 @@
   /** A Timeline note: text, a photo you can open, or a voice note you can play (same look as Plot files). */
   function msgHtml(m) {
     const who = `<b>${esc(first(m.fromName))}</b>`, d = m.kind === "photo" || m.kind === "voice" ? b64(m.data) : "";
+    if (RB.fileMsg(m)) return `${who}: ${RB.fileMsg(m)}`;
     if (m.kind === "photo") return `${who} added a photo${m.text ? ": " + esc(m.text) : ""}${d ? `<button class="plimg" data-tpimg="${esc(m.id)}" aria-label="Open the photo"><img alt="" src="data:image/jpeg;base64,${d}"><span>🔍 Click to open</span></button>` : ' <i class="tp-hint">(photo cleared)</i>'}`;
     if (m.kind === "voice") { const sec = Math.round((m.durMs || 0) / 1000), a = players[m.id]; return `${who} sent a voice note${d ? `<div class="plvoice" data-tpvoice="${esc(m.id)}"><button class="plplay" aria-label="Play">${a && !a.paused ? "❚❚" : "▶"}</button><span class="plwave" aria-hidden="true"></span><span class="pldur">${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}</span><button class="plspeed" aria-label="Speed">${a ? a.playbackRate : 1}x</button></div>` : ' <i class="tp-hint">(voice note cleared)</i>'}`; }
     return `${who}${m.text ? ": " + esc(m.text) : ""}`;
