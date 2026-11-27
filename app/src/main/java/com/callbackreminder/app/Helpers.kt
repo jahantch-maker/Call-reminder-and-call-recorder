@@ -60,6 +60,8 @@ object AppSounds {
     class Sound(val key: String, val title: String, val res: Int)
 
     val ALL = listOf(
+        // 28 Nov RB's own tone (made for RB, no copyright): the popup default for everyone.
+        Sound("rb_soft_chime", "RB Soft Chime", R.raw.ping_rb_soft_chime),
         Sound("ding_dong", "Ding Dong", R.raw.ping_ding_dong),
         Sound("electronic", "Electronic Ping", R.raw.ping_electronic),
         Sound("new_notification", "New Notification", R.raw.ping_new_notification),
@@ -125,7 +127,7 @@ class SoundSetting(
  * changed). [BANNER] is for notification banners: call-back banners and text-message alerts.
  */
 object ReminderSound {
-    val POPUP = SoundSetting(AppSettings.RINGTONE, "", "Phone ringtone (default)", RingtoneManager.TYPE_RINGTONE)
+    val POPUP = SoundSetting(AppSettings.RINGTONE, "app:rb_soft_chime", "Phone ringtone", RingtoneManager.TYPE_RINGTONE)
     val BANNER = SoundSetting(
         AppSettings.BANNER_SOUND,
         "app:message",
@@ -137,8 +139,16 @@ object ReminderSound {
 
     fun title(ctx: Context): String = POPUP.title(ctx)
 
+    /** 28 Nov (owner's choice) Once per phone: everyone's popup tone becomes RB Soft Chime; they can change it after. */
+    fun migrate(ctx: Context) {
+        if (AppSettings.get(ctx, "popup_chime_28nov", false)) return
+        POPUP.set(ctx, "app:rb_soft_chime")
+        AppSettings.set(ctx, "popup_chime_28nov", true)
+    }
+
     /** Popup sound plays again and again until you react (on), or just once (off). */
-    fun repeats(ctx: Context): Boolean = AppSettings.get(ctx, AppSettings.RINGTONE_REPEAT, true)
+    fun repeats(ctx: Context): Boolean =
+        if (WebRules.managed(ctx)) WebRules.bool(ctx, "remRepeat") else AppSettings.get(ctx, AppSettings.RINGTONE_REPEAT, true)
 
     fun setRepeats(ctx: Context, on: Boolean) = AppSettings.set(ctx, AppSettings.RINGTONE_REPEAT, on)
 }

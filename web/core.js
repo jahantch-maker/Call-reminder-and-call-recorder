@@ -77,6 +77,7 @@
     dos1On: true, dos1Min: -60, dos2On: true, dos2Min: 0, rev1On: true, rev1Min: -480, rev2On: true, rev2Min: -180,
     n_plotNew: "full", n_plotDue: "full", plotHeadsMin: 60, n_plotHeads: "normal", n_plotWait: "normal", n_plotFollow: "normal", n_newTask: "normal",
     n_mention: "normal", n_noDate: "normal", n_doneCheck: "normal", n_extend: "normal", n_timeline: "normal", n_dossier: "normal",
+    remStyle: "full", remSecs: 15, remRepeat: true,
   };
   const DEF_SET = RB.DEF_SET;
   RB.SECTIONS = [["app", "Team Performance"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];

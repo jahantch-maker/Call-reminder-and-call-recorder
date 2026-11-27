@@ -102,6 +102,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -853,9 +854,12 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     var popupTitle by remember { mutableStateOf(ReminderSound.POPUP.title(ctx)) }
     var bannerTitle by remember { mutableStateOf(ReminderSound.BANNER.title(ctx)) }
-    var repeatSound by remember { mutableStateOf(ReminderSound.repeats(ctx)) }
-    var reminderStyle by remember { mutableStateOf(ReminderStyle.mode(ctx)) }
-    var popupSeconds by remember { mutableStateOf(ReminderStyle.seconds(ctx)) }
+    // 28 Nov For a team member these three are set by the office and read only here; ringtones stay his own choice.
+    val webV by WebRules.version.collectAsState()
+    val locked = remember(webV) { WebRules.managed(ctx) }
+    var repeatSound by remember(webV) { mutableStateOf(ReminderSound.repeats(ctx)) }
+    var reminderStyle by remember(webV) { mutableStateOf(ReminderStyle.mode(ctx)) }
+    var popupSeconds by remember(webV) { mutableStateOf(ReminderStyle.seconds(ctx)) }
     var secondsMenu by remember { mutableStateOf(false) }
     // Which sound the chooser window is open for, if any.
     var choosing by remember { mutableStateOf<SoundSetting?>(null) }
@@ -945,7 +949,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
     SettingsPage(title = "Reminder style & ringtone", onBack = onBack) {
         SectionCard(
             title = "Reminder style",
-            subtitle = "What happens when it is time to call back."
+            subtitle = if (locked) "🔒 Set by your manager" else "What happens when it is time to call back."
         ) {
             ReminderStyle.Mode.values().forEach { mode ->
                 StyleRow(
@@ -959,6 +963,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                             "A normal notification with a sound and vibration. No full-screen popup."
                     },
                     selected = reminderStyle == mode,
+                    enabled = !locked,
                     onSelect = {
                         reminderStyle = mode
                         ReminderStyle.setMode(ctx, mode)
@@ -982,7 +987,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") }
+                        if (!locked) FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") }
                         DropdownMenu(expanded = secondsMenu, onDismissRequest = { secondsMenu = false }) {
                             ReminderStyle.SECONDS_CHOICES.forEach { sec ->
                                 DropdownMenuItem(
@@ -1002,7 +1007,8 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
 
         SectionCard(
             title = "Popup ringtone",
-            subtitle = "For the large full-screen reminder."
+            subtitle = if (locked) "For the large full-screen reminder. You can change the tone; 🔒 repeat is set by your manager."
+                else "For the large full-screen reminder."
         ) {
             SoundRow(
                 title = popupTitle,
@@ -1012,8 +1018,9 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             StyleRow(
                 title = "Repeat until I react",
-                description = "Keeps playing until you tap Call back, Snooze or Done.",
+                description = "Keeps playing until you react, for up to 1 minute. The reminder stays on screen.",
                 selected = repeatSound,
+                enabled = !locked,
                 onSelect = {
                     repeatSound = true
                     ReminderSound.setRepeats(ctx, true)
@@ -1021,8 +1028,9 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
             )
             StyleRow(
                 title = "Play once",
-                description = "Plays one time. The reminder stays on screen.",
+                description = "Plays one time and vibrates 3 times. The reminder stays on screen.",
                 selected = !repeatSound,
+                enabled = !locked,
                 onSelect = {
                     repeatSound = false
                     ReminderSound.setRepeats(ctx, false)
@@ -1640,11 +1648,12 @@ private fun PermissionRow(
 }
 
 @Composable
-private fun StyleRow(title: String, description: String, selected: Boolean, onSelect: () -> Unit) {
+private fun StyleRow(title: String, description: String, selected: Boolean, enabled: Boolean = true, onSelect: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .alpha(if (enabled || selected) 1f else 0.5f)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

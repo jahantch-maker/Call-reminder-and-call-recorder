@@ -149,6 +149,8 @@ class PopupSound(private val ctx: Context) {
                 mp.prepare()
                 mp.start()
                 player = mp
+                // 28 Nov Play once: a ringtone's own loop tag must not keep it going.
+                if (!repeat && mp.duration > 0) handler.postDelayed({ if (player === mp) runCatching { mp.stop() } }, mp.duration + 300L)
                 // Safety net: the noise (not the popup) stops after a few minutes.
                 handler.postDelayed({ stop() }, MAX_MS)
                 return
@@ -163,7 +165,10 @@ class PopupSound(private val ctx: Context) {
         else ctx.getSystemService(Vibrator::class.java)
         if (v == null || !v.hasVibrator()) return
         vibrator = v
-        runCatching { v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 900, 800), 0)) }
+        runCatching {
+            if (ReminderSound.repeats(ctx)) v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 900, 800), 0))
+            else v.vibrate(VibrationEffect.createWaveform(ReminderRingService.ONCE_BUZZ, -1))
+        }
     }
 
     fun stop() {
@@ -178,7 +183,7 @@ class PopupSound(private val ctx: Context) {
 
     private companion object {
         const val PING_GAP_MS = 1_200L
-        const val MAX_MS = 5 * 60_000L
+        const val MAX_MS = 60_000L // 28 Nov: no reaction -> quiet after 1 minute; the popup stays
     }
 }
 
