@@ -482,7 +482,7 @@
     { id: "portal", title: "In the portal", col: 1, rows: [
       ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't."],
       ["portal", "meetings", "Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", "None: no Meetings page. View: reads minutes of meetings he was in and his own actions. Edit: runs meetings."],
-      ["portal", "team", "Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments). The People list follows “How far”.", "None: no Team page. View: reads the ticked tabs. Edit: changes seats, chart and departments in the ticked tabs. Access and Offboard stay owners only."],
+      ["portal", "team", "Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments). The People list follows “How far”.", "None: no Team page. View: reads the ticked tabs. Edit: changes seats, chart and departments in the ticked tabs. Offboard stays owners only (access is in Settings › Team rules and access)."],
       ["portal", "plot", "Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page."],
       ["portal", "docs", "Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", "View: his reading list and shared documents. Edit: adds documents and sees everyone's reading."],
       ["portal", "settings", "Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", "None: no Settings page. View: reads the ticked tabs. Edit: changes them."],
@@ -508,7 +508,6 @@
       ["set", "n_dossier", "New dossier task", "", "A dossier task added or changed for him by the office.", "seg", STY, false, "DOSSIER"],
     ] },
   ];
-  const ACC_GROUPS = [["Phone app", ["team", "dates", "calls", "plot", "rem"]], ["Web portal", ["portal"]], ["Alerts", ["notif"]]];
   const ACC_IC = { team: "people", dates: "cal", calls: "phone", plot: "folder", rem: "alarm", portal: "screen", notif: "bell" };
   const ACC_DESC = { team: "Who he can give tasks to, and whose work he can see and approve.", dates: "Deadline and reminder rules for tasks he gives and gets.", calls: "Call recording, text messages and the after-call popup.", plot: "What he can do with plot files on his phone.", rem: "The dossier and review popups on his phone.", portal: "Which sections of this web portal he can open, and whether he can only view or also edit.", notif: "How each kind of notification shows on his phone." };
   /** Every key a section holds ("app.x", "set.y", "portal.z"); reminders hold On + minutes. */
@@ -537,8 +536,8 @@
     const tabsOn = (key, all) => (Array.isArray(e.portal[key]) ? e.portal[key] : []).filter((t) => all.some((a) => a[0] === t));
     const portalCtl = (k) => k === "app" ? [lv("app", [["none", "Off"], ["view", "On"]]), e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : ""]
       : k === "plot" ? [lv("plot", [["none", "Off"], ["edit", "On"]]), ""]
-      : k === "team" ? [lv("team", NVE), e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, tabsOn("teamTabs", RB.TEAM_TABS).includes(v))).join("") + lock("Access · Offboard (owners only)")) : ""]
-      : k === "settings" ? [lv("settings", NVE), e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, tabsOn("settingsTabs", RB.SET_TABS).includes(v))).join("") + lock("Check for updates · Appearance (always on)")) : ""]
+      : k === "team" ? [lv("team", NVE), e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, tabsOn("teamTabs", RB.TEAM_TABS).includes(v))).join("") + lock("Offboard (owners only)")) : ""]
+      : k === "settings" ? [lv("settings", NVE), e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, tabsOn("settingsTabs", RB.SET_TABS).includes(v))).join("") + lock("Team rules and access (owners only)") + lock("Check for updates · Appearance (always on)")) : ""]
       : [lv(k, NVE), ""];
     const rowHtml = (r) => {
       const [g, k, t, sub, inf, ctl, opts, isNew, band] = r;
@@ -556,7 +555,8 @@
       return `${band ? `<div class="mh2 accband">${band}</div>` : ""}<div class="swrow accrow"><div class="w"><b>${esc(t)}${info(inf)}${isNew ? ' <span class="tag grn">NEW</span>' : ""}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${tags}${c}${more}</div>`;
     };
     // Settings redesign (J8, locked 27 Nov): one section at a time, picked in a left menu; big name, icon and one line on top.
-    const card = (sec) => `<div class="acch"><span class="ic">${RB.lineIcon(ACC_IC[sec.id])}</span><h2>${esc(sec.title)}${sec.isNew ? ' <span class="tag grn">NEW</span>' : ""}</h2><div class="sp"></div>${ed() ? `<button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button>` : ""}</div><p class="accp">${ACC_DESC[sec.id] || ""}</p>
+    // 28 Nov Lives in Settings › Team rules and access: the big name, icon and line come from the Settings head.
+    const card = (sec) => `${ed() ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button></div>` : ""}
       <div class="card acccard">${sec.note ? `<div class="hint warn">${esc(sec.note)}</div>` : ""}${sec.rows.map(rowHtml).join("")}${sec.id === "portal" ? '<div class="hint">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}</div>`;
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b><span class="sub">${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span>`;
@@ -570,13 +570,11 @@
       ${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}`;
     if (!RB.ACC.some((x) => x.id === S.accSec)) S.accSec = RB.ACC[0].id;
     const cs = RB.ACC.find((x) => x.id === S.accSec);
-    const anav = `<nav class="gnav accnav" aria-label="Access sections">${ACC_GROUPS.map(([g, ids]) => `<h6>${g}</h6>` + ids.map((id) => { const x = RB.ACC.find((a) => a.id === id); return `<button data-accsec="${id}" class="${id === cs.id ? "on" : ""}" ${id === cs.id ? 'aria-current="true"' : ""}>${RB.lineIcon(ACC_IC[id])}<span>${esc(x.title)}</span><b class="n">${x.rows.length}</b></button>`; }).join("")).join("")}</nav>`;
-    const apick = `<label class="gpick">${RB.lineIcon(ACC_IC[cs.id])}<b>${esc(cs.title)}</b><span>Section ▾</span><select id="accsec" aria-label="Access section">${ACC_GROUPS.map(([g, ids]) => `<optgroup label="${g}">${ids.map((id) => `<option value="${id}" ${id === cs.id ? "selected" : ""}>${esc(RB.ACC.find((a) => a.id === id).title)}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
     const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length, total = RB.APP_SW.length;
     const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of ${total}</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
     const side = `<div class="card"><div class="subhead" style="margin-bottom:6px"><h3 style="margin:0">Designation defaults</h3><div class="sp"></div>${unN ? `<button class="sc ${showUn ? "on" : ""}" data-accun="1">Unchecked · ${unN}</button>` : ""}</div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
-    return { html: `${bar}<div class="acc2">${anav}<div class="accbody">${apick}${card(cs)}</div></div>`, side, sideCards: true };
+    return { html: `${bar}${card(cs)}`, side, sideCards: true };
   }
 
   /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
@@ -823,11 +821,11 @@
 
   // ------------------------------------------------------------------ section object
   RB.sections.team = {
-    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.filter((t) => ok.includes(t[0])).concat(RB.isOwner() ? [["dossier", "Dossier"]] : []).concat(ok.includes("access") ? [["access", "Access"]] : []); },
+    tabs: () => { const ok = RB.teamTabs(); return RB.TEAM_TABS.filter((t) => ok.includes(t[0])).concat(RB.isOwner() ? [["dossier", "Dossier"]] : []); },
     render(tab) {
       RB.reconcile();
-      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "access" ? access() : tab === "timetables" ? timetables() : tab === "dossier" ? RB.dossierEd.page() : people();
-      p.title = "Team"; p.sub = tab === "access" ? "Changes reach the phone in a few seconds · off buttons are hidden" : "Seats, chart, designations and access";
+      const p = tab === "chart" ? chart() : tab === "desig" ? desigs() : tab === "dept" ? depts() : tab === "timetables" ? timetables() : tab === "dossier" ? RB.dossierEd.page() : people();
+      p.title = "Team"; p.sub = "Seats, chart, designations and timetables";
       return p;
     },
     bind(root, side) {
@@ -849,7 +847,7 @@
         window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank", "noopener");
       });
       both("[data-editseat]", (e) => editSeat(e.dataset.editseat));
-      both("[data-access]", (e) => { S.accSeat = e.dataset.access; S.accMode = "person"; S.tab.team = "access"; RB.render(); });
+      both("[data-access]", (e) => { S.accSeat = e.dataset.access; S.accMode = "person"; RB.go("settings", "acc_" + (S.accSec || "team")); });
       both("[data-offboard]", (e) => offboard(e.dataset.offboard));
       both("[data-delseat]", (e) => deleteSeat(e.dataset.delseat));
       // chart
@@ -921,14 +919,20 @@
       };
       both("[data-psort]", (e) => { const k = e.dataset.psort; S.psort = [k, S.psort[0] === k ? -S.psort[1] : 1]; RB.render(); });
       both("[data-ddel]", (e) => RB.confirm("Delete the designation “" + esc(e.dataset.ddel) + "”?", "Delete", () => saveDesig(RB.desigList().filter((x) => x.name !== e.dataset.ddel), "Deleted designation " + e.dataset.ddel), true));
-      both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; S.tab.team = "access"; RB.render(); });
-      // access
+      both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; RB.go("settings", "acc_" + (S.accSec || "team")); });
+      // timetables
+      ttBind(root, side);
+    },
+  };
+
+  /** 28 Nov Team rules and access: one Settings tab per section ("acc_team", "acc_notif"…), owners only. */
+  function accBind(root, side) {
+      const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); fn(e, ev); }));
+      const both = (sel, fn) => { on(root, sel, fn); on(side, sel, fn); };
+      both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; RB.render(); });
       const accp = root.querySelector("#accp"); if (accp) accp.onchange = () => { S.accSeat = accp.value; RB.render(); };
       const accd = root.querySelector("#accd"); if (accd) accd.onchange = () => { S.accDesig = accd.value; RB.render(); };
       on(root, "[data-accmode]", (e) => { S.accMode = e.dataset.accmode; RB.render(); });
-      const toSec = (id) => { S.accSec = id; RB.render(); const c = document.getElementById("content"); if (c) c.scrollTop = 0; };
-      on(root, "[data-accsec]", (e) => toSec(e.dataset.accsec));
-      const asp = root.querySelector("#accsec"); if (asp) asp.onchange = () => toSec(asp.value);
       both("[data-accun]", () => { S.accUn = !S.accUn; RB.render(); });
       on(root, "[data-tick]", (e) => {
         if (!ed()) return; const [k, v] = e.dataset.tick.split(":");
@@ -944,9 +948,12 @@
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
       const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { const s = RB.seat(S.accSeat); s.override = {}; saveOverride(s, RB.holderName(s) + ": access reset to default"); });
-      // timetables
-      ttBind(root, side);
-    },
+  }
+  RB.access = {
+    page: (id) => { RB.reconcile(); S.accSec = id; return access(); },
+    bind: accBind,
+    /** Settings left menu rows: [tab, label, icon, one line]. */
+    menu: () => RB.ACC.map((x) => ["acc_" + x.id, x.title, ACC_IC[x.id], ACC_DESC[x.id]]),
   };
   RB.team = { addSeat, editSeat, offboard, moveSeat, migrate };
 })();

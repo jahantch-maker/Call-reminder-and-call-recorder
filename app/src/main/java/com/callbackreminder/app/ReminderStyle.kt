@@ -20,7 +20,7 @@ object ReminderStyle {
     private const val DEFAULT_SECONDS = 15
 
     fun mode(ctx: Context): Mode {
-        // 28 Nov A team member's style is set by the office (web Team › Access › Notifications); the owner picks his own.
+        // 28 Nov A team member's style is set by the office (web Settings › Team rules and access › Notifications); the owner picks his own.
         val saved = if (WebRules.managed(ctx)) WebRules.str(ctx, "remStyle") else AppSettings.getString(ctx, AppSettings.REMINDER_STYLE)
         return Mode.values().firstOrNull { it.code == saved } ?: Mode.FULL_SCREEN
     }

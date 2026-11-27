@@ -185,10 +185,15 @@
     ["My view", [["look", "Appearance", "look", "Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting."]]],
   ];
   RB.sections.settings = {
-    groups: (tabs) => GROUPS.map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
-    tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
+    // 28 Nov Team rules and access (was Team › Access) sits first: one tab per section, owners only.
+    groups: (tabs) => [["Team rules and access", RB.access.menu()]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
+    tabs: () => { const ok = RB.settingsTabs(); return (RB.isOwner() ? RB.access.menu().map((x) => [x[0], x[1]]) : []).concat(TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]])); },
     render(tab) {
       let html, side = "";
+      if (tab.startsWith("acc_")) {
+        const p = RB.access.page(tab.slice(4));
+        return { html: p.html, side: p.side, sideCards: p.sideCards, title: "Settings", sub: "Changes reach the phones in a few seconds · owners only" };
+      }
       if (tab === "look") {
         const cur = RB.theme.get(), card = (k, n, bg, cd) => `<button class="thm ${cur === k ? "on" : ""}" data-theme-pick="${k}"><div class="thp" style="background:${bg}"><i style="background:${cd}"></i><i style="background:${cd};width:85%"></i></div><b>${n}${cur === k ? " ✓" : ""}</b></button>`;
         html = `<div class="card st-card">
@@ -215,6 +220,7 @@
       return { html: html + SAVEBAR, side, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root, side) {
+      if (S.tab.settings && S.tab.settings.startsWith("acc_")) return RB.access.bind(root, side);
       root.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => { RB.theme.set(b.dataset.themePick); RB.render(); }));
       const sv = root.querySelector("#rsave");
       if (sv) sv.onclick = async () => { const n = Math.max(1, Math.min(60, Number(root.querySelector("#rdays").value) || 7)); await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { readingDays: n })); await RB.log("Reading deadline set to " + n + " days"); RB.stDone(); };
