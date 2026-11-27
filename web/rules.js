@@ -78,6 +78,7 @@
     ]],
     ["Phone and backup", [
       ["Cloud backup", "Each phone backs up every night (7 nights kept). Normally only while charging; if 2 days pass without one, it uploads anyway.", "", "0.61.0"],
+      ["Last seen", "Team › People shows when each person last used the phone app: green “● Active now” if it was open in the last 15 minutes, otherwise “Last seen” with the time. The phone sends it when the app opens and every 10 minutes while it stays open. “Not opened yet” = this phone never sent it.", "Ali's phone last sent it at 3:40 PM: until 3:55 PM he shows Active now, then “Last seen today 3:40 PM”. A day before: “Last seen 26 Nov, 3:40 PM”.", ""],
       ["Last backup", "Team › People shows each phone's last backup; red after 2 nights.", "", "0.61.0"],
       ["Web settings received", "Every time the website changes someone's settings it notes the time, and their phone writes back which change it has. Team › People › Phone health shows “✓ Web settings: up to date”, or in red “✗ Web settings: old” with the red dot next to the name. Phones older than 0.62 show nothing new.", "You change Ali's date rules at 5:09 PM while his phone is off: it shows “old” until he opens the app with internet on.", "0.62.0"],
       ["Settings search", "Phone Settings has a search bar at the top. Type a word and tap the page it is on.", "Type “quiet” → Notifications. Type “theme” → Appearance.", "0.62.0"],
