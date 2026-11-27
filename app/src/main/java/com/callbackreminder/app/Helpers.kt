@@ -147,7 +147,8 @@ object ReminderSound {
     }
 
     /** Popup sound plays again and again until you react (on), or just once (off). */
-    fun repeats(ctx: Context): Boolean = AppSettings.get(ctx, AppSettings.RINGTONE_REPEAT, true)
+    fun repeats(ctx: Context): Boolean =
+        if (WebRules.managed(ctx)) WebRules.bool(ctx, "remRepeat") else AppSettings.get(ctx, AppSettings.RINGTONE_REPEAT, true)
 
     fun setRepeats(ctx: Context, on: Boolean) = AppSettings.set(ctx, AppSettings.RINGTONE_REPEAT, on)
 }

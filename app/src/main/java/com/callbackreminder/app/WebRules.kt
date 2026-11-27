@@ -45,6 +45,8 @@ object WebRules {
         N_PLOT_NEW to FULL, N_PLOT_DUE to FULL, "plotHeadsMin" to 60, N_PLOT_HEADS to NORMAL, N_PLOT_WAIT to NORMAL, N_PLOT_FOLLOW to NORMAL,
         N_NEW_TASK to NORMAL, N_MENTION to NORMAL, N_NO_DATE to NORMAL, N_DONE_CHECK to NORMAL, N_EXTEND to NORMAL,
         N_TIMELINE to NORMAL, N_DOSSIER to NORMAL,
+        // 28 Nov Call-back reminders (read only on his phone): style, full-screen seconds, popup sound repeats.
+        "remStyle" to "full", "remSecs" to 15, "remRepeat" to true,
     )
 
     private fun p(c: Context) = c.getSharedPreferences("web_rules", Context.MODE_PRIVATE)

@@ -33,6 +33,7 @@ object ChangeLog {
             new = listOf(
                 "A full-screen popup now stops ringing after 1 minute if nobody reacts; the popup stays on screen",
                 "New popup tone \"RB Soft Chime\", made for RB, is now everyone's popup tone (you can change it in Settings › Reminder style)",
+                "Reminder style, full-screen time and repeat are now set by the office; you can still choose your own ringtones",
             ),
             fixed = listOf(
                 "Popup ringtone \"Play once\" now really plays once (some phone ringtones kept looping), and vibrates only 3 times",
