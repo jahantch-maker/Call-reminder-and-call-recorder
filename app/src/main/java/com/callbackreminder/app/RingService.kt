@@ -45,6 +45,17 @@ object RingController {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    private val _silenced = MutableStateFlow(false)
+    /** 27 Nov (S14) 🔇 Silence, a side button or the screen going off: no sound or vibration, the popup stays. */
+    val silenced: StateFlow<Boolean> = _silenced.asStateFlow()
+
+    fun silence(ctx: Context) {
+        if (_silenced.value || _active.value.isEmpty()) return
+        _silenced.value = true
+        val app = ctx.applicationContext
+        runCatching { app.startService(Intent(app, ReminderRingService::class.java).setAction(ReminderRingService.ACTION_SILENCE)) }
+    }
+
     /** One token per ring, so a timer left over from an earlier ring cannot end a newer one. */
     private val ringTokens = mutableMapOf<Long, Any>()
 
@@ -62,6 +73,7 @@ object RingController {
             return
         }
         if (r.id !in _active.value) _active.value = _active.value + r.id
+        _silenced.value = false
         val token = Any()
         ringTokens[r.id] = token
         try {
@@ -114,6 +126,8 @@ object RingController {
 class ReminderRingService : Service() {
 
     companion object {
+        const val ACTION_SILENCE = "com.callbackreminder.app.SILENCE"
+
         // Safety net: stop the noise (not the reminder) if nobody reacts for half an hour.
         private const val MAX_RING_MS = 30 * 60_000L
 
@@ -140,6 +154,10 @@ class ReminderRingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SILENCE) {
+            stopRinging()
+            return START_NOT_STICKY
+        }
         val due = currentReminders()
         // Android requires the service to go "foreground" right away, even if we then stop.
         enterForeground(Notifier.buildRingNotification(this, due))

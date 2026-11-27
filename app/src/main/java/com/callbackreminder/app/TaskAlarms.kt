@@ -116,6 +116,11 @@ object TaskAlarms {
 
     @SuppressLint("MissingPermission")
     fun showTask(ctx: Context, t: MyTask) {
+        // 27 Nov (S2.1) A plot file step that is due: the full-screen popup with ring (the office's choice, Full screen by default).
+        if (t.id.toString() in TeamLinks.set(ctx, "plotLocal") && WebRules.style(ctx, WebRules.N_PLOT_DUE) == WebRules.FULL)
+            TaskAlertActivity.show(ctx, "Plot file step due", t.title,
+                Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MY_TASKS).putExtra(MainActivity.EXTRA_TASK, t.id),
+                due = "Due ${Fmt.timeOnly(t.dueAt)}")
         if (!Notifier.canNotify(ctx)) return
         NotificationManagerCompat.from(ctx).cancel(NotifIds.taskBefore(t.id))
         val text = listOfNotNull(
@@ -262,6 +267,13 @@ object TaskAlarms {
     )
 
     fun scheduleNudge(ctx: Context, now: Long = System.currentTimeMillis()) {
+        // 27 Nov (S4) A team member's dossier reminder is set by the office: up to 2 times from his duty end, saved on the phone.
+        if (WebRules.managed(ctx)) {
+            val today = LocalDate.now(ZoneId.systemDefault())
+            val at = (0..7).asSequence().flatMap { d -> WebRules.reminderTimes(ctx, "dos", today.plusDays(d.toLong())) }.firstOrNull { it > now }
+            if (at == null) am(ctx).cancel(nudgeAlarm(ctx)) else setAlarm(ctx, at, nudgeAlarm(ctx), MainActivity.OPEN_DOSSIER_REVIEW)
+            return
+        }
         if (!DossierSettings.separate(ctx)) {
             am(ctx).cancel(nudgeAlarm(ctx))
             return
@@ -282,6 +294,7 @@ object TaskAlarms {
     @SuppressLint("MissingPermission")
     fun fireNudge(ctx: Context) {
         scheduleNudge(ctx, System.currentTimeMillis() + 1_000L)
+        if (WebRules.managed(ctx)) return officeNudge(ctx)
         if (!DossierSettings.separate(ctx) || !Notifier.canNotify(ctx)) return
         val todays = DossierStore.todays()
         if (todays.isEmpty()) return
@@ -299,6 +312,33 @@ object TaskAlarms {
             .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER_REVIEW, NUDGE_ID))
             .setAutoCancel(true)
         Notify.post(ctx, NotifType.DOSSIER_NUDGE, NUDGE_ID, b)
+    }
+
+    /**
+     * 27 Nov (S4.4, S4.6) The office's dossier reminder: only when something due so far is unticked, always the
+     * full-screen popup (the list, Open dossier, Skip, Silence), with a notification behind it.
+     */
+    @SuppressLint("MissingPermission")
+    private fun officeNudge(ctx: Context) {
+        val now = System.currentTimeMillis()
+        val day = Dossier.openDay(now)
+        val left = DossierStore.todays(now).filter { DossierStore.record(it.id, day)?.done != true && it.dueAt(day) <= now }
+        if (left.isEmpty()) return
+        val open = Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_DOSSIER_REVIEW)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (Notifier.canNotify(ctx)) {
+            val b = NotificationCompat.Builder(ctx, Notifier.bannerChannel(ctx))
+                .setSmallIcon(R.drawable.ic_stat_rb)
+                .setContentTitle("Dossier: ${left.size} not ticked")
+                .setContentText("Tick them, or say why not. Today locks at 3:00 AM.")
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(openApp(ctx, MainActivity.OPEN_DOSSIER_REVIEW, NUDGE_ID))
+                .setAutoCancel(true)
+            NotificationManagerCompat.from(ctx).notify(NUDGE_ID, b.build())
+        }
+        TaskAlertActivity.show(ctx, "Dossier reminder", "${left.size} dossier task" + (if (left.size == 1) "" else "s") + " not ticked",
+            open, due = "Tick them, or say why not", lines = left.map { it.title }, dossier = true)
     }
 
     /** After a restart, an app update or on opening the app: set every task alarm again. */

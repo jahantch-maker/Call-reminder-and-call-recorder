@@ -59,7 +59,14 @@ import androidx.compose.ui.unit.sp
  * "Full screen, then notification" style it closes by itself after a few seconds and leaves a
  * notification behind.
  */
-class ReviewAlertActivity : ComponentActivity() {
+class ReviewAlertActivity : SilenceActivity() {
+
+    private val silenced = androidx.compose.runtime.mutableStateOf(false)
+
+    override fun onSilence() {
+        stopSound()
+        silenced.value = true
+    }
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val timeOut = Runnable { leaveNotification() }
@@ -144,6 +151,8 @@ class ReviewAlertActivity : ComponentActivity() {
                         close()
                     },
                     onLater = { leaveNotification() },
+                    silenced = silenced.value,
+                    onSilence = { onSilence() },
                 )
             }
         }
@@ -258,6 +267,8 @@ private fun ReviewScreen(
     onReview: () -> Unit,
     onSnooze: (Int) -> Unit,
     onLater: () -> Unit,
+    silenced: Boolean,
+    onSilence: () -> Unit,
 ) {
     var snoozeOpen by remember { mutableStateOf(false) }
 
@@ -356,6 +367,7 @@ private fun ReviewScreen(
                     Text("Later", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+            SilenceButton(silenced, onSilence)
         }
     }
 }

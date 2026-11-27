@@ -64,7 +64,9 @@ import androidx.compose.ui.unit.sp
  * The full-screen "it is time to call back" screen. It stays up (and the phone keeps ringing)
  * until you tap Call back, Snooze or Done.
  */
-class ReminderAlertActivity : ComponentActivity() {
+class ReminderAlertActivity : SilenceActivity() {
+
+    override fun onSilence() = RingController.silence(this)
 
     companion object {
         const val EXTRA_CALLBACK_ID = "callback_id"
@@ -219,6 +221,11 @@ private fun AlertScreen(onAllDone: () -> Unit, onOpenInApp: (Long) -> Unit) {
                         onOpenInApp = { onOpenInApp(r.id) },
                     )
                 }
+            }
+            // 27 Nov (S14) 🔇 Silence: the sound stops, the reminder stays on screen.
+            item(key = "silence") {
+                val silenced by RingController.silenced.collectAsState()
+                SilenceButton(silenced) { RingController.silence(ctx) }
             }
         }
     }

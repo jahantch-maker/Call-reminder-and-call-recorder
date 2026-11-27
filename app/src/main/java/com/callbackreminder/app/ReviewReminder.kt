@@ -81,8 +81,14 @@ object ReviewReminder {
     }
 
     fun summary(c: Context): String =
-        if (!enabled(c)) "Off"
+        if (WebRules.managed(c)) webSummary(c)
+        else if (!enabled(c)) "Off"
         else times(c).sorted().joinToString(" and ") { timeLabel(it) } + " · " + daysLabel(days(c))
+
+    /** "1 hour before duty end and 3 hours before duty end · Set by office". */
+    fun webSummary(c: Context, prefix: String = "rev"): String =
+        (1..2).filter { WebRules.bool(c, "$prefix${it}On") }.joinToString(" and ") { WebRules.offsetLabel(WebRules.int(c, "$prefix${it}Min")) }
+            .ifBlank { "Off" } + " · Set by office"
 
     // ---- What is waiting ----
 
@@ -102,6 +108,12 @@ object ReviewReminder {
 
     /** The next review time after [now], or null when switched off or no day is chosen. */
     fun nextAt(ctx: Context, now: Long = System.currentTimeMillis()): Long? {
+        // 27 Nov (S4.8) A team member's review times come from the office: up to 2 from his duty end, never on his
+        // off day or a holiday (saved on the phone, so they work offline).
+        if (WebRules.managed(ctx)) {
+            val today = LocalDate.now(ZoneId.systemDefault())
+            return (0..7).asSequence().flatMap { d -> WebRules.reminderTimes(ctx, "rev", today.plusDays(d.toLong())) }.firstOrNull { it > now }
+        }
         if (!enabled(ctx)) return null
         val mask = days(ctx)
         val zone = ZoneId.systemDefault()

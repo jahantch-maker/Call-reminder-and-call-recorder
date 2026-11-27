@@ -174,7 +174,7 @@ object TeamSync {
                     if (told.add("${t.id}:$st")) {
                         TeamLinks.putSet(c, "ccTold", told)
                         notify(c, "cc:${t.id}", "👁 Plot ${t.plotNo} · Step ${t.step.substringAfter('.')} · $st", "${t.title}\n${t.toFirst}", mine = null, taskId = t.id,
-                            kind = NotifKind.FOLLOW_UPS, open = Open.TIMELINE)
+                            kind = NotifKind.FOLLOW_UPS, open = Open.TIMELINE, web = WebRules.N_PLOT_FOLLOW)
                     }
                 }
                 if (t.toUid == me) receive(c, t, before, foreground, recv, recvFu)
@@ -187,7 +187,7 @@ object TeamSync {
                         told += t.id
                         TeamLinks.putSet(c, "partTold", told)
                         notify(c, "part:${t.id}", "✓ ${t.fromFirst}: Received, thanks", t.title, mine = null, taskId = t.id,
-                            kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+                            kind = NotifKind.MY_TASKS, open = Open.TIMELINE, web = WebRules.N_DONE_CHECK)
                     }
                 }
                 // A new message from someone else on the task: ❓ and ⚠ on their own, the rest in the task's one notification.
@@ -196,7 +196,7 @@ object TeamSync {
                     when {
                         t.stuck && t.stuckAt == t.lastMsgAt ->
                             notify(c, "stuck:${t.id}", "⚠ $who is stuck · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id, kind = NotifKind.STUCK)
-                        else -> tell(c, t, who, "💬 ${t.lastMsgText}")
+                        else -> tell(c, t, who, "💬 ${t.lastMsgText}", web = if (mentionsMe(t.lastMsgText)) WebRules.N_MENTION else WebRules.N_TIMELINE)
                     }
                 }
                 if (t.lastMsgBy != me && t.lastMsgAt > (t.msgDel[me] ?: 0L)) TeamRepo.markMsgDelivered(t)
@@ -208,7 +208,7 @@ object TeamSync {
                 recv.remove(id)?.toLongOrNull()?.let { MyTaskStore.get(it) }?.takeIf { !it.done }?.let { local ->
                     MyTaskStore.delete(local.id)
                     clearTold(c, id)
-                    notify(c, "gone:$id", "Task given to someone else", local.title, mine = null, kind = NotifKind.MY_TASKS)
+                    notify(c, "gone:$id", "Task given to someone else", local.title, mine = null, kind = NotifKind.MY_TASKS, web = WebRules.N_NEW_TASK)
                 }
             }
             if (complete) recvFu.keys.filter { it !in ids }.forEach { id ->
@@ -251,8 +251,11 @@ object TeamSync {
                     val made = MyTaskStore.add(
                         title = t.title, note = "", dueAt = if (t.plot) t.due else 0L, name = "", number = "",
                         starred = t.urgent,
+                        // 27 Nov (S2.1) A plot step also gets the office's heads-up before it is due (default 1 hour).
+                        remindBefore = if (t.plot && WebRules.style(c, WebRules.N_PLOT_HEADS) != WebRules.OFF) listOf(WebRules.int(c, "plotHeadsMin")).filter { it > 0 } else emptyList(),
                     )
                     recv[t.id] = made.id.toString()
+                    if (t.plot) TeamLinks.putSet(c, "plotLocal", TeamLinks.set(c, "plotLocal") + made.id.toString())
                 } else {
                     // Plot files: the step's due time is its time on this phone (Overdue, Next up, the alarm).
                     if (t.plot && !local.done && t.due > 0L && local.dueAt != t.due) MyTaskStore.setDue(local.id, t.due)
@@ -279,13 +282,13 @@ object TeamSync {
             before == null && t.open && t.status != Team.REOPENED ->
                 tell(c, t, from, (if (t.urgent) "🔴 Urgent · " else "") + if (t.due > 0L) "📅 Deadline ${TeamUi.shortWhen(t.due)}"
                     else "📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${TeamUi.shortWhen(t.deadline)}" else "",
-                    head = (if (t.urgent) "🔴 Urgent task" else "New task") + " from $from")
+                    head = (if (t.urgent) "🔴 Urgent task" else "New task") + " from $from", web = WebRules.N_NEW_TASK)
             was != null && was != t.status && t.status == Team.REOPENED ->
                 tell(c, t, from, "↩ Not done yet" + (if (t.reason.isBlank()) "" else " · “${t.reason}”") + if (t.due == 0L) " · pick a new deadline" else "")
             was != null && was != t.status && t.status == Team.CHECKED -> tell(c, t, from, "✓ Received, thanks")
             was != null && was != t.status && t.status == Team.CANCELLED -> {
                 clearTold(c, t.id)
-                notify(c, "x:${t.id}", "Task removed by $from", t.title, mine = null, kind = NotifKind.MY_TASKS)
+                notify(c, "x:${t.id}", "Task removed by $from", t.title, mine = null, kind = NotifKind.MY_TASKS, web = WebRules.N_NEW_TASK)
             }
             moreOf(before) > 0L && t.moreAt == 0L && t.due == t.moreDue -> tell(c, t, from, "📅 Approved · Deadline ${TeamUi.shortWhen(t.due)}")
             moreOf(before) > 0L && t.moreAt == 0L && dueOf(before) == t.due -> tell(c, t, from, "📅 Kept the deadline · ${TeamUi.shortWhen(t.due)}")
@@ -347,12 +350,12 @@ object TeamSync {
             // On its own, with ✓ Received: tapping it opens the card in Needs you › Replied.
             was != t.status && t.status == Team.DONE ->
                 notify(c, "done:${t.id}", "✅ $who: Done, check it" + if (t.passedTo.isNotBlank()) " (by ${t.passedTo})" else "",
-                    t.title, mine = null, taskId = t.id, kind = NotifKind.DONE_CHECK, open = Open.CHECK)
+                    t.title, mine = null, taskId = t.id, kind = NotifKind.DONE_CHECK, open = Open.CHECK, web = WebRules.N_DONE_CHECK)
             was == Team.DONE && t.status != Team.DONE ->
                 androidx.core.app.NotificationManagerCompat.from(c).cancel(NotifIds.team("done:${t.id}"))
             moreOf(before) == 0L && t.moreAt > 0L ->
                 notify(c, "more:${t.id}", "📅 $who asks to extend · ${t.title}".take(80),
-                    "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isBlank()) "" else " · “${t.moreReason}”", mine = null, taskId = t.id, kind = NotifKind.ASKED)
+                    "${TeamUi.shortWhen(t.due)} → ${TeamUi.shortWhen(t.moreDue)}" + if (t.moreReason.isBlank()) "" else " · “${t.moreReason}”", mine = null, taskId = t.id, kind = NotifKind.ASKED, web = WebRules.N_EXTEND)
             t.hisDate && (dueOf(before) ?: 0L) == 0L && t.due > 0L -> tell(c, t, who, "📅 Deadline set · ${TeamUi.shortWhen(t.due)}")
             (dueOf(before) ?: 0L) > 0L && t.due > 0L && dueOf(before) != t.due && moreOf(before) == 0L && t.dateBy == Team.HIS_DATE ->
                 tell(c, t, who, "📅 Deadline ${TeamUi.shortWhen(dueOf(before)!!)} → ${TeamUi.shortWhen(t.due)}")
@@ -369,41 +372,68 @@ object TeamSync {
         // v0.55 Last reminder per task for "no deadline yet": "g:<id>" on your phone (you gave it), "h:<id>" on his.
         val chase = TeamLinks.map(c, "chaseAt")
         val chaseOnce = TeamLinks.set(c, "chaseOnce")
-        val repeatMin = TeamRules.repeatMin(c)
-        // Only inside working hours: a popup or an SMS never goes out at night.
-        val inHours = TeamRules.minutesSince(c, now - 60_000L, now) > 0L
+        // 27 Nov (S11.1) Only inside the notification window (30 min before duty to 1 hour after): nothing at night.
+        val inHours = TeamRules.inWindow(c, now)
+        // 27 Nov (S6.2) Urgent with no date: the receiver's own web rule (after N working hours, N times, same gap).
+        val urgentDue = mutableListOf<TeamTask>()
         // Plot step tasks have their own rules (the SOP's time allowed): no "no date" reminders or SMS.
         for (t in tasks.filter { it.fromUid == me && it.open && !it.plot }) {
             val waited = TeamRules.minutesSince(c, t.createdAt, now)
-            if (t.urgent && t.due == 0L) {
-                val k = "g:${t.id}"
-                val last = chase[k]?.toLongOrNull() ?: if (t.id in urgentDone) t.createdAt else null
-                val first = t.id !in urgentDone && waited >= TeamRules.urgentMin(c)
-                val again = last != null && inHours && repeatMin > 0 && TeamRules.minutesSince(c, last, now) >= repeatMin
-                if (first || again) {
+            if (t.urgent && t.due == 0L && !t.stuck && inHours) {
+                val u = TeamRules.urgentOf(TeamRepo.member(t.toUid)?.setPerms)
+                val k = "gu:${t.id}"
+                val n = chase[k]?.toIntOrNull() ?: 0
+                if (n < u.times && waited >= (n + 1L) * u.gapMin) {
+                    chase[k] = (n + 1).toString()
                     urgentDone += t.id
-                    chase[k] = now.toString()
-                    notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team", mine = null, taskId = t.id, open = Open.CARD)
+                    urgentDue += t
+                    // Backup only: the task never reached his phone, so a text goes from your SIM (S6.2).
+                    if (t.deliveredAt == 0L && t.toPhone.isNotBlank() && "urgsms:${t.id}" !in smsDone && SmsSender.hasPermission(c)) {
+                        val ok = runCatching {
+                            SmsSender.managerForDefaultSim(c).first.sendTextMessage(t.toPhone, null,
+                                "Urgent task from ${t.fromFirst}: ${t.title.take(90)}. Please open RB360 and set your deadline.", null, null)
+                        }.isSuccess
+                        if (ok) {
+                            smsDone += "urgsms:${t.id}"
+                            TeamRepo.note(t, "Urgent, not on his phone yet: text sent to ${t.toFirst}")
+                        }
+                    }
                 }
             }
-            smsRule(c, t, waited, now, smsDone, stage)
+            if (inHours) smsRule(c, t, waited, now, smsDone, stage)
             deadlineSms(c, t, waited, now, inHours, smsDone)
         }
-        // His phone: an urgent task waiting for his deadline reminds him every N working hours; a normal one once, the next morning.
+        // Several at once: one notification.
+        when (urgentDue.size) {
+            0 -> Unit
+            1 -> urgentDue[0].let { t -> notify(c, "urg:${t.id}", "🔴 ${t.toFirst} hasn't set a date", "${t.title}\nSet the date yourself in Team",
+                mine = null, taskId = t.id, open = Open.CARD, web = WebRules.N_NO_DATE) }
+            else -> notify(c, "urg:many", "🔴 ${urgentDue.size} urgent tasks still have no date · " + urgentDue.map { it.toFirst }.distinct().joinToString(", "),
+                urgentDue.joinToString("\n") { "${it.toFirst}: ${it.title}" }, mine = null, open = Open.CARD, web = WebRules.N_NO_DATE)
+        }
+        // His phone: an urgent task waiting for his deadline reminds him with his web rule; a normal one once, the next morning.
+        val mine = TeamRules.urgentMine(c)
+        val pickDue = mutableListOf<TeamTask>()
         for (t in tasks.filter { it.toUid == me && it.open && !it.plot && it.hisDate && it.due == 0L && !it.stuck }) {
             if (t.urgent) {
-                val k = "h:${t.id}"
-                val last = chase[k]?.toLongOrNull() ?: t.createdAt
-                if (inHours && repeatMin > 0 && TeamRules.minutesSince(c, last, now) >= repeatMin) {
-                    chase[k] = now.toString()
-                    notify(c, "pick:${t.id}", "🔴 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}. It is urgent: set your deadline now.",
-                        mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+                val k = "hu:${t.id}"
+                val n = chase[k]?.toIntOrNull() ?: 0
+                if (inHours && mine.style != WebRules.OFF && n < mine.times && TeamRules.minutesSince(c, t.createdAt, now) >= (n + 1L) * mine.gapMin) {
+                    chase[k] = (n + 1).toString()
+                    pickDue += t
                 }
             } else if ("pick:${t.id}" !in chaseOnce && inHours && now >= ReviewData.nextWorkStart(c, t.createdAt)) {
                 chaseOnce += "pick:${t.id}"
                 notify(c, "pick:${t.id}", "📅 Pick your deadline · ${t.title}".take(80), "From ${t.fromFirst}",
-                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE)
+                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.TIMELINE, web = WebRules.N_NO_DATE)
             }
+        }
+        if (pickDue.isNotEmpty()) {
+            val one = pickDue.singleOrNull()
+            val title = one?.let { "🔴 Pick your deadline · ${it.title}".take(80) } ?: "🔴 ${pickDue.size} urgent tasks need your deadline"
+            val text = one?.let { "From ${it.fromFirst}. It is urgent: set your deadline now." } ?: pickDue.joinToString("\n") { "${it.title} · from ${it.fromFirst}" }
+            notify(c, one?.let { "pick:${it.id}" } ?: "pick:many", title, text, mine = null, taskId = one?.id, kind = NotifKind.MY_TASKS,
+                open = Open.TIMELINE, web = WebRules.N_NO_DATE, style = mine.style)
         }
         // Plot files: a step waiting for the plot owner whose SOP says "every working day": one reminder a working day, in working hours.
         for (t in tasks.filter { it.toUid == me && it.plot && it.open && it.waitAt > 0 }) {
@@ -414,7 +444,7 @@ object TeamSync {
             if (inHours && now - last >= 20 * 3600_000L) {
                 chase[k] = now.toString()
                 notify(c, "pw:${t.id}", "⏳ Plot ${t.plotNo} is still waiting for the plot owner · 📞 Call", "${t.title}\nStep ${t.step}",
-                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.CARD, call = t.ownerWa)
+                    mine = null, taskId = t.id, kind = NotifKind.MY_TASKS, open = Open.CARD, call = t.ownerWa, web = WebRules.N_PLOT_WAIT)
             }
         }
         val live = tasks.filter { it.open }.map { it.id }.toSet()
@@ -423,6 +453,7 @@ object TeamSync {
         TeamLinks.putSet(c, "urgent", urgentDone)
         TeamLinks.putSet(c, "sms", smsDone)
         TeamLinks.putMap(c, "smsStage", stage.filterKeys { k -> tasks.any { it.id == k && it.open } })
+        if (inHours) deliverHeld(c)
     }
 
     /**
@@ -462,7 +493,7 @@ object TeamSync {
             if (!SmsSender.hasPermission(c)) {
                 if ("perm:${t.id}" !in smsDone) {
                     smsDone += "perm:${t.id}"
-                    notify(c, "smsperm:${t.id}", "✉ Couldn't text ${t.toFirst}", "${t.title}\nSMS permission is off: turn it on in Settings › Setup", mine = null, taskId = t.id, open = Open.CARD)
+                    notify(c, "smsperm:${t.id}", "✉ Couldn't text ${t.toFirst}", "${t.title}\nSMS permission is off: turn it on in Settings › Setup", mine = null, taskId = t.id, open = Open.CARD, web = WebRules.N_NO_DATE)
                 }
                 return false
             }
@@ -483,7 +514,7 @@ object TeamSync {
             n == 2 && TeamRules.minutesSince(c, at, now) >= smsMin -> {
                 stage[t.id] = "3|$now"
                 notify(c, "unseen:${t.id}", "👁 ${t.toFirst} still hasn't seen it · 📞 Call",
-                    "${t.title}\nTwo texts sent, not opened yet", mine = null, taskId = t.id, open = Open.CARD, call = t.toPhone)
+                    "${t.title}\nTwo texts sent, not opened yet", mine = null, taskId = t.id, open = Open.CARD, call = t.toPhone, web = WebRules.N_NO_DATE)
             }
         }
     }
@@ -837,7 +868,7 @@ object TeamSync {
      * The task's one notification, updated with every new Timeline line: "Basharat · 3 new on Timeline" and the
      * newest lines. Opening the Timeline clears it. ❓ Ask, ⚠ Stuck and 📅 extend requests come on their own.
      */
-    private fun tell(c: Context, t: TeamTask, who: String, line: String, head: String? = null) {
+    private fun tell(c: Context, t: TeamTask, who: String, line: String, head: String? = null, web: String = WebRules.N_TIMELINE) {
         val counts = TeamLinks.map(c, "nc")
         val lines = TeamLinks.map(c, "nl")
         val n = (counts[t.id]?.toIntOrNull() ?: 0) + 1
@@ -851,7 +882,31 @@ object TeamSync {
         val talk = line.startsWith("💬")
         notify(c, "tl:${t.id}", title, t.title + " · " + all.last() + "\n" + all.dropLast(1).reversed().joinToString("\n"), mine = null, taskId = t.id,
             kind = if (talk) NotifKind.MESSAGES else if (t.fromUid == TeamRepo.uid) NotifKind.FOLLOW_UPS else NotifKind.MY_TASKS,
-            open = if (talk) Open.TIMELINE else Open.CARD)
+            open = if (talk) Open.TIMELINE else Open.CARD, web = web)
+    }
+
+    /** An @mention of you in a Timeline message (it rings even outside your duty window). */
+    private fun mentionsMe(text: String): Boolean {
+        val me = TeamRepo.me.value ?: return false
+        val tag = memberTag(me, TeamRepo.members.value)
+        return tag.isNotBlank() && Regex("@" + Regex.escape(tag) + "(?![\\w.])", RegexOption.IGNORE_CASE).containsMatchIn(text)
+    }
+
+    /** 27 Nov (S13.2) Automatic notifications outside the duty window wait here, then come as ONE notification. */
+    private fun hold(c: Context, line: String) {
+        val p = c.getSharedPreferences("team_held", Context.MODE_PRIVATE)
+        val all = (p.getString("lines", "").orEmpty().split('\n').filter { it.isNotBlank() } + line.take(100)).takeLast(30)
+        p.edit().putString("lines", all.joinToString("\n")).putInt("n", p.getInt("n", 0) + 1).apply()
+    }
+
+    private fun deliverHeld(c: Context) {
+        val p = c.getSharedPreferences("team_held", Context.MODE_PRIVATE)
+        val n = p.getInt("n", 0)
+        if (n == 0) return
+        val lines = p.getString("lines", "").orEmpty()
+        p.edit().clear().apply()
+        notify(c, "held", "🌙 $n update" + (if (n == 1) "" else "s") + " while you were off", lines.lines().reversed().joinToString("\n"),
+            mine = null, kind = NotifKind.MESSAGES, timed = true)
     }
 
     /** The Timeline was opened (or the task went): its notifications go and the count starts again. */
@@ -871,7 +926,16 @@ object TeamSync {
         c: Context, key: String, title: String, text: String, mine: Long?, taskId: String? = null,
         kind: NotifKind = if (mine != null) NotifKind.MY_TASKS else NotifKind.FOLLOW_UPS,
         open: Open = Open.TIMELINE, call: String? = null,
+        /** 27 Nov (S2.3) Which website row decides it: Full screen, Normal or Off. */
+        web: String = WebRules.N_TIMELINE, style: String? = null,
+        /** Something with a set time: it always comes, day or night (S13.1). */
+        timed: Boolean = false,
     ) {
+        val st = style ?: WebRules.style(c, web)
+        if (st == WebRules.OFF) return
+        val quiet = !timed && !TeamRules.inWindow(c)
+        // Outside the window: Timeline messages come silently, an @mention still rings, the rest wait for the morning.
+        if (quiet && web != WebRules.N_TIMELINE && web != WebRules.N_MENTION) return hold(c, title)
         val intent = Intent(c, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (taskId != null) intent.putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_TEAM).putExtra(MainActivity.EXTRA_TEAM_TASK, taskId)
@@ -900,7 +964,10 @@ object TeamSync {
             b.addAction(0, "📞 Call",
                 PendingIntent.getActivity(c, NotifIds.team("call:$key"), dial, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
+        if (quiet && web == WebRules.N_TIMELINE) b.setSilent(true)
         Notify.post(c, NotifType.TEAM, NotifIds.team(key), b, kind)
+        if (st == WebRules.FULL && !quiet) TaskAlertActivity.show(c, head = kind.label, title = title, open = intent,
+            due = text.lineSequence().first(), call = call)
     }
 }
 

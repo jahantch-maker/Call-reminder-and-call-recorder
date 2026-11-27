@@ -73,7 +73,7 @@ object WebRules {
         _version.value++
         // Times may have moved: the alarms follow at once.
         runCatching { ReviewReminder.schedule(c) }
-        runCatching { DossierReminder.schedule(c) }
+        runCatching { TaskAlarms.scheduleNudge(c) }
     }
 
     /** Set by the office: a team member in a seat (not the owner). These rows are then read only on the phone. */

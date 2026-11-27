@@ -64,6 +64,39 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
+        // 27 Nov (S2.2, S2.3, S13) The team ones are set by the office on the website (read only here) and keep quiet at night.
+        val inTeam by TeamRepo.me.collectAsState()
+        if (inTeam?.active == true) {
+            val web by WebRules.version.collectAsState()
+            Text(
+                "🌙 Automatic ones come ${remember(web) { TeamRules.windowLabel(ctx) }}. Outside that they wait and come as one in the morning " +
+                    "(Timeline messages come silently, an @mention still rings). Anything with a set time always comes on time.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)
+            )
+            listOf(
+                "Plot files" to listOf(WebRules.N_PLOT_DUE to "Step due", WebRules.N_PLOT_HEADS to "Heads-up before due",
+                    WebRules.N_PLOT_WAIT to "Waiting for plot owner", WebRules.N_PLOT_FOLLOW to "Updates on plots you follow"),
+                "Team tasks" to listOf(WebRules.N_NEW_TASK to "New task for you", WebRules.N_DONE_CHECK to "Done, check it",
+                    WebRules.N_EXTEND to "Asks to extend", WebRules.N_NO_DATE to "No date / not seen nudges",
+                    WebRules.N_TIMELINE to "Timeline messages", WebRules.N_MENTION to "@mentions"),
+                "Dossier" to listOf(WebRules.N_DOSSIER to "New dossier task"),
+            ).forEach { (group, rows) ->
+                SectionCard(title = group, subtitle = if (WebRules.managed(ctx)) "🔒 Set by your manager" else "The office's defaults") {
+                    rows.forEachIndexed { i, (key, label) ->
+                        if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                        val st = remember(web) { WebRules.style(ctx, key) }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(
+                                when (st) { WebRules.FULL -> "Full screen"; WebRules.OFF -> "Off"; else -> "Normal" } +
+                                    if (key == WebRules.N_PLOT_HEADS && st != WebRules.OFF) " · " + TaskAlarms.beforeLabel(WebRules.int(ctx, "plotHeadsMin")) + " before" else "",
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
         // v0.44: one switch per category, the same names the notifications show next to "Callback Reminder".
         SectionCard(title = "Each category", subtitle = "Silence one, keep the rest") {
             NotifKind.values().forEachIndexed { i, k ->

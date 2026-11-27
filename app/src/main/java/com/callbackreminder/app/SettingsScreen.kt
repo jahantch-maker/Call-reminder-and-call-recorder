@@ -142,6 +142,7 @@ fun SettingsScreen(
     onOpenTeam: () -> Unit = {},
     onOpenWhatsNew: () -> Unit = {},
     onOpenNewPlotFile: () -> Unit = {},
+    onOpenTaskRules: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val status = remember(resumeKey) { SetupStatus.read(ctx) }
@@ -197,6 +198,11 @@ fun SettingsScreen(
             BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
             BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
             BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · Set by your manager" else "", onOpenOffDays)
+        }
+        // 27 Nov (S11.2) The rules for tasks you give and get (moved here from the Team page).
+        if (team != null && teamMe?.active == true) BadgeGroup("TEAM TASKS") {
+            BadgeRow(Icons.Rounded.Assignment, BadgeTone.RED, "Task rules",
+                "Deadlines, reminders and texts" + if (WebRules.managed(ctx)) " · Set by your manager" else "", onOpenTaskRules)
         }
         BadgeGroup("CALLS & TEXTS") {
             BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)
@@ -1029,6 +1035,10 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
     var editTime by remember { mutableStateOf<Int?>(null) }
 
     SettingsPage(title = "Review", onBack = onBack) {
+        // 27 Nov (S4.8) A team member's review reminder is set by the office (read only, follows his off day and holidays).
+        if (WebRules.managed(ctx)) SectionCard(title = "Remind me to review", subtitle = "🔒 Set by office. A full-screen popup, only when something is waiting. Never on your off day or a holiday.") {
+            Text(ReviewReminder.webSummary(ctx), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        } else
         // One screen: the reminder, its two times and days in one card, then the three switches.
         SectionCard(title = "Remind me to review", subtitle = "A popup with what needs you. Quiet when nothing is waiting.") {
             SwitchRow(label = "Remind me to review", checked = on, onChange = {
@@ -1209,7 +1219,11 @@ fun DossierSettingsScreen(onBack: () -> Unit) {
     var editTime by remember { mutableStateOf<Int?>(null) } // -1 = a new time
 
     SettingsPage(title = "Dossier reminder", onBack = onBack) {
-        SectionCard(
+        // 27 Nov (S4.1) A team member's dossier reminder is set by the office: read only here.
+        if (WebRules.managed(ctx)) SectionCard(title = "Dossier reminder",
+            subtitle = "🔒 Set by office. A full-screen popup with your unticked tasks, only when something is unticked. Never on your off day or a holiday.") {
+            Text(ReviewReminder.webSummary(ctx, "dos"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        } else SectionCard(
             title = "Separate dossier reminder",
             subtitle = if (separate) "On: you're reminded about unticked dossier tasks at your own times below."
             else "Off: unticked dossier tasks are part of your To review reminder (" +
@@ -1221,7 +1235,7 @@ fun DossierSettingsScreen(onBack: () -> Unit) {
             })
         }
 
-        if (separate) {
+        if (separate && !WebRules.managed(ctx)) {
             SectionCard(title = "Times", subtitle = "Every day. Add as many as you like, for example a late one for evening updates.") {
                 times.forEachIndexed { i, minutes ->
                     if (i > 0) HorizontalDivider()

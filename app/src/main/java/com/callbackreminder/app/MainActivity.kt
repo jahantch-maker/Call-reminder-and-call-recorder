@@ -421,6 +421,7 @@ private object Screen {
     const val TEAM_TIMELINE = 39
     const val WHATS_NEW = 40
     const val NEW_PLOT_FILE = 41
+    const val TASK_RULES = 42
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -625,7 +626,9 @@ private fun AppRoot(
                     onOpenTeam = { open(Screen.TEAM_SETTINGS) },
                     onOpenWhatsNew = { open(Screen.WHATS_NEW) },
                     onOpenNewPlotFile = { open(Screen.NEW_PLOT_FILE) },
+                    onOpenTaskRules = { open(Screen.TASK_RULES) },
                 )
+                Screen.TASK_RULES -> TaskRulesScreen(onBack = { back() })
                 Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },

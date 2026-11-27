@@ -483,64 +483,6 @@ private fun TeamActive(
 
     // Late reasons are edited on the website only (locked 25 Nov); everyone still picks from the list on the phone.
 
-    // Everyone can give tasks, so everyone has these rules for the tasks they give.
-    run {
-        TeamHeading("Date rules")
-        var noDate by remember { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
-        var urgent by remember { mutableIntStateOf(TeamRules.urgentMin(ctx)) }
-        var sms by remember { mutableIntStateOf(TeamRules.smsMin(ctx)) }
-        var repeat by remember { mutableIntStateOf(TeamRules.repeatMin(ctx)) }
-        var working by remember { mutableStateOf(TeamRules.workingOnly(ctx)) }
-        var locked by remember { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
-        var freeExt by remember { mutableIntStateOf(TeamRules.freeExt(ctx)) }
-        var rule by remember { mutableIntStateOf(-1) }
-        var reasons by remember { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
-        var editReasons by remember { mutableStateOf(false) }
-        TeamCard {
-            RuleRow("No deadline picked · remind me", TeamRules.label(noDate)) { rule = 0 }
-            RuleRow("Urgent, no deadline · notify me", TeamRules.label(urgent)) { rule = 1 }
-            RuleRow("Urgent, no deadline · repeat every", TeamRules.label(repeat)) { rule = 4 }
-            RuleRow("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms)) { rule = 2 }
-            RuleRow("Working hours only", if (working) "On" else "Off") { working = !working; TeamRules.setWorkingOnly(ctx, working) }
-            RuleRow("Deadline locked", if (locked) "On" else "Off") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
-            RuleRow("Extend without asking", TeamRules.extLabel(freeExt)) { rule = 3 }
-            RuleRow("Not done reasons", "${reasons.size}") { editReasons = true }
-            Text("New tasks follow these. Locked: once he sets his deadline, he can only ask to extend it.",
-                fontSize = 12.sp, color = cs.onSurfaceVariant)
-        }
-        if (editReasons) NotDoneReasonsDialog(reasons, onDismiss = { editReasons = false }) { list ->
-            TeamRules.setNotDoneReasons(ctx, list)
-            reasons = TeamRules.notDoneReasons(ctx)
-            editReasons = false
-        }
-        if (rule >= 0) {
-            val (title, choices, sel) = when (rule) {
-                0 -> Triple("No deadline picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
-                1 -> Triple("Urgent, no deadline · notify me after", TeamRules.URGENT_CHOICES, urgent)
-                2 -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
-                4 -> Triple("Urgent, no deadline · remind both of you every", TeamRules.REPEAT_CHOICES, repeat)
-                else -> Triple("Extend without asking", TeamRules.FREE_EXT_CHOICES, freeExt)
-            }
-            AlertDialog(
-                onDismissRequest = { rule = -1 },
-                title = { Text(title, fontSize = 17.sp) },
-                text = {
-                    MinuteChips(choices, sel, label = if (rule == 3) TeamRules::extLabel else TeamRules::label) { m ->
-                        when (rule) {
-                            0 -> { noDate = m; TeamRules.setNoDateMin(ctx, m) }
-                            1 -> { urgent = m; TeamRules.setUrgentMin(ctx, m) }
-                            2 -> { sms = m; TeamRules.setSmsMin(ctx, m) }
-                            4 -> { repeat = m; TeamRules.setRepeatMin(ctx, m) }
-                            else -> { freeExt = m; TeamRules.setFreeExt(ctx, m) }
-                        }
-                        rule = -1
-                    }
-                },
-                confirmButton = { TextButton(onClick = { rule = -1 }) { Text("Close") } },
-            )
-        }
-    }
-
     // v0.49 Documents: his job description, SOPs and tools (Google Drive links), with Read ✓.
     TextButton(onClick = { showDocs = true }, modifier = Modifier.fillMaxWidth()) { Text("📄 Documents") }
     if (showDocs) TeamDocsDialog(me, onDismiss = { showDocs = false })
@@ -583,6 +525,84 @@ private fun NotDoneReasonsDialog(start: List<String>, onDismiss: () -> Unit, onS
 }
 
 /** A slim date-rule row: name, value on the right. */
+/**
+ * 27 Nov (S11.2) Settings › Task rules: the rules for tasks you give and get, each with a line on what it does.
+ * A team member's come from the website (read only here); the owner sets his own.
+ */
+@Composable
+fun TaskRulesScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val web by WebRules.version.collectAsState()
+    val managed = remember(web) { WebRules.managed(ctx) }
+    var noDate by remember(web) { mutableIntStateOf(TeamRules.noDateMin(ctx)) }
+    var sms by remember(web) { mutableIntStateOf(TeamRules.smsMin(ctx)) }
+    var locked by remember(web) { mutableStateOf(TeamRules.deadlineLocked(ctx)) }
+    var freeExt by remember(web) { mutableIntStateOf(TeamRules.freeExt(ctx)) }
+    val urg = remember(web) { TeamRules.urgentMine(ctx) }
+    var rule by remember { mutableIntStateOf(-1) }
+    var reasons by remember { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
+    var editReasons by remember { mutableStateOf(false) }
+    @Composable
+    fun Rule(label: String, value: String, about: String, onClick: (() -> Unit)?) {
+        Column {
+            RuleRow(label, value) { if (onClick != null && !managed) onClick() }
+            Text(about, fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+        }
+    }
+    SettingsPage(title = "Task rules", onBack = onBack) {
+        if (managed) Text("🔒 Set by your manager on the website. They work even with no internet.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+        TeamHeading("Tasks you give")
+        TeamCard {
+            Rule("No deadline picked · remind me", TeamRules.label(noDate),
+                "If he hasn't picked a deadline after this many working hours, you get a reminder.") { rule = 0 }
+            Rule("Not seen · text him", if (sms == 0) "Off" else TeamRules.label(sms),
+                "If he hasn't opened the task after this many working hours, your phone sends him an SMS.") { rule = 2 }
+            Rule("Deadline locked", if (locked) "On" else "Off",
+                "On: once he sets his deadline he can't change it, he can only ask you to extend it.") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
+            Rule("Extend without asking", TeamRules.extLabel(freeExt),
+                "How many times he may move his own deadline without asking you.") { rule = 3 }
+            Rule("Not done reasons", "${reasons.size}",
+                "The quick reasons you pick from when you send a task back with ↩ Not done yet.", null)
+            TextButton(onClick = { editReasons = true }) { Text("Change reasons") }
+        }
+        TeamHeading("Tasks you get")
+        TeamCard {
+            Rule("Urgent, no deadline · remind me", if (urg.times == 0 || urg.style == WebRules.OFF) "Off" else "${TeamRules.label(urg.gapMin)} · ${urg.times}×",
+                "An urgent task with no deadline reminds you after this many working hours, then again with the same gap, this many times. Your manager is told each time.", null)
+        }
+        Text("Working hours only: nights, your weekly off day and holidays never count. Reminders come 30 min before your duty starts until 1 hour after it ends.",
+            fontSize = 12.sp, color = cs.onSurfaceVariant)
+    }
+    if (editReasons) NotDoneReasonsDialog(reasons, onDismiss = { editReasons = false }) { list ->
+        TeamRules.setNotDoneReasons(ctx, list)
+        reasons = TeamRules.notDoneReasons(ctx)
+        editReasons = false
+    }
+    if (rule >= 0) {
+        val (title, choices, sel) = when (rule) {
+            0 -> Triple("No deadline picked · remind me after", TeamRules.NO_DATE_CHOICES, noDate)
+            2 -> Triple("Not seen · text him after", TeamRules.SMS_CHOICES, sms)
+            else -> Triple("Extend without asking", TeamRules.FREE_EXT_CHOICES, freeExt)
+        }
+        AlertDialog(
+            onDismissRequest = { rule = -1 },
+            title = { Text(title, fontSize = 17.sp) },
+            text = {
+                MinuteChips(choices, sel, label = if (rule == 3) TeamRules::extLabel else TeamRules::label) { m ->
+                    when (rule) {
+                        0 -> { noDate = m; TeamRules.setNoDateMin(ctx, m) }
+                        2 -> { sms = m; TeamRules.setSmsMin(ctx, m) }
+                        else -> { freeExt = m; TeamRules.setFreeExt(ctx, m) }
+                    }
+                    rule = -1
+                }
+            },
+            confirmButton = { TextButton(onClick = { rule = -1 }) { Text("Close") } },
+        )
+    }
+}
+
 @Composable
 private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
     Row(
@@ -1413,7 +1433,7 @@ fun TeamForBox(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("🔴 Urgent", fontWeight = FontWeight.Bold, color = if (urgent) cs.error else cs.onSurface)
-                    Text("Red card · reminder ${TeamRules.label(TeamRules.urgentMin(LocalContext.current))} if no deadline · auto ⭐", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    Text("Red card · reminders until a deadline is picked · auto ⭐", fontSize = 12.sp, color = cs.onSurfaceVariant)
                 }
                 Switch(checked = urgent, onCheckedChange = onUrgent)
             }

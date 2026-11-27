@@ -66,6 +66,8 @@ data class TeamMember(
     val also: List<String> = emptyList(),
     /** v0.49 The app switches the portal set for him (null = none set yet: the old behaviour). */
     val appPerms: Map<String, Boolean>? = null,
+    /** 27 Nov: the website's other settings for this person (perms.set: date rules, urgent no-date, reminders, notifications). */
+    val setPerms: Map<*, *>? = null,
     /** v0.49 Whom the chart lets him give tasks to (uids); null = everyone, as before. */
     val giveTo: List<String>? = null,
     /** v0.49.1 He signed out of the team on his phone (shown to his managers until he signs in again). */
@@ -289,28 +291,33 @@ data class TeamMsg(
 object TeamRules {
     private fun p(c: Context) = c.getSharedPreferences("team_rules", Context.MODE_PRIVATE)
     val NO_DATE_CHOICES = listOf(60, 120, 240, 480, 24 * 60)
-    val URGENT_CHOICES = listOf(30, 60, 120, 240)
     val SMS_CHOICES = listOf(0, 60, 120, 240)
 
-    fun noDateMin(c: Context) = p(c).getInt("no_date", 240)
+    // 27 Nov: a team member's rules come from the website (Team › Access, saved on the phone in [WebRules]); the owner keeps his own.
+    private fun web(c: Context) = WebRules.managed(c)
+
+    fun noDateMin(c: Context) = if (web(c)) WebRules.int(c, "noDate") else p(c).getInt("no_date", 240)
     fun setNoDateMin(c: Context, m: Int) = p(c).edit().putInt("no_date", m).apply()
-    fun urgentMin(c: Context) = p(c).getInt("urgent", 60)
-    fun setUrgentMin(c: Context, m: Int) = p(c).edit().putInt("urgent", m).apply()
-    /** v0.55 An urgent task with no deadline: a reminder to both of you every N working hours until he picks one. */
-    val REPEAT_CHOICES = listOf(60, 120, 240)
-    fun repeatMin(c: Context) = p(c).getInt("repeat", 120)
-    fun setRepeatMin(c: Context, m: Int) = p(c).edit().putInt("repeat", m).apply()
-    fun smsMin(c: Context) = p(c).getInt("sms", 120)
+    fun smsMin(c: Context) = if (web(c)) WebRules.int(c, "smsMin") else p(c).getInt("sms", 120)
     fun setSmsMin(c: Context, m: Int) = p(c).edit().putInt("sms", m).apply()
-    fun workingOnly(c: Context) = p(c).getBoolean("working_only", true)
-    fun setWorkingOnly(c: Context, on: Boolean) = p(c).edit().putBoolean("working_only", on).apply()
+
+    /**
+     * 27 Nov (S6.2) Urgent task with no date: the person who GETS it has these on the website: the first reminder after
+     * [gapMin] working minutes, then again every [gapMin], [times] times in all, shown as [style] (full / normal / off).
+     */
+    data class Urgent(val gapMin: Int, val times: Int, val style: String)
+    fun urgentMine(c: Context) = Urgent(WebRules.int(c, "urgHours").coerceAtLeast(1) * 60, WebRules.int(c, "urgTimes").coerceAtLeast(0),
+        WebRules.style(c, "urgStyle"))
+    /** The same rule for someone else (their member row's perms.set), for the giver's phone. */
+    fun urgentOf(set: Map<*, *>?) = Urgent(((set?.get("urgHours") as? Number)?.toInt() ?: 2).coerceAtLeast(1) * 60,
+        ((set?.get("urgTimes") as? Number)?.toInt() ?: 3).coerceAtLeast(0), WebRules.NORMAL)
 
     /** Deadline locked: once he sets it he can only 📅 Extend deadline (your Approve, or a free push). */
-    fun deadlineLocked(c: Context) = p(c).getBoolean("locked", true)
+    fun deadlineLocked(c: Context) = if (web(c)) WebRules.bool(c, "locked") else p(c).getBoolean("locked", true)
     fun setDeadlineLocked(c: Context, on: Boolean) = p(c).edit().putBoolean("locked", on).apply()
     /** Extend without asking: how many times he may push it himself (0 = Never). */
     val FREE_EXT_CHOICES = listOf(0, 1, 2, 3)
-    fun freeExt(c: Context) = p(c).getInt("free_ext", 0)
+    fun freeExt(c: Context) = if (web(c)) WebRules.int(c, "freeExt") else p(c).getInt("free_ext", 0)
     fun setFreeExt(c: Context, n: Int) = p(c).edit().putInt("free_ext", n).apply()
     fun extLabel(n: Int): String = if (n <= 0) "Never" else "${n}×"
 
@@ -328,27 +335,46 @@ object TeamRules {
         else -> "${m}m"
     }
 
-    /** Minutes from [from] to [to], counting only working hours (weekly off day skipped) when that's on. */
     /** One working day in minutes: your working hours, else the office's 11 AM - 9 PM. */
     fun dayMin(c: Context): Long = if (WorkHours.isSet(c)) (WorkHours.end(c) - WorkHours.start(c)).coerceAtLeast(60).toLong() else 600L
 
+    /** Duty hours of [day]: your timetable, else the office's 11 AM - 9 PM; null on your weekly off day or a holiday. */
+    fun duty(c: Context, day: java.time.LocalDate): Pair<Long, Long>? {
+        if (OffDays.isOff(day) || Seats.isHoliday(c, day)) return null
+        return WorkHours.window(c, day) ?: CalendarData.at(day, 11 * 60).to(CalendarData.at(day, 21 * 60)).takeIf { !WorkHours.isSet(c) }
+    }
+
+    fun dutyEnd(c: Context, day: java.time.LocalDate): Long? = duty(c, day)?.second
+
+    /** 27 Nov (S11.1) The notification window: 30 min before duty start to 1 hour after duty end. */
+    private const val EARLY = 30 * 60_000L
+    private const val LATE = 60 * 60_000L
+
+    fun inWindow(c: Context, now: Long = System.currentTimeMillis()): Boolean {
+        val d = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        return listOf(d.minusDays(1), d).any { day -> duty(c, day)?.let { (s, e) -> now >= s - EARLY && now < e + LATE } == true }
+    }
+
+    /** The "Automatic ones come 10:30 AM - 10:00 PM" line (today's, else the office's). */
+    fun windowLabel(c: Context): String {
+        val s = (if (WorkHours.isSet(c)) WorkHours.start(c) else 11 * 60) - 30
+        val e = ((if (WorkHours.isSet(c)) WorkHours.end(c) else 21 * 60) + 60) % (24 * 60)
+        return Dossier.timeLabel(s.coerceAtLeast(0)) + " - " + Dossier.timeLabel(e)
+    }
+
+    /** Minutes from [from] to [to], counting only working hours (weekly off day and holidays skipped). */
     fun minutesSince(c: Context, from: Long, to: Long = System.currentTimeMillis()): Long {
         if (to <= from) return 0L
-        if (!workingOnly(c)) return (to - from) / 60_000L
         val zone = java.time.ZoneId.systemDefault()
         var day = java.time.Instant.ofEpochMilli(from).atZone(zone).toLocalDate()
         val last = java.time.Instant.ofEpochMilli(to).atZone(zone).toLocalDate()
         var total = 0L
         var guard = 0
         while (!day.isAfter(last) && guard++ < 60) {
-            if (!OffDays.isOff(day) && !Seats.isHoliday(c, day)) {
-                // Working hours from Settings, else the office's 11 AM - 9 PM.
-                val w = WorkHours.window(c, day) ?: if (!WorkHours.isSet(c)) CalendarData.at(day, 11 * 60) to CalendarData.at(day, 21 * 60) else null
-                w?.let { (s, e) ->
-                    val a = maxOf(s, from)
-                    val b = minOf(e, to)
-                    if (b > a) total += (b - a) / 60_000L
-                }
+            duty(c, day)?.let { (s, e) ->
+                val a = maxOf(s, from)
+                val b = minOf(e, to)
+                if (b > a) total += (b - a) / 60_000L
             }
             day = day.plusDays(1)
         }
@@ -441,6 +467,8 @@ object TeamRepo {
                 _me.value = m
                 if (m.status == Team.REMOVED) { removed(t); return@addSnapshotListener }
                 Seats.applyMine(appCtx, m.uid, m.seatId)
+                // The website's settings for him, kept on the phone so every alarm works offline (S-OFFLINE).
+                WebRules.save(appCtx, s.get("perms"), member = m.role != Team.OWNER && m.seatId.isNotBlank())
                 if (m.active && was?.active != true) {
                     listenMembersAndTasks(t, u.uid)
                     TeamWorker.schedule(appCtx)
@@ -558,6 +586,25 @@ object TeamRepo {
         val photo = auth().currentUser?.photoUrl?.toString().orEmpty()
         if (photo.isNotEmpty() && photo != _me.value?.photo)
             db().collection("teams").document(t).collection("members").document(u).update("photo", photo)
+        // 27 Nov (S10.1) Phone health for the website (Team › People): app version and the permissions alarms need.
+        runCatching {
+            val st = SetupStatus.read(appCtx)
+            val granted = { perm: String -> androidx.core.content.ContextCompat.checkSelfPermission(appCtx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+            val exact = android.os.Build.VERSION.SDK_INT < 31 || appCtx.getSystemService(android.app.AlarmManager::class.java).canScheduleExactAlarms()
+            db().collection("teams").document(t).collection("members").document(u).update("health", mapOf(
+                "v" to appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName.orEmpty(), "at" to now, "notif" to st.notifications, "full" to st.fullScreen, "alarms" to exact,
+                "battery" to st.battery, "calls" to (st.phone && st.callLog), "overlay" to st.overlay,
+                "sms" to granted(android.Manifest.permission.SEND_SMS),
+            ))
+        }
+    }
+
+    /** 27 Nov (S4.6) A dossier reminder was skipped: kept quietly on his row for the website's Team Performance. */
+    fun logDossierSkip() {
+        val u = uid ?: return
+        val t = teamId ?: return
+        db().collection("teams").document(t).collection("members").document(u)
+            .update("dosSkips", com.google.firebase.firestore.FieldValue.arrayUnion(System.currentTimeMillis()))
     }
 
     // ------------------------------------------------------------ sign-in
@@ -636,6 +683,7 @@ object TeamRepo {
         _members.value = emptyList()
         _tasks.value = emptyList()
         Seats.clear(appCtx)
+        WebRules.clear(appCtx)
         TeamWorker.cancel(appCtx)
     }
 
@@ -1583,6 +1631,7 @@ object TeamRepo {
         also = strings(s.get("also")),
         appPerms = ((s.get("perms") as? Map<*, *>)?.get("app") as? Map<*, *>)?.entries
             ?.mapNotNull { (k, v) -> (k as? String)?.let { key -> (v as? Boolean)?.let { key to it } } }?.toMap(),
+        setPerms = (s.get("perms") as? Map<*, *>)?.get("set") as? Map<*, *>,
         giveTo = (s.get("canGiveTo") as? List<*>)?.mapNotNull { it as? String },
     )
 
