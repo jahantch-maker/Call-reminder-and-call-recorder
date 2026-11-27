@@ -90,15 +90,19 @@
       ["Designation then person", "Each designation has defaults; a person's own changes win (“✎ changed”, tap it to go back to default).", "", ""],
       ["Copy to", "“Copy all…” copies every section; each section's “Copy this section to…” copies only that section. Works for designations and people.", "", "0.61.0"],
       ["Owners", "The app owner can do everything; call recording still needs them to turn it on in their phone.", "", ""],
+      ["One section at a time", "Team › Access shows one section at a time: pick it in the left menu (on a phone, the “Section ▾” picker). The number next to each name is how many settings it holds. On a phone the grey “default” tag is hidden; only rows that differ show “✎ changed”.", "Open “In the portal” to set which website pages he can open.", ""],
+    ]],
+    ["Website settings", [
+      ["Switches and ticks save at once", "In Settings, a switch or a tick box saves the moment you click it, and “✓ Saved” shows at the bottom.", "Turning off “Needs help box” in Team Performance hides it for everyone straight away.", ""],
+      ["Numbers wait for Save", "A typed number or a picked choice is not live yet: the changed row turns darker blue and a bar at the bottom shows “1 change not saved yet” with Undo and Save. Typed numbers stay even if you open another section and come back.", "Change “Red row when the score is under” from 60 to 55: nothing changes for the team until you press Save.", ""],
     ]],
   ];
 
   const LATEST = "0.62.0";   // bump with each build: rules changed in it get the green tag
   RB.rulesHtml = () => {
     const n = RB.RULES.reduce((t, [, rs]) => t + rs.length, 0);
-    return `<div class="card rules" style="max-width:900px"><div class="subhead"><h3 style="margin:0">Rules</h3><div class="sp"></div><span class="sub" id="rulesn">${n} rules</span></div>
-      <div class="hint">How every rule of the app and the website works, in plain words. Read only. Updated with every new version.</div>
-      <input id="rulesq" class="rulesq" placeholder="🔍 Search rules, e.g. urgent, SMS, dossier" aria-label="Search rules">
+    // The search sits in the card's frozen top, so it stays in view while the rules scroll (Settings redesign J4).
+    return `<div class="card rules st-card"><div class="subhead"><input id="rulesq" class="rulesq" placeholder="🔍 Search rules, e.g. urgent, SMS, dossier" aria-label="Search rules" style="flex:1;min-width:0;margin:0"><span class="sub" id="rulesn">${n} rules</span></div>
       ${RB.RULES.map(([h, rs]) => `<div class="rulesg"><div class="mh2 rulesh">${esc(h.toUpperCase())}</div>${rs.map((r) => { const [t, w, ex, v] = r; return `<div class="rule" data-t="${esc((h + " " + r.join(" ")).toLowerCase())}"><div class="ruleh"><b>${esc(t)}</b>${v ? `<span class="tag ${v === LATEST ? "grn" : ""}">Changed in version ${esc(v)}</span>` : ""}</div><div>${esc(w)}</div>${ex ? `<div class="rulex">Example: ${esc(ex)}</div>` : ""}</div>`; }).join("")}</div>`).join("")}
       <div class="muted" id="rulesnone" style="margin-top:12px;display:none">No rule matches.</div></div>`;
   };

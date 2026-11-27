@@ -4,23 +4,58 @@
   const RB = window.RB, D = RB.D, S = RB.S, esc = RB.esc;
   /** The five tabs the owner can tick per person (RB.SET_TABS); Change log is for owners, Updates and Appearance for everyone. */
   const TABS = RB.SET_TABS;
+  // ------------------------------------------------------------------ shared look (Settings redesign, locked 27 Nov, J1-J5)
+  /** A labelled row: name (and a grey line) on the left, the box on the right. */
+  RB.stField = (lbl, hint, box) => `<div class="st-f"><div class="l">${lbl}${hint ? `<small>${hint}</small>` : ""}</div><div class="v">${box}</div></div>`;
+  /** A switch card: icon, title, one line, switch. attrs = the data-* the page listens to. */
+  RB.stSwitch = (ic, t, d, attrs, on) => `<div class="st-sw"><span class="ic">${RB.lineIcon(ic)}</span><span class="w"><b>${esc(t)}</b>${d ? `<small>${esc(d)}</small>` : ""}</span><button class="sw ${on ? "on" : ""}" role="switch" aria-checked="${!!on}" aria-label="${esc(t)}" ${attrs}></button></div>`;
+  /** "Saved ✓" for switches and ticks, which save the moment they are clicked (J3). */
+  RB.stSaved = (t) => {
+    let el = document.getElementById("stok");
+    if (!el) { el = document.createElement("div"); el.id = "stok"; el.className = "st-ok"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.textContent = "✓ " + (t || "Saved"); el.classList.add("on"); clearTimeout(RB._stok); RB._stok = setTimeout(() => el.classList.remove("on"), 1600);
+  };
+  /** Numbers and choices wait for the fixed Save bar (J3). Typed values are kept per tab in S.stDirty, so a redraw when
+   *  cloud data arrives never wipes them, and the bar comes back if you leave the tab and return. */
+  S.stDirty = S.stDirty || {};
+  const SAVEBAR = '<div class="st-save" id="stsave" role="region" aria-label="Unsaved changes"><span class="g" id="stsn"></span><button class="un" id="stun">Undo</button><button class="sv" id="stsv">Save</button></div>';
+  function draftBind(root, tab) {
+    const bar = root.querySelector("#stsave"); if (!bar) return;
+    const d = (S.stDirty[tab] = S.stDirty[tab] || {});
+    const show = () => { const n = Object.keys(d).length; bar.classList.toggle("on", n > 0); root.querySelector("#stsn").textContent = n + (n === 1 ? " change" : " changes") + " not saved yet"; };
+    root.querySelectorAll("[data-st]").forEach((i) => {
+      const k = i.dataset.st, row = i.closest(".st-f,.rrow");
+      if (k in d) { i.value = d[k]; if (row) row.classList.add("chg"); }
+      const was = i.defaultValue !== undefined && i.tagName === "INPUT" ? i.defaultValue : [...i.options].find((o) => o.defaultSelected)?.value;
+      i.addEventListener("input", () => { if (i.value === was) delete d[k]; else d[k] = i.value; if (row) row.classList.toggle("chg", k in d); show(); });
+    });
+    show();
+    root.querySelector("#stun").onclick = () => { delete S.stDirty[tab]; RB.render(); };
+    root.querySelector("#stsv").onclick = () => { const b = root.querySelector("[data-st-save]"); if (b) b.click(); };
+  }
+  /** Called by a page's save once it worked: the bar goes, the rows calm down, "Saved ✓" shows. */
+  RB.stDone = () => { delete S.stDirty[S.tab.settings]; RB.render(); RB.stSaved(); };
+
   /** Team Performance settings (config/meeting.perf, read by tpcalc.js). */
   function perfHtml() {
-    const c = RB.tp.cfg(), num = (id, val, lbl, unit, hint) => `<div class="rrow"><span class="n" style="flex:1;min-width:200px">${lbl}${hint ? `<br><span class="sub">${hint}</span>` : ""}</span><input class="num" type="number" id="${id}" value="${val}"><span style="width:52px;flex:none">${unit || ""}</span></div>`;
-    const SHOW = [["oldOver", "Oldest overdue tasks"], ["oldUns", "Not scheduled list"], ["moved", "Moved " + c.movedN + "+ list"], ["needs", "Needs help box"], ["trend", "Score line (weeks)"], ["dosBars", "Dossier day bars"], ["byType", "By task type"]];
-    const tick = (k, i) => (c.show[k][i] === null ? '<span class="sub">–</span>' : `<input type="checkbox" data-tpshow="${k}:${i}" ${c.show[k][i] ? "checked" : ""} aria-label="${k}">`);
+    const c = RB.tp.cfg(), num = (id, val, lbl, unit, hint) => RB.stField(lbl, hint, `<input class="num" type="number" id="${id}" data-st="${id}" value="${val}" aria-label="${esc(lbl)}"><span>${unit || ""}</span>`);
+    const SHOW = [["oldOver", "Oldest overdue tasks", "Tasks overdue the longest"], ["oldUns", "Not scheduled list", "Tasks with no date for too long"], ["moved", "Moved " + c.movedN + "+ list", "Tasks whose date was moved again and again"], ["needs", "Needs help box", "People with the lowest score"], ["trend", "Score line (weeks)", "The score week by week"], ["dosBars", "Dossier day bars", "One bar per day for dossier work"], ["byType", "By task type", "Tasks split by type"]];
+    const sws = (i) => SHOW.filter(([k]) => c.show[k][i] !== null).map(([k, l, d]) => RB.stSwitch("chart", l, d, `data-tpshow="${k}:${i}"`, c.show[k][i])).join("");
     const ppl = RB.tp.people(true);
-    return `<div class="card" style="max-width:720px"><h3>Team Performance</h3><div class="hint">These numbers decide how Team Performance counts and colours. Changes show for everyone at once.</div>
-      ${num("tpwon", c.wOn, "Score weight: tasks on time", "%")}${num("tpwdos", c.wDos, "Score weight: dossier", "%", "Score = on time % × this + dossier % × this, divided by both added")}
-      ${num("tpgrace", c.grace, "Not scheduled counts after", "days", "a task with no date for longer than this")}${num("tpolder", c.older, "Oldest overdue list shows tasks over", "days")}
-      ${num("tpmoved", c.movedN, "Moved list: date moved at least", "times")}${num("tpred", c.redBelow, "Red row when the score is under", "%")}${num("tpweak", c.weakDay, "Red dossier day when under", "%")}
-      ${num("tpweeks", c.weeks, "Score line shows the last", "weeks")}${num("tpoldn", c.oldOverN, "Oldest overdue: rows before Show all", "rows")}${num("tpneedn", c.needsN, "Needs help: people shown", "people")}
-      <div class="rrow"><span class="n" style="flex:1">Period when the page opens</span><select id="tpperiod">${RB.tp.PERIODS.map(([k, l]) => `<option value="${k}" ${c.period === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-      <h3 style="margin-top:16px">Show or hide</h3><table style="width:100%"><tr><th style="text-align:left">Part</th><th>Main screen</th><th>Person report</th></tr>${SHOW.map(([k, l]) => `<tr><td>${l}</td><td style="text-align:center">${tick(k, 0)}</td><td style="text-align:center">${tick(k, 1)}</td></tr>`).join("")}</table>
-      <h3 style="margin-top:16px">Hide people</h3><div class="hint">Ticked people are left out of Team Performance (for example the owner or a driver).</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px">${ppl.map((m) => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-tphide="${esc(m.uid)}" ${c.hidden.includes(m.uid) ? "checked" : ""}>${esc(RB.first(m.name))}</label>`).join("")}</div>
-      <button class="btnp edit-only" id="tpsave" style="margin-top:14px">Save</button>
-      <div class="tp-box" style="margin-top:14px"><b>How the numbers work</b><div class="hint" style="line-height:1.6;margin-top:4px">· <b>On time %</b> = done on time ÷ (on time + late + overdue + not scheduled). The first due date counts; moving a date later doesn't reset it. Late with an outside reason (material, payment, client) counts nowhere.<br>· Tasks given by a manager use their current deadline, because only the giver or a manager can change it.<br>· <b>Dossier %</b> = ticked ÷ due over the days. Today never pulls it down until the day ends. No dossier counts as 0.<br>· <b>Score</b> = both together by the weights above; the rank always follows the score.<br>· The week starts on Saturday. Weekly off days come from each person's timetable, holidays from Settings › Holidays.</div></div></div>`;
+    return `<div class="card st-card"><h4 class="st-h">Score</h4>
+      ${num("tpwon", c.wOn, "Weight: tasks on time", "%")}${num("tpwdos", c.wDos, "Weight: dossier", "%", "Score = on time % × this + dossier % × this, divided by both added")}
+      ${num("tpred", c.redBelow, "Red row when the score is under", "%")}${num("tpweak", c.weakDay, "Red dossier day when under", "%")}</div>
+      <div class="card st-card"><h4 class="st-h">Lists</h4>
+      ${num("tpgrace", c.grace, "Not scheduled counts after", "days", "A task with no date for longer than this")}${num("tpolder", c.older, "Oldest overdue list shows tasks over", "days")}
+      ${num("tpmoved", c.movedN, "Moved list: date moved at least", "times")}${num("tpoldn", c.oldOverN, "Oldest overdue: rows before Show all", "rows")}${num("tpneedn", c.needsN, "Needs help: people shown", "people")}
+      ${num("tpweeks", c.weeks, "Score line shows the last", "weeks")}
+      ${RB.stField("Period when the page opens", "", `<select id="tpperiod" data-st="tpperiod" aria-label="Period when the page opens">${RB.tp.PERIODS.map(([k, l]) => `<option value="${k}" ${c.period === k ? "selected" : ""}>${l}</option>`).join("")}</select>`)}
+      <button class="edit-only st-hidden" id="tpsave" data-st-save="1">Save</button></div>
+      <div class="card st-card"><h4 class="st-h">Main screen · <span>show or hide</span></h4>${sws(0)}</div>
+      <div class="card st-card"><h4 class="st-h">Person report · <span>show or hide</span></h4>${sws(1)}</div>
+      <div class="card st-card"><h4 class="st-h">Hide people · <span>ticked people are left out (for example the owner or a driver)</span></h4>
+      <div class="st-tk">${ppl.map((m) => `<label class="${c.hidden.includes(m.uid) ? "on" : ""}"><input type="checkbox" data-tphide="${esc(m.uid)}" ${c.hidden.includes(m.uid) ? "checked" : ""}>${RB.lineIcon("user")}${esc(RB.first(m.name))}</label>`).join("")}</div></div>
+      <div class="card st-card"><div class="tp-box"><b>How the numbers work</b><div class="hint" style="line-height:1.6;margin-top:4px">· <b>On time %</b> = done on time ÷ (on time + late + overdue + not scheduled). The first due date counts; moving a date later doesn't reset it. Late with an outside reason (material, payment, client) counts nowhere.<br>· Tasks given by a manager use their current deadline, because only the giver or a manager can change it.<br>· <b>Dossier %</b> = ticked ÷ due over the days. Today never pulls it down until the day ends. No dossier counts as 0.<br>· <b>Score</b> = both together by the weights above; the rank always follows the score.<br>· The week starts on Saturday. Weekly off days come from each person's timetable, holidays from Settings › Holidays.</div></div></div>`;
   }
 
   // ------------------------------------------------------------------ Holidays (office closed days; locked 25 Nov: Import Pakistan holidays,
@@ -68,7 +103,7 @@
       return head + `<div class="hz-row"><span class="d">${esc(hfmt(h.d))}</span><b>${esc(h.name || "")}</b><span>${tag(h)}</span><span style="display:flex;gap:6px">${own ? `<button class="btnt" data-hedit="${esc(h.d)}">Edit</button><button class="btnt" data-hdel="${esc(h.d)}">Remove</button>` : ""}</span></div>`; }).join("");
     const moon = own ? RB.moonDue().map((g, i) => `<div class="hz-bar">🌙<span class="t"><b>${esc(g.base)} is set for ${g.dates.map((h) => esc(hfmt(h.d))).join(" and ")}.</b> Moon date: confirm once Ruet-e-Hilal announces.</span><button class="btnt" data-hmoon="${i}:same">Same</button><button class="btnt" data-hmoon="${i}:1">1 day later</button><button class="btnt" data-hmoon="${i}:-1">1 day earlier</button><button class="btnt" data-hmoon="${i}:add">+ Add a day</button></div>`).join("") : "";
     const ready = y ? `<div class="hz-bar">🗓<span class="t"><b>${y} Pakistan holidays are ready.</b> Tick the days the office is closed, then Add.</span><button class="btnp" data-himp="${y}">Review and add ›</button></div>` : "";
-    const html = `<div class="card" style="max-width:${S.hImp ? 640 : 820}px"><div class="stickhead"><div class="subhead"><h3>Holidays · ${list.length}</h3><div class="sp"></div>${own ? `<button class="btnp" data-himp="${new Date().getFullYear()}">⬇ Import Pakistan holidays</button>` : ""}</div><div class="hint">Public holidays and other days the office is closed. Due times in every SOP and dossier days skip these dates. Weekly days off are set per timetable, in Team › Timetables.</div></div>
+    const html = `<div class="card" style="max-width:${S.hImp ? 640 : 820}px"><div class="stickhead"><div class="subhead"><h3>${list.length} ${list.length === 1 ? "day" : "days"}</h3><div class="sp"></div>${own ? `<button class="btnp" data-himp="${new Date().getFullYear()}">⬇ Import Pakistan holidays</button>` : ""}</div></div>
       ${ready}${moon}${rows || '<div class="muted">No holidays added yet.</div>'}
       ${own ? `<div class="rrow" style="flex-wrap:wrap;gap:8px;margin-top:12px"><input type="date" id="hdate"><input id="hname" placeholder="Name, e.g. Eid ul Fitr" style="flex:1;min-width:160px"><button class="btnp" id="hadd">Add</button></div>` : '<div class="foot">Only the owner changes holidays.</div>'}</div>`;
     return { html, side: own && S.hImp ? impPanel() : "" };
@@ -141,18 +176,27 @@
     D.holimport = Object.assign({}, q, { found: f.map(([md, name, opt]) => ({ d: y + "-" + md, name, moon: /eid|ashura|milad/i.test(name), optional: !!opt })), error: "", doneAt: Date.now() });
     RB.render();
   }, 700);
+  // Left menu (J1): [group, [[tab, label, icon, one line shown under the big name]]]. Only tabs this person may open show.
+  const GROUPS = [
+    ["Team work", [["reasons", "Late reasons", "late", "The reasons staff pick on the phone when a task is late. The phones get this list the next time the app opens."], ["red", "Red lines", "red", "When a number on the Meetings screens turns red."], ["ranking", "Ranking", "rank", "One fair score and rank for the team."], ["perf", "Team Performance", "chart", "These numbers decide how Team Performance counts and colours. Changes show for everyone at once."]]],
+    ["Meetings and reading", [["steps", "Meeting steps", "steps", "The steps of the daily and weekly meeting, in order, with the minutes for each."], ["docs", "Reading deadline", "read", "How many days new people get to finish their reading list."]]],
+    ["Office", [["holidays", "Holidays", "cal", "Public holidays and other days the office is closed. Due times in every SOP and dossier days skip these dates. Weekly days off are set per timetable, in Team › Timetables."]]],
+    ["Help", [["rules", "Rules", "rules", "How every rule of the app and the website works, in plain words. Read only. Updated with every new version."], ["log", "Change log", "log", "Every access, chart, seat and offboarding change. Only owners see it and nobody can edit or delete a line."], ["updates", "Updates", "upd", "A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it."]]],
+    ["My view", [["look", "Appearance", "look", "Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting."]]],
+  ];
   RB.sections.settings = {
+    groups: (tabs) => GROUPS.map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
     tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
     render(tab) {
       let html, side = "";
       if (tab === "look") {
         const cur = RB.theme.get(), card = (k, n, bg, cd) => `<button class="thm ${cur === k ? "on" : ""}" data-theme-pick="${k}"><div class="thp" style="background:${bg}"><i style="background:${cd}"></i><i style="background:${cd};width:85%"></i></div><b>${n}${cur === k ? " ✓" : ""}</b></button>`;
-        html = `<div class="card" style="max-width:640px"><h3>Appearance</h3><div class="hint">Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting.</div>
+        html = `<div class="card st-card">
           <div class="thms">${card("light", "Light", "#F4F4F2", "#fff")}${card("dark", "Dark", "#17181B", "#2E3035")}${card("auto", "Same as device", "linear-gradient(90deg,#F4F4F2 50%,#17181B 50%)", "#8f9198")}</div></div>`;
       } else if (tab === "updates") {
         const vi = RB.versionInfo ? RB.versionInfo() : {};
-        html = `<div class="card" style="max-width:560px"><h3>Website updates</h3><div class="hint">A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it.</div>
-          <div class="rrow"><span class="n">This page is running</span><b>${esc(vi.version || "—")}</b>${vi.at ? `<span class="sub" style="margin-left:8px">published ${esc(RB.fmtWhen(Date.parse(vi.at)))}</span>` : ""}</div>
+        html = `<div class="card st-card">
+          ${RB.stField("This page is running", vi.at ? "published " + esc(RB.fmtWhen(Date.parse(vi.at))) : "", `<b>${esc(vi.version || "—")}</b>`)}
           <div style="display:flex;align-items:center;gap:14px;margin-top:12px"><button class="btnp" id="updchk">Check for updates</button><span class="sub" id="updres"></span></div></div>`;
       } else if (tab === "holidays") {
         const r = holidays();
@@ -160,20 +204,20 @@
       } else if (tab === "log") {
         const q = (S.q || "").toLowerCase();
         const list = D.changelog.filter((c) => !q || c.text.toLowerCase().includes(q) || (c.byName || "").toLowerCase().includes(q));
-        html = `<div class="card" style="max-width:820px"><div class="subhead"><h3>Change log</h3></div><div class="hint">Every access, chart, seat and offboarding change. Only owners see it and nobody can edit or delete a line.</div>
+        html = `<div class="card st-card"><div class="subhead"><h3>${list.length} ${list.length === 1 ? "change" : "changes"}</h3></div>
           ${list.map((c) => `<div class="tlr"><span class="t" style="width:120px">${esc(RB.fmtWhen(c.at))}</span><div><b>${esc(c.text)}</b><p>by ${esc(c.byName || "")}</p></div></div>`).join("") || '<div class="muted">Nothing logged yet.</div>'}</div>`;
       } else if (tab === "docs") {
         const days = (D.cfg && D.cfg.readingDays) || 7;
-        html = `<div class="card" style="max-width:560px"><h3>Reading list deadline</h3><div class="rrow"><span class="n">New people finish their reading in</span><input class="num" type="number" min="1" max="60" id="rdays" value="${days}"> days</div><button class="btnp edit-only" id="rsave" style="margin-top:12px">Save</button><div class="foot">Counted from the day he starts in the seat. The phone reminds him before it.</div></div>`;
+        html = `<div class="card st-card">${RB.stField("New people finish their reading in", "Counted from the day he starts in the seat. The phone reminds him before it.", `<input class="num" type="number" min="1" max="60" id="rdays" data-st="rdays" value="${days}" aria-label="Days"><span>days</span>`)}<button class="edit-only st-hidden" id="rsave" data-st-save="1">Save</button></div>`;
       } else if (tab === "perf") html = perfHtml();
       else if (tab === "rules") html = RB.rulesHtml();
       else { S.settingsTab = tab; html = RB.meet.html("settings"); }
-      return { html, side, title: "Settings", sub: "Only people with access can change these" };
+      return { html: html + SAVEBAR, side, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root, side) {
       root.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => { RB.theme.set(b.dataset.themePick); RB.render(); }));
       const sv = root.querySelector("#rsave");
-      if (sv) sv.onclick = async () => { const n = Math.max(1, Math.min(60, Number(root.querySelector("#rdays").value) || 7)); await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { readingDays: n })); await RB.log("Reading deadline set to " + n + " days"); RB.alertBox("Saved."); };
+      if (sv) sv.onclick = async () => { const n = Math.max(1, Math.min(60, Number(root.querySelector("#rdays").value) || 7)); await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { readingDays: n })); await RB.log("Reading deadline set to " + n + " days"); RB.stDone(); };
       const uc = root.querySelector("#updchk");
       if (uc) uc.onclick = async () => {
         const out = root.querySelector("#updres"); uc.disabled = true; out.textContent = "Checking…";
@@ -185,16 +229,25 @@
       const ps = root.querySelector("#tpsave");
       if (ps) ps.onclick = async () => {
         const v = (id, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(root.querySelector(id).value)) || 0));
-        const show = {}; root.querySelectorAll("[data-tpshow]").forEach((b) => { const [k, i] = b.dataset.tpshow.split(":"); (show[k] = show[k] || [])[Number(i)] = b.checked; });
+        const show = RB.tp.cfg().show;
         const perf = { wOn: v("#tpwon", 0, 100), wDos: v("#tpwdos", 0, 100), grace: v("#tpgrace", 1, 60), older: v("#tpolder", 1, 60), movedN: v("#tpmoved", 1, 20), redBelow: v("#tpred", 0, 100), weakDay: v("#tpweak", 0, 100),
           weeks: v("#tpweeks", 4, 26), oldOverN: v("#tpoldn", 1, 20), needsN: v("#tpneedn", 1, 20), period: root.querySelector("#tpperiod").value, show,
           hidden: [...root.querySelectorAll("[data-tphide]")].filter((b) => b.checked).map((b) => b.dataset.tphide) };
         if (perf.wOn + perf.wDos === 0) return RB.alertBox("At least one weight must be more than 0.");
         await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { perf }));
         await RB.log("Team Performance settings changed");
-        RB.alertBox("Saved. Team Performance uses the new numbers now.");
+        RB.stDone();
       };
+      // Show/hide switches and Hide people ticks save at once (J3), next to the numbers as last saved.
+      const tpQuick = async (perf, note) => { await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { perf: Object.assign({}, RB.tp.cfg(), perf) })); await RB.log(note); RB.render(); RB.stSaved(); };
+      root.querySelectorAll("[data-tpshow]").forEach((b) => (b.onclick = () => {
+        const [k, i] = b.dataset.tpshow.split(":"), show = JSON.parse(JSON.stringify(RB.tp.cfg().show)); show[k][Number(i)] = !show[k][Number(i)];
+        b.classList.toggle("on", show[k][Number(i)]); b.setAttribute("aria-checked", show[k][Number(i)]);
+        tpQuick({ show }, "Team Performance: show or hide changed");
+      }));
+      root.querySelectorAll("[data-tphide]").forEach((c) => (c.onchange = () => { c.closest("label").classList.toggle("on", c.checked); tpQuick({ hidden: [...root.querySelectorAll("[data-tphide]")].filter((x) => x.checked).map((x) => x.dataset.tphide) }, "Team Performance: hidden people changed"); }));
       if (S.tab.settings === "rules") RB.rulesBind(root);
+      if (!root.classList.contains("ro")) draftBind(root, S.tab.settings);
       if (!["log", "docs", "updates", "look", "holidays", "perf", "rules"].includes(S.tab.settings)) RB.meet.bind(root);
     },
   };

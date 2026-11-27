@@ -496,6 +496,9 @@
       ["set", "n_dossier", "New dossier task", "", "A dossier task added or changed for him by the office.", "seg", STY, false, "DOSSIER"],
     ] },
   ];
+  const ACC_GROUPS = [["Phone app", ["team", "dates", "calls", "plot", "rem"]], ["Web portal", ["portal"]], ["Alerts", ["notif"]]];
+  const ACC_IC = { team: "people", dates: "cal", calls: "phone", plot: "folder", rem: "alarm", portal: "screen", notif: "bell" };
+  const ACC_DESC = { team: "Who he can give tasks to, and whose work he can see and approve.", dates: "Deadline and reminder rules for tasks he gives and gets.", calls: "Call recording, text messages and the after-call popup.", plot: "What he can do with plot files on his phone.", rem: "The dossier and review popups on his phone.", portal: "Which sections of this web portal he can open, and whether he can only view or also edit.", notif: "How each kind of notification shows on his phone." };
   /** Every key a section holds ("app.x", "set.y", "portal.z"); reminders hold On + minutes. */
   const secKeys = (sec) => sec.rows.flatMap((r) => (r[5] === "rem" ? ["set." + r[1] + "On", "set." + r[1] + "Min"] : r[1] === "plotHeadsMin" ? [] : [r[0] + "." + r[1]]).concat(r[1] === "n_plotHeads" ? ["set.plotHeadsMin"] : []).concat(r[0] === "portal" && r[1] === "app" ? ["portal.appScope"] : r[0] === "portal" && r[1] === "team" ? ["portal.teamTabs"] : r[0] === "portal" && r[1] === "settings" ? ["portal.settingsTabs"] : []));
   const getK = (e, key) => { const [g, k] = key.split("."); return (e[g] || {})[k]; };
@@ -540,7 +543,9 @@
       }
       return `${band ? `<div class="mh2 accband">${band}</div>` : ""}<div class="swrow accrow"><div class="w"><b>${esc(t)}${info(inf)}${isNew ? ' <span class="tag grn">NEW</span>' : ""}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${tags}${c}${more}</div>`;
     };
-    const card = (sec) => `<div class="card acccard"><div class="subhead"><h3 style="margin:0">${esc(sec.title)}${sec.isNew ? ' <span class="tag grn">NEW</span>' : ""}</h3><div class="sp"></div>${ed() ? `<button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button>` : ""}</div>${sec.note ? `<div class="hint warn">${esc(sec.note)}</div>` : ""}${sec.rows.map(rowHtml).join("")}${sec.id === "portal" ? '<div class="hint">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}</div>`;
+    // Settings redesign (J8, locked 27 Nov): one section at a time, picked in a left menu; big name, icon and one line on top.
+    const card = (sec) => `<div class="acch"><span class="ic">${RB.lineIcon(ACC_IC[sec.id])}</span><h2>${esc(sec.title)}${sec.isNew ? ' <span class="tag grn">NEW</span>' : ""}</h2><div class="sp"></div>${ed() ? `<button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button>` : ""}</div><p class="accp">${ACC_DESC[sec.id] || ""}</p>
+      <div class="card acccard">${sec.note ? `<div class="hint warn">${esc(sec.note)}</div>` : ""}${sec.rows.map(rowHtml).join("")}${sec.id === "portal" ? '<div class="hint">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}</div>`;
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b><span class="sub">${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span>`;
     const cur = S.accDesig && RB.desigOf(S.accDesig);
@@ -551,12 +556,15 @@
       ${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset</button>' : ""}
       ${ed() ? '<button class="btnp edit-only" data-acccopy="all">⧉ Copy all…</button>' : ""}</div>
       ${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}`;
-    const col = (i) => `<div class="acccol">${RB.ACC.filter((x) => x.col === i).map(card).join("")}</div>`;
+    if (!RB.ACC.some((x) => x.id === S.accSec)) S.accSec = RB.ACC[0].id;
+    const cs = RB.ACC.find((x) => x.id === S.accSec);
+    const anav = `<nav class="gnav accnav" aria-label="Access sections">${ACC_GROUPS.map(([g, ids]) => `<h6>${g}</h6>` + ids.map((id) => { const x = RB.ACC.find((a) => a.id === id); return `<button data-accsec="${id}" class="${id === cs.id ? "on" : ""}" ${id === cs.id ? 'aria-current="true"' : ""}>${RB.lineIcon(ACC_IC[id])}<span>${esc(x.title)}</span><b class="n">${x.rows.length}</b></button>`; }).join("")).join("")}</nav>`;
+    const apick = `<label class="gpick">${RB.lineIcon(ACC_IC[cs.id])}<b>${esc(cs.title)}</b><span>Section ▾</span><select id="accsec" aria-label="Access section">${ACC_GROUPS.map(([g, ids]) => `<optgroup label="${g}">${ids.map((id) => `<option value="${id}" ${id === cs.id ? "selected" : ""}>${esc(RB.ACC.find((a) => a.id === id).title)}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
     const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length, total = RB.APP_SW.length;
     const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of ${total}</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
     const side = `<div class="card"><div class="subhead" style="margin-bottom:6px"><h3 style="margin:0">Designation defaults</h3><div class="sp"></div>${unN ? `<button class="sc ${showUn ? "on" : ""}" data-accun="1">Unchecked · ${unN}</button>` : ""}</div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
       <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
-    return { html: `${bar}<div class="acccols">${col(0)}${col(1)}</div>`, side, sideCards: true };
+    return { html: `${bar}<div class="acc2">${anav}<div class="accbody">${apick}${card(cs)}</div></div>`, side, sideCards: true };
   }
 
   /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
@@ -906,6 +914,9 @@
       const accp = root.querySelector("#accp"); if (accp) accp.onchange = () => { S.accSeat = accp.value; RB.render(); };
       const accd = root.querySelector("#accd"); if (accd) accd.onchange = () => { S.accDesig = accd.value; RB.render(); };
       on(root, "[data-accmode]", (e) => { S.accMode = e.dataset.accmode; RB.render(); });
+      const toSec = (id) => { S.accSec = id; RB.render(); const c = document.getElementById("content"); if (c) c.scrollTop = 0; };
+      on(root, "[data-accsec]", (e) => toSec(e.dataset.accsec));
+      const asp = root.querySelector("#accsec"); if (asp) asp.onchange = () => toSec(asp.value);
       both("[data-accun]", () => { S.accUn = !S.accUn; RB.render(); });
       on(root, "[data-tick]", (e) => {
         if (!ed()) return; const [k, v] = e.dataset.tick.split(":");
