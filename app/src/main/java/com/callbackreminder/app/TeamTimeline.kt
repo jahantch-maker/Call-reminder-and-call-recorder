@@ -87,9 +87,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** ❓ Ask, ⚠ Stuck and 📷 proof bubbles: the shared amber / red / green tones, right by day and by night. */
-private val AskBg: Color @Composable get() = Tones.amber.bg
-private val AskFg: Color @Composable get() = Tones.amber.fg
+/** ⚠ Stuck and 📷 proof bubbles: the shared red / green tones, right by day and by night. */
 private val StuckBg: Color @Composable get() = Tones.red.bg
 private val StuckFg: Color @Composable get() = Tones.red.fg
 private val ProofBg: Color @Composable get() = Tones.green.bg
@@ -297,7 +295,7 @@ private fun tickState(t: TeamTask, m: TeamMsg): Pair<Int, Boolean> {
 private fun playedByAll(t: TeamTask, m: TeamMsg): Boolean = recipients(t, m).all { t.playedBy(m, it) }
 
 /**
- * One message: yours on the right with time and ticks, theirs on the left; ❓ Ask amber, ⚠ Stuck red, 📷 proof
+ * One message: yours on the right with time and ticks, theirs on the left (an old ❓ Ask shows as a normal one); ⚠ Stuck red, 📷 proof
  * green; voice with ▶ (🎙 goes blue once played), photos open full screen. Long-press yours for Info per person.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -308,13 +306,12 @@ private fun TeamBubble(
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val (bg, label) = when (m.tag) {
-        Team.ASK -> AskBg to "❓ ${m.fromFirst} asks"
         Team.STUCK -> StuckBg to "⚠ ${m.fromFirst} is stuck"
         Team.PROOF -> ProofBg to "📷 ${m.fromFirst} · photo proof"
         Team.BRIEF -> (if (mine) cs.primaryContainer else cs.surface) to "${m.fromFirst} · with the task"
         else -> (if (mine) cs.primaryContainer else cs.surface) to (if (mine) null else m.fromFirst)
     }
-    val fg = when (m.tag) { Team.ASK -> AskFg; Team.STUCK -> StuckFg; Team.PROOF -> ProofFg; else -> if (mine) cs.onPrimaryContainer else cs.onSurface }
+    val fg = when (m.tag) { Team.STUCK -> StuckFg; Team.PROOF -> ProofFg; else -> if (mine) cs.onPrimaryContainer else cs.onSurface }
     val (ticks, blue) = if (mine) tickState(t, m) else 0 to false
     // The whole row answers a long press (and, once something is selected, a tap): not only the bubble.
     Box(
@@ -330,7 +327,7 @@ private fun TeamBubble(
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 label?.let {
                     Text(it, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = when (m.tag) {
-                        Team.ASK, Team.STUCK, Team.PROOF -> fg; else -> cs.primary
+                        Team.STUCK, Team.PROOF -> fg; else -> cs.primary
                     })
                 }
                 if (m.isDeleted) {
@@ -455,8 +452,9 @@ private fun TeamExtendRequest(t: TeamTask, me: String?, onAnswered: (String, Tea
 }
 
 /**
- * The message bar, two rows. Top: ❓ Ask · ⚠ Stuck · 📅 Extend deadline · 📷 for the person doing it (📷 only for
- * the giver). Bottom: type and ➤, or hold 🎤 for a voice note (up to 2 min). Tap ❓ or ⚠, then type or hold 🎤.
+ * The message bar, two rows. Top: ⚠ Stuck · 📅 Extend deadline for the person doing it (❓ Ask removed 27 Nov: a message,
+ * or @ for someone else, does the same). Bottom: type and ➤, or hold 🎤 for a voice note (up to 2 min). Tap ⚠, then
+ * type or hold 🎤: a reason is needed, and the task is paused until the giver answers.
  */
 @Composable
 private fun TeamComposer(
@@ -501,7 +499,7 @@ private fun TeamComposer(
         }
         if (tag.isNotEmpty() || recording) {
             Row(
-                Modifier.fillMaxWidth().background(if (tag == Team.STUCK) StuckBg else if (tag == Team.ASK) AskBg else cs.surfaceVariant)
+                Modifier.fillMaxWidth().background(if (tag == Team.STUCK) StuckBg else cs.surfaceVariant)
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -510,21 +508,19 @@ private fun TeamComposer(
                 Text(
                     when {
                         recording -> "🔴 ${TeamMedia.duration(secs * 1000)} · max 2:00"
-                        tag == Team.STUCK -> "⚠ Stuck · type it or tap 🎤"
-                        else -> "❓ Ask · type it or tap 🎤"
+                        else -> "⚠ Stuck · say why (type it or tap 🎤) · the task pauses until ${t.fromFirst} answers"
                     },
-                    color = if (tag == Team.STUCK) StuckFg else if (tag == Team.ASK) AskFg else cs.onSurface,
+                    color = if (tag == Team.STUCK) StuckFg else cs.onSurface,
                     fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f)
                 )
                 if (!recording) TextButton(onClick = { tag = "" }) { Text("✕ cancel", color = cs.onSurface) }
             }
         }
-        // Top row (the person doing it): ❓ Ask · ⚠ Stuck · 📅 Extend deadline.
+        // Top row (the person doing it): ⚠ Stuck · 📅 Extend deadline.
         if (isDoer && t.open) Row(
             Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
         ) {
-            TeamTagButton("❓ Ask", AskFg, tag == Team.ASK) { tag = if (tag == Team.ASK) "" else Team.ASK }
             TeamTagButton("⚠ Stuck", StuckFg, tag == Team.STUCK) { tag = if (tag == Team.STUCK) "" else Team.STUCK }
             TeamTagButton("📅 Extend deadline", Tones.purple.fg, false, enabled = t.due > 0L && !t.asking) { extendPick = true }
         }

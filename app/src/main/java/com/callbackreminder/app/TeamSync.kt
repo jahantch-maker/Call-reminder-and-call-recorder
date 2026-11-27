@@ -196,8 +196,6 @@ object TeamSync {
                     when {
                         t.stuck && t.stuckAt == t.lastMsgAt ->
                             notify(c, "stuck:${t.id}", "⚠ $who is stuck · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id, kind = NotifKind.STUCK)
-                        t.asks && t.askAt == t.lastMsgAt ->
-                            notify(c, "ask:${t.id}", "❓ $who asks · ${t.title}".take(80), t.lastMsgText, mine = null, taskId = t.id, kind = NotifKind.ASKED)
                         else -> tell(c, t, who, "💬 ${t.lastMsgText}")
                     }
                 }
@@ -392,7 +390,7 @@ object TeamSync {
             deadlineSms(c, t, waited, now, inHours, smsDone)
         }
         // His phone: an urgent task waiting for his deadline reminds him every N working hours; a normal one once, the next morning.
-        for (t in tasks.filter { it.toUid == me && it.open && !it.plot && it.hisDate && it.due == 0L && !it.asks && !it.stuck }) {
+        for (t in tasks.filter { it.toUid == me && it.open && !it.plot && it.hisDate && it.due == 0L && !it.stuck }) {
             if (t.urgent) {
                 val k = "h:${t.id}"
                 val last = chase[k]?.toLongOrNull() ?: t.createdAt
@@ -432,7 +430,7 @@ object TeamSync {
      * (urgent: two reminder gaps, normal: a working day). Inside working hours only. The reminders themselves carry on.
      */
     private fun deadlineSms(c: Context, t: TeamTask, waited: Long, now: Long, inHours: Boolean, smsDone: MutableSet<String>) {
-        if (!t.hisDate || t.due != 0L || t.asks || t.stuck || t.toPhone.isBlank() || "dl:${t.id}" in smsDone) return
+        if (!t.hisDate || t.due != 0L || t.stuck || t.toPhone.isBlank() || "dl:${t.id}" in smsDone) return
         val seen = t.seenAt > 0L || Ticks.seen(t)
         if (!seen || !inHours || TeamRules.smsMin(c) <= 0) return
         val after = if (t.urgent) 2L * TeamRules.repeatMin(c) else TeamRules.dayMin(c)

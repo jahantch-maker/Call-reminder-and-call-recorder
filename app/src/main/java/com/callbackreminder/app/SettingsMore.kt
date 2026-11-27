@@ -339,8 +339,17 @@ fun BackupSettingsScreen(onBack: () -> Unit) {
         if (inTeam) SectionCard(
             title = "Cloud backup",
             subtitle = "Every night, while charging and online, a copy of your tasks, Dossier and settings is saved to your own space " +
-                "in the cloud. The last 7 nights stay. Recordings are never saved there."
+                "in the cloud. If the phone hasn't charged for 2 days, it is saved anyway once online. The last 7 nights stay. Recordings are never saved there."
         ) {
+            val last = remember { CloudBackup.lastAt(ctx) }
+            val err = remember { CloudBackup.lastError(ctx) }
+            Text(
+                "Last cloud backup: " + (if (last > 0L) Fmt.dueLabel(last) else "not yet on this phone") +
+                    (if (err.isNotBlank()) "\nLast try failed: $err" else ""),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (err.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
             FilledTonalButton(onClick = {
                 cloudBusy = true
                 cloudMsg = null

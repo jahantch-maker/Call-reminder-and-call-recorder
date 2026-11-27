@@ -632,6 +632,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     var reason by remember(item?.key) { mutableStateOf("") }
     // Off to WhatsApp, or a call that isn't a follow-up call: leaving the app then doesn't pause the session.
     val leaving = remember { booleanArrayOf(false) }
+    var pickFor by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     /**
      * Done, a new time or Skip on a replied one, with Undo for a few seconds (puts the task and the session back).
@@ -762,6 +763,24 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                     val number = ReviewSession.groupNumber(s, g)
                     val next = ReviewSession.groupName(s, g + 1)
                     PartBars(s)
+                    pickFor?.let { (who, num) ->
+                        // Same list as People › Send list now (27 Nov): you pick the groups, then press Send in WhatsApp.
+                        val tasks = left.map { n ->
+                            TaskListText.Task(if (n.kind == ReviewItem.Kind.SCHED_FU || n.kind == ReviewItem.Kind.SCHED_MY) 0L else n.at, n.title, n.code)
+                        }
+                        SendWhichTasksDialog(
+                            name = who,
+                            tasks = tasks,
+                            onDismiss = { pickFor = null },
+                            onWhatsApp = { groups ->
+                                pickFor = null
+                                val text = TaskListText.format(who, tasks, System.currentTimeMillis(), groups, bold = true)
+                                leaving[0] = true
+                                if (text == null || !WhatsApp.open(ctx, num, text)) leaving[0] = false
+                            },
+                            onSms = null,
+                        )
+                    }
                     LazyColumn(
                         Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -773,11 +792,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
                                 number = number,
                                 items = left,
                                 onCall = { leaving[0] = true; dial(ctx, number) },
-                                onWhatsApp = {
-                                    leaving[0] = true
-                                    val list = left.mapIndexed { i, n -> "${i + 1}. ${n.title}" }.joinToString("\n")
-                                    if (!WhatsApp.open(ctx, number, "Please update me on these:\n$list")) leaving[0] = false
-                                },
+                                onWhatsApp = { pickFor = ReviewSession.groupName(s, g) to number },
                             )
                         }
                         items(left, key = { it.key }) { n ->

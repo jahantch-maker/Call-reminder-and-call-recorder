@@ -262,8 +262,7 @@ object ReviewData {
             val rank = when {
                 t.stuck -> 0
                 t.asking -> 1
-                t.asks -> 2
-                TeamUi.earlyWarning(ctx, t, now) != null -> 3
+                TeamUi.earlyWarning(ctx, t, now) != null -> 2
                 else -> return@mapNotNull null
             }
             rank to ReviewItem("c:${r.id}", ReviewSection.TEAM, ReviewItem.Kind.CALL, r.id,

@@ -192,8 +192,7 @@ object TeamUi {
             if (t.due > 0L) RowChip("📅 Deadline ${shortWhen(t.due)}" + if (t.deadlineLocked) " 🔒" else "", ChipTone.ORANGE)
             else RowChip("📅 Pick your deadline" + if (t.deadline > 0L) " · Latest ${shortWhen(t.deadline)}" else "", ChipTone.ORANGE)
         )
-        if (t.open && t.stuck) add(RowChip("⚠ Stuck, waiting", ChipTone.MUTED))
-        else if (t.open && t.asks) add(RowChip("❓ Asked, waiting", ChipTone.MUTED))
+        if (t.open && t.stuck) add(RowChip("⚠ Stuck, paused", ChipTone.MUTED))
         if (t.asking) add(RowChip("📅 Asked for ${shortWhen(t.moreDue)}", ChipTone.MUTED))
         if (t.extCount > 0 && t.open) add(RowChip("Extended ${t.extCount}×", ChipTone.MUTED))
         if (t.photoProof && t.open) add(RowChip("📷 Photo proof", ChipTone.MUTED))
@@ -204,7 +203,7 @@ object TeamUi {
     }
 
     /**
-     * The thin line on top of the card: ⚠ stuck (red), 📅 a deadline request (purple), ❓ a question (orange) stay
+     * The thin line on top of the card: ⚠ stuck (red) and 📅 a deadline request (purple) stay
      * until answered; 💬 new messages and 📥 New from (blue) go once opened. Tap opens the Timeline.
      */
     fun banner(c: Context, t: TeamTask, me: String?): CardBanner? {
@@ -214,7 +213,6 @@ object TeamUi {
         return when {
             giver && t.stuck -> CardBanner("⚠ ${t.toFirst} is stuck" + t.stuckText.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), ChipTone.RED, open, "Answer")
             giver && t.asking -> CardBanner("📅 ${t.toFirst} asks to extend to ${shortWhen(t.moreDue)}", ChipTone.PURPLE, open, "Answer")
-            giver && t.asks -> CardBanner("❓ ${t.toFirst} asked a question", ChipTone.ORANGE, open, "Answer")
             !giver && t.status == Team.REOPENED -> CardBanner("↩ Not done yet" + (if (t.reason.isNotBlank()) " · ${t.reason}" else "") +
                 if (t.due == 0L) " · pick a new deadline" else "", ChipTone.RED, open)
             !giver && t.toUid == me && t.open && TeamSync.isNew(c, t.id) -> CardBanner("📥 New from ${t.fromFirst}", ChipTone.BLUE, open)
@@ -251,7 +249,7 @@ object TeamUi {
     /** One line in Needs you: what it says and how many; [first] is the card it opens to. */
     data class Need(
         val text: String, val count: Int, val tone: ChipTone, val mine: Boolean = false, val first: TeamTask? = null,
-        /** [FollowUpsUi.STUCK], [FollowUpsUi.EXTEND] or [FollowUpsUi.ASK]: opens WAITING ON YOU with only these. */
+        /** [FollowUpsUi.STUCK] or [FollowUpsUi.EXTEND]: opens WAITING ON YOU with only these. */
         val kind: Int? = null,
         /** v0.53 🤝 Helping: opens the thread (one) or the Helping list. */
         val help: Boolean = false, val helpId: String? = null,
@@ -285,15 +283,11 @@ object TeamUi {
             given.filter { it.open && it.stuck }.sortedBy { it.stuckAt }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("⚠ ${it.size} stuck · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40), it.size, ChipTone.RED, first = it.first(), kind = FollowUpsUi.STUCK))
             }
-            given.filter { it.open && it.asks && !it.stuck && !it.asking }.sortedBy { it.askAt }.takeIf { it.isNotEmpty() }?.let {
-                add(Need("❓ ${it.size} question${if (it.size == 1) "" else "s"} waiting · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
-                    it.size, ChipTone.ORANGE, first = it.first(), kind = FollowUpsUi.ASK))
-            }
             given.filter { it.asking }.sortedBy { it.moreAt }.takeIf { it.isNotEmpty() }?.let {
                 add(Need("📅 ${it.size} deadline request${if (it.size == 1) "" else "s"} · " + it.map { t -> t.toFirst }.distinct().joinToString(", ").take(40),
                     it.size, ChipTone.PURPLE, first = it.first(), kind = FollowUpsUi.EXTEND))
             }
-            given.filter { it.open && it.due == 0L && !it.asks && !it.stuck && TeamRules.minutesSince(c, it.createdAt, now) >= noDateMin }.takeIf { it.isNotEmpty() }?.let {
+            given.filter { it.open && it.due == 0L && !it.stuck && TeamRules.minutesSince(c, it.createdAt, now) >= noDateMin }.takeIf { it.isNotEmpty() }?.let {
                 val oldest = it.minOf { t -> t.createdAt }
                 val h = TeamRules.minutesSince(c, oldest, now) / 60
                 add(Need("📅 ${it.size} deadline pending · " + it.map { t -> t.toFirst }.distinct().joinToString(", ") + " · ${h} h", it.size, ChipTone.ORANGE))

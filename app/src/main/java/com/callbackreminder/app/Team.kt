@@ -126,7 +126,7 @@ data class TeamTask(
     /** v0.44 ✓ Done, ➜ next part: who did the part before (his part stays done in his history, view only). */
     val partFrom: String = "",
     val events: List<TaskEvent>,
-    /** ❓ Ask waiting for the giver's answer (the no-date timer pauses meanwhile). */
+    /** ❓ Ask (removed 27 Nov): kept only so older tasks still read; nothing sets it any more. */
     val askAt: Long = 0L,
     /** ⚠ Stuck: a blocker, red until the giver answers. */
     val stuckAt: Long = 0L,
@@ -198,7 +198,6 @@ data class TeamTask(
     val deadlineLocked: Boolean get() = locked && due > 0L
     /** Messages from everyone but [uid]. */
     fun msgsFromOthers(uid: String?): Long = nBy.filterKeys { it != uid }.values.sum()
-    val asks: Boolean get() = open && askAt > 0L
     val stuck: Boolean get() = open && stuckAt > 0L
     val open: Boolean get() = status in Team.OPEN_STATES
     val hisDate: Boolean get() = dateBy == Team.HIS_DATE
@@ -990,6 +989,12 @@ object TeamRepo {
         return ref.id
     }
 
+    /** "2h 10m", "35m": how long a ⚠ Stuck pause lasted. */
+    fun pausedLabel(ms: Long): String {
+        val m = (ms / 60_000L).coerceAtLeast(1L)
+        return if (m < 60) "${m}m" else "${m / 60}h" + if (m % 60 > 0) " ${m % 60}m" else ""
+    }
+
     private fun update(t: TeamTask, fields: Map<String, Any>, event: String?) {
         if (teamId == null) return
         val all = fields.toMutableMap()
@@ -1332,13 +1337,25 @@ object TeamRepo {
         var event: String? = null
         when (tag) {
             Team.ASK -> f["askAt"] = now
-            Team.STUCK -> { f["stuckAt"] = now; f["stuckText"] = if (kind == Team.VOICE) "🎤 Voice note" else text.trim().take(120) }
+            Team.STUCK -> {
+                f["stuckAt"] = now
+                f["stuckText"] = if (kind == Team.VOICE) "🎤 Voice note" else text.trim().take(120)
+                // Counted in Team Performance (how often each person presses Stuck).
+                if (t.stuckAt == 0L) f["stuckN"] = FieldValue.increment(1)
+            }
             Team.PROOF -> f["proofAt"] = now
         }
         if (u.uid == t.fromUid && tag.isEmpty() && (t.askAt > 0L || t.stuckAt > 0L)) {
             f["askAt"] = 0L
             f["stuckAt"] = 0L
-            event = if (t.askAt > 0L) "❓ Answered · date timer running again" else "⚠ ${t.fromFirst} answered"
+            event = if (t.stuckAt > 0L) {
+                // 27 Nov ⚠ Stuck pauses the task: the deadline moves on by the time it waited for the giver, so nobody is late for it.
+                val paused = (now - t.stuckAt).coerceAtLeast(0L)
+                if (t.due > 0L) f["due"] = t.due + paused
+                if (t.firstDue > 0L) f["firstDue"] = t.firstDue + paused
+                f["pausedMs"] = FieldValue.increment(paused)
+                "⏸ Paused ${pausedLabel(paused)} · ${t.fromFirst} answered"
+            } else "❓ Answered · date timer running again"
         }
         update(t, f, event)
         TeamSync.markRead(appCtx, t.id, now)

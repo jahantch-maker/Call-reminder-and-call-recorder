@@ -346,6 +346,7 @@ private fun rememberRuntimeRequest(onResult: () -> Unit): () -> Unit {
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_CALENDAR,
         )
         if (Build.VERSION.SDK_INT >= 33) list += Manifest.permission.POST_NOTIFICATIONS
         launcher.launch(list.toTypedArray())
