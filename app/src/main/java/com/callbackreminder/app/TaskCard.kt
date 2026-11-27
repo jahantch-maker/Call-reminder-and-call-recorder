@@ -427,6 +427,8 @@ fun FitText(
         color = color,
         fontSize = fontSize * scale,
         fontWeight = fontWeight,
+        // Same-width digits: a count or time that changes (1/7 → 2/7) never changes the width, so nothing wraps or jumps.
+        style = androidx.compose.material3.LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
         lineHeight = if (lineHeight == androidx.compose.ui.unit.TextUnit.Unspecified) lineHeight else lineHeight * scale,
         textAlign = textAlign,
         maxLines = maxLines,

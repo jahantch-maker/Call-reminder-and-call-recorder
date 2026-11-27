@@ -567,7 +567,7 @@ object TeamRepo {
             team.collection("tasks").whereArrayContains("viewers", me).addSnapshotListener { s, e ->
                 if (e != null) return@addSnapshotListener relisten()
                 s ?: return@addSnapshotListener
-                val list = s.documents.map { taskOf(it) }
+                val list = s.documents.map { withPendingTicks(taskOf(it)) }
                 _tasks.value = list
                 val fromServer = !s.metadata.isFromCache
                 scope.launch { CrashLog.guard(appCtx, "Team sync") { TeamSync.apply(appCtx, list, foreground, complete = fromServer) } }
@@ -1109,9 +1109,21 @@ object TeamRepo {
         val due = fields["due"] as? Long ?: 0L
         if (t.firstDue == 0L && due > 0L && "firstDue" !in all) all["firstDue"] = due
         if (event != null) all["events"] = FieldValue.arrayUnion(ev(event))
-        tasksRef().document(t.id).update(all)
+        // Plot ticks: held on this phone until the server has them, so an older copy of the task arriving
+        // meanwhile can't put an unticked line back ticked on screen.
+        val ticks = all.filterKeys { it.startsWith("ticks.") }.mapKeys { "${t.id}|${it.key}" }
+        pendingTicks.putAll(ticks)
+        tasksRef().document(t.id).update(all).addOnCompleteListener { ticks.forEach { (k, v) -> pendingTicks.remove(k, v) } }
         // Shown at once, before the server answers.
         _tasks.value = _tasks.value.map { if (it.id == t.id) applyLocal(it, all, event) else it }
+    }
+
+    private val pendingTicks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /** A task as read from the cloud, with this phone's ticks and unticks that the server doesn't have yet. */
+    private fun withPendingTicks(t: TeamTask): TeamTask {
+        val mine = pendingTicks.filterKeys { it.startsWith("${t.id}|") }.mapKeys { it.key.substringAfter('|') }
+        return if (mine.isEmpty()) t else applyLocal(t, mine, null)
     }
 
     private fun applyLocal(t: TeamTask, f: Map<String, Any>, event: String?): TeamTask {
@@ -1659,7 +1671,7 @@ object TeamRepo {
         runCatching { _team.value = teamOf(team.get().await()) }
         runCatching { _members.value = team.collection("members").get().await().documents.map { memberOf(it) } }
         val snap = team.collection("tasks").whereArrayContains("viewers", u.uid).get().await()
-        val list = snap.documents.map { taskOf(it) }
+        val list = snap.documents.map { withPendingTicks(taskOf(it)) }
         _tasks.value = list
         TeamSync.apply(c, list, foreground, complete = !snap.metadata.isFromCache)
         runCatching {
