@@ -762,7 +762,7 @@ private fun AppRoot(
 @Composable
 private fun MainTabs(tab: Int, onTab: (Int) -> Unit, resumeKey: Int, open: (Int) -> Unit) {
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(androidx.compose.ui.platform.LocalContext.current, SmsStore.items.collectAsState().value)
     val toSchedule by ToScheduleStore.items.collectAsState()
     val pager = rememberPagerState(initialPage = tab.coerceIn(0, Tab.COUNT - 1)) { Tab.COUNT }
     val currentTab by rememberUpdatedState(tab)

@@ -105,7 +105,7 @@ fun HomeScreen(
     val unreadable by Db.failed.collectAsState()
     var unreadableSeen by remember { mutableStateOf(false) }
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val toSchedule by ToScheduleStore.items.collectAsState()
     val myTasks by MyTaskStore.items.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
@@ -500,7 +500,7 @@ private fun RingItem(done: Int, total: Int, color: Color, label: String, modifie
 @Composable
 fun DayClearedWatcher() {
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val myTasks by MyTaskStore.items.collectAsState()
     val dossier by DossierStore.tasks.collectAsState()
     val records by DossierStore.records.collectAsState()

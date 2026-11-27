@@ -89,6 +89,7 @@ enum class NotifKind(val emoji: String, val label: String, val color: Int, val u
 }
 
 object Notify {
+    private val HELD_OFF_DUTY = setOf(NotifType.TEXT_SENT, NotifType.TEXT_FAILED, NotifType.TEXT_REVIEW, NotifType.TEXT_REPLIED, NotifType.DAILY_LIST)
     /** For notifications set to Silent: shows in the shade, no sound or vibration. */
     const val CH_QUIET = "quiet_alerts"
 
@@ -159,6 +160,13 @@ object Notify {
                 b.setChannelId(Notifier.bannerChannel(ctx)).setSilent(false)
                     .setPriority(NotificationCompat.PRIORITY_HIGH).setDefaults(NotificationCompat.DEFAULT_ALL)
             }
+        }
+        // S13.1 Info about texts (sent, failed, review, reply, daily list) waits outside a team member's duty window
+        // and comes in the morning bundle; anything with a set time still rings at its time.
+        if (t in HELD_OFF_DUTY && TeamRepo.teamId != null && !TeamRules.inWindow(ctx)) {
+            val e = b.build().extras
+            TeamSync.holdLine(ctx, listOfNotNull(e.getCharSequence(NotificationCompat.EXTRA_TITLE), e.getCharSequence(NotificationCompat.EXTRA_TEXT)).joinToString(" · "))
+            return
         }
         if (kind == null) {
             NotificationManagerCompat.from(ctx).notify(id, b.build())

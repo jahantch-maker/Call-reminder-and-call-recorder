@@ -177,7 +177,7 @@ private enum class PeopleSort(val label: String) { PENDING("Most pending"), DELA
 @Composable
 fun PeopleScreen(resumeKey: Int, onBack: (() -> Unit)?, onOpenPerson: (String) -> Unit) {
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val myTasks by MyTaskStore.items.collectAsState()
     val now = rememberTicker(resumeKey)
     var sort by rememberSaveable { mutableStateOf(PeopleSort.PENDING) }
@@ -289,7 +289,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     val ctx = LocalContext.current
     val key by PeopleUi.current
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val myTasks by MyTaskStore.items.collectAsState()
     val toSchedule by ToScheduleStore.items.collectAsState()
     val recordings by RecordingStore.items.collectAsState()
@@ -682,7 +682,7 @@ fun MyDayScreen(resumeKey: Int, onBack: () -> Unit, onStart: () -> Unit, onOpenI
     val ctx = LocalContext.current
     // Recomputed whenever any list changes.
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val myTasks by MyTaskStore.items.collectAsState()
     val records by DossierStore.records.collectAsState()
     val now = rememberTicker(resumeKey)

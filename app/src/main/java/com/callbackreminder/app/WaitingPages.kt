@@ -239,7 +239,7 @@ fun ToScheduleScreen(onBack: () -> Unit, only: Int? = null) {
 fun OverdueScreen(resumeKey: Int, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val myTasks by MyTaskStore.items.collectAsState()
     val stars by FuStars.keys.collectAsState()
     LaunchedEffect(Unit) { FuStars.load(ctx) }

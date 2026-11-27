@@ -381,7 +381,7 @@ object CalendarData {
                 )
             }
         }
-        SmsStore.items.value.forEach { s ->
+        SmsStore.shown(c).forEach { s ->
             val done = s.done && s.review == null
             if (s.active || (done && showDone)) {
                 s.baseTimes.filter { it in from until to }.forEach { t ->

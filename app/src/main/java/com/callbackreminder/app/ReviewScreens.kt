@@ -212,7 +212,7 @@ fun ReviewPage(resumeKey: Int, onBack: () -> Unit, onOpenSettings: () -> Unit, o
     val ctx = LocalContext.current
     // Recomputed whenever any list changes.
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     val session by ReviewSession.state.collectAsState()
@@ -582,7 +582,7 @@ fun ReviewSessionScreen(resumeKey: Int, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val s by ReviewSession.state.collectAsState()
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     var tick by remember { mutableIntStateOf(0) }
@@ -1403,7 +1403,7 @@ private fun SessionSummary(
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     val minutes = ((System.currentTimeMillis() - s.startedAt) / 60_000L).coerceAtLeast(1)
@@ -1679,7 +1679,7 @@ fun ReviewHomeCard(
     val ctx = LocalContext.current
     val s by ReviewSession.state.collectAsState()
     val calls by ReminderStore.items.collectAsState()
-    val texts by SmsStore.items.collectAsState()
+    val texts = SmsStore.shown(LocalContext.current, SmsStore.items.collectAsState().value)
     val sched by ToScheduleStore.items.collectAsState()
     val mine by MyTaskStore.items.collectAsState()
     LaunchedEffect(resumeKey) { ReviewSession.init(ctx) }
