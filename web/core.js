@@ -55,6 +55,7 @@
     ["callRec", "Call recording", "Stays on his phone", false],
     ["sms", "Text messages", "His own SMS follow-ups on the phone", true],
     ["popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", true],
+    ["quietHours", "Can change quiet hours", "His “Quiet hours” switch", true],
     ["openPlot", "Can open new plot files", "Shows “New plot file” in his phone", false],
     ["seeHealth", "See phone health", "Team › People: each phone's permissions", false],
     ["seeRules", "See Rules", "Settings › Rules: how every rule works", false],

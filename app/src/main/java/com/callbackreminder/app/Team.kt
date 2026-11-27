@@ -355,6 +355,17 @@ object TeamRules {
         return listOf(d.minusDays(1), d).any { day -> duty(c, day)?.let { (s, e) -> now >= s - EARLY && now < e + LATE } == true }
     }
 
+    /**
+     * 27 Nov (N2) "Quiet hours" switch (on to start with): off = notifications come at any time, day or night, off day too.
+     * The office can stop him changing it (website Access "Can change quiet hours"; then it stays on). The owner always can.
+     */
+    private const val QUIET = "quiet_hours"
+    fun quietLocked(c: Context) = !WebRules.app(c, "quietHours", true)
+    fun quietOn(c: Context) = quietLocked(c) || AppSettings.get(c, QUIET, true)
+    fun setQuietOn(c: Context, on: Boolean) = AppSettings.set(c, QUIET, on)
+    /** True when automatic notifications must wait: quiet hours on and outside the window. */
+    fun quietNow(c: Context, now: Long = System.currentTimeMillis()) = quietOn(c) && !inWindow(c, now)
+
     /** The "Automatic ones come 10:30 AM - 10:00 PM" line (today's, else the office's). */
     fun windowLabel(c: Context): String {
         val s = (if (WorkHours.isSet(c)) WorkHours.start(c) else 11 * 60) - 30

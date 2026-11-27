@@ -68,11 +68,18 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
         val inTeam by TeamRepo.me.collectAsState()
         if (inTeam?.active == true) {
             val web by WebRules.version.collectAsState()
-            Text(
-                "🌙 Automatic ones come ${remember(web) { TeamRules.windowLabel(ctx) }}. Outside that they wait and come as one in the morning " +
-                    "(Timeline messages come silently, an @mention still rings). Anything with a set time always comes on time.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)
-            )
+            // 27 Nov (N2) Quiet hours switch; the office can lock it on (the owner never locked).
+            var quiet by remember { mutableStateOf(TeamRules.quietOn(ctx)) }
+            val quietLocked = remember(web) { TeamRules.quietLocked(ctx) }
+            SectionCard(
+                title = "Quiet hours",
+                subtitle = (if (quiet) "🌙 Automatic ones come ${remember(web) { TeamRules.windowLabel(ctx) }}. Outside that they wait and come as one in the morning " +
+                    "(Timeline messages come silently, an @mention still rings). Anything with a set time always comes on time."
+                else "Off: automatic ones come at any time, at night, on your off day and on holidays too.") +
+                    if (quietLocked) "\n🔒 Set by your manager" else ""
+            ) {
+                SwitchRow("Quiet hours", quiet || quietLocked) { if (!quietLocked) { quiet = it; TeamRules.setQuietOn(ctx, it) } }
+            }
             listOf(
                 "Plot files" to listOf(WebRules.N_PLOT_DUE to "Step due", WebRules.N_PLOT_HEADS to "Heads-up before due",
                     WebRules.N_PLOT_WAIT to "Waiting for plot owner", WebRules.N_PLOT_FOLLOW to "Updates on plots you follow"),

@@ -475,7 +475,8 @@
       ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
       ["app", "seeRules", "See Rules", "Settings › Rules: how every rule works", "On: he sees Settings › Rules (read only). Owners always see it."],
     ] },
-    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after. Anything with a set time always rings. He can't change these on his phone.", rows: [
+    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after (unless his Quiet hours switch is off). Anything with a set time always rings. He can't change the rows below on his phone.", rows: [
+      ["app", "quietHours", "Can change quiet hours", "His “Quiet hours” switch", "On: he can turn “Quiet hours” on or off himself in phone Settings › Notifications (off = automatic notifications come at any time, at night and on off days too). Off: it stays on and shows “Set by your manager”. The owner can always change it.", "sw", null, true, "QUIET HOURS"],
       ["set", "n_plotDue", "Step due", "At the SOP due time", "Full screen: a ringing popup at the step's due time (like a call-back reminder). Normal: a notification. Off: nothing.", "seg", STY, false, "PLOT FILES"],
       ["set", "n_plotHeads", "Heads-up before due", "", "A notification before a plot step is due. The time picks how long before.", "seg", STY],
       ["set", "n_plotWait", "Waiting for plot owner", "Once a working day", "When a step waits for the plot owner, a reminder once a working day to call them.", "seg", STY],

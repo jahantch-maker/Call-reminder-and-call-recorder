@@ -373,7 +373,7 @@ object TeamSync {
         val chase = TeamLinks.map(c, "chaseAt")
         val chaseOnce = TeamLinks.set(c, "chaseOnce")
         // 27 Nov (S11.1) Only inside the notification window (30 min before duty to 1 hour after): nothing at night.
-        val inHours = TeamRules.inWindow(c, now)
+        val inHours = !TeamRules.quietNow(c, now)
         // 27 Nov (S6.2) Urgent with no date: the receiver's own web rule (after N working hours, N times, same gap).
         val urgentDue = mutableListOf<TeamTask>()
         // Plot step tasks have their own rules (the SOP's time allowed): no "no date" reminders or SMS.
@@ -935,7 +935,7 @@ object TeamSync {
     ) {
         val st = style ?: WebRules.style(c, web)
         if (st == WebRules.OFF) return
-        val quiet = !timed && !TeamRules.inWindow(c)
+        val quiet = !timed && TeamRules.quietNow(c)
         // Outside the window: Timeline messages come silently, an @mention still rings, the rest wait for the morning.
         if (quiet && web != WebRules.N_TIMELINE && web != WebRules.N_MENTION) return hold(c, title)
         val intent = Intent(c, MainActivity::class.java)
