@@ -92,6 +92,7 @@
         <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
     if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
+    RB.stickHeads(document.getElementById("content"));   // wrap heads before the scroll spot is put back, else every card above it changes height and the page jumps
     if (keepC) { const c = document.getElementById("content"); if (c) c.scrollTop = keepC; }
     if (keepS) { const sd = document.getElementById("side"); if (sd) sd.scrollTop = keepS; }
     if (keepM) { const pm = root.querySelector(".pmain"); if (pm) pm.scrollTop = keepM; }
