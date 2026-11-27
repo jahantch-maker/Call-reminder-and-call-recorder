@@ -33,6 +33,7 @@ object ChangeLog {
             new = emptyList(),
             fixed = listOf(
                 "Task cards no longer jump when a count or time changes: chips keep the same width (e.g. ticking a plot checklist line)",
+                "Plot files: an unticked line stays unticked; it no longer flicks back ticked for a moment",
             ),
         ),
         Entry(
