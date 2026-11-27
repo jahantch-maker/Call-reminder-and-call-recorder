@@ -1011,6 +1011,8 @@ class TeamWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     override suspend fun doWork(): Result {
         runCatching { TeamRepo.fetchOnce(applicationContext) }
             .onFailure { CrashLog.record(applicationContext, it, "Team check") }
+        // N4 Files attached offline go up now.
+        runCatching { TeamFiles.flush(applicationContext) }
         runCatching { ReadingReminders.check(applicationContext) }
             .onFailure { CrashLog.record(applicationContext, it, "Reading reminder") }
         return Result.success()

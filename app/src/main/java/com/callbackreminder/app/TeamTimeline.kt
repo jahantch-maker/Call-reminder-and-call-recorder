@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
@@ -283,7 +284,8 @@ private fun recipients(t: TeamTask, m: TeamMsg): List<String> = listOf(t.fromUid
  * blue once opened full screen; a voice note's ticks go blue when seen and its 🎙 when played (see [playedByAll]).
  */
 private fun tickState(t: TeamTask, m: TeamMsg): Pair<Int, Boolean> {
-    if (m.pending) return 0 to false
+    // N4 A file still waiting in this phone's outbox shows 🕓 too.
+    if (m.pending || (m.fname.isNotEmpty() && m.url.isBlank())) return 0 to false
     val to = recipients(t, m)
     if (to.isEmpty()) return 2 to true
     val seen = if (m.kind == Team.PHOTO) to.all { t.playedBy(m, it) } else to.all { t.saw(m, it) || t.playedBy(m, it) }
@@ -335,7 +337,11 @@ private fun TeamBubble(
                     Text(Fmt.timeOnly(m.at), fontSize = 11.sp, color = fg.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.End))
                     return@Column
                 }
+                // N4 Shared from WhatsApp.
+                if (m.via == "whatsapp") Text("↪ from WhatsApp", fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = fg.copy(alpha = 0.7f))
                 when {
+                    m.fname.isNotEmpty() && m.data == null && !m.text.endsWith("(removed after 90 days)") ->
+                        if (m.kind == Team.VOICE) StoredVoice(t, m, fg) else StoredFile(m, fg, if (selecting) onToggle else null)
                     m.kind == Team.VOICE && m.data != null -> VoicePlayer(
                         m.id, m.data, m.durMs, m.wave, fg, modifier = Modifier.widthIn(min = 230.dp),
                         onPlay = { TeamRepo.markPlayed(t.id, m) },
@@ -381,6 +387,48 @@ private fun TeamBubble(
         }
         // Once something is selected every tap on the row picks or drops it, whatever is under the finger.
         if (selecting) Box(Modifier.matchParentSize().clickable(onClick = onToggle))
+    }
+}
+
+/** N4 A document or video kept in Storage: icon, name, size (and length); tap opens it in the phone's own app. */
+@Composable
+private fun StoredFile(m: TeamMsg, fg: Color, onTap: (() -> Unit)?) {
+    val ctx = LocalContext.current
+    Row(
+        Modifier.widthIn(min = 200.dp).clip(RoundedCornerShape(10.dp)).background(fg.copy(alpha = 0.08f))
+            .clickable { onTap?.invoke() ?: TeamFiles.open(ctx, m) }.padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(if (m.kind == Team.VIDEO) "🎬" else "📄", fontSize = 26.sp)
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(m.fname.ifBlank { "File" }, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOfNotNull(TeamFiles.sizeLabel(m.size), m.durMs.takeIf { it > 0L }?.let { TeamMedia.duration(it) },
+                    if (m.url.isBlank()) "uploading…" else if (m.kind == Team.VIDEO) "tap to play" else "tap to open").joinToString(" · "),
+                color = fg.copy(alpha = 0.7f), fontSize = 12.sp,
+            )
+        }
+    }
+}
+
+/** N4 A voice note from WhatsApp or the phone, kept in Storage: loads on ▶, then plays like any voice note. */
+@Composable
+private fun StoredVoice(t: TeamTask, m: TeamMsg, fg: Color) {
+    var bytes by remember(m.id) { mutableStateOf<ByteArray?>(null) }
+    var loading by remember(m.id) { mutableStateOf(false) }
+    val b = bytes
+    if (b != null) VoicePlayer(m.id, b, m.durMs, m.wave, fg, modifier = Modifier.widthIn(min = 230.dp), onPlay = { TeamRepo.markPlayed(t.id, m) }) {}
+    else Row(
+        Modifier.widthIn(min = 200.dp).clip(RoundedCornerShape(10.dp)).background(fg.copy(alpha = 0.08f))
+            .clickable(enabled = m.url.isNotBlank() && !loading) { loading = true; TeamFiles.bytes(m.url) { bytes = it; loading = false } }.padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("▶", fontSize = 22.sp, color = fg)
+        Text(
+            "🎤 Voice note" + (m.durMs.takeIf { it > 0L }?.let { " · " + TeamMedia.duration(it) } ?: "") +
+                when { m.url.isBlank() -> " · uploading…"; loading -> " · loading…"; else -> "" },
+            color = fg, fontSize = 14.sp,
+        )
     }
 }
 
@@ -469,7 +517,7 @@ private fun TeamComposer(
     var photo by remember { mutableStateOf<ByteArray?>(null) }
     var extendPick by remember { mutableStateOf(false) }
     var extendTo by remember { mutableStateOf<Long?>(null) }
-    val pickPhoto = rememberTeamPhotoPicker { photo = it }
+    val pickPhoto = rememberTeamAttach(t) { photo = it }
     val other = if (isDoer) t.fromFirst else t.toFirst
 
     // A reply starts with its quote ("↩ Name: text"), which the bubble shows as a small quote above the message.
@@ -528,7 +576,7 @@ private fun TeamComposer(
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChatPill(text, { text = it }, "Message $other…", Modifier.weight(1f)) {
                 HelpAtButton(help) { text = insertAtSign(text) }
-                ChatIconButton(pickPhoto) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Photo", tint = cs.onSurfaceVariant) }
+                ChatIconButton(pickPhoto) { Icon(Icons.Rounded.AttachFile, contentDescription = "Attach", tint = cs.onSurfaceVariant) }
             }
             Spacer(Modifier.width(6.dp))
             if (text.text.isNotBlank()) {

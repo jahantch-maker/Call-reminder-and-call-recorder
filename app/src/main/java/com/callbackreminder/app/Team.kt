@@ -251,6 +251,11 @@ object Team {
     const val TEXT = "text"
     const val VOICE = "voice"
     const val PHOTO = "photo"
+    /** N4 A document or a video from the phone or WhatsApp (kept in Firebase Storage; the message holds its link). */
+    const val FILE = "file"
+    const val VIDEO = "video"
+    /** N4 Largest file that can be attached. */
+    const val MAX_FILE = 15L * 1024 * 1024
     const val ASK = "ask"
     const val STUCK = "stuck"
     const val PROOF = "proof"
@@ -292,6 +297,12 @@ data class TeamMsg(
     val wave: String = "",
     /** N10 Plot files: the checklist line this photo proves ("" = a normal message). */
     val checkLine: String = "",
+    /** N4 A file in Firebase Storage: its link ("" while it uploads), name, size, type, and "whatsapp" when shared from there. */
+    val url: String = "",
+    val fname: String = "",
+    val size: Long = 0L,
+    val mime: String = "",
+    val via: String = "",
 ) {
     val fromFirst: String get() = TeamRepo.member(fromUid)?.first ?: Names.first(fromName) ?: fromName
     /** Taken back by its sender: only "🚫 This message was deleted" is left (see [TeamRepo.deleteMsg]). */
@@ -479,6 +490,8 @@ object TeamRepo {
             _user.value = auth().currentUser
             listen()
             TeamSync.start(appCtx)
+            // N4 Files attached while offline.
+            TeamFiles.flush(appCtx)
         }
     }
 
@@ -1403,7 +1416,11 @@ object TeamRepo {
             .addOnFailureListener { logFail(it, "Undo message") }
     }
 
-    fun send(t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L, checkLine: String = ""): Boolean {
+    fun send(
+        t: TeamTask, kind: String, text: String, tag: String = "", data: ByteArray? = null, durMs: Long = 0L, checkLine: String = "",
+        /** N4 More fields of a file message (fname, size, mime, via, url). */
+        extra: Map<String, Any> = emptyMap(),
+    ): Boolean {
         val u = auth().currentUser ?: return false
         val me = _me.value ?: return false
         if (teamId == null) return false
@@ -1415,12 +1432,15 @@ object TeamRepo {
         if (data != null) doc["data"] = com.google.firebase.firestore.Blob.fromBytes(data)
         if (kind == Team.VOICE) TeamMedia.waveFor(durMs).takeIf { it.isNotEmpty() }?.let { doc["wave"] = it }
         if (checkLine.isNotEmpty()) doc["checkLine"] = checkLine
+        doc.putAll(extra)
         val ref = msgs(t.id).document()
         lastSentId = ref.id
         ref.set(doc).addOnFailureListener { if (::appCtx.isInitialized) CrashLog.record(appCtx, it, "Timeline · Send") }
         val preview = when (kind) {
             Team.VOICE -> "🎤 Voice note"
             Team.PHOTO -> "📷 Photo" + if (text.isNotBlank()) ": ${text.trim()}" else ""
+            Team.FILE -> "📄 " + (extra["fname"] ?: "File")
+            Team.VIDEO -> "🎬 Video"
             else -> text.trim()
         }.take(120)
         val f = mutableMapOf<String, Any>("lastMsgAt" to now, "lastMsgBy" to u.uid, "lastMsgText" to preview)
@@ -1572,6 +1592,11 @@ object TeamRepo {
                     pending = d.metadata.hasPendingWrites(),
                     wave = d.getString("wave").orEmpty(),
                     checkLine = d.getString("checkLine").orEmpty(),
+                    url = d.getString("url").orEmpty(),
+                    fname = d.getString("fname").orEmpty(),
+                    size = d.getLong("size") ?: 0L,
+                    mime = d.getString("mime").orEmpty(),
+                    via = d.getString("via").orEmpty(),
                 )
             }.sortedBy { it.at })
         }
@@ -1587,7 +1612,11 @@ object TeamRepo {
                 runCatching {
                     msgs(t.id).whereArrayContains("viewers", u).get().await().documents
                         .filter { it.getString("kind") != Team.TEXT }
-                        .forEach { it.reference.update(mapOf("data" to FieldValue.delete(), "text" to (it.getString("text").orEmpty() + " (removed after 90 days)"))) }
+                        .forEach { d ->
+                            // N4 A file kept in Storage goes too.
+                            d.getString("url")?.takeIf { it.isNotBlank() }?.let { url -> runCatching { TeamFiles.delete(url) } }
+                            d.reference.update(mapOf("data" to FieldValue.delete(), "url" to FieldValue.delete(), "text" to (d.getString("text").orEmpty() + " (removed after 90 days)")))
+                        }
                     tasksRef().document(t.id).update("mediaCleared", true).await()
                 }
             }

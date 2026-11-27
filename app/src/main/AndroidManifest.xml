@@ -217,6 +217,33 @@
             android:name=".TaskReceiver"
             android:exported="false" />
 
+        <!-- N4 RB360 in Android's Share menu: photos, voice notes, files and videos into a task Timeline -->
+        <activity
+            android:name=".ShareActivity"
+            android:exported="true"
+            android:label="RB360"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+        </activity>
+
         <!-- ✓ Received on a team "Done, check it" notification -->
         <receiver
             android:name=".TeamActionReceiver"
