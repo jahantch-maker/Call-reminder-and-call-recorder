@@ -23,6 +23,7 @@ object TaskAlarms {
     const val ACTION_DOSSIER = "com.callbackreminder.app.DOSSIER"
     const val ACTION_DOSSIER_DONE = "com.callbackreminder.app.DOSSIER_DONE"
     const val ACTION_DOSSIER_NUDGE = "com.callbackreminder.app.DOSSIER_NUDGE"
+    const val ACTION_PLOT_COMES = "com.callbackreminder.app.PLOT_COMES"
     const val EXTRA_ID = "task_id"
     const val EXTRA_DATE = "date"
     const val EXTRA_BEFORE = "before"
@@ -33,6 +34,7 @@ object TaskAlarms {
     private const val BEFORE_BASE = 1_300_000
     private const val TASK_BEFORE_BASE = 1_400_000
     private const val NUDGE_ID = 1_099_001
+    private const val COMES_BASE = 1_500_000
     private const val FLAGS = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
 
     private fun am(ctx: Context) = ctx.getSystemService(AlarmManager::class.java)
@@ -77,6 +79,32 @@ object TaskAlarms {
     }
 
     fun cancelTask(ctx: Context, id: Long) = am(ctx).cancel(taskAlarm(ctx, id))
+
+    // ---- N6 Plot owner said he would come: a reminder on this phone (works offline) ----
+
+    private fun comesAlarm(ctx: Context, id: String, title: String = "", text: String = "", call: String = ""): PendingIntent = PendingIntent.getBroadcast(
+        ctx,
+        COMES_BASE + (id.hashCode() and 0xFFFFF),
+        Intent(ctx, TaskReceiver::class.java)
+            .setAction(ACTION_PLOT_COMES)
+            .setData(Uri.parse("callback://comes/$id"))
+            .putExtra("tid", id).putExtra("title", title).putExtra("text", text).putExtra("call", call),
+        FLAGS
+    )
+
+    /** Date only = the start of his duty that day; date + time = exactly then. Nothing when it has passed or he isn't waiting. */
+    fun scheduleComes(ctx: Context, t: TeamTask, now: Long = System.currentTimeMillis()) {
+        if (t.waitAt == 0L || t.waitUntil == 0L) return cancelComes(ctx, t.id)
+        val day = java.time.Instant.ofEpochMilli(t.waitUntil).atZone(ZoneId.systemDefault()).toLocalDate()
+        val at = if (t.waitTimed) t.waitUntil
+            else TeamRules.duty(ctx, day)?.first ?: CalendarData.at(day, if (WorkHours.isSet(ctx)) WorkHours.start(ctx) else 11 * 60)
+        if (at <= now) return cancelComes(ctx, t.id)
+        val who = t.ownerName.ifBlank { "The plot owner" }
+        setAlarm(ctx, at, comesAlarm(ctx, t.id, "⏳ Plot ${t.plotNo} · $who said he would come " + if (t.waitTimed) "now" else "today",
+            "${t.waitReason}\nStep ${t.step} · ${t.title}", t.ownerWa), MainActivity.OPEN_TEAM)
+    }
+
+    fun cancelComes(ctx: Context, id: String) = am(ctx).cancel(comesAlarm(ctx, id))
 
     /** One-time tasks that came due after [since] (while the phone was off), so they never showed. */
     fun missedSince(since: Long, now: Long = System.currentTimeMillis()): List<MyTask> =
@@ -392,6 +420,12 @@ class TaskReceiver : BroadcastReceiver() {
                 if (DossierStore.tick(id, date) || !TeamDossier.needsProof(context, id)) TaskAlarms.cancelDossierNotification(context, id)
             }
             TaskAlarms.ACTION_DOSSIER_NUDGE -> TaskAlarms.fireNudge(context)
+            TaskAlarms.ACTION_PLOT_COMES -> {
+                val tid = intent.getStringExtra("tid") ?: return
+                TeamSync.notify(context, "pc:$tid", intent.getStringExtra("title").orEmpty() + " · 📞 Call", intent.getStringExtra("text").orEmpty(),
+                    mine = null, taskId = tid, kind = NotifKind.MY_TASKS, open = TeamSync.Open.CARD,
+                    call = intent.getStringExtra("call")?.takeIf { it.isNotBlank() }, web = WebRules.N_PLOT_WAIT, timed = true)
+            }
             MorningSummary.ACTION_FIRE -> MorningSummary.fire(context)
             MorningSummary.ACTION_LATER -> MorningSummary.later(context)
             DailyList.ACTION_FIRE -> {

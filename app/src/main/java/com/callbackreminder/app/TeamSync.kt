@@ -437,6 +437,10 @@ object TeamSync {
         }
         // Plot files: a step waiting for the plot owner whose SOP says "every working day": one reminder a working day, in working hours.
         for (t in tasks.filter { it.toUid == me && it.plot && it.open && it.waitAt > 0 }) {
+            // N6 He said when he would come: that day's reminder instead; the daily one starts again if the day passes.
+            TaskAlarms.scheduleComes(c, t, now)
+            if (t.waitUntil > 0L && now < java.time.Instant.ofEpochMilli(t.waitUntil).atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()) continue
             val every = PlotFiles.sop.value?.step(t.step)?.reminder.orEmpty()
             if (!Regex("every|working day|daily", RegexOption.IGNORE_CASE).containsMatchIn(every)) continue
             val k = "pw:${t.id}"

@@ -98,6 +98,9 @@ data class TeamMember(
             java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
 }
 
+/** N8 One "Waiting for plot owner": from, to, the duty time it gave back (N7), why, and the day he said he would come. */
+data class PlotWait(val from: Long, val to: Long, val dutyMs: Long, val reason: String, val comesAt: Long)
+
 /**
  * A task one member gave another. [dateBy] is [Team.HIS_DATE] (he picks his date, on or before [deadline]) or
  * [Team.GIVER_DATE] (the giver fixed it; he can only ask for more time). [due] 0 = no date yet.
@@ -180,6 +183,12 @@ data class TeamTask(
     val ticks: Map<String, PlotTick> = emptyMap(),
     /** "Waiting for plot owner" started (0 = not waiting): the timer stops meanwhile. */
     val waitAt: Long = 0L,
+    /** N6 Why he is waiting, and when the plot owner said he would come (0 = not said; [waitTimed] = a clock time too). */
+    val waitReason: String = "",
+    val waitUntil: Long = 0L,
+    val waitTimed: Boolean = false,
+    /** N8 Every finished wait of this step. */
+    val waits: List<PlotWait> = emptyList(),
     /** The role of the step that opened this one ("" for the first step). */
     val fromRole: String = "",
     /** The plot owner, copied from the file, so the card can show and call him without reading the file. */
@@ -371,6 +380,22 @@ object TeamRules {
         val s = (if (WorkHours.isSet(c)) WorkHours.start(c) else 11 * 60) - 30
         val e = ((if (WorkHours.isSet(c)) WorkHours.end(c) else 21 * 60) + 60) % (24 * 60)
         return Dossier.timeLabel(s.coerceAtLeast(0)) + " - " + Dossier.timeLabel(e)
+    }
+
+    /** N7 [from] moved later by [ms] of duty time (nights, the weekly off day and holidays skipped). */
+    fun addDuty(c: Context, from: Long, ms: Long): Long {
+        if (ms <= 0L) return from
+        var left = ms
+        var day = java.time.Instant.ofEpochMilli(from).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        var guard = 0
+        while (guard++ < 400) {
+            duty(c, day)?.let { (s, e) ->
+                val a = maxOf(s, from)
+                if (e > a) { if (e - a >= left) return a + left; left -= e - a }
+            }
+            day = day.plusDays(1)
+        }
+        return from + left
     }
 
     /** Minutes from [from] to [to], counting only working hours (weekly off day and holidays skipped). */
@@ -1718,6 +1743,14 @@ object TeamRepo {
             (k as? String)?.let { it to PlotTick((m["at"] as? Number)?.toLong() ?: 0L, m["name"]?.toString().orEmpty(), m["value"]?.toString().orEmpty()) }
         }?.toMap() ?: emptyMap(),
         waitAt = s.getLong("waitAt") ?: 0L,
+        waitReason = s.getString("waitReason").orEmpty(),
+        waitUntil = s.getLong("waitUntil") ?: 0L,
+        waitTimed = s.getBoolean("waitTimed") ?: false,
+        waits = (s.get("waits") as? List<*>)?.mapNotNull { v ->
+            val m = v as? Map<*, *> ?: return@mapNotNull null
+            fun n(k: String) = (m[k] as? Number)?.toLong() ?: 0L
+            PlotWait(n("from"), n("to"), n("dutyMs"), m["reason"]?.toString().orEmpty(), n("comesAt"))
+        } ?: emptyList(),
         fromRole = s.getString("fromRole").orEmpty(),
         ownerName = s.getString("ownerName").orEmpty(),
         ownerWa = s.getString("ownerWa").orEmpty(),

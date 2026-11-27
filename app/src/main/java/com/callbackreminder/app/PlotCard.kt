@@ -31,6 +31,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -119,6 +124,18 @@ object PlotUi {
         return doneBlocked(t, PlotFiles.sop.value?.step(t.step))
     }
 
+    /** N6 "Thu 27 Nov" or "Thu 27 Nov, 4:00 PM". */
+    fun comes(at: Long, timed: Boolean): String {
+        val z = java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
+        return z.format(java.time.format.DateTimeFormatter.ofPattern(if (timed) "EEE d MMM, h:mm a" else "EEE d MMM", java.util.Locale.ENGLISH))
+    }
+
+    /** N7 Duty time waited: "5h", "2h 10m", "40m". */
+    fun hm(ms: Long): String {
+        val m = ms / 60_000L
+        return if (m < 60) "${m}m" else "${m / 60}h" + if (m % 60 > 0) " ${m % 60}m" else ""
+    }
+
     /** "Waiting for plot owner" on this step now: a button on the task, or after a line / an option the sheet names. */
     fun canWait(t: TeamTask, s: PlotFiles.Step): Boolean {
         if (!s.canPause) return false
@@ -194,7 +211,8 @@ internal fun PlotTaskCard(
         starred = t.starred,
         onStar = if (t.done) null else onStar,
         noTimeChip = false,
-        banner = if (waiting && !t.done) CardBanner("Waiting for plot owner · since ${TeamUi.shortWhen(tt.waitAt)}", ChipTone.ORANGE) else null,
+        banner = if (waiting && !t.done) CardBanner("Waiting for plot owner · since ${TeamUi.shortWhen(tt.waitAt)}" +
+            if (tt.waitUntil > 0L) " · comes ${PlotUi.comes(tt.waitUntil, tt.waitTimed)}" else "", ChipTone.ORANGE) else null,
         tint = sand.fill(dark).takeIf { !t.done },
         panelFromEdge = true,
         expanded = expanded,
@@ -220,6 +238,7 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
     var help by remember { mutableStateOf<PlotFiles.Line?>(null) }
     var picker by remember { mutableStateOf<Boolean?>(null) }   // true = WhatsApp, false = Call
     var returning by remember { mutableStateOf(false) }
+    var startWait by remember { mutableStateOf(false) }
     val shown = PlotUi.shown(t, s)
     fun tick(l: PlotFiles.Line, value: String?) {
         if (!open) return
@@ -272,7 +291,7 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
             if (s.canReturn) BarSlot(Icons.AutoMirrored.Rounded.Undo, "Return", Tones.late.pair, { returning = true }, true, Modifier.weight(1f))
             if (canWait || waiting) BarSlot(
                 null, if (!waiting) "Waiting for plot owner" else if (s.pauseStarts.contains("Receive", true)) "Receive" else "Plot owner came",
-                chipColors(ChipTone.ORANGE), { if (waiting) PlotActions.stopWaiting(ctx, t) else PlotActions.startWaiting(t) }, true, Modifier.weight(1f), lines = 2,
+                chipColors(ChipTone.ORANGE), { if (waiting) PlotActions.stopWaiting(ctx, t) else startWait = true }, true, Modifier.weight(1f), lines = 2,
             )
             if (s.call.isNotEmpty()) BarSlot(Icons.Rounded.Call, "Call", Tones.call.pair, { picker = false }, true, Modifier.weight(1f))
             if (s.wa.isNotEmpty()) BarSlot(null, "WhatsApp", WhatsAppGreen to WhatsAppInk, { picker = true }, true, Modifier.weight(1f))
@@ -289,6 +308,10 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
     }
     help?.let { l -> PlotLineHelpSheet(t.step, l) { help = null } }
     picker?.let { wa -> PlotWhoSheet(t, s, wa) { picker = null } }
+    if (startWait) PlotWaitDialog(onDismiss = { startWait = false }) { r, until, timed ->
+        startWait = false
+        PlotActions.startWaiting(ctx, t, r, until, timed)
+    }
     if (returning) TeamReasonDialog(
         title = "Return to ${s.returnTo}",
         body = "Write what is wrong. The step goes back to the ${s.returnTo}.",
@@ -408,6 +431,69 @@ private fun PlotWhoSheet(t: TeamTask, s: PlotFiles.Step, whatsApp: Boolean, onDi
     }
 }
 
+/**
+ * N6 "Waiting for plot owner": the reason (typed or 🎤, required), then optional "When will he come?" date and an
+ * optional time. Same look as the app's other reason windows.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlotWaitDialog(onDismiss: () -> Unit, onStart: (String, Long, Boolean) -> Unit) {
+    val ctx = LocalContext.current
+    val z = java.time.ZoneId.systemDefault()
+    var reason by remember { mutableStateOf("") }
+    var day by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    var time by remember { mutableStateOf<java.time.LocalTime?>(null) }
+    var pickDay by remember { mutableStateOf(false) }
+    var pickTime by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Waiting for plot owner") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Write why. Your time stops while waiting and is given back when he comes.")
+                OutlinedTextField(reason, { reason = it }, label = { Text("Reason *") }, trailingIcon = voiceMic(reason) { reason = it },
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 3)
+                ChipHeading("WHEN WILL HE COME? (OPTIONAL)", modifier = Modifier.padding(top = 4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = day != null, onClick = { pickDay = true },
+                        label = { Text(day?.let { "📅 " + PlotUi.comes(it.atStartOfDay(z).toInstant().toEpochMilli(), false) } ?: "📅 Pick date") },
+                        trailingIcon = if (day != null) ({ Icon(Icons.Rounded.Close, "Remove date", Modifier.size(16.dp).clickable { day = null; time = null }) }) else null)
+                    if (day != null) FilterChip(selected = time != null, onClick = { pickTime = true },
+                        label = { Text(time?.let { "🕒 " + it.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH)) } ?: "🕒 Add time (optional)") },
+                        trailingIcon = if (time != null) ({ Icon(Icons.Rounded.Close, "Remove time", Modifier.size(16.dp).clickable { time = null }) }) else null)
+                }
+                if (day != null) Text(
+                    if (time == null) "You get a reminder at the start of your duty that day." else "You get a reminder at that time.",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val d = day
+                val until = when {
+                    d == null -> 0L
+                    time != null -> d.atTime(time).atZone(z).toInstant().toEpochMilli()
+                    else -> d.atStartOfDay(z).toInstant().toEpochMilli()
+                }
+                onStart(reason.trim(), until, d != null && time != null)
+            }, enabled = reason.isNotBlank()) { Text("Start waiting") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+    if (pickDay) DateTimeDialog(
+        initialMs = (day ?: java.time.LocalDate.now(z)).atTime(9, 0).atZone(z).toInstant().toEpochMilli(),
+        onDone = { ms, _ -> day = java.time.Instant.ofEpochMilli(ms).atZone(z).toLocalDate(); pickDay = false },
+        onDismiss = { pickDay = false },
+    )
+    if (pickTime) ClockDialog(
+        initial = time ?: java.time.LocalTime.of(11, 0),
+        is24h = android.text.format.DateFormat.is24HourFormat(ctx),
+        onPicked = { time = it; pickTime = false },
+        onDismiss = { pickTime = false },
+    )
+}
+
 /** What the plot step's buttons write. Every one leaves a line on the task's Timeline. */
 object PlotActions {
     fun logContact(t: TeamTask, whatsApp: Boolean, p: PlotUi.Who) {
@@ -415,28 +501,28 @@ object PlotActions {
         TeamRepo.plotUpdate(t, emptyMap(), (if (whatsApp) "💬 $me opened WhatsApp for " else "📞 $me called ") + "${p.name} (${p.role})")
     }
 
-    fun startWaiting(t: TeamTask) {
-        TeamRepo.plotUpdate(t, mapOf("waitAt" to System.currentTimeMillis()), "⏸ Waiting for plot owner")
+    /** N6 Waiting starts with a reason, and the day (and time) he said he would come when he gave one. */
+    fun startWaiting(c: Context, t: TeamTask, reason: String, until: Long, timed: Boolean) {
+        TeamRepo.plotUpdate(t, mapOf("waitAt" to System.currentTimeMillis(), "waitReason" to reason, "waitUntil" to until, "waitTimed" to timed),
+            "⏸ Waiting for plot owner · $reason" + if (until > 0L) " · comes ${PlotUi.comes(until, timed)}" else "")
+        TaskAlarms.scheduleComes(c, t.copy(waitAt = 1L, waitReason = reason, waitUntil = until, waitTimed = timed))
     }
 
-    /** He came: the timer runs again and the due time moves later by the working days waited. */
+    /**
+     * He came: the timer runs again and (N7) the due time moves later by exactly the duty time waited (his timetable;
+     * nights, off days and holidays not counted). N8 the wait is kept in the step's list.
+     */
     fun stopWaiting(c: Context, t: TeamTask) {
         val now = System.currentTimeMillis()
-        val z = java.time.ZoneId.systemDefault()
-        var d = java.time.Instant.ofEpochMilli(t.waitAt).atZone(z).toLocalDate()
-        val today = java.time.Instant.ofEpochMilli(now).atZone(z).toLocalDate()
-        var days = 0L
-        while (d.isBefore(today)) { d = d.plusDays(1); if (!OffDays.isOff(d)) days++ }
-        val due = if (t.due > 0L && days > 0L) {
-            var x = java.time.Instant.ofEpochMilli(t.due).atZone(z)
-            var n = days
-            while (n > 0) { x = x.plusDays(1); if (!OffDays.isOff(x.toLocalDate())) n-- }
-            x.toInstant().toEpochMilli()
-        } else t.due
+        val dutyMs = TeamRules.minutesSince(c, t.waitAt, now) * 60_000L
         // A step created paused (2.1) starts its time now.
         val fresh = t.seenAt == 0L && t.due > 0L && t.waitAt <= t.createdAt + 60_000L
-        val newDue = if (fresh) PlotFiles.dueOf(c, t.timer, t.days, t.hours, now) else due
-        TeamRepo.plotUpdate(t, mapOf("waitAt" to 0L, "due" to newDue, "deadline" to newDue), "▶ Plot owner came" + if (newDue != t.due && newDue > 0L) " · due ${TeamUi.shortWhen(newDue)}" else "")
+        val newDue = if (fresh) PlotFiles.dueOf(c, t.timer, t.days, t.hours, now) else if (t.due > 0L) TeamRules.addDuty(c, t.due, dutyMs) else t.due
+        val wait = mapOf("from" to t.waitAt, "to" to now, "dutyMs" to dutyMs, "reason" to t.waitReason, "comesAt" to t.waitUntil)
+        TeamRepo.plotUpdate(t, mapOf("waitAt" to 0L, "waitReason" to "", "waitUntil" to 0L, "waitTimed" to false, "due" to newDue, "deadline" to newDue,
+            "waits" to com.google.firebase.firestore.FieldValue.arrayUnion(wait)),
+            "▶ Plot owner came · waited ${PlotUi.hm(dutyMs)}" + if (newDue != t.due && newDue > 0L) " · due ${TeamUi.shortWhen(newDue)}" else "")
+        TaskAlarms.cancelComes(c, t.id)
     }
 
     /** Return with a reason: this step closes as returned; the cloud gives the step before it back to [PlotFiles.Step.returnTo]. */
