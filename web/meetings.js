@@ -280,17 +280,19 @@
     if (S.settingsTab === "reasons") {
       const rc = reasonsCfg(), used = {}; const now = Date.now();
       items().forEach((x) => (x.reasons || []).forEach((r) => { if (r.at > now - 28 * DAY) used[r.r] = (used[r.r] || 0) + 1; }));
-      const col = (k, title) => `<div class="card" style="flex:1;min-width:300px"><div class="colh">${title}</div>${rc[k].map((r, i) => `<div class="rrow ${r.retired ? "ret" : ""}"><span class="n">${esc(r.name)}</span><span class="u">${r.retired ? "Retired" : "Used " + (used[r.name] || 0)}</span>${r.retired ? `<button class="link" data-rr="${k}:${i}:back">Bring back</button>` : `<button class="link" data-rr="${k}:${i}:rename">Rename</button> · <button class="link" data-rr="${k}:${i}:retire">Retire</button>`}</div>`).join("")}
-        <div class="addline"><input id="add_${k}" placeholder="New reason"><button class="btnt" data-radd="${k}">+ Add reason</button></div></div>`;
-      body = `<div class="set">${col("own", "THEIR OWN · counted")}${col("outside", "OUTSIDE · shown grey, not counted")}</div><div class="foot">The phones get the list the next time the app opens. Retired reasons leave the phone list but stay on old tasks, so past charts never change. "Other" is always last on the phone and asks for a short note.</div>`;
+      // Settings redesign (27 Nov): tinted rows, small grey buttons; on a phone the buttons show only their icon.
+      const btn = (a, ic, l, n) => `<button class="st-b edit-only" data-rr="${a}" aria-label="${l} ${esc(n)}">${RB.lineIcon(ic)}<span>${l}</span></button>`;
+      const col = (k, title) => `<div class="card st-card"><h4 class="st-h">${title}</h4>${rc[k].map((r, i) => `<div class="st-row ${k === "outside" ? "grey" : ""} ${r.retired ? "ret" : ""}"><span class="t">${esc(r.name)}</span><span class="u">${r.retired ? "Retired" : "Used " + (used[r.name] || 0)}</span>${r.retired ? btn(k + ":" + i + ":back", "undo", "Bring back", r.name) : btn(k + ":" + i + ":rename", "pen", "Rename", r.name) + btn(k + ":" + i + ":retire", "bin", "Retire", r.name)}</div>`).join("")}
+        <div class="st-add edit-only"><input id="add_${k}" placeholder="New reason" aria-label="New reason"><button class="btnp" data-radd="${k}">+ Add</button></div></div>`;
+      body = `<div class="st-2">${col("own", "Their own · <span>counted in the score</span>")}${col("outside", "Outside · <span>shown grey, not counted</span>")}</div><div class="st-note">Retired reasons leave the phone list but stay on old tasks, so past charts never change. "Other" is always last on the phone and asks for a short note.</div>`;
     } else if (S.settingsTab === "red") {
-      const R = red(), row = (k, l) => `<div class="rrow"><span class="n">${l}</span><input class="num" type="number" min="1" value="${R[k]}" data-red="${k}"></div>`;
-      body = `<div class="card" style="max-width:560px"><div class="colh">A number turns red at or above</div>${row("overdue", "Still overdue")}${row("late", "Late")}${row("moved", "Moved / extended")}${row("noDate", "No date")}${row("avgLate", "Avg days late")}<button class="btnp" style="margin-top:12px" data-savered="1">Save</button></div>`;
+      const R = red(), row = (k, l) => RB.stField(l, "", `<input class="num" type="number" min="1" value="${R[k]}" data-red="${k}" data-st="red_${k}" aria-label="${l}">`);
+      body = `<div class="card st-card"><h4 class="st-h">A number turns red at or above</h4>${row("overdue", "Still overdue")}${row("late", "Late")}${row("moved", "Moved / extended")}${row("noDate", "No date")}${row("avgLate", "Avg days late")}<button class="edit-only st-hidden" data-savered="1" data-st-save="1">Save</button></div>`;
     } else if (S.settingsTab === "steps") {
-      const col = (type) => { const st = stepsFor(type); return `<div class="card" style="flex:1;min-width:300px"><div class="colh">${type === "daily" ? "DAILY" : "WEEKLY"} · ${st.filter((s) => s[2]).reduce((p, s) => p + Number(s[1]), 0)} min</div>${st.map((s, i) => `<div class="rrow"><button class="link" data-mv="${type}:${i}:-1">↑</button><button class="link" data-mv="${type}:${i}:1">↓</button><span class="n">${STEP_NAMES[s[0]]}</span><input class="num" type="number" min="1" value="${s[1]}" data-min="${type}:${i}"> min <input type="checkbox" ${s[2] ? "checked" : ""} data-on="${type}:${i}"></div>`).join("")}</div>`; };
-      body = `<div class="set">${col("daily")}${col("weekly")}</div><div class="foot">↑ ↓ change the order · minutes per step · tick to switch a step on. Start and Close are always first and last.</div><button class="btnp" style="margin-top:10px" data-savesteps="1">Save</button>`;
+      const col = (type) => { const st = stepsFor(type); return `<div class="card st-card"><h4 class="st-h">${type === "daily" ? "Daily" : "Weekly"} · <span>${st.filter((s) => s[2]).reduce((p, s) => p + Number(s[1]), 0)} min</span></h4>${st.map((s, i) => `<div class="st-row ${s[2] ? "" : "grey"}"><span class="mv edit-only"><button class="st-b" data-mv="${type}:${i}:-1" aria-label="Move ${STEP_NAMES[s[0]]} up">↑</button><button class="st-b" data-mv="${type}:${i}:1" aria-label="Move ${STEP_NAMES[s[0]]} down">↓</button></span><span class="t">${STEP_NAMES[s[0]]}</span><input class="num" type="number" min="1" value="${s[1]}" data-min="${type}:${i}" data-st="min_${type}_${s[0]}" aria-label="Minutes for ${STEP_NAMES[s[0]]}"><span class="u">min</span><button class="sw ${s[2] ? "on" : ""}" role="switch" aria-checked="${!!s[2]}" aria-label="${STEP_NAMES[s[0]]} on" data-on="${type}:${i}"></button></div>`).join("")}</div>`; };
+      body = `<div class="st-2">${col("daily")}${col("weekly")}</div><div class="st-note">↑ ↓ change the order · minutes per step · the switch turns a step on or off. Start and Close are always first and last.</div><button class="edit-only st-hidden" data-savesteps="1" data-st-save="1">Save</button>`;
     } else {
-      body = `<div class="card" style="max-width:640px"><h3>Ranking and score: off for now</h3><div class="muted" style="line-height:1.5">Switched off until the team is used to the meetings. Everything is already being saved, so when it comes on it will have weeks of history. The four agreed rules: one fair score for everyone (moves and No date cost points), a minimum of 5 tasks to be ranked, outside reasons not counted, and a trend arrow against the last 4 weeks.</div></div>`;
+      body = `<div class="card st-card"><h4 class="st-h">Off for now</h4><div class="muted" style="line-height:1.5">Switched off until the team is used to the meetings. Everything is already being saved, so when it comes on it will have weeks of history. The four agreed rules: one fair score for everyone (moves and No date cost points), a minimum of 5 tasks to be ranked, outside reasons not counted, and a trend arrow against the last 4 weeks.</div></div>`;
     }
     return bare ? `<div class="body" style="flex-direction:column">${body}</div>` : `<div class="subhead"><div class="seg">${tabsS}</div></div><div class="body" style="flex-direction:column">${body}</div>`;
   }
@@ -408,16 +410,17 @@
       saveReasons(rc);
     });
     on("[data-radd]", (e) => { const k = e.dataset.radd, v = document.getElementById("add_" + k).value.trim(); if (!v) return; const rc = reasonsCfg(); rc[k].push({ name: v }); saveReasons(rc); });
-    on("[data-savered]", () => { const r = {}; $app.querySelectorAll("[data-red]").forEach((i) => (r[i.dataset.red] = Math.max(1, Number(i.value) || 1))); Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { red: r })).then(() => alertBox("Saved.")); });
+    on("[data-savered]", () => { const r = {}; $app.querySelectorAll("[data-red]").forEach((i) => (r[i.dataset.red] = Math.max(1, Number(i.value) || 1))); Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { red: r })).then(() => RB.stDone()); });
     let stepsDraft = null;
     const draft = () => (stepsDraft = stepsDraft || { daily: stepsFor("daily"), weekly: stepsFor("weekly") });
     on("[data-mv]", (e) => { const [t, i, d] = e.dataset.mv.split(":"); const s = draft()[t], a = Number(i), b = a + Number(d); if (b < 0 || b >= s.length) return; [s[a], s[b]] = [s[b], s[a]]; Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { steps: draft() })).then(render); });
     on("[data-savesteps]", () => {
       const s = draft();
       $app.querySelectorAll("[data-min]").forEach((i) => { const [t, k] = i.dataset.min.split(":"); s[t][Number(k)][1] = Math.max(1, Number(i.value) || 1); });
-      $app.querySelectorAll("[data-on]").forEach((i) => { const [t, k] = i.dataset.on.split(":"); s[t][Number(k)][2] = i.checked; });
-      Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { steps: s })).then(() => { render(); alertBox("Saved."); });
+      Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { steps: s })).then(() => RB.stDone());
     });
+    // A step's switch saves at once (Settings redesign J3); typed minutes still wait for the Save bar.
+    on("[data-on]", (e) => { const [t, k] = e.dataset.on.split(":"), s = draft(); s[t][Number(k)][2] = !s[t][Number(k)][2]; Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { steps: s })).then(() => { render(); RB.stSaved(); }); });
   }
   // The meeting clock ticks every second without redrawing the page.
   setInterval(() => {

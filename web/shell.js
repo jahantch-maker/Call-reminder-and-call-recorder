@@ -69,6 +69,8 @@
     // WEB10 Until the first data arrives, say so (never "No … yet", which looks like everything is gone).
     const wait = RB.loading && RB.loading();
     if (wait) page = { title: page.title, sub: page.sub, html: '<div class="card"><div class="muted loadmsg">Loading…</div></div>' };
+    // Grouped left menu instead of the row of tabs (Settings redesign, locked 27 Nov): [group, [[key, label, icon, one line]]].
+    const grp = RB.sections[sec].groups ? RB.sections[sec].groups(tabs) : null;
     const dt = new Date();
     const ownerSeat = RB.seatOfUid(RB.uidOf());
     const hi = "Hi, " + esc(RB.first(meRow.name || (D.team.ownerUid === RB.uidOf() ? "Jahanzaib" : "there")));
@@ -88,8 +90,8 @@
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
           <label class="srch"><span>⌕</span><input id="gq" placeholder="Search" value="${esc(S.q)}" autocomplete="off"></label><button class="bell" id="bell" title="Notices">🔔${noticeCount() ? `<b class="bd">${noticeCount()}</b>` : ""}</button></div>
         ${running}
-        <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}${page.tabsExtra ? `<span class="tabx">${page.tabsExtra}</span>` : ""}</div>
-        <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${page.html}</div>
+        ${grp ? `<div class="gwrap">${gnav(grp, tab)}` : `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}${page.tabsExtra ? `<span class="tabx">${page.tabsExtra}</span>` : ""}</div>`}
+        <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${grp && !wait ? ghead(grp, tab) : ""}${page.html}</div>${grp ? "</div>" : ""}
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
     if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
     RB.stickHeads(document.getElementById("content"));   // wrap heads before the scroll spot is put back, else every card above it changes height and the page jumps
@@ -98,6 +100,7 @@
     if (keepM) { const pm = root.querySelector(".pmain"); if (pm) pm.scrollTop = keepM; }
     root.querySelectorAll("[data-sec]").forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); RB.go(e.dataset.sec); }));
     root.querySelectorAll("[data-tab]").forEach((e) => (e.onclick = () => { setTab(sec, e.dataset.tab); RB.render(); }));
+    const gp = document.getElementById("gpick"); if (gp) gp.onchange = () => { setTab(sec, gp.value); RB.render(); };
     const so = document.getElementById("signout"); if (so) so.onclick = () => (RB.DEMO ? RB.alertBox("Sign out is off in the sample preview.") : firebase.auth().signOut().then(() => location.reload()));
     const gq = document.getElementById("gq");
     gq.oninput = () => { S.q = gq.value; RB.render(); const n = document.getElementById("gq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
@@ -110,6 +113,44 @@
     if (page.afterBind) page.afterBind();
     RB.stickHeads(content);
   };
+  /** The left menu (computer) and, on phones and narrow windows, one "Section ▾" picker in its place. */
+  function gnav(grp, tab) {
+    const all = grp.flatMap((g) => g[1]), cur = all.find((x) => x[0] === tab) || all[0] || ["", "", ""];
+    return `<nav class="gnav" aria-label="Sections">${grp.map(([g, it]) => `<h6>${esc(g)}</h6>` + it.map(([k, l, ic]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${ic || ""}<span>${esc(l)}</span></button>`).join("")).join("")}</nav>
+      <label class="gpick">${cur[2] || ""}<b>${esc(cur[1])}</b><span>Section ▾</span><select id="gpick" aria-label="Section">${grp.map(([g, it]) => `<optgroup label="${esc(g)}">${it.map(([k, l]) => `<option value="${k}" ${k === tab ? "selected" : ""}>${esc(l)}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
+  }
+  /** The open section's big name and one line on what it does (scrolls away with the page). */
+  function ghead(grp, tab) {
+    const x = grp.flatMap((g) => g[1]).find((i) => i[0] === tab); if (!x) return "";
+    return `<div class="ghead"><h2>${esc(x[1])}</h2>${x[3] ? `<p>${x[3]}</p>` : ""}</div>`;
+  }
+  /** Thin line icons (RB navy) for the left menus: RB.lineIcon("name"). */
+  const LI = {
+    late: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    red: '<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>',
+    steps: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
+    rank: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7"/>',
+    read: '<path d="M4 5.5A2 2 0 0 1 6 4h5v15H6a2 2 0 0 0-2 1.5z"/><path d="M20 5.5A2 2 0 0 0 18 4h-5v15h5a2 2 0 0 1 2 1.5z"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
+    cal: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    rules: '<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M9 11h6.5M9 14.5h6.5M9 18h4"/>',
+    log: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4M12 8v4.5l3 1.5"/>',
+    upd: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+    look: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+    people: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.5M17.5 14a5 5 0 0 1 3 5"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
+    folder: '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+    alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M5 4 3 6M19 4l2 2"/>',
+    screen: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>',
+    pen: '<path d="M15.5 4.5 19.5 8.5 8.5 19.5H4.5v-4z"/>',
+    bin: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
+    undo: '<path d="M9 7 4.5 11.5 9 16"/><path d="M4.5 11.5H15a4.5 4.5 0 0 1 0 9h-2"/>',
+  };
+  RB.lineIcon = (k) => `<svg class="li" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LI[k] || ""}</svg>`;
+
   /** WEB16 Slim top (locked 24 Nov): the moment the page is scrolled its top folds (a plot file: into its slim line), and it
    *  opens again back at the very top. It folds only when the page is long enough to stay scrolled once folded, so it never
    *  flickers. A redraw keeps the state with no animation. */
