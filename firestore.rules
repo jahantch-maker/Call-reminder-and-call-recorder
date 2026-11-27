@@ -64,7 +64,7 @@ service cloud.firestore {
             (request.resource.data.status == 'active' && request.auth.token.email_verified == true
               && request.resource.data.seatId == request.auth.token.email.lower()
               && exists(/databases/$(database)/documents/teams/$(t)/seats/$(request.auth.token.email.lower()))))) ||
-          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'email', 'signedOut', 'photo'])) ||
+          (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'name', 'phone', 'backupAt', 'backupBytes', 'health', 'dosSkips', 'email', 'signedOut', 'photo'])) ||
           // v0.50 A seat holder who signed in on the phone first copies the permissions of his own seat (nothing else, nothing different).
           (uid == me() && resource.data.status == 'active' && resource.data.role == 'member' && resource.data.get('seatId', '') == request.auth.token.email.lower()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['perms'])
@@ -218,7 +218,9 @@ service cloud.firestore {
         allow write: if signedIn() && isActive(t) && (isOwner(t)
           || (doc == 'designations' && lvl(t, 'team') == 'edit')
           || (doc == 'reasons' && lvl(t, 'settings') == 'edit')
-          || (doc == 'meeting' && lvl(t, 'settings') == 'edit'));
+          || (doc == 'meeting' && lvl(t, 'settings') == 'edit')
+          // 27 Nov "Last sent" of the WhatsApp pending list: anyone who can open Team Performance.
+          || (doc == 'waSent' && portalSee(t, 'app')));
         // config/plotsteps (Plot files rules and timing) is written by the owner only (isOwner above).
       }
 

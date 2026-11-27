@@ -891,7 +891,7 @@ fun FollowUpDialog(
 
         // Text him (green): text times and the message; Repeat, Tracking number, Burst and Autopilot under Customise.
         // Not for a team member: the app delivers it.
-        if (teamMember == null) TextGreenTheme {
+        if (teamMember == null && WebRules.smsOn(LocalContext.current)) TextGreenTheme {
             FeatureCard(
                 tint = TextCardBg,
                 icon = { Icon(Icons.Rounded.Sms, contentDescription = null, tint = if (LocalDarkTheme.current) TextGreen else Color(0xFF0E9F87)) },

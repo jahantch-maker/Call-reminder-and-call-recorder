@@ -29,6 +29,27 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.61.0", "27 Nov",
+            new = listOf(
+                "Team settings now come from the website and keep working with no internet: task rules, reminders and notifications",
+                "Team notifications only come during your duty hours (30 min before to 1 hour after); the rest arrive as one in the morning",
+                "Dossier and review reminders are full-screen popups set by the office; skipped dossier reminders show on the website",
+                "Every full-screen popup has a Silence button, and the side buttons stop the sound",
+                "Plot file steps ring full screen when due, with a heads-up before",
+                "Urgent tasks with no deadline remind you a set number of times; a text goes only if the task never reached the phone",
+                "Stuck now pauses the task until the giver answers; the Ask button is gone",
+                "Settings › Task rules explains each rule for tasks you give and get",
+                "After-call popup: only in duty hours, Close by itself and Hold to call",
+                "Task lists on WhatsApp and SMS come in groups with bold headings; you pick which groups to send",
+                "New sign-in screen for new phones, with a guest option for personal use",
+                "Light look with small text, and Google Calendar shows only your own Gmail's calendars",
+                "Cloud backup shows when it last worked and uploads after 2 days even when not charging",
+            ),
+            fixed = listOf(
+                "Team reminders no longer come in the middle of the night",
+            ),
+        ),
+        Entry(
             "0.60.3", "27 Nov",
             new = emptyList(),
             fixed = listOf(

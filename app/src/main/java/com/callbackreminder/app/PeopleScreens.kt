@@ -302,7 +302,7 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
     var dailyOn by remember(key) { mutableStateOf(DailyList.isOn(ctx, key.orEmpty())) }
     var via by remember(key) { mutableStateOf(DailyList.via(ctx, key.orEmpty())) }
     var preview by remember { mutableStateOf<String?>(null) }
-    var sendNow by remember { mutableStateOf<String?>(null) }
+    var sendNow by remember { mutableStateOf(false) }
 
     val k = key.orEmpty()
     fun mine(number: String) = k.isNotEmpty() && Work.personKey(number) == k
@@ -464,9 +464,8 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
                         // Send the whole list right now, daily list on or off.
                         FilledTonalButton(
                             onClick = {
-                                val text = DailyList.build(ctx, k)
-                                if (text == null) Toast.makeText(ctx, "Nothing to send: $name has no open follow-ups", Toast.LENGTH_SHORT).show()
-                                else sendNow = text
+                                if (DailyList.tasks(ctx, k).second.isEmpty()) Toast.makeText(ctx, "Nothing to send: $name has no open follow-ups", Toast.LENGTH_SHORT).show()
+                                else sendNow = true
                             },
                             enabled = number.isNotBlank(),
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp)
@@ -536,27 +535,22 @@ fun PersonScreen(resumeKey: Int, onBack: () -> Unit, onOpenItem: (WorkItem) -> U
         )
     }
 
-    sendNow?.let { text ->
-        AlertDialog(
-            onDismissRequest = { sendNow = null },
-            title = { Text("Send list to $name") },
-            text = {
-                Text(text, modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()))
+    if (sendNow) {
+        val list = remember(k) { DailyList.tasks(ctx, k) }
+        SendWhichTasksDialog(
+            name = name,
+            tasks = list.second,
+            onDismiss = { sendNow = false },
+            onWhatsApp = { groups ->
+                sendNow = false
+                val text = TaskListText.format(list.first, list.second, System.currentTimeMillis(), groups, bold = true)
+                if (text == null || !DailyList.openWhatsApp(ctx, k, text)) Toast.makeText(ctx, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
             },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        sendNow = null
-                        if (!DailyList.openWhatsApp(ctx, k)) Toast.makeText(ctx, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
-                    }) { Text("WhatsApp") }
-                    Button(onClick = {
-                        sendNow = null
-                        DailyList.send(ctx, k, text)
-                        Toast.makeText(ctx, "Sending the list to $name by SMS", Toast.LENGTH_SHORT).show()
-                    }) { Text("SMS") }
-                }
+            onSms = { groups ->
+                sendNow = false
+                TaskListText.format(list.first, list.second, System.currentTimeMillis(), groups, bold = false)?.let { DailyList.send(ctx, k, it) }
+                Toast.makeText(ctx, "Sending the list to $name by SMS", Toast.LENGTH_SHORT).show()
             },
-            dismissButton = { TextButton(onClick = { sendNow = null }) { Text("Cancel") } },
         )
     }
 
@@ -781,4 +775,51 @@ fun MyDayScreen(resumeKey: Int, onBack: () -> Unit, onStart: () -> Unit, onOpenI
             }
         }
     }
+}
+
+/**
+ * "Send which tasks?" (27 Nov): one tick box per group with its count. Late, No time yet and Today start ticked,
+ * Later not; an empty group is greyed. WhatsApp / SMS send the ticked groups ([onSms] null = WhatsApp only).
+ */
+@Composable
+internal fun SendWhichTasksDialog(
+    name: String,
+    tasks: List<TaskListText.Task>,
+    onDismiss: () -> Unit,
+    onWhatsApp: (Set<TaskListText.Group>) -> Unit,
+    onSms: ((Set<TaskListText.Group>) -> Unit)?,
+) {
+    val counts = remember(tasks) { TaskListText.counts(tasks, System.currentTimeMillis()) }
+    var picked by remember { mutableStateOf(TaskListText.DEFAULT.filter { (counts[it] ?: 0) > 0 }.toSet()) }
+    val any = picked.any { (counts[it] ?: 0) > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Send which tasks?") },
+        text = {
+            Column {
+                Text("To $name", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TaskListText.Group.entries.forEach { g ->
+                    val n = counts[g] ?: 0
+                    val on = g in picked && n > 0
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = n > 0) { picked = if (g in picked) picked - g else picked + g }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = on, enabled = n > 0, onCheckedChange = { picked = if (it) picked + g else picked - g })
+                        Text(g.label, modifier = Modifier.weight(1f), color = if (n > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        Text("$n", fontWeight = FontWeight.Bold, color = if (n > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = any, onClick = { onWhatsApp(picked) }) { Text("WhatsApp") }
+                if (onSms != null) Button(enabled = any, onClick = { onSms(picked) }) { Text("SMS") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
             Backup.rearmIfRestored(this)
         }
         handleOpen(intent)
+        CrashLog.guard(this, "Sign-in screen") { SignInGate.init(this) }
         setContent {
             CallbackTheme {
               androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
@@ -175,6 +176,12 @@ class MainActivity : ComponentActivity() {
                 // v0.59 A newer version is out: the whole app waits behind "Update required" until it is installed.
                 val mustUpdate by AppUpdate.required.collectAsState()
                 mustUpdate?.let { UpdateRequiredScreen(it) }
+                // 27 Nov (S12) The first-open sign-in screen (new installs), and Sign in only after a team phone signs out.
+                val signedIn by TeamRepo.user.collectAsState()
+                val teamMe by TeamRepo.me.collectAsState()
+                val gate by SignInGate.version.collectAsState()
+                val ctxGate = androidx.compose.ui.platform.LocalContext.current
+                if (mustUpdate == null && androidx.compose.runtime.remember(signedIn, teamMe, gate) { SignInGate.needed(ctxGate) }) SignInGateScreen()
               }
             }
         }
@@ -421,6 +428,7 @@ private object Screen {
     const val TEAM_TIMELINE = 39
     const val WHATS_NEW = 40
     const val NEW_PLOT_FILE = 41
+    const val TASK_RULES = 42
 }
 
 /** The tab (and the list inside it) that shows a task from Home, People, a person page or Your day. */
@@ -625,7 +633,9 @@ private fun AppRoot(
                     onOpenTeam = { open(Screen.TEAM_SETTINGS) },
                     onOpenWhatsNew = { open(Screen.WHATS_NEW) },
                     onOpenNewPlotFile = { open(Screen.NEW_PLOT_FILE) },
+                    onOpenTaskRules = { open(Screen.TASK_RULES) },
                 )
+                Screen.TASK_RULES -> TaskRulesScreen(onBack = { back() })
                 Screen.MY_DAY_SETTINGS -> MyDaySettingsScreen(
                     resumeKey = resumeKey,
                     onBack = { back() },

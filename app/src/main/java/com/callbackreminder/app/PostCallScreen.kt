@@ -5,10 +5,16 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -114,10 +120,43 @@ fun PostCallScreen(queue: SnapshotStateList<CallInfo>, onFinished: () -> Unit) {
     }
 }
 
+/** 27 Nov (S15a) How much of "Close by itself" is left (1 → 0) for the ring round ✕; null when off or stopped. */
+internal val LocalAutoClose = androidx.compose.runtime.compositionLocalOf<Float?> { null }
+
+/** The ✕ (Skip) of the after-call popups, with the shrinking "Close by itself" ring round it. */
+@Composable
+internal fun SkipX(onClick: () -> Unit, description: String = "Skip") {
+    val left = LocalAutoClose.current
+    Box(contentAlignment = Alignment.Center) {
+        if (left != null) androidx.compose.material3.CircularProgressIndicator(progress = { left }, modifier = Modifier.size(40.dp), strokeWidth = 2.5.dp)
+        IconButton(onClick = onClick) { Icon(Icons.Rounded.Close, contentDescription = description) }
+    }
+}
+
 /** The dimmed backdrop (tap to skip) and the sheet that slides up from the bottom. */
 @Composable
 internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val noRipple = remember { MutableInteractionSource() }
+    // 27 Nov (S15a) Close by itself: counts down every second, any touch stops it for good, at 0 it is a Skip.
+    val ctx = LocalContext.current
+    val total = remember { SimPopup.autoClose(ctx) }
+    var left by remember { mutableIntStateOf(total) }
+    var stopped by remember { mutableStateOf(total <= 0) }
+    LaunchedEffect(stopped) {
+        while (!stopped && left > 0) {
+            kotlinx.coroutines.delay(1_000L)
+            if (!stopped) left--
+        }
+        if (!stopped && left <= 0) onDismiss()
+    }
+    val stopOnTouch = Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                stopped = true
+            }
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -134,6 +173,7 @@ internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnS
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(stopOnTouch)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
                 shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -154,7 +194,16 @@ internal fun PopupSheetFrame(onDismiss: () -> Unit, content: @Composable ColumnS
                             .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
                     )
                     Spacer(Modifier.height(14.dp))
-                    content()
+                    if (!stopped) {
+                        LinearProgressIndicator(progress = { left / total.toFloat() }, modifier = Modifier.fillMaxWidth().height(3.dp))
+                        Spacer(Modifier.height(6.dp))
+                        Text("⏱ Closes in ${left}s · touch to keep it open", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    androidx.compose.runtime.CompositionLocalProvider(LocalAutoClose provides if (stopped) null else left / total.toFloat()) {
+                        content()
+                    }
                 }
             }
         }
@@ -326,9 +375,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                IconButton(onClick = onNext) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Skip")
-                }
+                SkipX(onNext)
             }
             Spacer(Modifier.height(16.dp))
             if (needsName) {
@@ -428,7 +475,7 @@ private fun PostCallSheet(call: CallInfo, positionLabel: String?, onNext: () -> 
                         enabled = callerNumber != null,
                         onChange = { callOn = it },
                     )
-                    SwitchCard(
+                    if (WebRules.smsOn(ctx)) SwitchCard(
                         icon = { Icon(Icons.Rounded.Sms, contentDescription = null) },
                         title = firstName?.let { "Also text $it" } ?: "Also send texts",
                         subtitle = if (alsoText) "On: ${firstName?.let { "$it's texts" } ?: "texts"}, with Burst" else "Off: only your call back",
@@ -557,17 +604,51 @@ private fun BigChoice(
  */
 @Composable
 internal fun CallAgainButton(onClick: () -> Unit) {
+    // 27 Nov (S15b) Hold to call: it dials only after a press of the chosen seconds; a quick tap says so.
+    val ctx = LocalContext.current
+    val hold = remember { SimPopup.holdToCall(ctx) }
+    val fill = remember { androidx.compose.animation.core.Animatable(0f) }
+    var holding by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(hint) { if (hint) { kotlinx.coroutines.delay(2_000L); hint = false } }
+    val press = if (hold <= 0) Modifier else Modifier.pointerInput(hold) {
+        detectTapGestures(onPress = {
+            holding = true
+            val run = scope.launch {
+                fill.snapTo(0f)
+                fill.animateTo(1f, tween(hold * 1_000, easing = androidx.compose.animation.core.LinearEasing))
+                holding = false
+                fill.snapTo(0f)
+                onClick()
+            }
+            val done = tryAwaitRelease()
+            if (run.isActive) {
+                run.cancel()
+                holding = false
+                fill.snapTo(0f)
+                if (done) hint = true
+            }
+        })
+    }
     Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(48.dp),
+        modifier = Modifier.fillMaxWidth().height(if (hold > 0) 54.dp else 48.dp).clip(RoundedCornerShape(30.dp))
+            .then(if (hold > 0) press else Modifier.clickable(onClick = onClick)),
         shape = RoundedCornerShape(30.dp),
         color = Color(0xFF0FA68E),
         contentColor = Color.White,
     ) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("Call again", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Box {
+            if (hold > 0) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color(0xFF07705F)))
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Call, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(if (holding) "Keep holding…" else "Call again", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                if (hold > 0) Text(if (hint) "Hold the button ${hold}s to call" else "Hold ${hold}s to call",
+                    style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
+            }
         }
     }
 }

@@ -45,7 +45,16 @@ object Appearance {
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version.asStateFlow()
 
-    fun mode(c: Context): Int = AppSettings.getString(c, KEY_MODE).toIntOrNull()?.takeIf { it in SYSTEM..DARK } ?: SYSTEM
+    fun mode(c: Context): Int { lightOnce(c); return AppSettings.getString(c, KEY_MODE).toIntOrNull()?.takeIf { it in SYSTEM..DARK } ?: LIGHT }
+
+    /** 27 Nov: every phone (new or updated) starts once in Light + Small; afterwards the person's own choice wins. */
+    private fun lightOnce(c: Context) {
+        if (AppSettings.get(c, KEY_LIGHT_ONCE, false)) return
+        AppSettings.setString(c, KEY_MODE, LIGHT.toString())
+        AppSettings.setString(c, KEY_SIZE, SIZE_DEFAULT.toString())
+        AppSettings.set(c, KEY_LIGHT_ONCE, true)
+    }
+    private const val KEY_LIGHT_ONCE = "app_light_small_once"
     fun setMode(c: Context, m: Int) { AppSettings.setString(c, KEY_MODE, m.toString()); _version.value++ }
 
     fun accent(c: Context): Int {
@@ -63,7 +72,7 @@ object Appearance {
     val SIZES = listOf("Extra small" to 0.80f, "Small" to 0.90f, "Default" to 1.0f, "Large" to 1.10f)
     const val SIZE_DEFAULT = 1
     private const val KEY_SIZE = "app_display_size"
-    fun displaySize(c: Context): Int = AppSettings.getString(c, KEY_SIZE).toIntOrNull()?.takeIf { it in SIZES.indices } ?: SIZE_DEFAULT
+    fun displaySize(c: Context): Int { lightOnce(c); return AppSettings.getString(c, KEY_SIZE).toIntOrNull()?.takeIf { it in SIZES.indices } ?: SIZE_DEFAULT }
     fun setDisplaySize(c: Context, i: Int) { AppSettings.setString(c, KEY_SIZE, i.toString()); _version.value++ }
     fun scale(c: Context): Float = SIZES[displaySize(c)].second
 

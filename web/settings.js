@@ -142,7 +142,7 @@
     RB.render();
   }, 700);
   RB.sections.settings = {
-    tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
+    tabs: () => { const ok = RB.settingsTabs(); return TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]]); },
     render(tab) {
       let html, side = "";
       if (tab === "look") {
@@ -166,6 +166,7 @@
         const days = (D.cfg && D.cfg.readingDays) || 7;
         html = `<div class="card" style="max-width:560px"><h3>Reading list deadline</h3><div class="rrow"><span class="n">New people finish their reading in</span><input class="num" type="number" min="1" max="60" id="rdays" value="${days}"> days</div><button class="btnp edit-only" id="rsave" style="margin-top:12px">Save</button><div class="foot">Counted from the day he starts in the seat. The phone reminds him before it.</div></div>`;
       } else if (tab === "perf") html = perfHtml();
+      else if (tab === "rules") html = RB.rulesHtml();
       else { S.settingsTab = tab; html = RB.meet.html("settings"); }
       return { html, side, title: "Settings", sub: "Only people with access can change these" };
     },
@@ -193,7 +194,8 @@
         await RB.log("Team Performance settings changed");
         RB.alertBox("Saved. Team Performance uses the new numbers now.");
       };
-      if (!["log", "docs", "updates", "look", "holidays", "perf"].includes(S.tab.settings)) RB.meet.bind(root);
+      if (S.tab.settings === "rules") RB.rulesBind(root);
+      if (!["log", "docs", "updates", "look", "holidays", "perf", "rules"].includes(S.tab.settings)) RB.meet.bind(root);
     },
   };
 })();

@@ -107,6 +107,18 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.Callback.Alert" />
 
+        <!-- 27 Nov: the same full-screen popup for team kinds set to Full screen on the website and the dossier reminder -->
+        <activity
+            android:name=".TaskAlertActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.Callback.Alert" />
+
         <!-- Plays the ringtone while a reminder is ringing -->
         <service
             android:name=".ReminderRingService"

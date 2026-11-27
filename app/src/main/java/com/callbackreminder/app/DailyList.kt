@@ -92,15 +92,24 @@ object DailyList {
 
     // ---- The text ----
 
-    private val dayFmt = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
-    private val dueFmt = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault())
+    /** The list for [key] (Late, No time yet, Today by default), or null when nothing is in those groups. */
+    fun build(
+        ctx: Context, key: String, now: Long = System.currentTimeMillis(), whatsApp: Boolean = false,
+        groups: Set<TaskListText.Group> = TaskListText.DEFAULT,
+    ): String? {
+        val (name, tasks) = tasks(ctx, key)
+        return TaskListText.format(name, tasks, now, groups, bold = whatsApp)
+    }
 
-    /** The list for [key], or null when they owe nothing. On [whatsApp] the heading is bold. */
-    fun build(ctx: Context, key: String, now: Long = System.currentTimeMillis(), whatsApp: Boolean = false): String? {
+    /** How many tasks [build] would list for [key] (the daily round's count). */
+    fun count(ctx: Context, key: String, now: Long = System.currentTimeMillis()): Int =
+        TaskListText.counts(tasks(ctx, key).second, now).filterKeys { it in TaskListText.DEFAULT }.values.sum()
+
+    /** Every open follow-up [key] owes you, with the newest name saved for them. */
+    fun tasks(ctx: Context, key: String): Pair<String?, List<TaskListText.Task>> {
         ReminderStore.init(ctx)
         SmsStore.init(ctx)
         ToScheduleStore.init(ctx)
-        val zone = ZoneId.systemDefault()
         // The same person as on the person page: all their numbers (a team member's too).
         fun mine(number: String) = RecentPeople.key(number) == key || Work.personKey(number) == key
         val calls = ReminderStore.items.value.filter { !it.done && mine(it.number) }
@@ -110,43 +119,27 @@ object DailyList {
         }
         // Follow-ups still waiting in To schedule (no time yet) are theirs too: they are in the person's Pending list.
         val waiting = ToScheduleStore.items.value.filter { mine(it.number) }
-        /** [noTime]: no date; [due] then holds when it was saved, only to order them. */
-        data class Line(val due: Long, val text: String, val code: String, val noTime: Boolean = false)
-        val lines = mutableListOf<Line>()
+        val lines = mutableListOf<TaskListText.Task>()
         val links = mutableSetOf<Long>()
         calls.forEach { r ->
             val code = r.code.ifEmpty { TaskCodes.next(ctx).first().also { ReminderStore.setCode(r.id, it) } }
             if (r.linkId != 0L) links += r.linkId
-            lines += Line(r.dueAt, r.note.ifBlank { "Call back" }, code)
+            lines += TaskListText.Task(r.dueAt, r.note.ifBlank { "Call back" }, code)
         }
         // A follow-up's texts are the same task as its call: one line.
         texts.filter { it.linkId == 0L || it.linkId !in links }.groupBy { if (it.linkId != 0L) "l${it.linkId}" else "t${it.id}" }.values.forEach { g ->
             val t = g.first()
             val code = t.code.ifEmpty { SmsStore.newCode().also { c -> SmsStore.setCode(t.id, c) } }
             val due = t.taskDue.takeIf { it > 0L } ?: if (t.review != null) t.reviewAt else t.nextTextAt
-            lines += Line(due, t.message, code)
+            lines += TaskListText.Task(due, t.message, code)
         }
         waiting.forEach { w ->
             val code = w.code.ifEmpty { TaskCodes.next(ctx).first().also { ToScheduleStore.put(w.copy(code = it)) } }
-            lines += Line(w.createdAt, w.headline, code, noTime = true)
+            lines += TaskListText.Task(0L, w.headline, code, order = w.createdAt)
         }
-        if (lines.isEmpty()) return null
         val name = (calls.map { it.createdAt to it.name } + texts.map { it.createdAt to it.name } + waiting.map { it.createdAt to it.name })
             .filter { it.second.isNotBlank() }.maxByOrNull { it.first }?.second
-        // Late first (oldest first), then No time yet (oldest first), then the rest by due time: like the person page.
-        val sorted = lines.sortedWith(compareBy<Line>({ if (it.noTime) 1 else if (it.due < now) 0 else 2 }, { it.due }))
-        val body = sorted.mapIndexed { i, l ->
-            if (l.noTime) "${i + 1}) ${l.code} | ${l.text} | No time yet"
-            else {
-                val day = Instant.ofEpochMilli(l.due).atZone(zone)
-                "${i + 1}) ${l.code} | ${l.text} | Due ${day.format(dueFmt)}" + if (l.due < now) " (late)" else ""
-            }
-        }
-        val head = (name?.let { "$it, your" } ?: "Your") + " open tasks (" + LocalDate.now(zone).format(dayFmt) + "):"
-        return buildString {
-            append(if (whatsApp) "*$head*" else head).append("\n")
-            append(body.joinToString("\n"))
-        }
+        return name to lines
     }
 
     // ---- Alarm ----
@@ -325,9 +318,9 @@ object DailyList {
     fun nameFor(ctx: Context, key: String): String = numberFor(ctx, key)?.first ?: key
 
     /** Opens his WhatsApp chat with the list typed. */
-    fun openWhatsApp(ctx: Context, key: String): Boolean {
+    fun openWhatsApp(ctx: Context, key: String, typed: String? = null): Boolean {
         val (_, number) = numberFor(ctx, key) ?: return false
-        val text = build(ctx, key, whatsApp = true) ?: return false
+        val text = typed ?: build(ctx, key, whatsApp = true) ?: return false
         return WhatsApp.open(ctx, number, text)
     }
 
@@ -473,4 +466,58 @@ object DailyList {
     }
 
     private fun notifId(key: String) = NotifIds.dailyList(key)
+}
+
+/**
+ * The "all tasks" message (27 Nov), the same in every place it is sent from (People › Send list now, the daily
+ * list, Review › By person, and the website's Team Performance button): a bold heading, then groups with bold
+ * headings and counts (Late, No time yet, Today, Later), numbering running on, two lines per task and one blank
+ * line after each. SMS gets the same text without the * bold marks.
+ */
+object TaskListText {
+    enum class Group(val label: String) { LATE("🔴 Late"), NO_TIME("⏳ No time yet"), TODAY("📅 Today"), LATER("🗓 Later") }
+
+    /** Sent when nobody picks: Later stays out. */
+    val DEFAULT = setOf(Group.LATE, Group.NO_TIME, Group.TODAY)
+
+    /** [due] 0 = no time yet ([order] then sorts them, oldest first). [tail] is the code or "from Ali". */
+    data class Task(val due: Long, val title: String, val tail: String, val order: Long = due)
+
+    private val dayFmt = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
+    private val dueFmt = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.ENGLISH)
+
+    fun group(t: Task, now: Long, zone: ZoneId = ZoneId.systemDefault()): Group = when {
+        t.due <= 0L -> Group.NO_TIME
+        t.due < now -> Group.LATE
+        Instant.ofEpochMilli(t.due).atZone(zone).toLocalDate() == Instant.ofEpochMilli(now).atZone(zone).toLocalDate() -> Group.TODAY
+        else -> Group.LATER
+    }
+
+    fun counts(tasks: List<Task>, now: Long): Map<Group, Int> =
+        Group.entries.associateWith { g -> tasks.count { group(it, now) == g } }
+
+    /** The message, or null when no task is in [groups]. */
+    fun format(name: String?, tasks: List<Task>, now: Long, groups: Set<Group>, bold: Boolean, zone: ZoneId = ZoneId.systemDefault()): String? {
+        val picked = tasks.filter { group(it, now, zone) in groups }
+        if (picked.isEmpty()) return null
+        fun b(s: String) = if (bold) "*$s*" else s
+        val head = (name?.takeIf { it.isNotBlank() }?.let { "$it, your" } ?: "Your") + " open tasks (" +
+            Instant.ofEpochMilli(now).atZone(zone).format(dayFmt) + ")"
+        var n = 0
+        return buildString {
+            append(b(head)).append("\n")
+            Group.entries.filter { it in groups }.forEach { g ->
+                val list = picked.filter { group(it, now, zone) == g }.sortedBy { it.order }
+                if (list.isEmpty()) return@forEach
+                if (n == 0) append("\n")
+                append(b("${g.label} (${list.size})")).append("\n")
+                list.forEach { t ->
+                    n++
+                    append("$n. ${t.title.trim().replace('\n', ' ')}\n")
+                    val due = if (t.due > 0L) "Due " + Instant.ofEpochMilli(t.due).atZone(zone).format(dueFmt).replace("AM", "am").replace("PM", "pm") else ""
+                    append("   ").append(listOf(due, t.tail).filter { it.isNotBlank() }.joinToString(" · ")).append("\n\n")
+                }
+            }
+        }.trimEnd()
+    }
 }

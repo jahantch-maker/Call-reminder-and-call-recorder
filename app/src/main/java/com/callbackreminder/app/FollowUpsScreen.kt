@@ -104,11 +104,10 @@ object FollowUpsUi {
     /** Another screen asked for a view (e.g. Home's Calls tile). */
     val view = MutableStateFlow<Int?>(null)
 
-    /** Home's Needs you line: only the WAITING ON YOU cards of this kind ([STUCK], [EXTEND], [ASK]), with ✕ Show all. */
+    /** Home's Needs you line: only the WAITING ON YOU cards of this kind ([STUCK], [EXTEND]), with ✕ Show all. */
     val needKind = MutableStateFlow<Int?>(null)
     const val STUCK = 0
     const val EXTEND = 1
-    const val ASK = 2
 
     /** "Show in Follow-ups ›": this follow-up (its row key) is scrolled to and outlined for a moment. */
     val showEntry = MutableStateFlow<String?>(null)
@@ -431,7 +430,6 @@ private fun FollowUpsAll(
             when {
                 t.open && t.stuck -> FollowUpsUi.STUCK
                 t.asking -> FollowUpsUi.EXTEND
-                t.open && t.asks -> FollowUpsUi.ASK
                 else -> null
             }?.let { e.key to it }
         }.toMap()
@@ -799,7 +797,7 @@ internal fun FollowUpCard(
                 if (e.inReview) add(RowLink("Review later", onClick = onReviewLater))
                 if (!e.inReview && teamTask == null) add(RowLink("Remove time", onClick = onRemoveTime))
                 if (teamTask == null) add(RowLink("Move to My tasks", onClick = onMove))
-                if (text != null) add(RowLink("Texts", onClick = { onTexts(text) }))
+                if (text != null && WebRules.smsOn(ctx)) add(RowLink("Texts", onClick = { onTexts(text) }))
                 add(RowLink("Delete", danger = true, onClick = delete))
             }
         )

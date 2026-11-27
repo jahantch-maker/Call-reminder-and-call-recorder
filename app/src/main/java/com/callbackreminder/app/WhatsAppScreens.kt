@@ -156,7 +156,7 @@ fun DailyWhatsAppScreen(resumeKey: Int, onBack: () -> Unit) {
                 round.keys.forEachIndexed { i, key ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                     val sent = key in round.sent
-                    val count = remember(tick, key) { DailyList.build(ctx, key)?.lines()?.size?.minus(1) ?: 0 }
+                    val count = remember(tick, key) { DailyList.count(ctx, key) }
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically

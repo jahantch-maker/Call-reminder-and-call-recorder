@@ -1755,7 +1755,7 @@ private fun GoogleCalendarsSheet(onDismiss: () -> Unit) {
         ) {
             Text("Which calendars to show?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "All are off. Turn on the ones you want. You can change this later in Calendar settings.",
+                "Your main calendar is on. Turn on any others you want. You can change this later in Calendar settings.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1765,7 +1765,7 @@ private fun GoogleCalendarsSheet(onDismiss: () -> Unit) {
     }
 }
 
-/** Every account on the phone with its calendars as switches (Holidays and Birthdays are their own). */
+/** The signed-in Gmail's calendars as switches (no Holidays or Birthdays). */
 @Composable
 private fun GoogleCalendarSwitches() {
     val ctx = LocalContext.current
@@ -1775,7 +1775,17 @@ private fun GoogleCalendarSwitches() {
     val all by produceState(initialValue = emptyList<GCalendar>(), g) {
         value = kotlinx.coroutines.withContext(Dispatchers.IO) { GoogleCal.calendars(ctx) }
     }
-    val on = remember(g) { GoogleCal.onIds(ctx) }
+    val on by produceState(initialValue = emptySet<Long>(), g) {
+        value = kotlinx.coroutines.withContext(Dispatchers.IO) { GoogleCal.onIds(ctx) }
+    }
+    val me = remember { GoogleCal.myGmail() }
+    val onPhone by produceState(initialValue = true, g) {
+        value = kotlinx.coroutines.withContext(Dispatchers.IO) { GoogleCal.myGmailOnPhone(ctx) }
+    }
+    if (me != null && !onPhone) {
+        Text("Add $me to this phone's accounts to see its calendar.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+        return
+    }
     if (all.isEmpty()) {
         Text("No calendars found on this phone.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
         return
@@ -1953,7 +1963,7 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
         AnimatedVisibility(visible = googleOn, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             SectionCard(
                 title = "Google calendars",
-                subtitle = "Only the calendars switched on here show in the Calendar. Other accounts, Holidays and Birthdays stay out unless you turn them on. A calendar added later starts off."
+                subtitle = "Only the calendars of the Gmail you signed in with are listed. Your main calendar starts on, the others off. Holidays come from the office list, so Google's Holidays and Birthdays are not shown."
             ) {
                 GoogleCalendarSwitches()
             }

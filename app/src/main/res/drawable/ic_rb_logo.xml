@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RB mark from web/logo.svg, brand blue, for the sign-in screen. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="1168"
+    android:viewportHeight="1168">
+    <group android:translateX="-394.5" android:translateY="151.5">
+        <path android:fillColor="#FF3D4FE0" android:pathData="M492 82H855A208 208 0 0 1 855 498L724 368H855A78 78 0 0 0 855 212H622Z" />
+        <path android:fillColor="#FF3D4FE0" android:pathData="M492 368H676L1090 783H907Z" />
+        <path android:fillColor="#FF3D4FE0" android:pathData="M492 705a78 78 0 1 0 156 0a78 78 0 1 0-156 0Z" />
+        <path android:fillColor="#FF3D4FE0" android:pathData="M978 82H1313A208 208 0 0 1 1465 432A208 208 0 0 1 1313 783H1140L1010 653H1313A78 78 0 0 0 1313 497H978A241 241 0 0 0 1083 368H1313A78 78 0 0 0 1313 212H1083A241 241 0 0 0 978 82Z" />
+    </group>
+</vector>

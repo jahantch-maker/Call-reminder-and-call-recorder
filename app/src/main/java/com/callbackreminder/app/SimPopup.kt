@@ -39,8 +39,24 @@ object SimPopup {
         return sims(c).firstOrNull { it.subId.toString() == accountId || (it.iccId.isNotEmpty() && accountId.startsWith(it.iccId)) }?.slot
     }
 
-    /** False only when the call went through a SIM switched off and the number has no open task with you. */
+    /**
+     * 27 Nov (S7.1) "After-call popup only in duty hours" (on to start with): outside the duty window (30 min before
+     * to 1 hour after) only a number with an open task asks. The office can stop him changing it (then it stays on).
+     */
+    private const val DUTY = "popup_duty_only"
+    fun dutyLocked(c: Context) = !WebRules.app(c, "popupHours", true)
+    fun dutyOnly(c: Context) = dutyLocked(c) || AppSettings.get(c, DUTY, true)
+    fun setDutyOnly(c: Context, on: Boolean) = AppSettings.set(c, DUTY, on)
+
+    /** 27 Nov (S15a) "Close by itself" after this many seconds (0 = off), and (S15b) "Hold to call" for this many (0 = off). */
+    fun autoClose(c: Context) = AppSettings.getString(c, "popup_autoclose").toIntOrNull() ?: 0
+    fun setAutoClose(c: Context, s: Int) = AppSettings.setString(c, "popup_autoclose", s.toString())
+    fun holdToCall(c: Context) = AppSettings.getString(c, "popup_hold").toIntOrNull() ?: 0
+    fun setHoldToCall(c: Context, s: Int) = AppSettings.setString(c, "popup_hold", s.toString())
+
+    /** False when the call went through a SIM switched off (or came outside duty hours) and the number has no open task with you. */
     fun allowed(c: Context, call: CallInfo): Boolean {
+        if (dutyOnly(c) && !TeamRules.inWindow(c)) return hasOpenTask(call.number)
         val slot = slotOf(c, call.accountId) ?: return true
         if (on(c, slot)) return true
         return hasOpenTask(call.number)

@@ -40,11 +40,24 @@ object CloudBackup {
         return me.active && TeamRepo.teamId != null && TeamRepo.uid != null
     }
 
-    /** Asks for tonight's upload: runs when the phone is charging and online. Called by the nightly backup. */
+    private const val KEY_LAST = "cloud_backup_last"
+    private const val KEY_ERROR = "cloud_backup_error"
+    private const val NO_CHARGE_AFTER = 48 * 3_600_000L
+
+    /** When the last night reached the cloud (0 = never on this phone). */
+    fun lastAt(ctx: Context): Long = AppSettings.getString(ctx, KEY_LAST).toLongOrNull() ?: 0L
+    /** Why the last try failed ("" when it worked). */
+    fun lastError(ctx: Context): String = AppSettings.getString(ctx, KEY_ERROR)
+
+    /**
+     * Asks for tonight's upload: runs when the phone is charging and online. Called by the nightly backup.
+     * 27 Nov: after 2 days without an upload (a phone that never charges at night) it goes up once online, charging or not.
+     */
     fun request(ctx: Context) {
         if (!eligible()) return
+        val charging = System.currentTimeMillis() - lastAt(ctx) < NO_CHARGE_AFTER
         val req = OneTimeWorkRequestBuilder<CloudBackupWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresCharging(true).build())
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresCharging(charging).build())
             .build()
         WorkManager.getInstance(ctx).enqueueUniqueWork("cloud_backup", ExistingWorkPolicy.REPLACE, req)
     }
@@ -71,9 +84,15 @@ object CloudBackup {
         days.drop(KEEP).forEach { old ->
             col.get().await().documents.filter { it.getString("day") == old }.forEach { it.reference.delete().await() }
         }
+        val now = System.currentTimeMillis()
+        AppSettings.setString(ctx, KEY_LAST, now.toString())
+        AppSettings.setString(ctx, KEY_ERROR, "")
+        // For the website's Team page: "Last backup" per person, and how much of the free storage backups use.
+        FirebaseFirestore.getInstance().collection("teams").document(t).collection("members").document(u)
+            .update(mapOf("backupAt" to now, "backupBytes" to text.length.toLong()))
         null
     } catch (e: Exception) {
-        e.message?.takeIf { it.isNotBlank() } ?: "Cloud backup failed"
+        (e.message?.takeIf { it.isNotBlank() } ?: "Cloud backup failed").also { AppSettings.setString(ctx, KEY_ERROR, it) }
     }
 
     /** The newest night that is complete: its day and when it was made, or null when there is none. */

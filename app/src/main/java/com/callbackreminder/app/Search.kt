@@ -321,7 +321,7 @@ fun SearchScreen(
                     onOpenToSchedule()
                 }
             },
-        "Texts" to texts.filter { t -> task(t.message) || task(t.code) || name(t.name) || name(t.title) || num(t.number) }.map { t ->
+        "Texts" to texts.filter { WebRules.smsOn(ctx) }.filter { t -> task(t.message) || task(t.code) || name(t.name) || name(t.title) || num(t.number) }.map { t ->
             Hit(t.message, listOf(t.title, if (t.done) "done" else Fmt.dueLabel(t.alarmAt)).joinToString(" · "), t.done, Icons.Rounded.Sms, rk = "text:${t.id}",
                 reopen = if (!t.done) null else ({ Reopen.text(t.id); reopened(t.message) })) {
                 SmsUi.showRequest.value = t.id

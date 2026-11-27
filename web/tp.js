@@ -188,12 +188,63 @@
     const today = T.dosDays(uid, T.sod(now), T.addDays(T.sod(now), 1), now)[0] || { items: [] };
     const cnt = (tab) => (tab === "dossier" ? (today.items || []).length : tab === "cal" ? "" : its.filter((x) => !x.done && inTab(x, tab)).length);
     const tabs = `<div class="tp-tabs">${TABS.map(([k, l], i) => `${i === 5 ? '<span class="tp-div"></span>' : ""}<button data-tptab="${k}" class="${S.tpTab === k ? "on" : S.tpTab === "all" && i >= 1 && i <= 4 ? "inall" : ""}">${l} ${cnt(k) === "" ? "" : `<b>${cnt(k)}</b>`}</button>`).join("")}${S.tpTab === "all" ? '<span class="tp-allnote">All = the 4 blue tabs together</span>' : ""}</div>`;
-    const head = `<div class="tp-ph">${av(r.m, true)}<b>${esc(first(r.m.name))}</b>${rk(r.rank)}<span class="tp-hint">Score this week ${pc(r.score)} · view only</span></div>${tabs}`;
+    // 27 Nov (S3.3, S4.6) Stuck presses, paused time and dossier reminder skips: counts only, the score doesn't change.
+    const mine = D.tasks.filter((t) => t.toUid === uid), stuckN = mine.reduce((n, t) => n + (t.stuckN || 0), 0), pausedMs = mine.reduce((n, t) => n + (t.pausedMs || 0), 0);
+    const [wa0] = T.range("week", now), skips = ((RB.member(uid) || {}).dosSkips || []).filter((x) => x >= wa0).length;
+    const facts = [stuckN ? `⚠ Stuck ${stuckN}×${pausedMs ? " · paused " + pausedLbl(pausedMs) : ""}` : "", skips ? `📋 Dossier reminder skipped ${skips}× this week` : ""].filter(Boolean).map((t) => `<span class="tp-fact">${t}</span>`).join("");
+    const sent = (D.waSent || {})[uid];
+    const head = `<div class="tp-ph">${av(r.m, true)}<b>${esc(first(r.m.name))}</b>${rk(r.rank)}<span class="tp-hint">Score this week ${pc(r.score)} · view only</span>${facts}<span class="sp" style="flex:1"></span>
+      <div class="tp-wa"><div class="tp-warow"><button class="tp-wabtn" data-tpwa="${esc(uid)}">${WA_LOGO} Send pending list on WhatsApp</button><span class="tp-hov tp-wai" tabindex="0" aria-label="About this button">i<span class="tp-tip left">Sends ${esc(first(r.m.name))} all open tasks from everyone (not dossier). You choose which groups, then press Send in WhatsApp.</span></span></div>
+      ${sent ? `<div class="tp-wasent">Last sent: ${esc(dshort(sent.at))}, ${esc(clock(sent.at))} by ${esc(first(sent.by || ""))}</div>` : ""}</div></div>${tabs}`;
     let body;
     if (S.tpTab === "dossier") body = dossierTab(uid, now);
     else if (S.tpTab === "cal") body = calendar(uid, its, now);
     else body = taskList(uid, its, today, now);
     return { html: `<div class="tp-person">${list}<div class="card tp-main">${head}<div class="tp-body${S._tpFresh === "body" ? " in" : ""}">${body}</div></div></div>` };
+  }
+
+  const pausedLbl = (ms) => { const m = Math.round(ms / 60000), h = Math.floor(m / 60); return h ? h + "h" + (m % 60 ? " " + (m % 60) + "m" : "") : m + "m"; };
+  const WA_LOGO = '<svg class="tp-walogo" viewBox="0 0 32 32" aria-hidden="true"><path fill="#fff" d="M16 3a13 13 0 0 0-11.2 19.6L3 29l6.6-1.7A13 13 0 1 0 16 3z"/><path fill="#25D366" d="M16 5.4a10.6 10.6 0 0 0-9 16.2l.3.4-1 3.8 3.9-1 .4.2A10.6 10.6 0 1 0 16 5.4z"/><path fill="#fff" d="M12.2 9.8c-.3-.6-.6-.6-.9-.6h-.7c-.3 0-.7.1-1 .5-.4.4-1.4 1.3-1.4 3.2s1.4 3.7 1.6 4c.2.2 2.7 4.3 6.7 5.9 3.3 1.3 4 1 4.7 1 .7-.1 2.3-1 2.6-1.9.3-.9.3-1.7.2-1.9-.1-.2-.4-.3-.8-.5l-2.7-1.3c-.4-.1-.6-.2-.9.2l-1.2 1.5c-.2.3-.4.3-.8.1-.4-.2-1.6-.6-3.1-1.9-1.1-1-1.9-2.3-2.1-2.7-.2-.4 0-.6.2-.8l.6-.7c.2-.2.3-.4.4-.6.1-.3.1-.5 0-.7l-1.2-3z"/></svg>';
+  /**
+   * S5.1/S5.5 The pending list for WhatsApp, the same format as the phone's (TaskListText.kt): bold heading, groups
+   * Late / No time yet / Today / Later with counts, numbering runs on, "Due 25 Nov, 5:00 pm · from Ali", a blank line after each task.
+   */
+  const GROUPS = [["late", "🔴 Late"], ["none", "⏳ No time yet"], ["today", "📅 Today"], ["later", "🗓 Later"]];
+  const groupOf = (x, now) => (!x.due ? "none" : x.due < now ? "late" : T.sod(x.due) === T.sod(now) ? "today" : "later");
+  const dueTxt = (t) => dshort(t) + ", " + clock(t).toLowerCase().replace(/\s/g, " ");
+  const tailOf = (x) => (x.kind === "given" ? "from " + first(x.from || "") : x.kind === "own" ? "my task" : x.kind === "fu" ? "follow-up" : "plot file");
+  function pendingText(name, its, now, pick) {
+    let n = 0, out = `*${first(name)}, your open tasks (${dshort(now)})*\n`;
+    GROUPS.filter(([g]) => pick.has(g)).forEach(([g, l]) => {
+      const L = its.filter((x) => groupOf(x, now) === g).sort((a, b) => (a.due || a.created) - (b.due || b.created));
+      if (!L.length) return;
+      out += `\n*${l} (${L.length})*\n` + L.map((x) => `${++n}. ${x.title}\n   ${x.due ? "Due " + dueTxt(x.due) + " · " : ""}${tailOf(x)}`).join("\n\n") + "\n";
+    });
+    return n ? out.trimEnd() : null;
+  }
+  function waPicker(uid) {
+    const now = Date.now(), m0 = RB.member(uid) || {}, its = T.items(uid).filter((x) => !x.done), pick = new Set(["late", "none", "today"]), md = document.getElementById("modal");
+    const seat = RB.seatOfUid(uid), num = String(m0.wa || (seat && seat.phone) || m0.phone || "").replace(/\D/g, ""), intl = num.length === 11 && num[0] === "0" ? "92" + num.slice(1) : num;
+    const cnt = (g) => its.filter((x) => groupOf(x, now) === g).length;
+    const draw = () => {
+      const txt = pendingText(m0.name || "", its, now, pick);
+      md.querySelector("#wagr").innerHTML = GROUPS.map(([g, l]) => `<label class="swrow" style="cursor:pointer;${cnt(g) ? "" : "opacity:.45"}"><input type="checkbox" data-wag="${g}" ${pick.has(g) && cnt(g) ? "checked" : ""} ${cnt(g) ? "" : "disabled"} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${l}</b></div><span class="sub">${cnt(g)}</span></label>`).join("");
+      md.querySelector("#wapv").innerHTML = txt ? esc(txt).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>") : '<span class="muted">Nothing picked.</span>';
+      md.querySelector("#wago").disabled = !txt;
+      md.querySelectorAll("[data-wag]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.wag) : pick.delete(c.dataset.wag); draw(); }));
+    };
+    md.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Send which tasks to ${esc(first(m0.name || ""))}?</b><div class="foot">${intl ? "Opens WhatsApp with the text typed; you press Send." : "No WhatsApp number on this seat: WhatsApp opens and you pick the chat."}</div>
+      <div class="tp-wagrid"><div id="wagr"></div><div class="tp-wapv" id="wapv"></div></div>
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="wac">Cancel</button><button class="tp-wabtn" id="wago">${WA_LOGO} Open in WhatsApp</button></div></div></div>`;
+    md.querySelector("#wac").onclick = () => (md.innerHTML = "");
+    md.querySelector("#wago").onclick = () => {
+      const txt = pendingText(m0.name || "", its, now, pick); if (!txt) return;
+      window.open("https://wa.me/" + intl + "?text=" + encodeURIComponent(txt), "_blank", "noopener");
+      const me = RB.member(RB.uidOf()) || {}, rec = { [uid]: { at: Date.now(), by: me.name || "" } };
+      RB.Store.put("config", "waSent", rec, true).catch((e) => console.warn("waSent", e));
+      md.innerHTML = ""; RB.render();
+    };
+    draw();
   }
 
   const cardLegend = `<div class="tp-lg"><span><i class="norm"></i>Normal</span><span><i class="urg"></i>🔴 Urgent</span><span><i class="plot"></i>Plot file</span><span><span class="tp-mv">Moved ${T.cfg().movedN}×</span> date moved ${T.cfg().movedN}+ times</span></div>`;
@@ -410,7 +461,7 @@
       root.querySelectorAll("[data-tpimg]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); const m = findMsg(b.dataset.tpimg); if (m && RB.photoView) RB.photoView("data:image/jpeg;base64," + b64(m.data)); }));
       const tx = document.querySelector(".tabx");   // the period chips live in the shell tab row, outside root
       root.onclick = (ev) => {
-        const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday],[data-tpeditdos]");
+        const e = ev.target.closest("[data-tpper],[data-tpsort],[data-tpsel],[data-tpclose],[data-tpopen],[data-tpreptab],[data-tpallold],[data-tpperson],[data-tptab],[data-tpchip],[data-tpdsub],[data-tptl],[data-tpdos],[data-tpdday],[data-tpcv],[data-tpcn],[data-tpfit],[data-tpwday],[data-tpeditdos],[data-tpwa]");
         if (!e || !(root.contains(e) || (tx && tx.contains(e)))) return;
         const ds = e.dataset;
         if (ds.tpper) S.tpPeriod = ds.tpper;
@@ -418,6 +469,7 @@
         else if (ds.tpsel) { if (!S.tpSel) S._tpAnim = "open"; S.tpSel = ds.tpsel; S.tpAllOld = false; }
         else if (ds.tpclose) { S.tpSel = null; S._tpAnim = "close"; }
         else if (ds.tpeditdos) { S.dosSel = ds.tpeditdos; S.dosEdit = null; RB.go("team", "dossier"); return; }
+        else if (ds.tpwa) { waPicker(ds.tpwa); return; }
         else if (ds.tpopen) { S.tpPerson = ds.tpopen; S.tpTab = "all"; S.tpChip = "all"; S.tpSel = null; RB.go("app", "person"); return; }
         else if (ds.tpreptab) { S.tpRepTab = ds.tpreptab; S.tpAllOld = false; }
         else if (ds.tpallold) S.tpAllOld = !S.tpAllOld;

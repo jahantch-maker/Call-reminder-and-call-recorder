@@ -45,16 +45,28 @@
   })();
 
   // ------------------------------------------------------------------ switches and access
+  // [key, title, subtitle, default]. 27 Nov: "Approve people waiting to join" and "See money details" gone (nothing read them).
   RB.APP_SW = [
-    ["approveJoins", "Approve people waiting to join", "Join requests", false],
-    ["approveExt", "Approve extension requests", "From own people", true],
-    ["seeNumbers", "See how my people are doing", "How many tasks are late or due today, for people he gave tasks to", false],
+    ["approveExt", "Approve extension requests", "From his own people", true],
+    ["seeNumbers", "See how my people are doing", "Late and due-today counts", false],
     ["seeDay", "See own people's day", "People below him in the chart", true],
     ["giveDown", "Give tasks down his branch", "", true],
     ["giveSide", "Give tasks sideways", "Colleagues with the same head", true],
     ["callRec", "Call recording", "Stays on his phone", false],
-    ["seeMoney", "See money details", "Plot files: cheques, amounts, discounts and PCC dues. Only you can turn it on", false],
+    ["sms", "Text messages", "His own SMS follow-ups on the phone", true],
+    ["popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", true],
+    ["openPlot", "Can open new plot files", "Shows “New plot file” in his phone", false],
+    ["seeHealth", "See phone health", "Team › People: each phone's permissions", false],
+    ["seeRules", "See Rules", "Settings › Rules: how every rule works", false],
   ];
+  /** 27 Nov: the website's other settings per person (perms.set). Same keys and defaults as the phone (WebRules.kt). */
+  RB.DEF_SET = {
+    noDate: 240, smsMin: 120, locked: true, freeExt: 0, urgHours: 2, urgTimes: 3, urgStyle: "normal",
+    dos1On: true, dos1Min: -60, dos2On: true, dos2Min: 0, rev1On: true, rev1Min: -480, rev2On: true, rev2Min: -180,
+    n_plotDue: "full", plotHeadsMin: 60, n_plotHeads: "normal", n_plotWait: "normal", n_plotFollow: "normal", n_newTask: "normal",
+    n_mention: "normal", n_noDate: "normal", n_doneCheck: "normal", n_extend: "normal", n_timeline: "normal", n_dossier: "normal",
+  };
+  const DEF_SET = RB.DEF_SET;
   RB.SECTIONS = [["app", "Team Performance"], ["meetings", "Meetings"], ["team", "Team"], ["plot", "Plot files"], ["docs", "Documents"], ["settings", "Settings"]];
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
   /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
@@ -69,7 +81,7 @@
   RB.colorOf = (i) => "var(--" + COLORS[i % 4] + ")";
 
   const SEED_DESIG = [
-    { name: "GM", app: { approveJoins: true, seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view", settings: "none" } },
+    { name: "GM", app: { seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view", settings: "none" } },
     { name: "Site Manager", app: {}, portal: { app: "view" } },
     { name: "Admin", app: { seeNumbers: true }, portal: {} },
     { name: "Surveyor", app: {}, portal: {} },
@@ -89,19 +101,21 @@
 
   /** What a seat can do: designation defaults, then the owner's changes for that person. Owners can do everything. */
   RB.effective = (seat) => {
-    if (!seat) return { app: DEF_APP, portal: DEF_PORTAL, changed: {}, owner: false };
+    if (!seat) return { app: DEF_APP, portal: DEF_PORTAL, set: DEF_SET, changed: {}, owner: false };
     const owner = seat.role === "owner";
     const ds = RB.desigOf(seat.designation) || { app: {}, portal: {} };
     const ov = seat.override || {};
     const app = Object.assign({}, DEF_APP, ds.app || {}, ov.app || {});
     const portal = Object.assign({}, DEF_PORTAL, ds.portal || {}, ov.portal || {});
+    const set = Object.assign({}, DEF_SET, ds.set || {}, ov.set || {});
     if (owner) { Object.keys(app).forEach((k) => (app[k] = k === "callRec" ? false : true)); RB.SECTIONS.forEach(([k]) => (portal[k] = k === "app" ? "view" : "edit")); portal.appScope = "all"; portal.teamTabs = RB.TEAM_TABS.map((t) => t[0]); portal.settingsTabs = RB.SET_TABS.map((t) => t[0]); }
     const changed = {};
     Object.keys(ov.app || {}).forEach((k) => { if ((ov.app[k]) !== (Object.assign({}, DEF_APP, ds.app || {})[k])) changed["app." + k] = 1; });
     Object.keys(ov.portal || {}).forEach((k) => { if (JSON.stringify(ov.portal[k]) !== JSON.stringify(Object.assign({}, DEF_PORTAL, ds.portal || {})[k])) changed["portal." + k] = 1; });
-    return { app, portal, changed, owner };
+    Object.keys(ov.set || {}).forEach((k) => { if (ov.set[k] !== Object.assign({}, DEF_SET, ds.set || {})[k]) changed["set." + k] = 1; });
+    return { app, portal, set, changed, owner };
   };
-  RB.defaultsOf = (name) => { const ds = RB.desigOf(name) || { app: {}, portal: {} }; return { app: Object.assign({}, DEF_APP, ds.app || {}), portal: Object.assign({}, DEF_PORTAL, ds.portal || {}) }; };
+  RB.defaultsOf = (name) => { const ds = RB.desigOf(name) || { app: {}, portal: {} }; return { app: Object.assign({}, DEF_APP, ds.app || {}), portal: Object.assign({}, DEF_PORTAL, ds.portal || {}), set: Object.assign({}, DEF_SET, ds.set || {}) }; };
   RB.countOn = (name) => Object.values(RB.defaultsOf(name).app).filter(Boolean).length;
 
   const seatOfUid = (u) => D.seats.find((s) => s.uid === u && s.status === "filled");
@@ -115,6 +129,8 @@
     return (D.me && D.me.perms && D.me.perms.portal && D.me.perms.portal[sec]) || "none";
   };
   RB.canEdit = (sec) => RB.level(sec) === "edit";
+  /** 27 Nov One of the person's own Access switches on the website (See phone health, See Rules); owners always. */
+  RB.mySwitch = (k) => RB.isOwner() || (() => { const s = seatOfUid(uid); return !!(s && RB.effective(s).app[k]); })();
   /** The signed-in person's resolved portal settings (owners: everything). */
   RB.portalOf = () => { if (RB.isOwner()) return RB.effective({ role: "owner" }).portal; const s = seatOfUid(uid); return s ? RB.effective(s).portal : Object.assign({}, DEF_PORTAL, (D.me && D.me.perms && D.me.perms.portal) || {}); };
   /** How far the person sees in App view and the People list: own | team | all. */
@@ -171,7 +187,7 @@
       if (coll === "docs" && !RB.DEMO) { const ex = D.docs.find((x) => x.id === id); coll = (data.type || (ex && ex.type)) === "policy" ? "policies" : "docs"; }
       if (RB.DEMO) {
         RB.savedSoon();
-        if (coll === "config") { if (id === "holimport") { D.holimport = data; RB.demoHolImport && RB.demoHolImport(data); return id; } if (id === "holidays") D.holidays = data; else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
+        if (coll === "config") { if (id === "holimport") { D.holimport = data; RB.demoHolImport && RB.demoHolImport(data); return id; } if (id === "holidays") D.holidays = data; else if (id === "waSent") D.waSent = Object.assign({}, D.waSent || {}, data); else if (id === "plotsop") D.plotSop = data; else if (id === "reasons") D.reasons = data; else if (id === "meeting") D.cfg = merge ? Object.assign({}, D.cfg || {}, data) : data; else if (id === "designations") D.desig = merge ? Object.assign({}, D.desig || {}, data) : data; return id; }
         if (coll === "reading") { D.reading[id] = merge ? Object.assign({}, D.reading[id] || {}, data) : data; return id; }
         if (coll === "dossier") { D.dossier[id] = data; return id; }
         const arr = D[COLL[coll]]; const i = arr.findIndex((x) => x.id === id || x.uid === id && coll === "members");
@@ -264,7 +280,7 @@
     D.seats.forEach((s) => {
       // Every seat keeps its permissions on itself, so whoever signs in (phone or web) gets them at once.
       if (s.role !== "owner" && s.gmail) {
-        const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal };
+        const e0 = RB.effective(s), p0 = { app: e0.app, portal: e0.portal, set: e0.set };
         if (JSON.stringify(s.perms) !== JSON.stringify(p0)) writes.push(RB.Store.put("seats", s.id, { perms: p0 }, true, true).catch((err) => console.warn("sync seat", s.id, err)));
       }
       if (s.status !== "filled" || !s.uid) return;
@@ -276,7 +292,7 @@
         // The seat's name is the only name shown anywhere (locked 23 Nov), so the member row follows it.
         name: s.name || (RB.member(s.uid) || {}).name || "",
         seatId: s.id, designation: s.designation || "", dept: s.dept || "", reportsTo: head && head.uid ? head.uid : "", managers: chain,
-        perms: { app: e.app, portal: e.portal }, setDossier: false, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
+        perms: { app: e.app, portal: e.portal, set: e.set }, setDossier: false, canGiveTo: RB.canGiveTo(s).filter((x) => x.uid && x.status === "filled").map((x) => x.uid),
         role: s.role === "owner" ? "owner" : "member",
         docDesigs: Array.from(new Set([s.designation].concat(RB.descendants(s.id).map((x) => x.designation)).filter(Boolean))),
         also: s.also || [],   // WEB21 other jobs this person covers (plot steps go to them too)
@@ -439,7 +455,7 @@
     const allTp = RB.level("app") !== "none" && ((D.me && D.me.perms && D.me.perms.portal) || {}).appScope === "all";
     const tq = RB.isOwner() || allTp ? teamRef.collection("tasks") : teamRef.collection("tasks").where("viewers", "array-contains", uid);
     on(tq, "tasks", (s) => { D.tasks = s.docs.map((d) => Object.assign({ id: d.id }, d.data())); RB.soft(); }, onErr);
-    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holimport") D.holimport = d.data(); if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); }); RB.soft(); }, onErr);
+    on(teamRef.collection("config"), "config", (s) => { D.plotSop = null; D.plotSopX = null; D.holidays = null; s.docs.forEach((d) => { if (d.id === "holimport") D.holimport = d.data(); if (d.id === "holidays") D.holidays = d.data(); if (d.id === "reasons") D.reasons = d.data(); if (d.id === "meeting") D.cfg = d.data(); if (d.id === "designations") D.desig = d.data(); if (d.id === "policyIndex") RB.watchPolicies(d.data().byDesig); if (d.id === "plotsop") D.plotSop = d.data(); if (d.id === "plotsopx") D.plotSopX = d.data(); if (d.id === "waSent") D.waSent = d.data(); }); RB.soft(); }, onErr);
     // Plot files: the files themselves.
     if (RB.level("plot") !== "none") snap("plotfiles", (s) => (D.plot = s.docs.map((d) => Object.assign({ id: d.id }, d.data()))));
     // Plot files: the step tasks of every file (the rules let Plot files access read tasks marked plot: true).

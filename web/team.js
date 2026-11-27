@@ -48,6 +48,9 @@
   const saveDesigLazy = (list, label) => { D.desig = Object.assign({}, D.desig || {}, { list }); lazySave("desig", () => RB.Store.put("config", "designations", { list: RB.desigList(), updatedAt: Date.now() }, true), label); };
 
   // ------------------------------------------------------------------ people
+  /** S1.2 Roughly how much of the free 1 GB the phone backups use: each phone keeps 7 nights of about its last size. */
+  const storageLine = () => { const b = D.members.reduce((n, m) => n + (m.backupBytes || 0) * 7, 0); if (!b) return ""; const mb = b / 1048576;
+    return `<br>☁ Cloud backups use about <b>${mb < 1 ? "under 1" : Math.round(mb)} MB</b> of the free 1 GB (${Math.max(0, Math.round(100 - mb / 10.24))}% left). A backup is red after 2 nights without one.`; };
   function people() {
     const q = (S.q || "").toLowerCase();
     // Sort by a column (locked 23 Nov, WEB8): click a column name, click again to flip. [column, 1 = A→Z / -1 = Z→A]
@@ -69,7 +72,7 @@
       const btn = ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${joined || s.invited ? "Edit" : "Fill seat"}</button>` : "";
       return `<div class="prow ${joined ? "on" : "off"} ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}" role="button" tabindex="0">
         ${avatar(s)}
-        <div class="pcl"><b>${esc(joined ? s.name : s.name || "Empty seat")}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}</b>${status}</div>
+        <div class="pcl"><b>${esc(joined ? s.name : s.name || "Empty seat")}${s.role === "owner" ? ' <span class="tag">App owner</span>' : ""}${RB.mySwitch("seeHealth") && healthBad(s).length ? ` <span class="hdot" title="Phone health: ${esc(healthBad(s).join(", "))} off"></span>` : ""}</b>${status}${backupOf(s)}</div>
         <div class="pcl">${s.phone ? `<b class="pph">📞 ${esc(s.phone)}</b>` : '<b class="pph none">📞 —</b>'}<span class="pem">✉ ${esc(s.gmail)}</span></div>
         <div class="pcl"><b>${esc(s.dept || "—")}</b><span>${headName(s) ? "Head: <b>" + esc(headName(s)) + "</b>" : s.role === "owner" ? "Top of the chart" : "No head"}</span></div>
         <div class="pcl">${tt ? `<b>${esc(RB.ttName(tt))}</b>` : '<span>—</span>'}</div>
@@ -77,7 +80,7 @@
         <div class="pend">${miss}${btn}</div></div>`;
     };
     const html = `<div class="cols"><div class="card pcard" style="flex:2"><div class="stickhead"><div class="subhead"><h3>People · ${D.seats.filter((s) => s.status === "filled").length} in seats</h3><div class="sp"></div>${ed() ? '<button class="btnp edit-only" id="addseat">+ Add seat</button>' : ""}</div>
-      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.</div>${list.length ? head : ""}</div>
+      <div class="hint">Each official Gmail is one seat. Only Gmails added here can join Rafiq Builders. When someone leaves, the seat stays and the history stays.${storageLine()}</div>${list.length ? head : ""}</div>
       ${list.map(row).join("") || (D.members.some((m) => m.status === "active") && ed() ? '<div class="hint warn edit-only">Your team is already using the app. Turn the people who are in it now into seats first; they keep all their tasks and their place in the chart.<br><button class="btnp" id="migrate" style="margin-top:8px">Make seats from the current team</button></div>' : '<div class="muted">No seats yet. Add the first one.</div>')}</div></div>`;
     return { html, side: seatPanel(sel) };
   }
@@ -97,6 +100,19 @@
   }
 
   /** Seat still linked to an account that was removed (offboarded or signed out): tasks can't reach it. */
+  /** S1 The phone's last cloud backup (written by the phone): red after 2 nights. */
+  const backupOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); if (!m) return ""; const at = m.backupAt || 0, old = !at || Date.now() - at > 2 * DAY;
+    return `<span class="pbk ${old ? "old" : ""}" title="Last cloud backup from this phone">☁ ${at ? "Backup " + fmtShort(at) : "No cloud backup yet"}</span>`; };
+  /** S10.1 Phone health (written by the phone when online): the important items that are off. */
+  const HEALTH = [["notif", "Notifications"], ["full", "Full-screen alerts"], ["alarms", "Exact alarms (Alarms & reminders)"], ["battery", "Battery saver not blocking the app"], ["calls", "Call log (after-call popup)"], ["overlay", "Show over other apps (popups)"], ["sms", "SMS"]];
+  const healthOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return m && m.health ? m.health : null; };
+  const healthBad = (s) => { const h = healthOf(s); return h ? HEALTH.filter(([k]) => k !== "sms" && h[k] === false).map((x) => x[1]) : []; };
+  const healthCard = (s) => {
+    if (!RB.mySwitch("seeHealth") || s.status !== "filled") return "";
+    const h = healthOf(s);
+    if (!h) return '<div class="sec"><h4>Phone health</h4><div class="sub">Nothing from this phone yet. It is sent when the app opens online (version 0.61 or newer).</div></div>';
+    return `<div class="sec"><h4>Phone health</h4><div class="sub">App ${esc(h.v || "?")} · last online ${fmtWhen(h.at || 0)}</div>${HEALTH.map(([k, l]) => `<div class="hrow ${h[k] === false ? "bad" : ""}">${h[k] === false ? "✗" : "✓"} ${l}</div>`).join("")}</div>`;
+  };
   const signedOut = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return !!m && m.status !== "active"; };
 
   function seatPanel(s) {
@@ -106,6 +122,7 @@
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
     return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${signedOut(s) ? '<div class="s pst out">● Signed out · must sign in again<br>Tasks can\'t reach this person until they sign in on the phone.</div>' : ""}${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
+      ${healthCard(s)}
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
       <div class="sec"><h4>Access now</h4><div class="sub">${Object.values(e.app).filter(Boolean).length} of ${RB.APP_SW.length} app switches on · Portal: ${RB.SECTIONS.filter(([k]) => e.portal[k] !== "none").map(([k, l]) => l + " " + e.portal[k]).join(", ") || "none"}</div></div>`;
   }
@@ -406,97 +423,216 @@
   }
 
   // ------------------------------------------------------------------ access
+  /*
+   * 27 Nov (S2.4-S2.15, locked mockups access-sections/4-access-v3 + 5-info-popup + 6/7 sticky): a slim picker bar that
+   * stays at the top, then one card per section with tinted rows, a "default"/"✎ changed" tag, an ⓘ with the full
+   * explanation and a "Copy this section to…" link. "Copy all…" copies every section. Works for designations and people.
+   * Row: [group, key, title, subtitle, ⓘ text, control, options]. group: app (switch), set (website settings), portal.
+   */
+  const H = (m) => (m % 60 ? (m / 60).toFixed(1).replace(/\.0$/, "") : m / 60) + " h";
+  const MINS = (l) => l.map((m) => [m, m === 0 ? "Off" : m >= 1440 ? "1 day" : H(m)]);
+  const OFFS = [-480, -360, -300, -240, -180, -120, -90, -60, -45, -30, -15, 0, 15, 30, 60, 90, 120];
+  const offLbl = (m) => (m === 0 ? "At duty end" : (Math.abs(m) % 60 ? Math.abs(m) + " min" : Math.abs(m) / 60 + " h") + (m < 0 ? " before duty end" : " after duty end"));
+  const STY = [["full", "Full screen"], ["normal", "Normal"], ["off", "Off"]];
+  RB.ACC = [
+    { id: "team", title: "Team and tasks", col: 0, rows: [
+      ["app", "approveExt", "Approve extension requests", "From his own people", "On: when one of his own people asks for more time on a task he gave, he can approve or keep the deadline on his phone. Off: only the task giver's own phone can't approve; the request waits for someone who can."],
+      ["app", "seeNumbers", "See how my people are doing", "Late and due-today counts", "On: in his phone's Team page he sees how many tasks are late or due today for each person he gave tasks to. Off: he doesn't see these numbers."],
+      ["app", "seeDay", "See own people's day", "People below him in the chart", "On: he can open the day (tasks and calendar) of people below him in the chart. Off: he only sees his own day."],
+      ["app", "giveDown", "Give tasks down his branch", "", "On: he can give tasks to anyone below him in the chart. Off: he can't give tasks down."],
+      ["app", "giveSide", "Give tasks sideways", "Colleagues with the same head", "On: he can give tasks to colleagues who have the same head. Off: not to them."],
+    ] },
+    { id: "dates", title: "Date rules", isNew: true, col: 0, note: "He sees these in phone Settings › Task rules but can't change them. Times count working hours only (nights, his off day and holidays don't count).", rows: [
+      ["set", "noDate", "No deadline picked · remind him after", "Tasks he gave", "When he gives a task and the other person hasn't picked a deadline after this many working hours, he gets a reminder. Example: 4 h, task given at 10 AM, reminder at 2 PM.", "sel", MINS([60, 120, 240, 480, 1440])],
+      ["set", "urgHours", "Urgent, no deadline · first reminder after", "Tasks he gets", "An urgent task he gets with no deadline: the first reminder comes after this many working hours. The task giver is told each time too. Stops as soon as a deadline is set. Example: 2 h, given at 11 AM, reminders at 1 PM, 3 PM, 5 PM.", "sel", [1, 2, 3, 4, 6, 8].map((h) => [h, h + " h"])],
+      ["set", "urgTimes", "Urgent, no deadline · repeat", "Each with the same gap", "How many reminders in all for an urgent task with no deadline (same gap each time). If the task never reached his phone, the giver's phone sends him one SMS instead.", "sel", [1, 2, 3, 4, 5, 6].map((n) => [n, n + "×"])],
+      ["set", "urgStyle", "Urgent, no deadline · how it shows", "On his phone", "Full screen: a ringing popup like a call-back reminder. Normal: a notification. Off: no reminders to him (the giver is still told).", "seg", STY],
+      ["set", "smsMin", "Not seen · send SMS after", "Tasks he gave", "If the person hasn't opened his task after this many working hours, his phone sends them an SMS. Off: no SMS.", "sel", MINS([0, 60, 120, 240])],
+      ["set", "locked", "Deadline locked", "Once set, only “Extend” can change it", "On: once the person picks a deadline on a task he gave, they can only ask him to extend it. Off: they can change it themselves.", "sw"],
+      ["set", "freeExt", "Extend without asking", "On tasks he gave", "How many times the person may move their own deadline without asking him. Never = always asks.", "sel", [[0, "Never"], [1, "1×"], [2, "2×"], [3, "3×"]]],
+    ] },
+    { id: "calls", title: "Calls and texts", col: 0, rows: [
+      ["app", "callRec", "Call recording", "Stays on his phone", "On: call recording is allowed; he still has to turn it on in his own phone. Recordings never leave his phone. Off: no call recording."],
+      ["app", "sms", "Text messages", "His own SMS follow-ups", "On: he can send SMS follow-ups from his phone. Off: every SMS part disappears from his phone (Settings › Text messages, text options on tasks, Texts links, Search). Texts already scheduled pause and start again when it is back on. The automatic team SMS is not affected."],
+      ["app", "popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", "On: he can turn “After-call popup only in duty hours” on or off himself. Off: it stays on and shows “Set by your manager”. Calls from numbers with an open task always ask."],
+    ] },
+    { id: "plot", title: "Plot files", col: 0, rows: [
+      ["app", "openPlot", "Can open new plot files", "Shows “New plot file” in his phone", "On: his phone shows “New plot file” in Settings. Off: it is hidden (until set, the owner and whoever does the first step have it).", "sw", null, true],
+    ] },
+    { id: "rem", title: "Reminders", isNew: true, col: 0, note: "Set from his duty end (his timetable, else 11 AM - 9 PM). Never on his off day or a holiday. Full-screen popup, works with no internet.", rows: [
+      ["set", "dos1", "Dossier reminder 1", "Only if a dossier task is unticked", "A full-screen popup listing his unticked dossier tasks, with Open dossier and Skip. Each Skip shows in his Team Performance report.", "rem"],
+      ["set", "dos2", "Dossier reminder 2", "", "A second dossier popup, the same way.", "rem"],
+      ["set", "rev1", "Review reminder 1", "Only if something is waiting", "The review popup (calls overdue or to review, texts to review), with Snooze and Skip.", "rem"],
+      ["set", "rev2", "Review reminder 2", "", "A second review popup. Example: lunch time = 4 h before duty end.", "rem"],
+    ] },
+    { id: "portal", title: "In the portal", col: 1, rows: [
+      ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't."],
+      ["portal", "meetings", "Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", "None: no Meetings page. View: reads minutes of meetings he was in and his own actions. Edit: runs meetings."],
+      ["portal", "team", "Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments). The People list follows “How far”.", "None: no Team page. View: reads the ticked tabs. Edit: changes seats, chart and departments in the ticked tabs. Access and Offboard stay owners only."],
+      ["portal", "plot", "Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page."],
+      ["portal", "docs", "Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", "View: his reading list and shared documents. Edit: adds documents and sees everyone's reading."],
+      ["portal", "settings", "Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", "None: no Settings page. View: reads the ticked tabs. Edit: changes them."],
+      ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
+      ["app", "seeRules", "See Rules", "Settings › Rules: how every rule works", "On: he sees Settings › Rules (read only). Owners always see it."],
+    ] },
+    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after. Anything with a set time always rings. He can't change these on his phone.", rows: [
+      ["set", "n_plotDue", "Step due", "At the SOP due time", "Full screen: a ringing popup at the step's due time (like a call-back reminder). Normal: a notification. Off: nothing.", "seg", STY, false, "PLOT FILES"],
+      ["set", "n_plotHeads", "Heads-up before due", "", "A notification before a plot step is due. The time picks how long before.", "seg", STY],
+      ["set", "n_plotWait", "Waiting for plot owner", "Once a working day", "When a step waits for the plot owner, a reminder once a working day to call them.", "seg", STY],
+      ["set", "n_plotFollow", "Updates on plots he follows", "", "Started, late and done on plot steps he is told about.", "seg", STY],
+      ["set", "n_newTask", "New task for him", "", "A new task, or a task taken back or given to someone else.", "seg", STY, false, "TEAM TASKS"],
+      ["set", "n_mention", "Someone @mentioned him", "Rings even at night", "A Timeline message with @his name.", "seg", STY],
+      ["set", "n_noDate", "No date / not seen reminders", "", "“Pick your deadline”, “X hasn't set a date”, not seen and SMS problems.", "seg", STY],
+      ["set", "n_doneCheck", "Done, check it", "", "Someone finished a task he gave; or a task he did was received.", "seg", STY],
+      ["set", "n_extend", "Asks to extend", "", "Someone asks for more time on a task he gave.", "seg", STY],
+      ["set", "n_timeline", "Timeline messages", "Silent at night", "Messages and changes on a task's Timeline.", "seg", STY],
+      ["set", "n_dossier", "New dossier task", "", "A dossier task added or changed for him by the office.", "seg", STY, false, "DOSSIER"],
+    ] },
+  ];
+  /** Every key a section holds ("app.x", "set.y", "portal.z"); reminders hold On + minutes. */
+  const secKeys = (sec) => sec.rows.flatMap((r) => (r[5] === "rem" ? ["set." + r[1] + "On", "set." + r[1] + "Min"] : r[1] === "plotHeadsMin" ? [] : [r[0] + "." + r[1]]).concat(r[1] === "n_plotHeads" ? ["set.plotHeadsMin"] : []).concat(r[0] === "portal" && r[1] === "app" ? ["portal.appScope"] : r[0] === "portal" && r[1] === "team" ? ["portal.teamTabs"] : r[0] === "portal" && r[1] === "settings" ? ["portal.settingsTabs"] : []));
+  const getK = (e, key) => { const [g, k] = key.split("."); return (e[g] || {})[k]; };
+  const srcEff = () => (S.accMode === "person" && RB.seat(S.accSeat) ? RB.effective(RB.seat(S.accSeat)) : RB.defaultsOf(S.accDesig));
+
   function access() {
     const seats = D.seats.filter((s) => s.status === "filled"), desigs = RB.desigList().slice().sort((a, b) => a.name.localeCompare(b.name));
     if (!S.accSeat || !RB.seat(S.accSeat)) S.accSeat = (seats.find((s) => s.role !== "owner") || seats[0] || {}).id;
     if (!S.accDesig || !RB.desigOf(S.accDesig)) S.accDesig = (desigs.find((d) => !RB.isChecked(d)) || desigs[0] || {}).name;
     const s = RB.seat(S.accSeat), mode = S.accMode === "person" && s ? "person" : "desig";
-    const e = mode === "desig" ? { app: RB.defaultsOf(S.accDesig).app, portal: RB.defaultsOf(S.accDesig).portal, changed: {} } : RB.effective(s);
+    const e = mode === "desig" ? Object.assign({ changed: {} }, RB.defaultsOf(S.accDesig)) : RB.effective(s);
     const can = ed() && !(mode === "person" && s && s.role === "owner");
-    const sw = (k) => `<div class="sw ${e.app[k] ? "on" : ""} ${can ? "" : "dis"}" data-sw="${k}" role="switch" aria-checked="${!!e.app[k]}"></div>`;
-    const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
-    const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><div class="nm"><b>${esc(S.accDesig)} · defaults</b><span>Everyone with this designation, unless changed for one person</span></div>`
-      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><div class="nm"><b>${esc(RB.holderName(s))}</b><span>${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span></div>`;
-    const cur = S.accDesig && RB.desigOf(S.accDesig);
-    const left = `<div class="card" style="flex:1.1"><div class="subhead" style="flex-wrap:nowrap"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div><div class="sp"></div>${mode === "desig" && ed() ? `${cur && RB.isChecked(cur) ? "" : '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>'}<button class="btnp edit-only" id="acccopy">Copy to…</button>` : ""}${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset to default</button>' : ""}</div>
-      <div class="subhead">${mode === "person" ? `<select id="accp" style="flex:1">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd" style="flex:1">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}</div>
-      <div class="seatcard" style="cursor:default">${who}</div>${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}
-      <div class="mh2" style="margin-top:12px">IN THE APP</div>
-      ${RB.APP_SW.map(([k, t, sub]) => `<div class="swrow"><div class="w"><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</div>${stag("app." + k)}${sw(k)}</div>`).join("")}</div>`;
     const dis = can ? "" : "pointer-events:none;opacity:.6";
+    const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
+    const info = (t) => (t ? `<button class="accinfo" data-info="${esc(t)}" aria-label="What this does">i</button>` : "");
+    const sw = (g, k) => `<div class="sw ${getK(e, g + "." + k) ? "on" : ""} ${can ? "" : "dis"}" data-asw="${g}.${k}" role="switch" aria-checked="${!!getK(e, g + "." + k)}"></div>`;
+    const sel = (key, opts) => `<select class="accsel" data-aset="${key}" style="${dis}">${opts.map(([v, l]) => `<option value="${v}" ${String(getK(e, key)) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+    const seg = (key, opts) => `<div class="lvl" style="${dis}">${opts.map(([v, l]) => `<button data-aseg="${key}:${v}" class="${getK(e, key) === v ? "on" + (v === "full" ? " full" : "") : ""}">${l}</button>`).join("")}</div>`;
     const lv = (k, opts) => `<div class="lvl" style="${dis}">${opts.map(([v, l]) => `<button data-lvl="${k}:${v}" class="${(k === "app" ? (e.portal.app !== "none" ? "view" : "none") : e.portal[k]) === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const NVE = [["none", "None"], ["view", "View"], ["edit", "Edit"]];
     const chip = (key, v, l, on) => `<button class="sc ${on ? "on" : ""}" style="${dis}" data-tick="${key}:${v}">${on ? "✓ " : ""}${l}</button>`;
     const lock = (t) => `<button class="sc" style="opacity:.55;cursor:default" disabled>🔒 ${t}</button>`;
-    const extra = (label, html) => `<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding-top:8px"><span class="mh2" style="margin:0 4px 0 0">${label}</span>${html}</div>`;
-    const row = (name, help, tags, ctl, more) => `<div class="swrow" style="flex-wrap:wrap;align-items:flex-start"><div class="w" style="min-width:200px"><b>${name}</b><span>${help}</span></div>${tags}${ctl}${more || ""}</div>`;
+    const extra = (label, html) => `<div class="accx"><span class="mh2" style="margin:0 4px 0 0">${label}</span>${html}</div>`;
     const tabsOn = (key, all) => (Array.isArray(e.portal[key]) ? e.portal[key] : []).filter((t) => all.some((a) => a[0] === t));
-    const teamOn = tabsOn("teamTabs", RB.TEAM_TABS), setOn = tabsOn("settingsTabs", RB.SET_TABS);
-    const mid = `<div class="card" style="flex:1.25"><div class="mh2">IN THE PORTAL</div>
-      ${row("Team Performance", 'See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.', stag("portal.app", "portal.appScope"), lv("app", [["none", "Off"], ["view", "On"]]),
-        e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : "")}
-      ${row("Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", stag("portal.meetings"), lv("meetings", NVE))}
-      ${row("Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments, approving joins). The People list follows “How far”.", stag("portal.team", "portal.teamTabs"), lv("team", NVE),
-        e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, teamOn.includes(v))).join("") + lock("Access · Offboard (owners only)")) : "")}
-      ${row("Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", stag("portal.plot"), lv("plot", [["none", "Off"], ["edit", "On"]]))}
-      ${row("Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", stag("portal.docs"), lv("docs", NVE))}
-      ${row("Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", stag("portal.settings", "portal.settingsTabs"), lv("settings", NVE),
-        e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, setOn.includes(v))).join("") + lock("Check for updates · Appearance (always on)")) : "")}
-      <div class="hint">Portal “None” for every section = he can't sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div></div>`;
-    const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length;
-    const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of 9</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
+    const portalCtl = (k) => k === "app" ? [lv("app", [["none", "Off"], ["view", "On"]]), e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : ""]
+      : k === "plot" ? [lv("plot", [["none", "Off"], ["edit", "On"]]), ""]
+      : k === "team" ? [lv("team", NVE), e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, tabsOn("teamTabs", RB.TEAM_TABS).includes(v))).join("") + lock("Access · Offboard (owners only)")) : ""]
+      : k === "settings" ? [lv("settings", NVE), e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, tabsOn("settingsTabs", RB.SET_TABS).includes(v))).join("") + lock("Check for updates · Appearance (always on)")) : ""]
+      : [lv(k, NVE), ""];
+    const rowHtml = (r) => {
+      const [g, k, t, sub, inf, ctl, opts, isNew, band] = r;
+      let c, more = "", tags;
+      if (ctl === "rem") {
+        const on = getK(e, "set." + k + "On");
+        c = sw("set", k + "On"); tags = stag("set." + k + "On", "set." + k + "Min");
+        more = on ? `<div class="accx">${sel("set." + k + "Min", OFFS.map((m) => [m, offLbl(m)]))}</div>` : "";
+      } else if (g === "portal") { const [x, y] = portalCtl(k); c = x; more = y; tags = stag("portal." + k, "portal.appScope", "portal.teamTabs", "portal.settingsTabs"); }
+      else {
+        tags = stag(g + "." + k, ...(k === "n_plotHeads" ? ["set.plotHeadsMin"] : []));
+        c = ctl === "sel" ? sel(g + "." + k, opts) : ctl === "seg" ? seg(g + "." + k, opts) : sw(g, k);
+        if (k === "n_plotHeads" && getK(e, "set.n_plotHeads") !== "off") more = `<div class="accx">${sel("set.plotHeadsMin", [15, 30, 60, 120, 240, 1440].map((m) => [m, (m >= 1440 ? "1 day" : m >= 60 ? m / 60 + " hour" + (m > 60 ? "s" : "") : m + " min") + " before"]))}</div>`;
+      }
+      return `${band ? `<div class="mh2 accband">${band}</div>` : ""}<div class="swrow accrow"><div class="w"><b>${esc(t)}${info(inf)}${isNew ? ' <span class="tag grn">NEW</span>' : ""}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${tags}${c}${more}</div>`;
+    };
+    const card = (sec) => `<div class="card acccard"><div class="subhead"><h3 style="margin:0">${esc(sec.title)}${sec.isNew ? ' <span class="tag grn">NEW</span>' : ""}</h3><div class="sp"></div>${ed() ? `<button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button>` : ""}</div>${sec.note ? `<div class="hint warn">${esc(sec.note)}</div>` : ""}${sec.rows.map(rowHtml).join("")}${sec.id === "portal" ? '<div class="hint">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}</div>`;
+    const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
+      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b><span class="sub">${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span>`;
+    const cur = S.accDesig && RB.desigOf(S.accDesig);
+    const bar = `<div class="accbar"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div>
+      ${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}
+      <div class="accwho">${who}</div><div class="sp"></div>
+      ${mode === "desig" && ed() && cur && !RB.isChecked(cur) ? '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>' : ""}
+      ${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset</button>' : ""}
+      ${ed() ? '<button class="btnp edit-only" data-acccopy="all">⧉ Copy all…</button>' : ""}</div>
+      ${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}`;
+    const col = (i) => `<div class="acccol">${RB.ACC.filter((x) => x.col === i).map(card).join("")}</div>`;
+    const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length, total = RB.APP_SW.length;
+    const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of ${total}</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
     const side = `<div class="card"><div class="subhead" style="margin-bottom:6px"><h3 style="margin:0">Designation defaults</h3><div class="sp"></div>${unN ? `<button class="sc ${showUn ? "on" : ""}" data-accun="1">Unchecked · ${unN}</button>` : ""}</div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
-      <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, SMS, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
-    return { html: `<div class="cols">${left}${mid}</div>`, side, sideCards: true };
-  }
-  async function setSwitch(k, val) {
-    if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { app: Object.assign({}, d.app) }) : d)); const d = list.find((x) => x.name === S.accDesig); d.app[k] = val; d.checkedAt = Date.now();
-      saveDesigLazy(list, "Default for " + S.accDesig + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
-    } else {
-      const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.app = ov.app || {}; ov.app[k] = val;
-      if (RB.defaultsOf(s.designation).app[k] === val) delete ov.app[k];
-      s.override = ov; saveOverride(s, RB.holderName(s) + ": " + RB.APP_SW.find((x) => x[0] === k)[1] + " " + (val ? "ON" : "OFF"));
-    }
-  }
-  async function setLevel(k, v) {
-    if (S.accMode === "desig" && S.accDesig) {
-      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { portal: Object.assign({}, d.portal) }) : d)); list.find((x) => x.name === S.accDesig).portal[k] = v; list.find((x) => x.name === S.accDesig).checkedAt = Date.now();
-      saveDesigLazy(list, "Default for " + S.accDesig + ": portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
-    } else {
-      const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov.portal = ov.portal || {}; ov.portal[k] = v;
-      if (JSON.stringify(RB.defaultsOf(s.designation).portal[k]) === JSON.stringify(v)) delete ov.portal[k];
-      s.override = ov; saveOverride(s, RB.holderName(s) + ": portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
-    }
+      <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
+    return { html: `${bar}<div class="acccols">${col(0)}${col(1)}</div>`, side, sideCards: true };
   }
 
-  /** Copy one designation's access (app switches and portal levels) to several others at once. */
-  function copyAccess(from) {
-    const src = RB.desigOf(from); if (!src) return;
+  /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
+  function setVal(g, k, val, label) {
+    if (S.accMode === "desig" && S.accDesig) {
+      const list = RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { [g]: Object.assign({}, d[g]) }) : d)); const d = list.find((x) => x.name === S.accDesig); d[g][k] = val; d.checkedAt = Date.now();
+      saveDesigLazy(list, "Default for " + S.accDesig + ": " + label);
+    } else {
+      const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); ov[g] = ov[g] || {}; ov[g][k] = val;
+      if (JSON.stringify(RB.defaultsOf(s.designation)[g][k]) === JSON.stringify(val)) delete ov[g][k];
+      s.override = ov; saveOverride(s, RB.holderName(s) + ": " + label);
+    }
+    return Promise.resolve();
+  }
+  const rowTitle = (k) => { for (const sec of RB.ACC) for (const r of sec.rows) if (r[1] === k || r[1] + "On" === k || r[1] + "Min" === k) return r[2]; return k === "plotHeadsMin" ? "Heads-up time" : k; };
+  const setSwitch = (k, val) => setVal("app", k, val, rowTitle(k) + " " + (val ? "ON" : "OFF"));
+  const setLevel = (k, v) => setVal("portal", k, v, "portal " + k + " " + (Array.isArray(v) ? v.join(", ") || "none" : v));
+
+  /**
+   * S2.5/S2.8 Copy the whole access (all sections) or one section to many designations (Designations mode) or people
+   * (People mode). Each one shows "✓ Same as <source>" or "N rows different"; "Show only different" hides the same ones.
+   */
+  function copyAccess(secId) {
+    const secs = secId === "all" ? RB.ACC : RB.ACC.filter((x) => x.id === secId);
+    const keys = secs.flatMap(secKeys), src = srcEff(), person = S.accMode === "person" && RB.seat(S.accSeat);
+    const srcName = person ? RB.holderName(person) : S.accDesig, what = secId === "all" ? "all access" : secs[0].title;
+    const items = person ? D.seats.filter((x) => x.status === "filled" && x.id !== person.id && x.role !== "owner").map((x) => ({ id: x.id, name: RB.holderName(x), group: x.designation || "No designation", e: RB.effective(x) }))
+      : RB.desigList().filter((d) => d.name !== S.accDesig).map((d) => ({ id: d.name, name: d.name, group: "", e: RB.defaultsOf(d.name) }));
+    items.forEach((it) => (it.diff = keys.filter((k) => JSON.stringify(getK(it.e, k)) !== JSON.stringify(getK(src, k))).length));
     const m = document.getElementById("modal"), pick = new Set();
-    const others = RB.desigList().filter((d) => d.name !== from).sort((a, b) => a.name.localeCompare(b.name));
-    const draw = (q) => {
-      const vis = others.filter((d) => !q || d.name.toLowerCase().includes(q.toLowerCase()));
-      m.querySelector("#cplist").innerHTML = vis.map((d) => `<label class="swrow" style="cursor:pointer"><input type="checkbox" data-cp="${esc(d.name)}" ${pick.has(d.name) ? "checked" : ""} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${esc(d.name)}</b></div><span class="sub">${RB.countOn(d.name)} of 9${d.checkedAt ? "" : " · unchecked"}</span></label>`).join("") || '<div class="muted">No designation matches.</div>';
+    let onlyDiff = false;
+    const draw = () => {
+      const q = (m.querySelector("#cpq").value || "").toLowerCase();
+      const vis = items.filter((it) => (!q || (it.name + " " + it.group).toLowerCase().includes(q)) && (!onlyDiff || it.diff)).sort((a, b) => (a.group + a.name).localeCompare(b.group + b.name));
+      let last = null;
+      m.querySelector("#cplist").innerHTML = vis.map((it) => { const head = person && it.group !== last ? `<div class="mh2" style="margin-top:10px">${esc((last = it.group))}</div>` : ""; return head + `<label class="swrow" style="cursor:pointer"><input type="checkbox" data-cp="${esc(it.id)}" ${pick.has(it.id) ? "checked" : ""} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${esc(it.name)}</b></div>${it.diff ? `<span class="tag yel">${it.diff} row${it.diff === 1 ? "" : "s"} different</span>` : `<span class="tag grn">✓ Same as ${esc(first(srcName))}</span>`}</label>`; }).join("") || '<div class="muted">Nothing matches.</div>';
       m.querySelectorAll("[data-cp]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.cp) : pick.delete(c.dataset.cp); count(); }));
-      m.querySelector("#cpall").onclick = () => { const all = vis.every((d) => pick.has(d.name)); vis.forEach((d) => (all ? pick.delete(d.name) : pick.add(d.name))); draw(m.querySelector("#cpq").value); count(); };
+      m.querySelector("#cpall").onclick = () => { const all = vis.every((it) => pick.has(it.id)); vis.forEach((it) => (all ? pick.delete(it.id) : pick.add(it.id))); draw(); count(); };
     };
-    const count = () => { const b = m.querySelector("#cpgo"); b.textContent = pick.size ? "Copy to " + pick.size : "Copy"; b.disabled = !pick.size; };
-    m.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Copy ${esc(from)}'s access to…</b><div class="foot">App switches and portal levels are copied together. People with their own changes keep them.</div>
-      <div style="display:flex;gap:10px;margin:10px 0"><input id="cpq" placeholder="Search designations" style="flex:1"><button class="btnt" id="cpall">Select all</button></div>
+    const count = () => { const b = m.querySelector("#cpgo"); b.textContent = pick.size ? "Copy to " + pick.size + (person ? (pick.size === 1 ? " person" : " people") : "") : "Copy"; b.disabled = !pick.size; };
+    m.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Copy ${esc(srcName)}'s ${esc(what.toLowerCase())} to…</b><div class="foot">${secId === "all" ? "Every section is copied." : "Only this section is copied; the rest stays as it is."}${person ? "" : " People with their own changes keep them."}</div>
+      <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap"><input id="cpq" placeholder="Search" style="flex:1;min-width:160px"><button class="sc" id="cpdiff">Show only different</button><button class="btnt" id="cpall">Select all</button></div>
       <div id="cplist" style="max-height:52vh;overflow:auto"></div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="cpc">Cancel</button><button class="btnp" id="cpgo" disabled>Copy</button></div></div></div>`;
     m.querySelector("#cpc").onclick = () => (m.innerHTML = "");
-    m.querySelector("#cpq").oninput = (e) => draw(e.target.value);
+    m.querySelector("#cpq").oninput = draw;
+    m.querySelector("#cpdiff").onclick = (ev) => { onlyDiff = !onlyDiff; ev.target.classList.toggle("on", onlyDiff); ev.target.textContent = (onlyDiff ? "✓ " : "") + "Show only different"; draw(); };
     m.querySelector("#cpgo").onclick = () => {
-      const names = Array.from(pick); if (!names.length) return;
-      RB.confirm(`Copy ${esc(from)}'s access to ${names.length} designation${names.length === 1 ? "" : "s"}?<div class="foot" style="margin-top:6px">${names.map(esc).join(", ")}</div>`, "Copy", async () => {
-        const now = Date.now();
-        const list = RB.desigList().map((d) => (pick.has(d.name) ? Object.assign({}, d, { app: Object.assign({}, src.app || {}), portal: Object.assign({}, src.portal || {}), checkedAt: now }) : d.name === from ? Object.assign({}, d, { checkedAt: now }) : d));
-        await saveDesig(list, "Copied " + from + "'s access to " + names.join(", "));
+      const ids = Array.from(pick); if (!ids.length) return;
+      const names = ids.map((id) => items.find((x) => x.id === id).name);
+      RB.confirm(`Copy ${esc(srcName)}'s ${esc(what.toLowerCase())} to ${ids.length} ${person ? (ids.length === 1 ? "person" : "people") : "designation" + (ids.length === 1 ? "" : "s")}?<div class="foot" style="margin-top:6px">${names.map(esc).join(", ")}</div>`, "Copy", async () => {
+        const label = "Copied " + srcName + "'s " + what.toLowerCase() + " to " + names.join(", ");
+        if (person) {
+          for (const id of ids) {
+            const t = RB.seat(id), def = RB.defaultsOf(t.designation), ov = JSON.parse(JSON.stringify(t.override || {}));
+            keys.forEach((key) => { const [g, k] = key.split("."), v = getK(src, key); ov[g] = ov[g] || {}; if (JSON.stringify(def[g][k]) === JSON.stringify(v)) delete ov[g][k]; else ov[g][k] = v; });
+            t.override = ov;
+            await RB.Store.putField("seats", id, "override", ov);
+          }
+          await done(label);
+        } else {
+          const now = Date.now();
+          const list = RB.desigList().map((d) => {
+            if (!pick.has(d.name)) return d.name === S.accDesig ? Object.assign({}, d, { checkedAt: now }) : d;
+            const c = Object.assign({}, d, { app: Object.assign({}, d.app), portal: Object.assign({}, d.portal), set: Object.assign({}, d.set), checkedAt: now });
+            keys.forEach((key) => { const [g, k] = key.split("."); c[g][k] = getK(src, key); });
+            return c;
+          });
+          await saveDesig(list, label);
+        }
+        RB.render();
       });
     };
-    draw(""); count(); m.querySelector("#cpq").focus();
+    draw(); count(); m.querySelector("#cpq").focus();
+  }
+
+  /** S2.9 The ⓘ: the full explanation in a floating popup with Close. */
+  function accInfo(btn) {
+    const m = document.getElementById("modal"), r = btn.getBoundingClientRect();
+    const title = btn.closest(".w").querySelector("b").firstChild.textContent;
+    m.innerHTML = `<div class="back" id="iback" style="background:transparent"><div class="dlg popc" style="left:${Math.max(8, Math.min(r.left - 20, innerWidth - 330))}px;top:${Math.min(r.bottom + 8, innerHeight - 220)}px"><b>${esc(title)}</b><div style="margin:8px 0 12px;line-height:1.5">${esc(btn.dataset.info)}</div><div style="text-align:right"><button class="btnp" id="iok">Close</button></div></div></div>`;
+    m.querySelector("#iok").onclick = () => (m.innerHTML = "");
+    m.querySelector("#iback").onclick = (ev) => { if (ev.target.id === "iback") m.innerHTML = ""; };
   }
 
   /** A member whose Gmail has a seat takes the seat; caretaker tasks that belong to the seat go back to him (unless kept). */
@@ -736,7 +872,6 @@
       const dd = root.querySelector("#adddes"); if (dd) dd.onclick = addDesig;
       const dd2 = side && side.querySelector("#adddes2"); if (dd2) dd2.onclick = addDesig;
       both("[data-dren]", (e) => renDesig(e.dataset.dren));
-      const cpb = root.querySelector("#acccopy"); if (cpb) cpb.onclick = () => copyAccess(S.accDesig);
       const okb = root.querySelector("#accok"); if (okb) okb.onclick = () => saveDesig(RB.desigList().map((d) => (d.name === S.accDesig ? Object.assign({}, d, { checkedAt: Date.now() }) : d)), "Access for " + S.accDesig + " looked over, no change").then(() => RB.render());
       both("[data-dsort]", (e) => { S.dsort = e.dataset.dsort; RB.render(); });
       const adp = root.querySelector("#adddept"); if (adp) adp.onclick = () => newDeptFor(null);
@@ -771,7 +906,11 @@
         const cur = Array.isArray(eff[k]) ? eff[k] : [], next = cur.includes(v) ? cur.filter((x) => x !== v) : cur.concat(v);
         setLevel(k, next).then(RB.render);
       });
-      on(root, "[data-sw]", (e) => { if (!ed() || e.classList.contains("dis")) return; setSwitch(e.dataset.sw, !e.classList.contains("on")).then(RB.render); });
+      on(root, "[data-asw]", (e) => { if (!ed() || e.classList.contains("dis")) return; const [g, k] = e.dataset.asw.split("."), v = !e.classList.contains("on"); (g === "app" ? setSwitch(k, v) : setVal(g, k, v, rowTitle(k) + " " + (v ? "ON" : "OFF"))).then(RB.render); });
+      on(root, "[data-aseg]", (e) => { if (!ed()) return; const [key, v] = e.dataset.aseg.split(":"), k = key.split(".")[1]; setVal("set", k, v, rowTitle(k) + " " + e.textContent).then(RB.render); });
+      root.querySelectorAll("[data-aset]").forEach((el) => (el.onchange = () => { if (!ed()) return; const k = el.dataset.aset.split(".")[1], v = Number(el.value); setVal("set", k, v, rowTitle(k) + " " + el.options[el.selectedIndex].text).then(RB.render); }));
+      on(root, "[data-acccopy]", (e) => copyAccess(e.dataset.acccopy));
+      on(root, "[data-info]", (e) => accInfo(e));
       on(root, "[data-lvl]", (e) => { if (!ed()) return; const [k, v] = e.dataset.lvl.split(":"); setLevel(k, v).then(RB.render); });
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
       const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { const s = RB.seat(S.accSeat); s.override = {}; saveOverride(s, RB.holderName(s) + ": access reset to default"); });

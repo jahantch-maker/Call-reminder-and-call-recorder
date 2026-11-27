@@ -70,7 +70,11 @@ data class GCalendar(
     val accountType: String,
     val name: String,
     val color: Int,
-)
+    val owner: String = "",
+) {
+    /** The account's own main calendar (Google names it after the Gmail). */
+    val primary: Boolean get() = owner.equals(account, ignoreCase = true)
+}
 
 /**
  * Reads the Google Calendar that is synced to this phone (Android's calendar store), with the
@@ -91,9 +95,27 @@ object GoogleCal {
     fun hasPermission(c: Context) =
         c.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
-    fun enabled(c: Context) = AppSettings.get(c, KEY_ON, false) && hasPermission(c)
-    fun wanted(c: Context) = AppSettings.get(c, KEY_ON, false)
+    fun enabled(c: Context) = wanted(c) && hasPermission(c)
+    fun wanted(c: Context): Boolean { onOnce(c); return AppSettings.get(c, KEY_ON, true) }
     fun asked(c: Context) = AppSettings.get(c, KEY_ASKED, false)
+
+    /** 27 Nov: "Show Google Calendar" is on by default; phones that had it off get it switched on once (and asked again). */
+    private fun onOnce(c: Context) {
+        if (AppSettings.get(c, KEY_ON_ONCE, false)) return
+        AppSettings.set(c, KEY_ON, true)
+        if (!hasPermission(c)) AppSettings.set(c, KEY_ASKED, false)
+        AppSettings.set(c, KEY_ON_ONCE, true)
+    }
+    private const val KEY_ON_ONCE = "gcal_on_once"
+
+    /** The Gmail signed in to this app (lower case), or null when not signed in. */
+    fun myGmail(): String? = runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email }
+        .getOrNull()?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+
+    /** Google's own Holidays and Birthdays calendars (web holidays already reach the phone). */
+    private fun isHolidayOrBirthday(owner: String) =
+        owner.endsWith("#holiday@group.v.calendar.google.com") || owner.contains("#contacts@group.v.calendar.google.com") ||
+            owner.contains("addressbook#contacts")
 
     fun setEnabled(c: Context, on: Boolean) {
         AppSettings.set(c, KEY_ON, on)
@@ -107,29 +129,54 @@ object GoogleCal {
      * The calendars you switched on in Calendar settings › Google calendars. Everything else stays out
      * (other accounts, Holidays, Birthdays), and a calendar added to the phone later starts off.
      */
-    fun onIds(c: Context): Set<Long> =
-        AppSettings.getString(c, KEY_CALS).split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    fun onIds(c: Context): Set<Long> {
+        val saved = AppSettings.getString(c, KEY_CALS)
+        // Never picked yet: the signed-in Gmail's main calendar starts on, its others off.
+        if (saved.isEmpty() && !picked(c)) return calendars(c).filter { it.primary }.map { it.id }.toSet()
+        return saved.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
 
     fun setCalendarOn(c: Context, id: Long, on: Boolean) {
         val ids = onIds(c).toMutableSet()
         if (on) ids.add(id) else ids.remove(id)
         AppSettings.setString(c, KEY_CALS, ids.joinToString(","))
+        AppSettings.set(c, KEY_PICKED, true)
         refresh()
     }
 
     /** False until the calendar list has been shown once (it opens by itself the first time). */
     fun picked(c: Context) = AppSettings.get(c, KEY_PICKED, false)
-    fun setPicked(c: Context) = AppSettings.set(c, KEY_PICKED, true)
+    fun setPicked(c: Context) {
+        if (picked(c)) return
+        // Keep the default (main calendar on) as the saved choice.
+        if (AppSettings.getString(c, KEY_CALS).isEmpty()) AppSettings.setString(c, KEY_CALS, onIds(c).joinToString(","))
+        AppSettings.set(c, KEY_PICKED, true)
+    }
 
-    /** Every calendar on the phone, grouped by account (sorted by account, then name). */
+    /**
+     * The calendars of the Gmail signed in to this app (sorted by name), without Holidays and Birthdays.
+     * Other accounts on the phone are not listed. Not signed in (guest): every account, as before.
+     */
     fun calendars(c: Context): List<GCalendar> {
         if (!hasPermission(c)) return emptyList()
+        val me = myGmail()
+        return allCalendars(c).filter { !isHolidayOrBirthday(it.owner) && (me == null || it.account.equals(me, ignoreCase = true)) }
+    }
+
+    /** True when the signed-in Gmail is an account on this phone (else Calendar settings says to add it). */
+    fun myGmailOnPhone(c: Context): Boolean {
+        val me = myGmail() ?: return true
+        return allCalendars(c).any { it.account.equals(me, ignoreCase = true) }
+    }
+
+    private fun allCalendars(c: Context): List<GCalendar> {
         val cols = arrayOf(
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.ACCOUNT_NAME,
             CalendarContract.Calendars.ACCOUNT_TYPE,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
         )
         return try {
             c.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, cols, null, null, null)?.use { cur ->
@@ -142,6 +189,7 @@ object GoogleCal {
                             accountType = cur.getString(2).orEmpty(),
                             name = cur.getString(3).orEmpty().ifBlank { "(No name)" },
                             color = cur.getInt(4),
+                            owner = cur.getString(5).orEmpty(),
                         )
                     )
                 }
@@ -188,11 +236,11 @@ object GoogleCal {
     @Synchronized
     fun events(c: Context, date: LocalDate): List<GEvent> {
         if (!enabled(c)) return emptyList()
-        val ids = onIds(c)
-        if (ids.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
         cache[date]?.let { (at, list) -> if (now - at < CACHE_MS) return list }
-        val list = query(c, date, ids)
+        // Only switched-on calendars that are still listed (signed-in Gmail, no Holidays/Birthdays).
+        val ids = onIds(c) intersect calendars(c).map { it.id }.toSet()
+        val list = if (ids.isEmpty()) emptyList() else query(c, date, ids)
         cache[date] = now to list
         return list
     }

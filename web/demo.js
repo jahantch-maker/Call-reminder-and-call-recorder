@@ -71,12 +71,12 @@ window.DEMO_DATA = {
     const meetings = [{ id: m1, type: "weekly", startedAt: at(-6, 11), closedAt: at(-6, 11.7), plannedMin: 40, attendance: { m0: "present", m1: "present", m2: "present", m3: "late", m4: "present", m5: "absent" }, decisions: [{ at: at(-6, 11), text: "Site visits start at 10 AM from Monday" }], notes: [{ at: at(-6, 11), text: "Cement rate may rise; order early" }], actions: ["a1", "a2", "a3"], agreed: {}, sharedAt: at(-6, 12) }];
     const seats = [{ id: "jahanzaib@gmail.com", gmail: "jahanzaib@gmail.com", name: "Jahanzaib", designation: "Owner", role: "owner", status: "filled", uid: "owner", reportsTo: "", dept: "Head office", extraGivers: [], override: {}, holders: [{ uid: "owner", name: "Jahanzaib", from: at(-300) }] }]
       .concat(names.map((n) => ({ id: gm(n), gmail: gm(n), name: n, designation: SEATS[n][0], role: "member", status: "filled", uid: uidOfName(n), reportsTo: SEATS[n][1] === "owner" ? "jahanzaib@gmail.com" : gm(SEATS[n][1]), dept: SEATS[n][2], extraGivers: [], override: {}, holders: [{ uid: uidOfName(n), name: n, from: at(-120) }] })));
-    seats.find((x) => x.id === gm("Kamran")).override = { app: { setDossier: true }, portal: { app: "view" } };
+    seats.find((x) => x.id === gm("Kamran")).override = { portal: { app: "view" } };
     seats.find((x) => x.id === gm("Bilal")).extraGivers = [gm("Usman")];
     seats.push({ id: "surveyor3@gmail.com", gmail: "surveyor3@gmail.com", name: "", designation: "Surveyor", role: "member", status: "empty", uid: "", reportsTo: gm("Kamran"), dept: "Site A", extraGivers: [], override: {}, holders: [{ uid: "old1", name: "Rashid", from: at(-200), to: at(-20) }] });
     const desig = { list: [
-      { name: "GM", app: { approveJoins: true, setDossier: true, editReasons: true, seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view" } },
-      { name: "Site Manager", app: { setDossier: true }, portal: { app: "view" } }, { name: "Admin", app: { seeNumbers: true }, portal: {} }, { name: "Surveyor", app: {}, portal: {} },
+      { name: "GM", app: { seeNumbers: true }, portal: { app: "view", meetings: "view", team: "view", docs: "view" } },
+      { name: "Site Manager", app: {}, portal: { app: "view" } }, { name: "Admin", app: { seeNumbers: true }, portal: {} }, { name: "Surveyor", app: {}, portal: {} },
       { name: "Asst Admin", app: {}, portal: {} }, { name: "Asst Manager", app: {}, portal: {} }, { name: "Store Keeper", app: {}, portal: {} }, { name: "Supervisor", app: {}, portal: {} } ],
       timetables: [{ id: "office", name: "Office", start: 660, end: 1260, off: [5] }, { id: "site", name: "Site", start: 540, end: 1080, off: [5] }] };
     seats.forEach((s, i) => { if (i < 4) s.timetable = i % 2 ? "site" : "office"; });
