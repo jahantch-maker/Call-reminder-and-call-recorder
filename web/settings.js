@@ -186,14 +186,34 @@
     ["Help", [["rules", "Rules", "rules", "How every rule of the app and the website works, in plain words. Read only. Updated with every new version."], ["log", "Change log", "log", "Every access, chart, seat and offboarding change. Only owners see it and nobody can edit or delete a line."], ["updates", "Updates", "upd", "A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it."]]],
     ["My view", [["look", "Appearance", "look", "Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting."]]],
   ];
+  /** 28 Nov (B3) Only the owner sees it: his own phone's settings follow the website like the team's. */
+  const ownLock = () => {
+    const me = RB.isOwner() && RB.seatOfUid(RB.uidOf());
+    if (!me) return "";
+    const on = me.ownerLock === true;
+    return `<div class="ownlock"><div class="w"><b>🔒 Lock my phone like the team<button class="accinfo" data-info="On: your own phone's settings follow what you set for yourself here (Settings › Phone app settings, your name picked), and the 🔒 Locked rows are read only on your phone, exactly like the team's. Off: your phone keeps its own settings." aria-label="What this does">i</button></b><span>Only you see this</span></div><div class="sw ${on ? "on" : ""}" id="ownlock" role="switch" aria-checked="${on}" aria-label="Lock my phone like the team" tabindex="0"></div></div>`;
+  };
+  RB.ownLockBind = () => {
+    const b = document.getElementById("ownlock"); if (!b) return;
+    const flip = async () => {
+      const me = RB.seatOfUid(RB.uidOf()); if (!me || b.dataset.busy) return; b.dataset.busy = 1;
+      const v = me.ownerLock !== true; me.ownerLock = v; b.classList.toggle("on", v); b.setAttribute("aria-checked", v);
+      try { await RB.Store.put("seats", me.id, { ownerLock: v }, true); await RB.log("Lock my phone like the team " + (v ? "ON" : "OFF")); await RB.sync(); } finally { delete b.dataset.busy; RB.render(); }
+    };
+    b.onclick = flip; b.onkeydown = (ev) => { if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); flip(); } };
+    const i = b.parentElement.querySelector("[data-info]"); if (i) i.onclick = (ev) => { ev.stopPropagation(); RB.infoPop(i); };
+  };
   RB.sections.settings = {
+    navTop: ownLock,
     // 28 Nov (SETTINGS-REGROUP) Phone app settings (named like the phone's Settings) and Permissions sit first, owners only.
-    groups: (tabs) => [["📱 Phone app settings", RB.access.menu("phone")], ["🔐 Permissions", RB.access.menu("perm")]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
-    tabs: () => { const ok = RB.settingsTabs(); return (RB.isOwner() ? RB.access.menu().map((x) => [x[0], x[1]]) : []).concat(TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]])); },
+    // 28 Nov (B5, his idea) Left menu has one "Phone app settings" and one "Permissions"; their pages sit in a second menu beside the page.
+    groups: (tabs) => [["Phone and access", [[S.phLast || "ph_" + RB.PHONE[0].id, "Phone app settings", "phone", ""], [S.permLast || "acc_team", "Permissions", "people", ""]]]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
+    tabs: () => { const ok = RB.settingsTabs(); return (RB.isOwner() ? RB.PHONE.map((p) => ["ph_" + p.id, p.title]).concat(RB.access.menu().map((x) => [x[0], x[1]])) : []).concat(TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]])); },
     render(tab) {
       let html, side = "";
-      if (tab.startsWith("acc_")) {
-        const p = RB.access.page(tab.slice(4));
+      if (tab.startsWith("ph_") || tab.startsWith("acc_")) {
+        if (tab.startsWith("ph_")) S.phLast = tab; else S.permLast = tab;
+        const p = tab.startsWith("ph_") ? RB.access.phone(tab.slice(3)) : RB.access.page(tab.slice(4));
         return { html: p.html, side: p.side, sideCards: p.sideCards, title: "Settings", sub: "Changes reach the phones in a few seconds · owners only" };
       }
       if (tab === "look") {
@@ -223,7 +243,7 @@
       return { html: html + SAVEBAR, side, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root, side) {
-      if (S.tab.settings && S.tab.settings.startsWith("acc_")) return RB.access.bind(root, side);
+      if (S.tab.settings && (S.tab.settings.startsWith("acc_") || S.tab.settings.startsWith("ph_"))) return RB.access.bind(root, side);
       root.querySelectorAll("[data-info]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); RB.infoPop(b); }));
       root.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => { RB.theme.set(b.dataset.themePick); RB.render(); }));
       const sv = root.querySelector("#rsave");

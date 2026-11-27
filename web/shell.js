@@ -90,7 +90,7 @@
         <div class="top"><div><h1>${page.title || hi}</h1><div class="s">${page.sub || (dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) + " · " + working + " people in the team")}</div></div><div class="sp"></div>
           <label class="srch"><span>⌕</span><input id="gq" placeholder="Search" value="${esc(S.q)}" autocomplete="off"></label><button class="bell" id="bell" title="Notices">🔔${noticeCount() ? `<b class="bd">${noticeCount()}</b>` : ""}</button></div>
         ${running}
-        ${grp ? `<div class="gwrap">${gnav(grp, tab)}` : `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}${page.tabsExtra ? `<span class="tabx">${page.tabsExtra}</span>` : ""}</div>`}
+        ${grp ? `<div class="gwrap">${gnav(grp, tab, RB.sections[sec].navTop ? RB.sections[sec].navTop() : "")}` : `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}${page.tabsExtra ? `<span class="tabx">${page.tabsExtra}</span>` : ""}</div>`}
         <div id="content" class="content${anim ? " fade" : ""} ${RB.level(sec) === "view" ? "ro" : ""}">${grp && !wait ? ghead(grp, tab) : ""}${page.html}</div>${grp ? "</div>" : ""}
       </div>${page.side ? `<aside class="pside${anim ? " fade" : ""}" id="side">${page.side}</aside>` : ""}</div></div>`;
     if (pcCls) root.querySelector(".pc").className = pcCls + " notr";
@@ -110,17 +110,19 @@
     if (wait) return;
     if (sec === "app" || sec === "meetings") RB.meet.bind(content);
     if (RB.sections[sec].bind) RB.sections[sec].bind(content, document.getElementById("side"));
+    if (RB.sections[sec].navTop && RB.ownLockBind) RB.ownLockBind();
     if (page.afterBind) page.afterBind();
     RB.stickHeads(content);
   };
   /** The left menu (computer) and, on phones and narrow windows, one "Section ▾" picker in its place. */
-  function gnav(grp, tab) {
+  function gnav(grp, tab, top) {
     const all = grp.flatMap((g) => g[1]), cur = all.find((x) => x[0] === tab) || all[0] || ["", "", ""];
-    return `<nav class="gnav" aria-label="Sections">${grp.map(([g, it]) => `<h6>${esc(g)}</h6>` + it.map(([k, l, ic]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${ic || ""}<span>${esc(l)}</span></button>`).join("")).join("")}</nav>
+    return `<nav class="gnav" aria-label="Sections">${top || ""}${grp.map(([g, it]) => `<h6>${esc(g)}</h6>` + it.map(([k, l, ic]) => `<button data-tab="${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${ic || ""}<span>${esc(l)}</span></button>`).join("")).join("")}</nav>
       <label class="gpick">${cur[2] || ""}<b>${esc(cur[1])}</b><span>Section ▾</span><select id="gpick" aria-label="Section">${grp.map(([g, it]) => `<optgroup label="${esc(g)}">${it.map(([k, l]) => `<option value="${k}" ${k === tab ? "selected" : ""}>${esc(l)}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
   }
   /** The open section's big name and one line on what it does (scrolls away with the page). */
   function ghead(grp, tab) {
+    if (/^(ph|acc)_/.test(tab)) return "";   // these pages draw their own head beside their second menu
     const x = grp.flatMap((g) => g[1]).find((i) => i[0] === tab); if (!x) return "";
     return `<div class="ghead"><h2>${esc(x[1])}</h2>${x[3] ? `<p>${x[3]}</p>` : ""}</div>`;
   }

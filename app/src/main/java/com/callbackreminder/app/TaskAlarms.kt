@@ -317,7 +317,7 @@ object TaskAlarms {
 
     fun scheduleNudge(ctx: Context, now: Long = System.currentTimeMillis()) {
         // 27 Nov (S4) A team member's dossier reminder is set by the office: up to 2 times from his duty end, saved on the phone.
-        if (WebRules.managed(ctx)) {
+        if (WebRules.locked(ctx, "dossier")) {
             val today = LocalDate.now(ZoneId.systemDefault())
             val at = (0..7).asSequence().flatMap { d -> WebRules.reminderTimes(ctx, "dos", today.plusDays(d.toLong())) }.firstOrNull { it > now }
             if (at == null) am(ctx).cancel(nudgeAlarm(ctx)) else setAlarm(ctx, at, nudgeAlarm(ctx), MainActivity.OPEN_DOSSIER_REVIEW)
@@ -343,7 +343,7 @@ object TaskAlarms {
     @SuppressLint("MissingPermission")
     fun fireNudge(ctx: Context) {
         scheduleNudge(ctx, System.currentTimeMillis() + 1_000L)
-        if (WebRules.managed(ctx)) return officeNudge(ctx)
+        if (WebRules.locked(ctx, "dossier")) return officeNudge(ctx)
         if (!DossierSettings.separate(ctx) || !Notifier.canNotify(ctx)) return
         val todays = DossierStore.todays()
         if (todays.isEmpty()) return

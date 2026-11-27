@@ -103,6 +103,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -264,13 +265,15 @@ fun SettingsScreen(
             BadgeGroup("PHONE") {
                 BadgeRow(Icons.Rounded.Backup, BadgeTone.BLUE, "Backup", remember(resumeKey) { Backup.summary(ctx) }, onOpenBackup)
                 var silenceCalls by remember(resumeKey) { mutableStateOf(RingerSilence.enabled(ctx)) }
-                val toggleSilence = { on: Boolean ->
+                val silenceLocked = rememberLocked("voiceNotes")
+                val toggleSilence = toggle@{ on: Boolean ->
+                    if (silenceLocked) return@toggle
                     silenceCalls = on
                     RingerSilence.setEnabled(ctx, on)
                     // One time: Android asks you to allow Do Not Disturb access for the app.
                     if (on && !RingerSilence.hasAccess(ctx)) RingerSilence.openAccessSettings(ctx)
                 }
-                BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) },
+                BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) + if (silenceLocked) " · Set by your manager" else "" },
                     onClick = { toggleSilence(!silenceCalls) }, switch = silenceCalls, onSwitch = toggleSilence)
                 BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
                 BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
@@ -532,7 +535,7 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
             subtitle = "When someone with pending tasks calls, or you call them, their tasks show over the call screen. " +
                 "Once the call is answered it shrinks to a small bubble; tap it to read the tasks while you talk."
         ) {
-            SwitchRow("Show the caller card", callerCard) {
+            SwitchRow("Show the caller card", callerCard, lock = "callerCard") {
                 callerCard = it; CallerCard.setEnabled(ctx, it)
             }
             if (callerCard) {
@@ -554,19 +557,19 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
         }
 
         SectionCard(title = "Show the popup after", subtitle = "Choose which calls show the popup.") {
-            SwitchRow("Outgoing calls", outgoing) {
+            SwitchRow("Outgoing calls", outgoing, lock = "popOut") {
                 outgoing = it; AppSettings.set(ctx, AppSettings.OUTGOING, it)
             }
             HorizontalDivider()
-            SwitchRow("Incoming calls", incoming) {
+            SwitchRow("Incoming calls", incoming, lock = "popIn") {
                 incoming = it; AppSettings.set(ctx, AppSettings.INCOMING, it)
             }
             HorizontalDivider()
-            SwitchRow("Missed calls", missed) {
+            SwitchRow("Missed calls", missed, lock = "popMissed") {
                 missed = it; AppSettings.set(ctx, AppSettings.MISSED, it)
             }
             HorizontalDivider()
-            SwitchRow("WhatsApp calls", whatsapp) {
+            SwitchRow("WhatsApp calls", whatsapp, lock = "popWa") {
                 whatsapp = it; AppSettings.set(ctx, AppSettings.WHATSAPP, it)
             }
             Text(
@@ -603,7 +606,7 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
 
         // 27 Nov (S15a) Close by itself: a live countdown; any touch keeps it open.
         var auto by remember { mutableIntStateOf(SimPopup.autoClose(ctx)) }
-        SectionCard(title = "Close by itself", subtitle = "The popup closes after a few seconds if you don't touch it, like Skip (the call stays in Calls).") {
+        SectionCard(title = "Close by itself", subtitle = "The popup closes after a few seconds if you don't touch it, like Skip (the call stays in Calls).", lock = "autoClose") {
             SwitchRow("Close by itself", auto > 0) { auto = if (it) 15 else 0; SimPopup.setAutoClose(ctx, auto) }
             if (auto > 0) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(5, 10, 15, 30, 60).forEach { sec ->
@@ -614,7 +617,7 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
 
         // 27 Nov (S15b) Hold to call: Call again dials only after a press-and-hold (stops calls by mistake).
         var hold by remember { mutableIntStateOf(SimPopup.holdToCall(ctx)) }
-        SectionCard(title = "Hold to call", subtitle = "\"Call again\" on the popups calls only when you hold it. The full-screen reminder's Call back stays one tap.") {
+        SectionCard(title = "Hold to call", subtitle = "\"Call again\" on the popups calls only when you hold it. The full-screen reminder's Call back stays one tap.", lock = "hold") {
             SwitchRow("Hold to call", hold > 0) { hold = if (it) 1 else 0; SimPopup.setHoldToCall(ctx, hold) }
             if (hold > 0) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(1, 2).forEach { sec ->
@@ -731,11 +734,11 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
         }
 
         SectionCard(title = "Recording", subtitle = "Records your calls and keeps them in the Recordings screen.") {
-            SwitchRow("Record phone calls", recPhone) {
+            SwitchRow("Record phone calls", recPhone, lock = "recPhone") {
                 recPhone = it; AppSettings.set(ctx, AppSettings.REC_PHONE, it)
             }
             HorizontalDivider()
-            SwitchRow("Record WhatsApp calls", recWhatsApp) {
+            SwitchRow("Record WhatsApp calls", recWhatsApp, lock = "recWa") {
                 recWhatsApp = it; AppSettings.set(ctx, AppSettings.REC_WHATSAPP, it)
             }
             HorizontalDivider()
@@ -760,7 +763,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                 }
                 Spacer(Modifier.width(8.dp))
                 Box {
-                    FilledTonalButton(onClick = { sourceMenu = true }) { Text("Change") }
+                    if (rememberLocked("recSource")) Text("🔒") else FilledTonalButton(onClick = { sourceMenu = true }) { Text("Change") }
                     DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
                         RecSource.options.forEach { o ->
                             DropdownMenuItem(
@@ -792,7 +795,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                 }
                 Spacer(Modifier.width(8.dp))
                 Box {
-                    FilledTonalButton(onClick = { keepMenu = true }) { Text("Change") }
+                    if (rememberLocked("recKeep")) Text("🔒") else FilledTonalButton(onClick = { keepMenu = true }) { Text("Change") }
                     DropdownMenu(expanded = keepMenu, onDismissRequest = { keepMenu = false }) {
                         keepOptions.forEach { (value, label) ->
                             DropdownMenuItem(
@@ -856,7 +859,10 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
     var bannerTitle by remember { mutableStateOf(ReminderSound.BANNER.title(ctx)) }
     // 28 Nov For a team member these three are set by the office and read only here; ringtones stay his own choice.
     val webV by WebRules.version.collectAsState()
-    val locked = remember(webV) { WebRules.managed(ctx) }
+    // 28 Nov (B5) Each row follows the website only while the office keeps it "🔒 Locked".
+    val locked = rememberLocked("remStyle")
+    val lockSecs = rememberLocked("remSecs")
+    val lockRepeat = rememberLocked("remRepeat")
     var repeatSound by remember(webV) { mutableStateOf(ReminderSound.repeats(ctx)) }
     var reminderStyle by remember(webV) { mutableStateOf(ReminderStyle.mode(ctx)) }
     var popupSeconds by remember(webV) { mutableStateOf(ReminderStyle.seconds(ctx)) }
@@ -987,7 +993,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        if (!locked) FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") }
+                        if (!lockSecs) FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") } else Text("🔒")
                         DropdownMenu(expanded = secondsMenu, onDismissRequest = { secondsMenu = false }) {
                             ReminderStyle.SECONDS_CHOICES.forEach { sec ->
                                 DropdownMenuItem(
@@ -1007,20 +1013,21 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
 
         SectionCard(
             title = "Popup ringtone",
-            subtitle = if (locked) "For the large full-screen reminder. You can change the tone; 🔒 repeat is set by your manager."
-                else "For the large full-screen reminder."
+            subtitle = "For the large full-screen reminder."
         ) {
-            SoundRow(
-                title = popupTitle,
-                description = "Follows your ringtone volume, and stays silent when the phone is on silent.",
-                onChange = { choosing = ReminderSound.POPUP }
-            )
+            LockArea(rememberLocked("popupTone")) {
+                SoundRow(
+                    title = popupTitle,
+                    description = "Follows your ringtone volume, and stays silent when the phone is on silent.",
+                    onChange = { choosing = ReminderSound.POPUP }
+                )
+            }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             StyleRow(
                 title = "Repeat until I react",
                 description = "Keeps playing until you react, for up to 1 minute. The reminder stays on screen.",
                 selected = repeatSound,
-                enabled = !locked,
+                enabled = !lockRepeat,
                 onSelect = {
                     repeatSound = true
                     ReminderSound.setRepeats(ctx, true)
@@ -1030,7 +1037,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                 title = "Play once",
                 description = "Plays one time and vibrates 3 times. The reminder stays on screen.",
                 selected = !repeatSound,
-                enabled = !locked,
+                enabled = !lockRepeat,
                 onSelect = {
                     repeatSound = false
                     ReminderSound.setRepeats(ctx, false)
@@ -1040,7 +1047,8 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
 
         SectionCard(
             title = "Notification ringtone",
-            subtitle = "For banner notifications: call-back banners and text-message alerts."
+            subtitle = "For banner notifications: call-back banners and text-message alerts.",
+            lock = "bannerTone"
         ) {
             SoundRow(
                 title = bannerTitle,
@@ -1112,7 +1120,7 @@ fun ReviewSettingsScreen(onBack: () -> Unit) {
 
     SettingsPage(title = "Review", onBack = onBack) {
         // 27 Nov (S4.8) A team member's review reminder is set by the office (read only, follows his off day and holidays).
-        if (WebRules.managed(ctx)) SectionCard(title = "Remind me to review", subtitle = "🔒 Set by office. A full-screen popup, only when something is waiting. Never on your off day or a holiday.") {
+        if (WebRules.locked(ctx, "review")) SectionCard(title = "Remind me to review", subtitle = "🔒 Set by office. A full-screen popup, only when something is waiting. Never on your off day or a holiday.") {
             Text(ReviewReminder.webSummary(ctx), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         } else
         // One screen: the reminder, its two times and days in one card, then the three switches.
@@ -1204,14 +1212,14 @@ fun MorningSummarySettingsScreen(onBack: () -> Unit) {
             subtitle = "One notification with today's calls, texts, My tasks and dossier, and what is still overdue. " +
                 "Tap it to see your day."
         ) {
-            SwitchRow(label = "Send me a morning summary", checked = on, onChange = {
+            SwitchRow(label = "Send me a morning summary", checked = on, lock = "msOn", onChange = {
                 on = it
                 MorningSummary.setEnabled(ctx, it)
             })
         }
 
         if (on) {
-            SectionCard(title = "Time", subtitle = "Later on the notification brings it back in ${MorningSummary.LATER_MINUTES} minutes.") {
+            SectionCard(title = "Time", subtitle = "Later on the notification brings it back in ${MorningSummary.LATER_MINUTES} minutes.", lock = "msTime") {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1228,7 +1236,7 @@ fun MorningSummarySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            SectionCard(title = "Days", subtitle = "Runs on ${ReviewReminder.daysLabel(days)}.") {
+            SectionCard(title = "Days", subtitle = "Runs on ${ReviewReminder.daysLabel(days)}.", lock = "msDays") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DayOfWeek.values().forEach { day ->
                         val selected = days and (1 shl (day.value - 1)) != 0
@@ -1251,12 +1259,12 @@ fun MorningSummarySettingsScreen(onBack: () -> Unit) {
             }
 
             SectionCard(title = "How it shows", subtitle = "A notification, or full screen like a call-back reminder.") {
-                SwitchRow(label = "Full screen", checked = full, onChange = {
+                SwitchRow(label = "Full screen", checked = full, lock = "msFull", onChange = {
                     full = it
                     MorningSummary.setFullScreen(ctx, it)
                 })
                 HorizontalDivider()
-                SwitchRow(label = "Skip when the day is empty", checked = skipEmpty, onChange = {
+                SwitchRow(label = "Skip when the day is empty", checked = skipEmpty, lock = "msSkip", onChange = {
                     skipEmpty = it
                     MorningSummary.setSkipEmpty(ctx, it)
                 })
@@ -1296,7 +1304,7 @@ fun DossierSettingsScreen(onBack: () -> Unit) {
 
     SettingsPage(title = "Dossier reminder", onBack = onBack) {
         // 27 Nov (S4.1) A team member's dossier reminder is set by the office: read only here.
-        if (WebRules.managed(ctx)) SectionCard(title = "Dossier reminder",
+        if (WebRules.locked(ctx, "dossier")) SectionCard(title = "Dossier reminder",
             subtitle = "🔒 Set by office. A full-screen popup with your unticked tasks, only when something is unticked. Never on your off day or a holiday.") {
             Text(ReviewReminder.webSummary(ctx, "dos"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         } else SectionCard(
@@ -1311,7 +1319,7 @@ fun DossierSettingsScreen(onBack: () -> Unit) {
             })
         }
 
-        if (separate && !WebRules.managed(ctx)) {
+        if (separate && !WebRules.locked(ctx, "dossier")) {
             SectionCard(title = "Times", subtitle = "Every day. Add as many as you like, for example a late one for evening updates.") {
                 times.forEachIndexed { i, minutes ->
                     if (i > 0) HorizontalDivider()
@@ -1591,7 +1599,8 @@ private fun NavRow(icon: ImageVector, title: String, summary: String, onClick: (
 }
 
 @Composable
-internal fun SectionCard(title: String, subtitle: String, content: @Composable () -> Unit) {
+internal fun SectionCard(title: String, subtitle: String, lock: String? = null, content: @Composable () -> Unit) {
+    val locked = rememberLocked(lock)
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1605,8 +1614,32 @@ internal fun SectionCard(title: String, subtitle: String, content: @Composable (
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
-            content()
+            LockArea(locked) { content() }
         }
+    }
+}
+
+/** 28 Nov (B5) True while the office keeps setting [id] "🔒 Locked" on the website (redraws when new settings arrive). */
+@Composable
+internal fun rememberLocked(id: String?): Boolean {
+    if (id == null) return false
+    val ctx = LocalContext.current
+    val v by WebRules.version.collectAsState()
+    return remember(v, id) { WebRules.locked(ctx, id) }
+}
+
+/** 28 Nov (B5) A locked setting: shown faded, taps do nothing, with "🔒 Set by your manager" under it. */
+@Composable
+internal fun LockArea(locked: Boolean, content: @Composable () -> Unit) {
+    if (!locked) { content(); return }
+    Column {
+        Box {
+            Box(Modifier.alpha(0.55f)) { content() }
+            Box(Modifier.matchParentSize().pointerInput(Unit) {
+                awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } }
+            })
+        }
+        Text("🔒 Set by your manager", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -1671,7 +1704,7 @@ private fun StyleRow(title: String, description: String, selected: Boolean, enab
 }
 
 @Composable
-internal fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: String, checked: Boolean, lock: String? = null, onChange: (Boolean) -> Unit) = LockArea(rememberLocked(lock)) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1721,7 +1754,7 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
             title = "When a follow-up gets a new time",
             subtitle = "The texts move to the same clock times on the new day. If every one of those times has already passed:"
         ) {
-            SwitchRow("Send one text right away", sendNowIfPassed) {
+            SwitchRow("Send one text right away", sendNowIfPassed, lock = "sendNow") {
                 sendNowIfPassed = it
                 FollowUps.setSendNowIfPassed(ctx, it)
             }
@@ -1800,7 +1833,7 @@ fun TextMessageSettingsScreen(resumeKey: Int, onBack: () -> Unit) {
                 "so you can check the work. Any other words, even \"Done\", don't count. The app only checks for " +
                 "this reply; it doesn't keep or show anyone's messages."
         ) {
-            SwitchRow("Stop on a task number reply", stopOnReply && canReceive) { on ->
+            SwitchRow("Stop on a task number reply", stopOnReply && canReceive, lock = "stopReply") { on ->
                 if (on && !canReceive) {
                     receivePermission.launch(Manifest.permission.RECEIVE_SMS)
                 } else {

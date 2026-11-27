@@ -81,7 +81,7 @@ object ReviewReminder {
     }
 
     fun summary(c: Context): String =
-        if (WebRules.managed(c)) webSummary(c)
+        if (WebRules.locked(c, "review")) webSummary(c)
         else if (!enabled(c)) "Off"
         else times(c).sorted().joinToString(" and ") { timeLabel(it) } + " · " + daysLabel(days(c))
 
@@ -110,7 +110,7 @@ object ReviewReminder {
     fun nextAt(ctx: Context, now: Long = System.currentTimeMillis()): Long? {
         // 27 Nov (S4.8) A team member's review times come from the office: up to 2 from his duty end, never on his
         // off day or a holiday (saved on the phone, so they work offline).
-        if (WebRules.managed(ctx)) {
+        if (WebRules.locked(ctx, "review")) {
             val today = LocalDate.now(ZoneId.systemDefault())
             return (0..7).asSequence().flatMap { d -> WebRules.reminderTimes(ctx, "rev", today.plusDays(d.toLong())) }.firstOrNull { it > now }
         }

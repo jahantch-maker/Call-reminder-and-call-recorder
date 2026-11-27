@@ -21,7 +21,7 @@ object ReminderStyle {
 
     fun mode(ctx: Context): Mode {
         // 28 Nov A team member's style is set by the office (web Settings › Team rules and access › Notifications); the owner picks his own.
-        val saved = if (WebRules.managed(ctx)) WebRules.str(ctx, "remStyle") else AppSettings.getString(ctx, AppSettings.REMINDER_STYLE)
+        val saved = WebRules.strOr(ctx, "remStyle") { AppSettings.getString(ctx, AppSettings.REMINDER_STYLE) }
         return Mode.values().firstOrNull { it.code == saved } ?: Mode.FULL_SCREEN
     }
 
@@ -30,7 +30,7 @@ object ReminderStyle {
 
     /** How long the full-screen reminder stays before it moves to the notifications. */
     fun seconds(ctx: Context): Int =
-        (if (WebRules.managed(ctx)) WebRules.int(ctx, "remSecs") else AppSettings.getString(ctx, AppSettings.POPUP_SECONDS).toIntOrNull())
+        (if (WebRules.locked(ctx, "remSecs")) WebRules.int(ctx, "remSecs") else AppSettings.getString(ctx, AppSettings.POPUP_SECONDS).toIntOrNull())
             ?.takeIf { it in SECONDS_CHOICES } ?: DEFAULT_SECONDS
 
     fun setSeconds(ctx: Context, seconds: Int) =

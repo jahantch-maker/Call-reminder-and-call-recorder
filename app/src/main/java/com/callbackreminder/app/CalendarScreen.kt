@@ -1955,7 +1955,7 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
             title = "Google Calendar",
             subtitle = "Shows the meetings and events of the Google Calendar on this phone, read only. Nothing is written back. Google Tasks need a Google sign-in, so they are not shown."
         ) {
-            SwitchRow("Show Google Calendar", googleOn) { on ->
+            SwitchRow("Show Google Calendar", googleOn, lock = "gcal") { on ->
                 if (on && !GoogleCal.hasPermission(ctx)) launcher.launch(Manifest.permission.READ_CALENDAR)
                 else GoogleCal.setEnabled(ctx, on)
             }
@@ -1970,7 +1970,8 @@ fun CalendarSettingsScreen(onBack: () -> Unit) {
         }
         SectionCard(
             title = "Done tasks",
-            subtitle = "What happens to a My task or follow-up when you mark it done. Dossier ticks always stay, greyed."
+            subtitle = "What happens to a My task or follow-up when you mark it done. Dossier ticks always stay, greyed.",
+            lock = "doneLeave"
         ) {
             DoneTasksChoice()
         }
