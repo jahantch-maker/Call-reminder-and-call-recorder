@@ -466,6 +466,7 @@ object TeamRepo {
                 val was = _me.value
                 _me.value = m
                 if (m.status == Team.REMOVED) { removed(t); return@addSnapshotListener }
+                if (m.active) SignInGate.markJoined(appCtx)
                 Seats.applyMine(appCtx, m.uid, m.seatId)
                 // The website's settings for him, kept on the phone so every alarm works offline (S-OFFLINE).
                 WebRules.save(appCtx, s.get("perms"), member = m.role != Team.OWNER && m.seatId.isNotBlank())

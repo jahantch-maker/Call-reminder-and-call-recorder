@@ -185,6 +185,7 @@ fun SettingsScreen(
             name = teamMe?.name?.takeIf { it.isNotBlank() } ?: teamUser?.displayName,
             email = teamUser?.email,
             line = when {
+                teamUser == null && SignInGate.guest(ctx) -> "Guest · Sign in for all features · No team"
                 teamUser == null -> null
                 teamMe?.pending == true -> "Not added yet"
                 team != null && teamMe?.active == true -> "👥 ${team!!.name} · " + teamMe!!.designation.ifBlank { teamMe!!.roleLabel }

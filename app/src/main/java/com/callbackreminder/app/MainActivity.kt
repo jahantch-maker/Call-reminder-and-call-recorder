@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
             Backup.rearmIfRestored(this)
         }
         handleOpen(intent)
+        CrashLog.guard(this, "Sign-in screen") { SignInGate.init(this) }
         setContent {
             CallbackTheme {
               androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
@@ -175,6 +176,12 @@ class MainActivity : ComponentActivity() {
                 // v0.59 A newer version is out: the whole app waits behind "Update required" until it is installed.
                 val mustUpdate by AppUpdate.required.collectAsState()
                 mustUpdate?.let { UpdateRequiredScreen(it) }
+                // 27 Nov (S12) The first-open sign-in screen (new installs), and Sign in only after a team phone signs out.
+                val signedIn by TeamRepo.user.collectAsState()
+                val teamMe by TeamRepo.me.collectAsState()
+                val gate by SignInGate.version.collectAsState()
+                val ctxGate = androidx.compose.ui.platform.LocalContext.current
+                if (mustUpdate == null && androidx.compose.runtime.remember(signedIn, teamMe, gate) { SignInGate.needed(ctxGate) }) SignInGateScreen()
               }
             }
         }
