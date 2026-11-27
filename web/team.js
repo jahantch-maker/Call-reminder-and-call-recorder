@@ -57,13 +57,15 @@
     if (!Array.isArray(S.psort)) S.psort = ["name", 1];
     const [col, dir] = S.psort;
     const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
-    const key = { name: nm, dept: (s) => (s.dept || "~").toLowerCase(), tt: (s) => (RB.ttOf(s) ? RB.ttOf(s).start * 10000 + RB.ttOf(s).end : 9e9), desig: (s) => (s.designation || "~").toLowerCase() }[col] || nm;
-    const by = (a, b) => { const x = key(a), y = key(b); return (x < y ? -dir : x > y ? dir : 0) || nm(a).localeCompare(nm(b)); };
+    const key = { name: nm, dept: (s) => (s.dept || "~").toLowerCase(), tt: (s) => (RB.ttOf(s) ? RB.ttOf(s).start * 10000 + RB.ttOf(s).end : 9e9), desig: (s) => (s.designation || "~").toLowerCase(),
+      // Last seen: ▲ = longest ago first (never opened at the top), empty seats at the bottom.
+      seen: (s) => (RB.member(s.uid) || {}).lastSeen || 0 }[col] || nm;
+    const by = (a, b) => { if (col === "seen" && (a.status === "filled") !== (b.status === "filled")) return a.status === "filled" ? -1 : 1; const x = key(a), y = key(b); return (x < y ? -dir : x > y ? dir : 0) || nm(a).localeCompare(nm(b)); };
     const inScope = RB.scope() === "all" ? null : new Set(RB.visibleSeats().map((x) => x.id));
     const list = D.seats.filter((s) => (!inScope || inScope.has(s.id)) && (!q || (RB.holderName(s) + " " + s.gmail + " " + (s.phone || "") + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q))).slice().sort(by);
     const sel = selSeat();
     const th = (k, l) => k ? `<button class="plth ${col === k ? "on" : ""}" data-psort="${k}" aria-label="Sort by ${l}">${l} <span aria-hidden="true">${col === k ? (dir === 1 ? "▲" : "▼") : "⬍"}</span></button>` : `<span class="plth">${l}</span>`;
-    const head = `<div class="prow phead" aria-hidden="false"><span></span>${th("name", "Name")}${th("", "Contact")}${th("dept", "Department")}${th("tt", "Timetable")}${th("desig", "Designation")}<span></span></div>`;
+    const head = `<div class="prow phead" aria-hidden="false"><span></span><span class="plths">${th("name", "Name")}${th("seen", "Last seen")}</span>${th("", "Contact")}${th("dept", "Department")}${th("tt", "Timetable")}${th("desig", "Designation")}<span></span></div>`;
     const headName = (s) => { const h = RB.headOf(s); return h ? (h.status === "filled" ? h.name : h.name || first(h.gmail)) : ""; };
     const row = (s) => {
       const joined = s.status === "filled", tt = RB.ttOf(s);
