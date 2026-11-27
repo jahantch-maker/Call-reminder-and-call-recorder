@@ -383,11 +383,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * The app's screens. HOME is the bottom-bar page (Home, My tasks, Calls, Texts). Recordings, Settings
- * (the icons at the top right) and setting pages slide in over it from the right like a phone's own
- * settings app.
- */
 /** The page a [SettingEntry.key] opens (Settings' search bar and the Home search). */
 private fun settingScreen(key: String): Int? = when (key) {
     "off_days" -> Screen.OFF_DAYS
@@ -414,6 +409,11 @@ private fun settingScreen(key: String): Int? = when (key) {
     else -> null
 }
 
+/**
+ * The app's screens. HOME is the bottom-bar page (Home, My tasks, Calls, Texts). Recordings, Settings
+ * (the icons at the top right) and setting pages slide in over it from the right like a phone's own
+ * settings app.
+ */
 private object Screen {
     const val HOME = 0
     const val QUICK_TIMES = 3

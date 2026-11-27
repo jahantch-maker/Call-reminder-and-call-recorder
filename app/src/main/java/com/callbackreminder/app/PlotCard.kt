@@ -325,7 +325,7 @@ private fun PlotPanel(t: TeamTask, s: PlotFiles.Step, sop: PlotFiles.Sop, open: 
             if (s.canReturn) BarSlot(Icons.AutoMirrored.Rounded.Undo, "Return", Tones.late.pair, { returning = true }, true, Modifier.weight(1f))
             if (canWait || waiting) BarSlot(
                 null, if (!waiting) "Waiting for plot owner" else if (s.pauseStarts.contains("Receive", true)) "Receive" else "Plot owner came",
-                chipColors(ChipTone.ORANGE), { if (waiting) PlotActions.stopWaiting(ctx, t) else startWait = true }, true, Modifier.weight(1f), lines = 2,
+                chipColors(ChipTone.ORANGE), { startWait = !waiting; if (waiting) PlotActions.stopWaiting(ctx, t) }, true, Modifier.weight(1f), lines = 2,
             )
             if (s.call.isNotEmpty()) BarSlot(Icons.Rounded.Call, "Call", Tones.call.pair, { picker = false }, true, Modifier.weight(1f))
             if (s.wa.isNotEmpty()) BarSlot(null, "WhatsApp", WhatsAppGreen to WhatsAppInk, { picker = true }, true, Modifier.weight(1f))
@@ -551,7 +551,7 @@ private fun PlotWaitDialog(onDismiss: () -> Unit, onStart: (String, Long, Boolea
                 val d = day
                 val until = when {
                     d == null -> 0L
-                    time != null -> d.atTime(time).atZone(z).toInstant().toEpochMilli()
+                    time != null -> d.atTime(time!!).atZone(z).toInstant().toEpochMilli()
                     else -> d.atStartOfDay(z).toInstant().toEpochMilli()
                 }
                 onStart(reason.trim(), until, d != null && time != null)

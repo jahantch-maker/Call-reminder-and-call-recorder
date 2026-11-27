@@ -135,7 +135,8 @@ object TeamFiles {
             val id = e.getString("msg")
             val file = File(e.getString("file"))
             if (!file.exists()) { drop(c, id); continue }
-            synchronized(busy) { if (!busy.add(id)) continue }
+            val added = synchronized(busy) { busy.add(id) }
+            if (!added) continue
             val path = "teams/${e.getString("team")}/tasks/${e.getString("task")}/${id}_${file.name.substringAfter('_')}"
             val ref = FirebaseStorage.getInstance().reference.child(path)
             ref.putFile(Uri.fromFile(file), StorageMetadata.Builder().setContentType(e.getString("mime")).build())
