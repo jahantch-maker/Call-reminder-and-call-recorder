@@ -583,7 +583,7 @@
     let onlyDiff = false;
     const draw = () => {
       const q = (m.querySelector("#cpq").value || "").toLowerCase();
-      const vis = items.filter((it) => (!q || (it.name + " " + it.group).toLowerCase().includes(q)) && (!onlyDiff || it.diff)).sort((a, b) => (a.group + a.name).localeCompare(b.group + b.name));
+      const vis = items.filter((it) => (!q || (it.name + " " + it.group).toLowerCase().includes(q)) && (!onlyDiff || it.diff)).sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
       let last = null;
       m.querySelector("#cplist").innerHTML = vis.map((it) => { const head = person && it.group !== last ? `<div class="mh2" style="margin-top:10px">${esc((last = it.group))}</div>` : ""; return head + `<label class="swrow" style="cursor:pointer"><input type="checkbox" data-cp="${esc(it.id)}" ${pick.has(it.id) ? "checked" : ""} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${esc(it.name)}</b></div>${it.diff ? `<span class="tag yel">${it.diff} row${it.diff === 1 ? "" : "s"} different</span>` : `<span class="tag grn">✓ Same as ${esc(first(srcName))}</span>`}</label>`; }).join("") || '<div class="muted">Nothing matches.</div>';
       m.querySelectorAll("[data-cp]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.cp) : pick.delete(c.dataset.cp); count(); }));
@@ -592,7 +592,7 @@
     const count = () => { const b = m.querySelector("#cpgo"); b.textContent = pick.size ? "Copy to " + pick.size + (person ? (pick.size === 1 ? " person" : " people") : "") : "Copy"; b.disabled = !pick.size; };
     m.innerHTML = `<div class="back"><div class="dlg wide"><b style="font-size:19px">Copy ${esc(srcName)}'s ${esc(what.toLowerCase())} to…</b><div class="foot">${secId === "all" ? "Every section is copied." : "Only this section is copied; the rest stays as it is."}${person ? "" : " People with their own changes keep them."}</div>
       <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap"><input id="cpq" placeholder="Search" style="flex:1;min-width:160px"><button class="sc" id="cpdiff">Show only different</button><button class="btnt" id="cpall">Select all</button></div>
-      <div id="cplist" style="max-height:52vh;overflow:auto"></div>
+      <div id="cplist" style="height:min(52vh,460px);overflow:auto"></div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px"><button class="link" id="cpc">Cancel</button><button class="btnp" id="cpgo" disabled>Copy</button></div></div></div>`;
     m.querySelector("#cpc").onclick = () => (m.innerHTML = "");
     m.querySelector("#cpq").oninput = draw;

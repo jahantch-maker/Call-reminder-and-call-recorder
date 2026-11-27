@@ -229,7 +229,7 @@
     const draw = () => {
       const txt = pendingText(m0.name || "", its, now, pick);
       md.querySelector("#wagr").innerHTML = GROUPS.map(([g, l]) => `<label class="swrow" style="cursor:pointer;${cnt(g) ? "" : "opacity:.45"}"><input type="checkbox" data-wag="${g}" ${pick.has(g) && cnt(g) ? "checked" : ""} ${cnt(g) ? "" : "disabled"} style="width:18px;height:18px;margin-right:10px"><div class="w"><b>${l}</b></div><span class="sub">${cnt(g)}</span></label>`).join("");
-      md.querySelector("#wapv").innerHTML = txt ? esc(txt).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>") : '<span class="muted">Nothing picked.</span>';
+      md.querySelector("#wapv").innerHTML = txt ? esc(txt).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/\n/g, "<br>") : `<span class="muted">${its.length ? "Nothing picked." : "No open tasks to send."}</span>`;
       md.querySelector("#wago").disabled = !txt;
       md.querySelectorAll("[data-wag]").forEach((c) => (c.onchange = () => { c.checked ? pick.add(c.dataset.wag) : pick.delete(c.dataset.wag); draw(); }));
     };
