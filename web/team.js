@@ -57,17 +57,19 @@
     if (!Array.isArray(S.psort)) S.psort = ["name", 1];
     const [col, dir] = S.psort;
     const nm = (s) => (s.status === "filled" ? RB.holderName(s) : s.name || s.gmail || "").toLowerCase();
-    const key = { name: nm, dept: (s) => (s.dept || "~").toLowerCase(), tt: (s) => (RB.ttOf(s) ? RB.ttOf(s).start * 10000 + RB.ttOf(s).end : 9e9), desig: (s) => (s.designation || "~").toLowerCase() }[col] || nm;
-    const by = (a, b) => { const x = key(a), y = key(b); return (x < y ? -dir : x > y ? dir : 0) || nm(a).localeCompare(nm(b)); };
+    const key = { name: nm, dept: (s) => (s.dept || "~").toLowerCase(), tt: (s) => (RB.ttOf(s) ? RB.ttOf(s).start * 10000 + RB.ttOf(s).end : 9e9), desig: (s) => (s.designation || "~").toLowerCase(),
+      // Last seen: ▲ = longest ago first (never opened at the top), empty seats at the bottom.
+      seen: (s) => (RB.member(s.uid) || {}).lastSeen || 0 }[col] || nm;
+    const by = (a, b) => { if (col === "seen" && (a.status === "filled") !== (b.status === "filled")) return a.status === "filled" ? -1 : 1; const x = key(a), y = key(b); return (x < y ? -dir : x > y ? dir : 0) || nm(a).localeCompare(nm(b)); };
     const inScope = RB.scope() === "all" ? null : new Set(RB.visibleSeats().map((x) => x.id));
     const list = D.seats.filter((s) => (!inScope || inScope.has(s.id)) && (!q || (RB.holderName(s) + " " + s.gmail + " " + (s.phone || "") + " " + s.designation + " " + (s.dept || "")).toLowerCase().includes(q))).slice().sort(by);
     const sel = selSeat();
     const th = (k, l) => k ? `<button class="plth ${col === k ? "on" : ""}" data-psort="${k}" aria-label="Sort by ${l}">${l} <span aria-hidden="true">${col === k ? (dir === 1 ? "▲" : "▼") : "⬍"}</span></button>` : `<span class="plth">${l}</span>`;
-    const head = `<div class="prow phead" aria-hidden="false"><span></span>${th("name", "Name")}${th("", "Contact")}${th("dept", "Department")}${th("tt", "Timetable")}${th("desig", "Designation")}<span></span></div>`;
+    const head = `<div class="prow phead" aria-hidden="false"><span></span><span class="plths">${th("name", "Name")}${th("seen", "Last seen")}</span>${th("", "Contact")}${th("dept", "Department")}${th("tt", "Timetable")}${th("desig", "Designation")}<span></span></div>`;
     const headName = (s) => { const h = RB.headOf(s); return h ? (h.status === "filled" ? h.name : h.name || first(h.gmail)) : ""; };
     const row = (s) => {
       const joined = s.status === "filled", tt = RB.ttOf(s);
-      const status = signedOut(s) ? '<span class="pst out">● Signed out · must sign in again</span>' : joined ? '<span class="pst on">● Joined</span>' : s.invited ? '<span class="pst">Invited, not joined</span>' : '<span class="pst">Nobody invited yet</span>';
+      const status = signedOut(s) ? '<span class="pst out">● Signed out · must sign in again</span>' : joined ? seenOf(s) : s.invited ? '<span class="pst">Invited, not joined</span>' : '<span class="pst">Nobody invited yet</span>';
       const miss = [s.phone ? "" : '<span class="tag amb">No phone number</span>', tt ? "" : '<span class="tag amb">No timetable</span>'].join("");
       const btn = ed() ? `<button class="btnt edit-only" data-editseat="${esc(s.id)}">${joined || s.invited ? "Edit" : "Fill seat"}</button>` : "";
       return `<div class="prow ${joined ? "on" : "off"} ${sel && sel.id === s.id ? "sel" : ""}" data-seat="${esc(s.id)}" role="button" tabindex="0">
@@ -120,13 +122,19 @@
     return `<div class="sec"><h4>Phone health</h4><div class="sub">App ${esc(h.v || "?")} · last online ${fmtWhen(h.at || 0)}</div>${got}${HEALTH.map(([k, l]) => `<div class="hrow ${h[k] === false ? "bad" : ""}">${h[k] === false ? "✗" : "✓"} ${l}</div>`).join("")}</div>`;
   };
   const signedOut = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid); return !!m && m.status !== "active"; };
+  /** "Last seen" (the phone says "Last active"): the phone writes members.lastSeen when the app opens and every 10 min while open. */
+  const seenOf = (s) => { const m = s.status === "filled" && s.uid && RB.member(s.uid), at = (m && m.lastSeen) || 0;
+    if (!at) return '<span class="pst">Not opened yet</span>';
+    if (Date.now() - at < 15 * 60000) return '<span class="pst on">● Active now</span>';
+    const tm = new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return `<span class="pst" title="${esc(fmtWhen(at))}">Last seen ${new Date(at).toDateString() === new Date().toDateString() ? "today" : fmtShort(at) + ","} ${tm}</span>`; };
 
   function seatPanel(s) {
     if (!s) return "";
     const h = RB.headOf(s), e = RB.effective(s);
     const hist = (s.holders || []).slice().reverse().map((x) => `<div class="tlr"><span class="t" style="width:80px">${fmtShort(x.from)}${x.to ? " – " + fmtShort(x.to) : ""}</span><div><b>${esc(x.name)}</b><p>${x.to ? "Left the seat" : "Now in the seat"}</p></div></div>`).join("");
     const sub = [s.designation, s.dept].filter(Boolean).join(" · ") + (h ? " · reports to " + (h.status === "filled" ? h.name : h.name || h.gmail) : "");
-    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${signedOut(s) ? '<div class="s pst out">● Signed out · must sign in again<br>Tasks can\'t reach this person until they sign in on the phone.</div>' : ""}${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
+    return `<div class="ph"><div class="pav" style="background:${s.status === "filled" ? "linear-gradient(135deg,#F2C7A5,#E08A3C)" : "#C9CACD"}">${face(s)}</div><h2>${esc(RB.holderName(s))}</h2><div class="s">${esc(sub)}</div>${signedOut(s) ? '<div class="s pst out">● Signed out · must sign in again<br>Tasks can\'t reach this person until they sign in on the phone.</div>' : s.status === "filled" ? `<div class="s">${seenOf(s)}</div>` : ""}${(s.also || []).length ? `<div class="s">Also does: <b>${esc(s.also.join(", "))}</b></div>` : ""}<div class="s">${esc(s.gmail)}${s.phone ? " · " + esc(s.phone) : ""}</div><div class="s">${RB.ttOf(s) ? "Timetable: " + esc(RB.ttName(RB.ttOf(s))) : '<span class="tag amb">No timetable</span>'}</div>
       ${ed() ? `<div class="pb edit-only"><button style="background:var(--yel)" data-editseat="${esc(s.id)}">Edit</button>${s.status !== "filled" && s.invited ? `<button style="background:#DDF0E3;color:#1F6B3B" data-wainv="${esc(s.id)}">🟢 Send invite on WhatsApp</button>` : ""}${s.status === "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-offboard="${esc(s.id)}">Offboard / Delete</button>` : ""}${s.status !== "filled" && s.role !== "owner" && RB.isOwner() ? `<button style="background:#F9DAD8;color:#9E2B27" data-delseat="${esc(s.id)}">Delete seat</button>` : ""}</div>` : ""}</div>
       ${healthCard(s)}
       <div class="sec"><h4>Seat history</h4>${hist || '<div class="sub">No one has held this seat yet.</div>'}</div>
