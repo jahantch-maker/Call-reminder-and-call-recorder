@@ -85,7 +85,8 @@
       const plot = !!t.plot;
       out.push({
         kind: plot ? "plot" : "given", id: "t" + t.id, taskId: t.id, raw: t, title: plot ? "Plot " + (t.plotNo || "") + " · " + (t.title || "") : t.title || "",
-        promise: t.due || 0, due: t.due || 0, done: t.status === "done" || t.status === "checked", doneAt: t.doneAt || 0, moves: 0,
+        // N7 A plot step waiting for the plot owner is never late meanwhile; "Plot owner came" moves its due by the duty hours waited.
+        promise: plot && t.waitAt && t.due ? t.due + Math.max(0, Date.now() - t.waitAt) : t.due || 0, due: t.due || 0, done: t.status === "done" || t.status === "checked", doneAt: t.doneAt || 0, moves: 0,
         created: t.createdAt || 0, dur: 30, from: t.fromName || "", chain: t.passedTo ? [RB.first(t.fromName || ""), RB.first(t.toName || ""), t.passedTo] : null, urgent: !!t.urgent, stage: plot && t.step ? String(t.step).split(".")[0] : "",
         reasons: t.lateReasons || [], outside: outside(t.lateReasons), events: t.events || [],
       });
