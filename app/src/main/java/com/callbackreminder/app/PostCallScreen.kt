@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
@@ -13,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -611,7 +613,7 @@ internal fun CallAgainButton(onClick: () -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(hint) { if (hint) { kotlinx.coroutines.delay(2_000L); hint = false } }
     val press = if (hold <= 0) Modifier else Modifier.pointerInput(hold) {
-        androidx.compose.foundation.gestures.detectTapGestures(onPress = {
+        detectTapGestures(onPress = {
             holding = true
             val run = scope.launch {
                 fill.snapTo(0f)
@@ -630,8 +632,8 @@ internal fun CallAgainButton(onClick: () -> Unit) {
         })
     }
     Surface(
-        onClick = { if (hold <= 0) onClick() },
-        modifier = Modifier.fillMaxWidth().height(if (hold > 0) 54.dp else 48.dp).then(press),
+        modifier = Modifier.fillMaxWidth().height(if (hold > 0) 54.dp else 48.dp).clip(RoundedCornerShape(30.dp))
+            .then(if (hold > 0) press else Modifier.clickable(onClick = onClick)),
         shape = RoundedCornerShape(30.dp),
         color = Color(0xFF0FA68E),
         contentColor = Color.White,
