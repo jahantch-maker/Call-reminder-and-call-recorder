@@ -358,14 +358,14 @@ html[data-theme="dark"] .dz-chip.on{background:#F2F2F0;color:#1B1C1F}html[data-t
 html[data-theme="dark"] .hz-row{background:#1E2A44}html[data-theme="dark"] .hz-p{background:#2A2C31}html[data-theme="dark"] .hz-moonnote{background:#4A3A12;color:#F2CC72}
 /* 27 Nov Access (locked mockups access-sections/4-access-v3, 5-info-popup, 6/7 sticky): slim picker bar fixed at the top,
    one card per section with tinted rows, ⓘ popups, Copy links. */
-.accbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sf,#fff);border-radius:18px;padding:10px 14px;margin-bottom:12px;box-shadow:0 1px 0 #0000000d,0 4px 14px #0000000a}
+.accbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sf,#fff);border-radius:18px;padding:8px 14px;margin-bottom:10px;box-shadow:0 1px 0 #0000000d,0 4px 14px #0000000a}
 .accbar select{max-width:260px}.accwho{display:flex;align-items:center;gap:8px;min-width:0}.accwho b{white-space:nowrap}.accwho .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .accwho .avs,.accwho .ty{flex:none}
 
-.acccard .accrow{flex-wrap:wrap;background:#F2F4FB;border-left:3px solid #C9D0EE;border-radius:12px;padding:10px 12px;margin:6px 0;border-bottom:0}
+.acccard .accrow{flex-wrap:wrap;gap:8px;background:#F2F4FB;border-left:3px solid #C9D0EE;border-radius:10px;padding:4px 10px;margin:0 0 4px;min-height:40px;box-sizing:border-box;border-bottom:0}
 .acccard .accrow .w{min-width:180px}.acccard .accrow .w b{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .accinfo{width:18px;height:18px;border-radius:50%;border:1.5px solid currentColor;font:700 11px/1 serif;font-style:italic;color:var(--onv);display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
-.accx{flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding-top:8px}
+.accx{flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 0 4px}
 .accband{margin-top:12px}.accsel{width:auto;padding:4px 8px;border-radius:10px;font-weight:700}
 .lvl button.on.full{background:#C8372D;color:#fff}
 @media (max-width:1000px){.accbar select{max-width:100%;flex:1}}
@@ -400,30 +400,38 @@ html[data-theme="dark"] .rule{background:#1F2126;border-left-color:#3A3F55}
 .gpick{display:none;position:relative;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:10px 14px;font-size:15px}
 .gpick .li{color:#1F3A93;flex:none}.gpick b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gpick span{color:var(--onv);font-size:13px;font-weight:600;white-space:nowrap}
 .gpick select{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
-.ghead{margin:2px 0 14px}.ghead h2{font-size:24px;font-weight:700;margin:0 0 4px}.ghead p{color:var(--onv);font-size:13.5px;line-height:1.5;max-width:680px;margin:0}
-.gwrap .content>.card,.gwrap .content>.st-2,.gwrap .content>.body,.gwrap .content>.st-note,.gwrap .content>.acc2{max-width:880px}
+.ghead{margin:0 0 10px}.ghead h2{font-size:22px;font-weight:700;margin:0 0 4px}.ghead p{color:var(--onv);font-size:13.5px;line-height:1.5;max-width:680px;margin:0}
+/* 28 Nov (SETTINGS-2COL) Settings pages use the free space: up to 1180px, centred; whole cards in two columns
+   (one below laptop width); one compact row height everywhere, details in the ⓘ. */
+.gwrap .content>*:not(.st-save){max-width:1180px;margin-left:auto;margin-right:auto}
+.gwrap .content>.body{width:100%}.gwrap .content>.st-save{max-width:1180px;margin-left:auto;margin-right:auto}
+.stcols{columns:2 420px;column-gap:16px;width:100%}.stcols>.card{break-inside:avoid;display:block;margin:0 0 16px}
+.stcols.one{columns:1;max-width:580px;margin-left:0}
+.st-2{width:100%}
+.phtag{display:block;margin-top:6px;font-size:12.5px;font-weight:600;color:#1F3A93}
+html[data-theme="dark"] .phtag{color:#9DB8F0}
 .st-card{margin-bottom:16px}.st-card:last-child{margin-bottom:0}
-.st-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--onv);font-weight:700;margin:0 0 10px}.st-h span{text-transform:none;letter-spacing:0;font-weight:500}
+.st-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--onv);font-weight:700;margin:0 0 8px}.st-h span{text-transform:none;letter-spacing:0;font-weight:500}
 .st-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}.st-2>.st-card{margin:0}
 .st-note{font-size:12.5px;color:var(--onv);line-height:1.5;margin:12px 2px 0}
-.st-row,.st-f,.st-sw{display:flex;align-items:center;gap:12px;background:#EEF3FB;border-left:3px solid #1F3A93;border-radius:12px;padding:9px 12px;margin-bottom:6px}
+.st-row,.st-f,.st-sw{display:flex;align-items:center;gap:10px;background:#EEF3FB;border-left:3px solid #1F3A93;border-radius:10px;padding:4px 10px;margin-bottom:4px;min-height:40px;box-sizing:border-box}
 .st-row.grey{background:#F4F4F2;border-left-color:#B9BBC1}.st-row.grey .t{color:#5d5f65}.st-row.ret .t{text-decoration:line-through;color:var(--onv)}
 .st-row .t{flex:1;min-width:0;font-size:14.5px;font-weight:600}.st-row .u{font-size:12px;color:var(--onv);white-space:nowrap}
 .st-row .mv{display:flex;gap:4px}.st-row .num{width:64px}
 .st-b{display:inline-flex;align-items:center;gap:5px;background:#fff;border-radius:14px;padding:5px 10px;font-size:12.5px;font-weight:600;color:#55575d;white-space:nowrap;transition:background .15s}
 .st-b:hover{background:#E4E6EA}.st-b .li{width:14px;height:14px}
 .st-add{display:flex;gap:8px;margin-top:10px}.st-add input{flex:1;min-width:0}
-.st-f .l{flex:1;min-width:0;font-size:14px;font-weight:600}.st-f .l small{display:block;font-weight:500;color:var(--onv);font-size:12px;margin-top:2px}
+.st-f .l{flex:1;min-width:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}.st-f .l small{display:block;font-weight:500;color:var(--onv);font-size:12px;margin-top:2px}
 .st-f .v{display:flex;align-items:center;gap:8px;flex:none;min-width:130px}.st-f .v .num{width:72px}.st-f .v span{font-size:12.5px;color:var(--onv)}
 .st-f.chg,.st-row.chg{background:#DCE7FA;box-shadow:inset 0 0 0 1.5px #1F3A93}
-.st-sw{padding:10px 12px}.st-sw .ic{width:34px;height:34px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;color:#1F3A93;flex:none}
-.st-sw .w{flex:1;min-width:0}.st-sw b{display:block;font-size:14px}.st-sw small{color:var(--onv);font-size:12px}
+.st-sw .ic{width:26px;height:26px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;color:#1F3A93;flex:none}
+.st-sw .w{flex:1;min-width:0}.st-sw b{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600}.st-sw small{color:var(--onv);font-size:12px}
 button.sw{padding:0;border:0}
 .st-tk{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
-.st-tk label{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:12px;background:#F4F4F2;font-size:14px;font-weight:600;cursor:pointer}
+.st-tk label{display:flex;align-items:center;gap:9px;padding:6px 10px;min-height:36px;box-sizing:border-box;border-radius:12px;background:#F4F4F2;font-size:14px;font-weight:600;cursor:pointer}
 .st-tk label.on{background:#EEF3FB;box-shadow:inset 3px 0 0 #1F3A93}.st-tk input{width:18px;height:18px;flex:none;accent-color:#1F3A93}.st-tk .li{color:#1F3A93;flex:none}
 .st-hidden{display:none!important}
-.st-save{position:sticky;bottom:12px;z-index:8;display:none;align-items:center;gap:10px;margin-top:16px;max-width:880px;background:var(--on);color:#fff;border-radius:18px;padding:10px 12px 10px 18px;box-shadow:0 6px 24px #0003;font-size:14px}
+.st-save{position:sticky;bottom:12px;z-index:8;display:none;align-items:center;gap:10px;margin-top:16px;background:var(--on);color:#fff;border-radius:18px;padding:10px 12px 10px 18px;box-shadow:0 6px 24px #0003;font-size:14px}
 .st-save.on{display:flex;animation:stup .25s ease}
 @keyframes stup{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .st-save .g{flex:1;min-width:0}.st-save button{border-radius:14px;padding:8px 16px;font-weight:700;font-size:13.5px;white-space:nowrap}
@@ -464,3 +472,7 @@ html[data-theme="dark"] .st-save{background:#F2F2F0;color:#1B1C1F}html[data-them
   .acccard .accrow:has(.accx){flex-wrap:wrap}.acccard .accrow:has(.lvl){flex-wrap:wrap}
 }
 html[data-theme="dark"] .acch .ic{background:#2E3035;color:#9DB8F0}html[data-theme="dark"] .accnav button.on .n{color:#1B1C1Fb0}
+/* 28 Nov (SETTINGS-2COL) Settings cards a little tighter; the section note spans both columns. */
+.gwrap .content .st-card{padding:12px 14px}.st-f .v input,.st-f .v select{padding-top:5px;padding-bottom:5px}.gwrap .content .hint.st-wide{margin:0 0 10px}
+.gwrap .acch{margin:0 0 2px}
+@media (max-width:1100px){.stcols{columns:1}.stcols.one{max-width:none}}
