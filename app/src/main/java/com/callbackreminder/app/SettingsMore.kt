@@ -81,7 +81,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                 SwitchRow("Quiet hours", quiet || quietLocked) { if (!quietLocked) { quiet = it; TeamRules.setQuietOn(ctx, it) } }
             }
             listOf(
-                "Plot files" to listOf(WebRules.N_PLOT_DUE to "Step due", WebRules.N_PLOT_HEADS to "Heads-up before due",
+                "Plot files" to listOf(WebRules.N_PLOT_NEW to "New plot step", WebRules.N_PLOT_DUE to "Step due", WebRules.N_PLOT_HEADS to "Heads-up before due",
                     WebRules.N_PLOT_WAIT to "Waiting for plot owner", WebRules.N_PLOT_FOLLOW to "Updates on plots you follow"),
                 "Team tasks" to listOf(WebRules.N_NEW_TASK to "New task for you", WebRules.N_DONE_CHECK to "Done, check it",
                     WebRules.N_EXTEND to "Asks to extend", WebRules.N_NO_DATE to "No date / not seen nudges",

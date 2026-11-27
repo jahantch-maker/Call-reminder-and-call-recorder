@@ -31,6 +31,7 @@ object ChangeLog {
         Entry(
             "0.62.2", "28 Nov",
             new = listOf(
+                "Plot files: a new step given to you rings full screen (Settings › Notifications › New plot step)",
                 "Plot files: Heads-up before due can also be a full-screen popup",
             ),
             fixed = listOf(

@@ -20,6 +20,7 @@ object WebRules {
     const val OFF = "off"
 
     /** The kinds of notification the website sets (same keys as the website's Access › Notifications rows). */
+    const val N_PLOT_NEW = "n_plotNew"
     const val N_PLOT_DUE = "n_plotDue"
     const val N_PLOT_HEADS = "n_plotHeads"
     const val N_PLOT_WAIT = "n_plotWait"
@@ -41,7 +42,7 @@ object WebRules {
         "dos1On" to true, "dos1Min" to -60, "dos2On" to true, "dos2Min" to 0,
         "rev1On" to true, "rev1Min" to -480, "rev2On" to true, "rev2Min" to -180,
         // Notifications.
-        N_PLOT_DUE to FULL, "plotHeadsMin" to 60, N_PLOT_HEADS to NORMAL, N_PLOT_WAIT to NORMAL, N_PLOT_FOLLOW to NORMAL,
+        N_PLOT_NEW to FULL, N_PLOT_DUE to FULL, "plotHeadsMin" to 60, N_PLOT_HEADS to NORMAL, N_PLOT_WAIT to NORMAL, N_PLOT_FOLLOW to NORMAL,
         N_NEW_TASK to NORMAL, N_MENTION to NORMAL, N_NO_DATE to NORMAL, N_DONE_CHECK to NORMAL, N_EXTEND to NORMAL,
         N_TIMELINE to NORMAL, N_DOSSIER to NORMAL,
     )
