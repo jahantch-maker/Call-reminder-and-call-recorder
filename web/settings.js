@@ -5,10 +5,12 @@
   /** The five tabs the owner can tick per person (RB.SET_TABS); Change log is for owners, Updates and Appearance for everyone. */
   const TABS = RB.SET_TABS;
   // ------------------------------------------------------------------ shared look (Settings redesign, locked 27 Nov, J1-J5)
-  /** A labelled row: name (and a grey line) on the left, the box on the right. */
-  RB.stField = (lbl, hint, box) => `<div class="st-f"><div class="l">${lbl}${hint ? `<small>${hint}</small>` : ""}</div><div class="v">${box}</div></div>`;
+  /** 28 Nov (SETTINGS-2COL) The ⓘ right after a row's name: its full explanation in a small popup. */
+  RB.stInfo = (t) => (t ? ` <button class="accinfo" data-info="${esc(t)}" aria-label="What this does">i</button>` : "");
+  /** A labelled row: name and ⓘ on the left, the box on the right. One line, so more rows fit on the screen. */
+  RB.stField = (lbl, hint, box) => `<div class="st-f"><div class="l">${lbl}${RB.stInfo(hint)}</div><div class="v">${box}</div></div>`;
   /** A switch card: icon, title, one line, switch. attrs = the data-* the page listens to. */
-  RB.stSwitch = (ic, t, d, attrs, on) => `<div class="st-sw"><span class="ic">${RB.lineIcon(ic)}</span><span class="w"><b>${esc(t)}</b>${d ? `<small>${esc(d)}</small>` : ""}</span><button class="sw ${on ? "on" : ""}" role="switch" aria-checked="${!!on}" aria-label="${esc(t)}" ${attrs}></button></div>`;
+  RB.stSwitch = (ic, t, d, attrs, on) => `<div class="st-sw"><span class="ic">${RB.lineIcon(ic)}</span><span class="w"><b>${esc(t)}${RB.stInfo(d)}</b></span><button class="sw ${on ? "on" : ""}" role="switch" aria-checked="${!!on}" aria-label="${esc(t)}" ${attrs}></button></div>`;
   /** "Saved ✓" for switches and ticks, which save the moment they are clicked (J3). */
   RB.stSaved = (t) => {
     let el = document.getElementById("stok");
@@ -42,20 +44,20 @@
     const SHOW = [["oldOver", "Oldest overdue tasks", "Tasks overdue the longest"], ["oldUns", "Not scheduled list", "Tasks with no date for too long"], ["moved", "Moved " + c.movedN + "+ list", "Tasks whose date was moved again and again"], ["needs", "Needs help box", "People with the lowest score"], ["trend", "Score line (weeks)", "The score week by week"], ["dosBars", "Dossier day bars", "One bar per day for dossier work"], ["byType", "By task type", "Tasks split by type"]];
     const sws = (i) => SHOW.filter(([k]) => c.show[k][i] !== null).map(([k, l, d]) => RB.stSwitch("chart", l, d, `data-tpshow="${k}:${i}"`, c.show[k][i])).join("");
     const ppl = RB.tp.people(true);
-    return `<div class="card st-card"><h4 class="st-h">Score</h4>
-      ${num("tpwon", c.wOn, "Weight: tasks on time", "%")}${num("tpwdos", c.wDos, "Weight: dossier", "%", "Score = on time % × this + dossier % × this, divided by both added")}
-      ${num("tpred", c.redBelow, "Red row when the score is under", "%")}${num("tpweak", c.weakDay, "Red dossier day when under", "%")}</div>
+    return `<div class="stcols"><div class="card st-card"><h4 class="st-h">Score</h4>
+      ${num("tpwon", c.wOn, "Weight: tasks on time", "%", "How much the on time % counts in the score. Score = on time % × this + dossier % × the dossier weight, divided by both added.")}${num("tpwdos", c.wDos, "Weight: dossier", "%", "Score = on time % × this + dossier % × this, divided by both added")}
+      ${num("tpred", c.redBelow, "Red row when the score is under", "%", "A person's row turns red on Team Performance when the score is under this. Example: 70 = a score of 69 shows red.")}${num("tpweak", c.weakDay, "Red dossier day when under", "%", "A day on the dossier calendar turns red when less than this share of that day's dossier tasks was ticked.")}</div>
       <div class="card st-card"><h4 class="st-h">Lists</h4>
-      ${num("tpgrace", c.grace, "Not scheduled counts after", "days", "A task with no date for longer than this")}${num("tpolder", c.older, "Oldest overdue list shows tasks over", "days")}
-      ${num("tpmoved", c.movedN, "Moved list: date moved at least", "times")}${num("tpoldn", c.oldOverN, "Oldest overdue: rows before Show all", "rows")}${num("tpneedn", c.needsN, "Needs help: people shown", "people")}
-      ${num("tpweeks", c.weeks, "Score line shows the last", "weeks")}
-      ${RB.stField("Period when the page opens", "", `<select id="tpperiod" data-st="tpperiod" aria-label="Period when the page opens">${RB.tp.PERIODS.map(([k, l]) => `<option value="${k}" ${c.period === k ? "selected" : ""}>${l}</option>`).join("")}</select>`)}
+      ${num("tpgrace", c.grace, "Not scheduled counts after", "days", "A task with no date for longer than this")}${num("tpolder", c.older, "Oldest overdue list shows tasks over", "days", "The Oldest overdue list shows only tasks overdue for more days than this.")}
+      ${num("tpmoved", c.movedN, "Moved list: date moved at least", "times", "A task shows in the Moved list once its date was moved this many times or more.")}${num("tpoldn", c.oldOverN, "Oldest overdue: rows before Show all", "rows", "How many tasks the Oldest overdue list shows before a Show all link.")}${num("tpneedn", c.needsN, "Needs help: people shown", "people", "How many people with the lowest score the Needs help box shows.")}
+      ${num("tpweeks", c.weeks, "Score line shows the last", "weeks", "How many weeks back the score line (week by week) goes.")}
+      ${RB.stField("Period when the page opens", "The time span Team Performance shows when it first opens. You can still change it on the page.", `<select id="tpperiod" data-st="tpperiod" aria-label="Period when the page opens">${RB.tp.PERIODS.map(([k, l]) => `<option value="${k}" ${c.period === k ? "selected" : ""}>${l}</option>`).join("")}</select>`)}
       <button class="edit-only st-hidden" id="tpsave" data-st-save="1">Save</button></div>
       <div class="card st-card"><h4 class="st-h">Main screen · <span>show or hide</span></h4>${sws(0)}</div>
       <div class="card st-card"><h4 class="st-h">Person report · <span>show or hide</span></h4>${sws(1)}</div>
       <div class="card st-card"><h4 class="st-h">Hide people · <span>ticked people are left out (for example the owner or a driver)</span></h4>
       <div class="st-tk">${ppl.map((m) => `<label class="${c.hidden.includes(m.uid) ? "on" : ""}"><input type="checkbox" data-tphide="${esc(m.uid)}" ${c.hidden.includes(m.uid) ? "checked" : ""}>${RB.lineIcon("user")}${esc(RB.first(m.name))}</label>`).join("")}</div></div>
-      <div class="card st-card"><div class="tp-box"><b>How the numbers work</b><div class="hint" style="line-height:1.6;margin-top:4px">· <b>On time %</b> = done on time ÷ (on time + late + overdue + not scheduled). The first due date counts; moving a date later doesn't reset it. Late with an outside reason (material, payment, client) counts nowhere.<br>· Tasks given by a manager use their current deadline, because only the giver or a manager can change it.<br>· <b>Dossier %</b> = ticked ÷ due over the days. Today never pulls it down until the day ends. No dossier counts as 0.<br>· <b>Score</b> = both together by the weights above; the rank always follows the score.<br>· The week starts on Saturday. Weekly off days come from each person's timetable, holidays from Settings › Holidays.</div></div></div>`;
+      <div class="card st-card"><div class="tp-box"><b>How the numbers work</b><div class="hint" style="line-height:1.6;margin-top:4px">· <b>On time %</b> = done on time ÷ (on time + late + overdue + not scheduled). The first due date counts; moving a date later doesn't reset it. Late with an outside reason (material, payment, client) counts nowhere.<br>· Tasks given by a manager use their current deadline, because only the giver or a manager can change it.<br>· <b>Dossier %</b> = ticked ÷ due over the days. Today never pulls it down until the day ends. No dossier counts as 0.<br>· <b>Score</b> = both together by the weights above; the rank always follows the score.<br>· The week starts on Saturday. Weekly off days come from each person's timetable, holidays from Settings › Holidays.</div></div></div></div>`;
   }
 
   // ------------------------------------------------------------------ Holidays (office closed days; locked 25 Nov: Import Pakistan holidays,
@@ -178,15 +180,15 @@
   }, 700);
   // Left menu (J1): [group, [[tab, label, icon, one line shown under the big name]]]. Only tabs this person may open show.
   const GROUPS = [
-    ["Team work", [["reasons", "Late reasons", "late", "The reasons staff pick on the phone when a task is late. The phones get this list the next time the app opens."], ["red", "Red lines", "red", "When a number on the Meetings screens turns red."], ["ranking", "Ranking", "rank", "One fair score and rank for the team."], ["perf", "Team Performance", "chart", "These numbers decide how Team Performance counts and colours. Changes show for everyone at once."]]],
+    ["Team work", [["reasons", "Late reasons", "late", "The reasons staff pick on the phone when a task is late. The phones get this list the next time the app opens.<span class=\"phtag\">📱 Used on phones: the late reason list on a task</span>"], ["red", "Red lines", "red", "When a number on the Meetings screens turns red."], ["ranking", "Ranking", "rank", "One fair score and rank for the team."], ["perf", "Team Performance", "chart", "These numbers decide how Team Performance counts and colours. Changes show for everyone at once."]]],
     ["Meetings and reading", [["steps", "Meeting steps", "steps", "The steps of the daily and weekly meeting, in order, with the minutes for each."], ["docs", "Reading deadline", "read", "How many days new people get to finish their reading list."]]],
-    ["Office", [["holidays", "Holidays", "cal", "Public holidays and other days the office is closed. Due times in every SOP and dossier days skip these dates. Weekly days off are set per timetable, in Team › Timetables."]]],
+    ["Office", [["holidays", "Holidays", "cal", "Public holidays and other days the office is closed. Due times in every SOP and dossier days skip these dates. Weekly days off are set per timetable, in Team › Timetables.<span class=\"phtag\">📱 Used on phones: due times, reminders and dossier days skip these dates</span>"]]],
     ["Help", [["rules", "Rules", "rules", "How every rule of the app and the website works, in plain words. Read only. Updated with every new version."], ["log", "Change log", "log", "Every access, chart, seat and offboarding change. Only owners see it and nobody can edit or delete a line."], ["updates", "Updates", "upd", "A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it."]]],
     ["My view", [["look", "Appearance", "look", "Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting."]]],
   ];
   RB.sections.settings = {
-    // 28 Nov Team rules and access (was Team › Access) sits first: one tab per section, owners only.
-    groups: (tabs) => [["Team rules and access", RB.access.menu()]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
+    // 28 Nov (SETTINGS-REGROUP) Phone app settings (named like the phone's Settings) and Permissions sit first, owners only.
+    groups: (tabs) => [["📱 Phone app settings", RB.access.menu("phone")], ["🔐 Permissions", RB.access.menu("perm")]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
     tabs: () => { const ok = RB.settingsTabs(); return (RB.isOwner() ? RB.access.menu().map((x) => [x[0], x[1]]) : []).concat(TABS.filter((t) => ok.includes(t[0])).concat([["holidays", "Holidays"]]).concat(RB.mySwitch("seeRules") ? [["rules", "Rules"]] : []).concat(RB.isOwner() ? [["log", "Change log"]] : []).concat([["updates", "Updates"], ["look", "Appearance"]])); },
     render(tab) {
       let html, side = "";
@@ -201,7 +203,7 @@
       } else if (tab === "updates") {
         const vi = RB.versionInfo ? RB.versionInfo() : {};
         html = `<div class="card st-card">
-          ${RB.stField("This page is running", vi.at ? "published " + esc(RB.fmtWhen(Date.parse(vi.at))) : "", `<b>${esc(vi.version || "—")}</b>`)}
+          ${RB.stField("This page is running", "The version of this website open in your browser. Check for updates looks for a newer one.", `<b>${esc(vi.version || "—")}</b>${vi.at ? `<span>published ${esc(RB.fmtWhen(Date.parse(vi.at)))}</span>` : ""}`)}
           <div style="display:flex;align-items:center;gap:14px;margin-top:12px"><button class="btnp" id="updchk">Check for updates</button><span class="sub" id="updres"></span></div></div>`;
       } else if (tab === "holidays") {
         const r = holidays();
@@ -217,10 +219,12 @@
       } else if (tab === "perf") html = perfHtml();
       else if (tab === "rules") html = RB.rulesHtml();
       else { S.settingsTab = tab; html = RB.meet.html("settings"); }
+      if (["look", "updates", "docs"].includes(tab)) html = `<div class="stcols one">${html}</div>`;
       return { html: html + SAVEBAR, side, title: "Settings", sub: "Only people with access can change these" };
     },
     bind(root, side) {
       if (S.tab.settings && S.tab.settings.startsWith("acc_")) return RB.access.bind(root, side);
+      root.querySelectorAll("[data-info]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); RB.infoPop(b); }));
       root.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => { RB.theme.set(b.dataset.themePick); RB.render(); }));
       const sv = root.querySelector("#rsave");
       if (sv) sv.onclick = async () => { const n = Math.max(1, Math.min(60, Number(root.querySelector("#rdays").value) || 7)); await RB.Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { readingDays: n })); await RB.log("Reading deadline set to " + n + " days"); RB.stDone(); };

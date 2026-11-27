@@ -449,51 +449,53 @@
   const offLbl = (m) => (m === 0 ? "At duty end" : (Math.abs(m) % 60 ? Math.abs(m) + " min" : Math.abs(m) / 60 + " h") + (m < 0 ? " before duty end" : " after duty end"));
   const STY = [["full", "Full screen"], ["normal", "Normal"], ["off", "Off"]];
   RB.ACC = [
-    { id: "team", title: "Team and tasks", col: 0, rows: [
-      ["app", "approveExt", "Approve extension requests", "From his own people", "On: when one of his own people asks for more time on a task he gave, he can approve or keep the deadline on his phone. Off: only the task giver's own phone can't approve; the request waits for someone who can."],
+    { id: "team", title: "Team and tasks", grp: "perm", col: 0, rows: [
+      ["app", "approveExt", "Approve extension requests", "From his own people", "On: when one of his own people asks for more time on a task he gave, he can approve or keep the deadline on his phone. Off: only the task giver's own phone can't approve; the request waits for someone who can.", "sw", null, false, "SEEING AND APPROVING"],
       ["app", "seeNumbers", "See how my people are doing", "Late and due-today counts", "On: in his phone's Team page he sees how many tasks are late or due today for each person he gave tasks to. Off: he doesn't see these numbers."],
       ["app", "seeDay", "See own people's day", "People below him in the chart", "On: he can open the day (tasks and calendar) of people below him in the chart. Off: he only sees his own day."],
-      ["app", "giveDown", "Give tasks down his branch", "", "On: he can give tasks to anyone below him in the chart. Off: he can't give tasks down."],
+      ["app", "giveDown", "Give tasks down his branch", "", "On: he can give tasks to anyone below him in the chart. Off: he can't give tasks down.", "sw", null, false, "GIVING TASKS"],
       ["app", "giveSide", "Give tasks sideways", "Colleagues with the same head", "On: he can give tasks to colleagues who have the same head. Off: not to them."],
     ] },
-    { id: "dates", title: "Date rules", isNew: true, col: 0, note: "He sees these in phone Settings › Task rules but can't change them. Times count working hours only (nights, his off day and holidays don't count).", rows: [
-      ["set", "noDate", "No deadline picked · remind him after", "Tasks he gave", "When he gives a task and the other person hasn't picked a deadline after this many working hours, he gets a reminder. Example: 4 h, task given at 10 AM, reminder at 2 PM.", "sel", MINS([60, 120, 240, 480, 1440])],
-      ["set", "urgHours", "Urgent, no deadline · first reminder after", "Tasks he gets", "An urgent task he gets with no deadline: the first reminder comes after this many working hours. The task giver is told each time too. Stops as soon as a deadline is set. Example: 2 h, given at 11 AM, reminders at 1 PM, 3 PM, 5 PM.", "sel", [1, 2, 3, 4, 6, 8].map((h) => [h, h + " h"])],
-      ["set", "urgTimes", "Urgent, no deadline · repeat", "Each with the same gap", "How many reminders in all for an urgent task with no deadline (same gap each time). If the task never reached his phone, the giver's phone sends him one SMS instead.", "sel", [1, 2, 3, 4, 5, 6].map((n) => [n, n + "×"])],
-      ["set", "urgStyle", "Urgent, no deadline · how it shows", "On his phone", "Full screen: a ringing popup like a call-back reminder. Normal: a notification. Off: no reminders to him (the giver is still told).", "seg", STY],
+    { id: "dates", title: "Task rules", grp: "phone", phone: "Task rules", isNew: true, col: 0, note: "He sees these in phone Settings › Task rules but can't change them. Times count working hours only (nights, his off day and holidays don't count).", rows: [
+      ["set", "noDate", "No deadline picked · remind him after", "Tasks he gave", "When he gives a task and the other person hasn't picked a deadline after this many working hours, he gets a reminder. Example: 4 h, task given at 10 AM, reminder at 2 PM.", "sel", MINS([60, 120, 240, 480, 1440]), false, "TASKS HE GIVES"],
       ["set", "smsMin", "Not seen · send SMS after", "Tasks he gave", "If the person hasn't opened his task after this many working hours, his phone sends them an SMS. Off: no SMS.", "sel", MINS([0, 60, 120, 240])],
       ["set", "locked", "Deadline locked", "Once set, only “Extend” can change it", "On: once the person picks a deadline on a task he gave, they can only ask him to extend it. Off: they can change it themselves.", "sw"],
       ["set", "freeExt", "Extend without asking", "On tasks he gave", "How many times the person may move their own deadline without asking him. Never = always asks.", "sel", [[0, "Never"], [1, "1×"], [2, "2×"], [3, "3×"]]],
+      ["set", "urgHours", "Urgent, no deadline · first reminder after", "Tasks he gets", "An urgent task he gets with no deadline: the first reminder comes after this many working hours. The task giver is told each time too. Stops as soon as a deadline is set. Example: 2 h, given at 11 AM, reminders at 1 PM, 3 PM, 5 PM.", "sel", [1, 2, 3, 4, 6, 8].map((h) => [h, h + " h"]), false, "TASKS HE GETS · URGENT, NO DEADLINE"],
+      ["set", "urgTimes", "Urgent, no deadline · repeat", "Each with the same gap", "How many reminders in all for an urgent task with no deadline (same gap each time). If the task never reached his phone, the giver's phone sends him one SMS instead.", "sel", [1, 2, 3, 4, 5, 6].map((n) => [n, n + "×"])],
+      ["set", "urgStyle", "Urgent, no deadline · how it shows", "On his phone", "Full screen: a ringing popup like a call-back reminder. Normal: a notification. Off: no reminders to him (the giver is still told).", "seg", STY],
     ] },
-    { id: "calls", title: "Calls and texts", col: 0, rows: [
+    { id: "calls", title: "Calls and texts", grp: "phone", phone: "Call recording, Text messages, After-call popup", col: 0, rows: [
       ["app", "callRec", "Call recording", "Stays on his phone", "On: call recording is allowed; he still has to turn it on in his own phone. Recordings never leave his phone. Off: no call recording."],
       ["app", "sms", "Text messages", "His own SMS follow-ups", "On: he can send SMS follow-ups from his phone. Off: every SMS part disappears from his phone (Settings › Text messages, text options on tasks, Texts links, Search). Texts already scheduled pause and start again when it is back on. The automatic team SMS is not affected."],
       ["app", "popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", "On: he can turn “After-call popup only in duty hours” on or off himself. Off: it stays on and shows “Set by your manager”. Calls from numbers with an open task always ask."],
     ] },
-    { id: "plot", title: "Plot files", col: 0, rows: [
+    { id: "plot", title: "Plot files", grp: "phone", phone: "New plot file (under the account card)", col: 0, rows: [
       ["app", "openPlot", "Can open new plot files", "Shows “New plot file” in his phone", "On: his phone shows “New plot file” in Settings. Off: it is hidden (until set, the owner and whoever does the first step have it).", "sw", null, true],
     ] },
-    { id: "rem", title: "Reminders", isNew: true, col: 0, note: "Set from his duty end (his timetable, else 11 AM - 9 PM). Never on his off day or a holiday. Full-screen popup, works with no internet.", rows: [
-      ["set", "dos1", "Dossier reminder 1", "Only if a dossier task is unticked", "A full-screen popup listing his unticked dossier tasks, with Open dossier and Skip. Each Skip shows in his Team Performance report.", "rem"],
+    { id: "rem", title: "Dossier and review popups", grp: "phone", phone: "My day › Dossier reminder and Review", isNew: true, col: 0, note: "Set from his duty end (his timetable, else 11 AM - 9 PM). Never on his off day or a holiday. Full-screen popup, works with no internet.", rows: [
+      ["set", "dos1", "Dossier reminder 1", "Only if a dossier task is unticked", "A full-screen popup listing his unticked dossier tasks, with Open dossier and Skip. Each Skip shows in his Team Performance report.", "rem", null, false, "DOSSIER"],
       ["set", "dos2", "Dossier reminder 2", "", "A second dossier popup, the same way.", "rem"],
-      ["set", "rev1", "Review reminder 1", "Only if something is waiting", "The review popup (calls overdue or to review, texts to review), with Snooze and Skip.", "rem"],
+      ["set", "rev1", "Review reminder 1", "Only if something is waiting", "The review popup (calls overdue or to review, texts to review), with Snooze and Skip.", "rem", null, false, "REVIEW"],
       ["set", "rev2", "Review reminder 2", "", "A second review popup. Example: lunch time = 4 h before duty end.", "rem"],
     ] },
-    { id: "portal", title: "In the portal", col: 1, rows: [
-      ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't."],
+    { id: "portal", title: "In the portal", grp: "perm", col: 1, rows: [
+      ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't.", null, null, false, "TEAM PAGES"],
       ["portal", "meetings", "Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", "None: no Meetings page. View: reads minutes of meetings he was in and his own actions. Edit: runs meetings."],
       ["portal", "team", "Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments). The People list follows “How far”.", "None: no Team page. View: reads the ticked tabs. Edit: changes seats, chart and departments in the ticked tabs. Offboard stays owners only (access is in Settings › Team rules and access)."],
-      ["portal", "plot", "Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page."],
+      ["portal", "plot", "Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page.", null, null, false, "FILES AND SETTINGS"],
       ["portal", "docs", "Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", "View: his reading list and shared documents. Edit: adds documents and sees everyone's reading."],
       ["portal", "settings", "Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", "None: no Settings page. View: reads the ticked tabs. Edit: changes them."],
       ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
       ["app", "seeRules", "See Rules", "Settings › Rules: how every rule works", "On: he sees Settings › Rules (read only). Owners always see it."],
     ] },
-    { id: "notif", title: "Notifications", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after (unless his Quiet hours switch is off). Anything with a set time always rings. He can't change the rows below on his phone.", rows: [
-      ["app", "quietHours", "Can change quiet hours", "His “Quiet hours” switch", "On: he can turn “Quiet hours” on or off himself in phone Settings › Notifications (off = automatic notifications come at any time, at night and on off days too). Off: it stays on and shows “Set by your manager”. The owner can always change it.", "sw", null, true, "QUIET HOURS"],
+    { id: "style", title: "Reminder style", grp: "phone", phone: "Reminder style", col: 1, note: "He sees these in phone Settings › Reminder style but can't change them. He can still pick his own ringtones.", rows: [
       ["set", "remStyle", "Call-back reminder", "Full screen until he reacts, full screen then a notification, or a banner", "Until he reacts: full screen, rings and stays on screen until he taps Call back, Snooze or Done. Then notification: rings on full screen for the seconds below, then moves to his notifications. Banner only: a normal notification, no popup. He can't change this on his phone.", "seg", [["full", "Until he reacts"], ["timed", "Then notification"], ["banner", "Banner only"]], true, "CALL-BACK REMINDERS"],
       ["set", "remSecs", "Full screen for", "Only with “Then notification”", "How long the full-screen call-back reminder stays before it moves to his notifications.", "sel", [10, 15, 30, 60].map((n) => [n, n + " seconds"]), true],
       ["set", "remRepeat", "Popup sound repeats until he reacts", "Off = plays once", "On: the popup sound plays again and again (up to 1 minute) until he reacts. Off: it plays one time and vibrates 3 times. Either way the popup stays on screen. He can still pick his own ringtone.", "sw", null, true],
+    ] },
+    { id: "notif", title: "Notifications", grp: "phone", phone: "Notifications", band0: "QUIET HOURS", isNew: true, col: 1, note: "🌙 Automatic ones come only from 30 min before his duty to 1 hour after (unless his Quiet hours switch is off). Anything with a set time always rings. He can't change the rows below on his phone.", rows: [
+      ["app", "quietHours", "Can change quiet hours", "His “Quiet hours” switch", "On: he can turn “Quiet hours” on or off himself in phone Settings › Notifications (off = automatic notifications come at any time, at night and on off days too). Off: it stays on and shows “Set by your manager”. The owner can always change it.", "sw", null, true, "QUIET HOURS"],
       ["set", "n_plotNew", "New plot step", "When a step is given to him", "Full screen: a ringing popup when a plot file step is given to him (only in his notification window, unless his Quiet hours switch is off). Normal: a notification. Off: nothing.", "seg", STY, false, "PLOT FILES"],
       ["set", "n_plotDue", "Step due", "At the SOP due time", "Full screen: a ringing popup at the step's due time (like a call-back reminder). Normal: a notification. Off: nothing.", "seg", STY],
       ["set", "n_plotHeads", "Heads-up before due", "", "A notification before a plot step is due. The time picks how long before.", "seg", STY],
@@ -508,8 +510,10 @@
       ["set", "n_dossier", "New dossier task", "", "A dossier task added or changed for him by the office.", "seg", STY, false, "DOSSIER"],
     ] },
   ];
-  const ACC_IC = { team: "people", dates: "cal", calls: "phone", plot: "folder", rem: "alarm", portal: "screen", notif: "bell" };
-  const ACC_DESC = { team: "Who he can give tasks to, and whose work he can see and approve.", dates: "Deadline and reminder rules for tasks he gives and gets.", calls: "Call recording, text messages and the after-call popup.", plot: "What he can do with plot files on his phone.", rem: "The dossier and review popups on his phone.", portal: "Which sections of this web portal he can open, and whether he can only view or also edit.", notif: "How each kind of notification shows on his phone." };
+  const ACC_IC = { team: "people", dates: "cal", style: "bell", calls: "phone", plot: "folder", rem: "alarm", portal: "screen", notif: "bell" };
+  const ACC_DESC = { team: "Who he can give tasks to, and whose work he can see and approve.", dates: "Deadline and reminder rules for tasks he gives and gets.", calls: "Call recording, text messages and the after-call popup.", plot: "What he can do with plot files on his phone.", rem: "The dossier and review popups on his phone.", style: "How a call-back reminder shows and rings on his phone.", portal: "Which sections of this web portal he can open, and whether he can only view or also edit.", notif: "How each kind of notification shows on his phone." };
+  /** 28 Nov (SETTINGS-REGROUP) Where each row sits in the phone's Settings; rows not listed use their section's place. */
+  const PH = { callRec: "Call recording", sms: "Text messages", popupHours: "After-call popup", dos1: "My day › Dossier reminder", dos2: "My day › Dossier reminder", rev1: "My day › Review", rev2: "My day › Review" };
   /** Every key a section holds ("app.x", "set.y", "portal.z"); reminders hold On + minutes. */
   const secKeys = (sec) => sec.rows.flatMap((r) => (r[5] === "rem" ? ["set." + r[1] + "On", "set." + r[1] + "Min"] : r[1] === "plotHeadsMin" ? [] : [r[0] + "." + r[1]]).concat(r[1] === "n_plotHeads" ? ["set.plotHeadsMin"] : []).concat(r[0] === "portal" && r[1] === "app" ? ["portal.appScope"] : r[0] === "portal" && r[1] === "team" ? ["portal.teamTabs"] : r[0] === "portal" && r[1] === "settings" ? ["portal.settingsTabs"] : []));
   const getK = (e, key) => { const [g, k] = key.split("."); return (e[g] || {})[k]; };
@@ -523,7 +527,7 @@
     const e = mode === "desig" ? Object.assign({ changed: {} }, RB.defaultsOf(S.accDesig)) : RB.effective(s);
     const can = ed() && !(mode === "person" && s && s.role === "owner");
     const dis = can ? "" : "pointer-events:none;opacity:.6";
-    const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? '<span class="tag">default</span>' : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
+    const stag = (...keys) => { const key = keys.find((k) => e.changed[k]); return mode === "desig" || !key ? "" : `<span class="tag chg" data-resetone="${key}" title="Tap to go back to default">✎ changed</span>`; };
     const info = (t) => (t ? `<button class="accinfo" data-info="${esc(t)}" aria-label="What this does">i</button>` : "");
     const sw = (g, k) => `<div class="sw ${getK(e, g + "." + k) ? "on" : ""} ${can ? "" : "dis"}" data-asw="${g}.${k}" role="switch" aria-checked="${!!getK(e, g + "." + k)}"></div>`;
     const sel = (key, opts) => `<select class="accsel" data-aset="${key}" style="${dis}">${opts.map(([v, l]) => `<option value="${v}" ${String(getK(e, key)) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -537,10 +541,10 @@
     const portalCtl = (k) => k === "app" ? [lv("app", [["none", "Off"], ["view", "On"]]), e.portal.app !== "none" ? extra("HOW FAR", RB.SCOPES.map(([v, l]) => `<button class="sc ${e.portal.appScope === v ? "on" : ""}" style="${dis}" data-lvl="appScope:${v}">${e.portal.appScope === v ? "✓ " : ""}${l}</button>`).join("")) : ""]
       : k === "plot" ? [lv("plot", [["none", "Off"], ["edit", "On"]]), ""]
       : k === "team" ? [lv("team", NVE), e.portal.team !== "none" ? extra("TABS", RB.TEAM_TABS.map(([v, l]) => chip("teamTabs", v, l, tabsOn("teamTabs", RB.TEAM_TABS).includes(v))).join("") + lock("Offboard (owners only)")) : ""]
-      : k === "settings" ? [lv("settings", NVE), e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, tabsOn("settingsTabs", RB.SET_TABS).includes(v))).join("") + lock("Team rules and access (owners only)") + lock("Check for updates · Appearance (always on)")) : ""]
+      : k === "settings" ? [lv("settings", NVE), e.portal.settings !== "none" ? extra("TABS", RB.SET_TABS.map(([v, l]) => chip("settingsTabs", v, l, tabsOn("settingsTabs", RB.SET_TABS).includes(v))).join("") + lock("Phone app settings and Permissions (owners only)") + lock("Check for updates · Appearance (always on)")) : ""]
       : [lv(k, NVE), ""];
-    const rowHtml = (r) => {
-      const [g, k, t, sub, inf, ctl, opts, isNew, band] = r;
+    const rowHtml = (r, sec) => {
+      const [g, k, t, sub, inf, ctl, opts, isNew] = r;
       let c, more = "", tags;
       if (ctl === "rem") {
         const on = getK(e, "set." + k + "On");
@@ -552,12 +556,19 @@
         c = ctl === "sel" ? sel(g + "." + k, opts) : ctl === "seg" ? seg(g + "." + k, opts) : sw(g, k);
         if (k === "n_plotHeads" && getK(e, "set.n_plotHeads") !== "off") more = `<div class="accx">${sel("set.plotHeadsMin", [15, 30, 60, 120, 240, 1440].map((m) => [m, (m >= 1440 ? "1 day" : m >= 60 ? m / 60 + " hour" + (m > 60 ? "s" : "") : m + " min") + " before"]))}</div>`;
       }
-      return `${band ? `<div class="mh2 accband">${band}</div>` : ""}<div class="swrow accrow"><div class="w"><b>${esc(t)}${info(inf)}${isNew ? ' <span class="tag grn">NEW</span>' : ""}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>${tags}${c}${more}</div>`;
+      const ph = sec.grp === "phone" ? "📱 On the phone: Settings › " + (PH[k] || sec.phone) : "";
+      return `<div class="swrow accrow"><div class="w"><b>${esc(t)}${info([ph, sub, inf].filter(Boolean).join("\n"))}${isNew ? ' <span class="tag grn">NEW</span>' : ""}</b></div>${tags}${c}${more}</div>`;
     };
     // Settings redesign (J8, locked 27 Nov): one section at a time, picked in a left menu; big name, icon and one line on top.
     // 28 Nov Lives in Settings › Team rules and access: the big name, icon and line come from the Settings head.
-    const card = (sec) => `${ed() ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button></div>` : ""}
-      <div class="card acccard">${sec.note ? `<div class="hint warn">${esc(sec.note)}</div>` : ""}${sec.rows.map(rowHtml).join("")}${sec.id === "portal" ? '<div class="hint">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}</div>`;
+    // 28 Nov (SETTINGS-2COL) Each band of rows is its own card; the cards sit in two columns (one on narrow screens).
+    const card = (sec) => {
+      const parts = [];
+      sec.rows.forEach((r) => { if (!parts.length || r[8]) parts.push({ band: r[8] || sec.band0 || "", rows: [] }); parts[parts.length - 1].rows.push(r); });
+      const cards = parts.map((p) => `<div class="card acccard st-card">${p.band ? `<h4 class="st-h">${esc(p.band)}</h4>` : ""}${p.rows.map((r) => rowHtml(r, sec)).join("")}</div>`).join("");
+      return `${ed() ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button></div>` : ""}${sec.note ? `<div class="hint warn st-wide">${esc(sec.note)}</div>` : ""}
+      <div class="stcols${parts.length === 1 ? " one" : ""}">${cards}</div>${sec.id === "portal" ? '<div class="st-note">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}${sec.id === "team" ? '<div class="st-note">Always on for everyone: 📷 photo proof on tasks he gives, 🔒 private tasks, ⏰ his own reminders, tasks, widgets and calendar. Only owners remove someone from RB; staff can only sign out.</div>' : ""}`;
+    };
     const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
       : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b><span class="sub">${esc(s.designation)}${s.dept ? " · " + esc(s.dept) : ""}${RB.headOf(s) ? " · head: " + esc(first(RB.holderName(RB.headOf(s)))) : ""}</span>`;
     const cur = S.accDesig && RB.desigOf(S.accDesig);
@@ -570,11 +581,7 @@
       ${s && s.role === "owner" && mode === "person" ? '<div class="hint">The app owner can do everything, whatever the designation. Call recording stays off unless the person turns it on in his own phone.</div>' : ""}`;
     if (!RB.ACC.some((x) => x.id === S.accSec)) S.accSec = RB.ACC[0].id;
     const cs = RB.ACC.find((x) => x.id === S.accSec);
-    const showUn = S.accUn && desigs.some((d) => !RB.isChecked(d)), unN = desigs.filter((d) => !RB.isChecked(d)).length, total = RB.APP_SW.length;
-    const dl = desigs.filter((d) => !showUn || !RB.isChecked(d)).map((d) => `<div class="swrow ${mode === "desig" && S.accDesig === d.name ? "sel" : ""}"><div class="w"><b>${esc(d.name)}</b></div>${RB.isChecked(d) ? "" : '<span class="tag yel">unchecked</span>'}<span class="sub">${RB.countOn(d.name)} of ${total}</span><button class="link" data-dacc="${esc(d.name)}">open ›</button></div>`).join("");
-    const side = `<div class="card"><div class="subhead" style="margin-bottom:6px"><h3 style="margin:0">Designation defaults</h3><div class="sp"></div>${unN ? `<button class="sc ${showUn ? "on" : ""}" data-accun="1">Unchecked · ${unN}</button>` : ""}</div>${dl}${ed() ? '<button class="link" id="adddes2" style="margin-top:8px">+ New designation</button>' : ""}</div>
-      <div class="card" style="margin-top:12px"><h3>Always on for everyone</h3><div class="sub" style="line-height:1.8">📷 Photo proof on tasks he gives<br>🔒 Private tasks<br>⏰ Own reminders, tasks, widgets, calendar<br>Only owners remove someone from RB. Staff can only sign out.</div></div>`;
-    return { html: `${bar}${card(cs)}`, side, sideCards: true };
+    return { html: `${bar}${card(cs)}`, side: "" };
   }
 
   /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
@@ -654,8 +661,8 @@
   /** S2.9 The ⓘ: the full explanation in a floating popup with Close. */
   function accInfo(btn) {
     const m = document.getElementById("modal"), r = btn.getBoundingClientRect();
-    const title = btn.closest(".w").querySelector("b").firstChild.textContent;
-    m.innerHTML = `<div class="back" id="iback" style="background:transparent"><div class="dlg popc" style="left:${Math.max(8, Math.min(r.left - 20, innerWidth - 330))}px;top:${Math.min(r.bottom + 8, innerHeight - 220)}px"><b>${esc(title)}</b><div style="margin:8px 0 12px;line-height:1.5">${esc(btn.dataset.info)}</div><div style="text-align:right"><button class="btnp" id="iok">Close</button></div></div></div>`;
+    const box = btn.closest(".w,.l"), title = ((box && box.querySelector("b")) || box || btn).firstChild.textContent;
+    m.innerHTML = `<div class="back" id="iback" style="background:transparent"><div class="dlg popc" style="left:${Math.max(8, Math.min(r.left - 20, innerWidth - 330))}px;top:${Math.min(r.bottom + 8, innerHeight - 220)}px"><b>${esc(title)}</b><div style="margin:8px 0 12px;line-height:1.5;white-space:pre-line">${esc(btn.dataset.info)}</div><div style="text-align:right"><button class="btnp" id="iok">Close</button></div></div></div>`;
     m.querySelector("#iok").onclick = () => (m.innerHTML = "");
     m.querySelector("#iback").onclick = (ev) => { if (ev.target.id === "iback") m.innerHTML = ""; };
   }
@@ -949,11 +956,14 @@
       on(root, "[data-resetone]", (e) => { const [grp, k] = e.dataset.resetone.split("."); const s = RB.seat(S.accSeat), ov = JSON.parse(JSON.stringify(s.override || {})); if (ov[grp]) delete ov[grp][k]; s.override = ov; saveOverride(s, RB.holderName(s) + ": " + k + " back to default"); RB.render(); });
       const rs = root.querySelector("#accreset"); if (rs) rs.onclick = () => RB.confirm("Reset all of " + esc(RB.holderName(RB.seat(S.accSeat))) + "'s access to the " + esc(RB.seat(S.accSeat).designation) + " defaults?", "Reset", async () => { const s = RB.seat(S.accSeat); s.override = {}; saveOverride(s, RB.holderName(s) + ": access reset to default"); });
   }
+  RB.infoPop = accInfo;
+  const MENU_ORDER = ["dates", "style", "notif", "calls", "rem", "plot", "team", "portal"];
   RB.access = {
     page: (id) => { RB.reconcile(); S.accSec = id; return access(); },
     bind: accBind,
     /** Settings left menu rows: [tab, label, icon, one line]. */
-    menu: () => RB.ACC.map((x) => ["acc_" + x.id, x.title, ACC_IC[x.id], ACC_DESC[x.id]]),
+    // Phone sections in the order the phone's Settings lists them.
+    menu: (grp) => RB.ACC.filter((x) => !grp || x.grp === grp).sort((a, b) => MENU_ORDER.indexOf(a.id) - MENU_ORDER.indexOf(b.id)).map((x) => ["acc_" + x.id, x.title, ACC_IC[x.id], ACC_DESC[x.id] + (x.phone ? `<span class="phtag">📱 On the phone: Settings › ${esc(x.phone)}</span>` : "")]),
   };
   RB.team = { addSeat, editSeat, offboard, moveSeat, migrate };
 })();
