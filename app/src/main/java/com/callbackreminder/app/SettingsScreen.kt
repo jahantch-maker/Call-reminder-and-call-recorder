@@ -233,12 +233,12 @@ fun SettingsScreen(
             BadgeGroup("GENERAL") {
                 BadgeRow(Icons.Rounded.Palette, BadgeTone.PURPLE, "Appearance", remember(look) { AppearanceUi.summary(ctx) }, onOpenAppearance)
                 BadgeRow(Icons.Rounded.CalendarMonth, BadgeTone.BLUE, "Calendar", "Working hours " + remember(workHours) { WorkHours.label(ctx) }, onOpenCalendar)
-                BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · Set by your manager" else "", onOpenOffDays)
+                BadgeRow(Icons.Rounded.BeachAccess, BadgeTone.TEAL, "Weekly off day", OffDays.label(offDays) + if (Seats.managed(ctx)) " · 🔒 " + WebRules.setBy() else "", onOpenOffDays)
             }
             // 27 Nov (S11.2) The rules for tasks you give and get (moved here from the Team page).
             if (team != null && teamMe?.active == true) BadgeGroup("TEAM TASKS") {
                 BadgeRow(Icons.Rounded.Assignment, BadgeTone.RED, "Task rules",
-                    "Deadlines, reminders and texts" + if (WebRules.managed(ctx)) " · Set by your manager" else "", onOpenTaskRules)
+                    "Deadlines, reminders and texts" + if (WebRules.managed(ctx)) " · 🔒 " + WebRules.setBy() else "", onOpenTaskRules)
             }
             BadgeGroup("CALLS & TEXTS") {
                 BadgeRow(Icons.Rounded.NotificationsActive, BadgeTone.AMBER, "Reminder style", reminderSummary, onOpenReminder)
@@ -273,7 +273,7 @@ fun SettingsScreen(
                     // One time: Android asks you to allow Do Not Disturb access for the app.
                     if (on && !RingerSilence.hasAccess(ctx)) RingerSilence.openAccessSettings(ctx)
                 }
-                BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) + if (silenceLocked) " · Set by your manager" else "" },
+                BadgeRow(Icons.Rounded.Mic, BadgeTone.TEAL, "Voice notes", remember(silenceCalls, resumeKey) { RingerSilence.summary(ctx) + if (silenceLocked) " · 🔒 " + WebRules.setBy() else "" },
                     onClick = { toggleSilence(!silenceCalls) }, switch = silenceCalls, onSwitch = toggleSilence)
                 BadgeRow(Icons.Rounded.KeyboardVoice, BadgeTone.PURPLE, "Voice typing", remember { VoiceTyping.summary(ctx) }, onOpenVoiceTyping)
                 BadgeRow(Icons.Rounded.VerifiedUser, BadgeTone.GREEN, "Setup",
@@ -599,9 +599,9 @@ fun PopupSettingsScreen(onBack: () -> Unit) {
         SectionCard(
             title = "Only in duty hours",
             subtitle = "Outside ${TeamRules.windowLabel(ctx)} (and on your off day or a holiday) calls stay quiet. " +
-                "A number that still has an open task with you always asks." + if (dutyLocked) "\n🔒 Set by your manager" else ""
+                "A number that still has an open task with you always asks."
         ) {
-            SwitchRow("After-call popup only in duty hours", duty) { if (!dutyLocked) { duty = it; SimPopup.setDutyOnly(ctx, it) } }
+            LockArea(dutyLocked) { SwitchRow("After-call popup only in duty hours", duty) { if (!dutyLocked) { duty = it; SimPopup.setDutyOnly(ctx, it) } } }
         }
 
         // 27 Nov (S15a) Close by itself: a live countdown; any touch keeps it open.
@@ -743,13 +743,13 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
             }
             HorizontalDivider()
 
-            Row(
+            LockArea(rememberLocked("recSource")) { Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Recording source", style = MaterialTheme.typography.bodyLarge)
+                    Text(lk("Recording source"), style = MaterialTheme.typography.bodyLarge)
                     Text(
                         RecSource.label(recSource),
                         style = MaterialTheme.typography.bodyMedium,
@@ -763,7 +763,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                 }
                 Spacer(Modifier.width(8.dp))
                 Box {
-                    if (rememberLocked("recSource")) Text("🔒") else FilledTonalButton(onClick = { sourceMenu = true }) { Text("Change") }
+                    if (!rememberLocked("recSource")) FilledTonalButton(onClick = { sourceMenu = true }) { Text("Change") }
                     DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
                         RecSource.options.forEach { o ->
                             DropdownMenuItem(
@@ -777,16 +777,16 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                         }
                     }
                 }
-            }
+            } }
             HorizontalDivider()
 
-            Row(
+            LockArea(rememberLocked("recKeep")) { Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Keep recordings", style = MaterialTheme.typography.bodyLarge)
+                    Text(lk("Keep recordings"), style = MaterialTheme.typography.bodyLarge)
                     Text(
                         keepOptions.firstOrNull { it.first == keepDays }?.second ?: "Forever",
                         style = MaterialTheme.typography.bodyMedium,
@@ -795,7 +795,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                 }
                 Spacer(Modifier.width(8.dp))
                 Box {
-                    if (rememberLocked("recKeep")) Text("🔒") else FilledTonalButton(onClick = { keepMenu = true }) { Text("Change") }
+                    if (!rememberLocked("recKeep")) FilledTonalButton(onClick = { keepMenu = true }) { Text("Change") }
                     DropdownMenu(expanded = keepMenu, onDismissRequest = { keepMenu = false }) {
                         keepOptions.forEach { (value, label) ->
                             DropdownMenuItem(
@@ -809,7 +809,7 @@ fun RecordingSettingsScreen(resumeKey: Int, onBack: () -> Unit, onOpenRecordings
                         }
                     }
                 }
-            }
+            } }
 
             Spacer(Modifier.height(8.dp))
             Text(
@@ -955,9 +955,9 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
     SettingsPage(title = "Reminder style & ringtone", onBack = onBack) {
         SectionCard(
             title = "Reminder style",
-            subtitle = if (locked) "🔒 Set by your manager" else "What happens when it is time to call back."
+            subtitle = "What happens when it is time to call back."
         ) {
-            ReminderStyle.Mode.values().forEach { mode ->
+            ReminderStyle.Mode.values().forEach { mode -> LockArea(locked) {
                 StyleRow(
                     title = mode.title,
                     description = when (mode) {
@@ -975,16 +975,16 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                         ReminderStyle.setMode(ctx, mode)
                     }
                 )
-            }
+            } }
             if (reminderStyle == ReminderStyle.Mode.FULL_SCREEN_THEN_NOTIFY) {
                 HorizontalDivider()
-                Row(
+                LockArea(lockSecs) { Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Full screen for", style = MaterialTheme.typography.bodyLarge)
+                        Text(lk("Full screen for"), style = MaterialTheme.typography.bodyLarge)
                         Text(
                             "$popupSeconds seconds",
                             style = MaterialTheme.typography.bodySmall,
@@ -993,7 +993,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        if (!lockSecs) FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") } else Text("🔒")
+                        if (!lockSecs) FilledTonalButton(onClick = { secondsMenu = true }) { Text("Change") }
                         DropdownMenu(expanded = secondsMenu, onDismissRequest = { secondsMenu = false }) {
                             ReminderStyle.SECONDS_CHOICES.forEach { sec ->
                                 DropdownMenuItem(
@@ -1007,7 +1007,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                             }
                         }
                     }
-                }
+                } }
             }
         }
 
@@ -1023,6 +1023,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                 )
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            LockArea(lockRepeat) { Column {
             StyleRow(
                 title = "Repeat until I react",
                 description = "Keeps playing until you react, for up to 1 minute. The reminder stays on screen.",
@@ -1043,6 +1044,7 @@ fun ReminderSettingsScreen(onBack: () -> Unit) {
                     ReminderSound.setRepeats(ctx, false)
                 }
             )
+            } }
         }
 
         SectionCard(
@@ -1406,7 +1408,7 @@ private fun SoundRow(title: String, description: String, onChange: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(lk(title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
@@ -1628,18 +1630,36 @@ internal fun rememberLocked(id: String?): Boolean {
     return remember(v, id) { WebRules.locked(ctx, id) }
 }
 
-/** 28 Nov (B5) A locked setting: shown faded, taps do nothing, with "🔒 Set by your manager" under it. */
+/** 28 Nov (T10) True inside a locked row: names drawn with [lk] get a 🔒 right after them. */
+internal val LocalLocked = androidx.compose.runtime.compositionLocalOf { false }
+
+/** A setting's name, with 🔒 after it when the office locked it (the value stays where it was on the right). */
+@Composable
+internal fun lk(label: String): String = if (LocalLocked.current) "$label 🔒" else label
+
+/** 28 Nov (T10, locked mockup locked-grey A) A locked setting: a grey row, dimmed, 🔒 after its name; a tap does nothing
+ *  but shows "🔒 Set by Jahanzaib on the website". */
 @Composable
 internal fun LockArea(locked: Boolean, content: @Composable () -> Unit) {
     if (!locked) { content(); return }
-    Column {
-        Box {
-            Box(Modifier.alpha(0.55f)) { content() }
-            Box(Modifier.matchParentSize().pointerInput(Unit) {
-                awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } }
-            })
+    val ctx = LocalContext.current
+    Box(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+    ) {
+        Box(Modifier.padding(horizontal = 10.dp, vertical = 2.dp).alpha(0.6f)) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalLocked provides true) { content() }
         }
-        Text("🔒 Set by your manager", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp))
+        Box(Modifier.matchParentSize().pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    e.changes.forEach { it.consume() }
+                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Release)
+                        Toast.makeText(ctx, "🔒 " + WebRules.setBy(), Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
     }
 }
 
@@ -1659,7 +1679,7 @@ private fun PermissionRow(
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(lk(title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
@@ -1693,7 +1713,7 @@ private fun StyleRow(title: String, description: String, selected: Boolean, enab
         RadioButton(selected = selected, onClick = null)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(lk(title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
@@ -1710,7 +1730,7 @@ internal fun SwitchRow(label: String, checked: Boolean, lock: String? = null, on
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Text(lk(label), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }

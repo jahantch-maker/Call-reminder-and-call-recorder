@@ -108,6 +108,13 @@ object WebRules {
     /** Set by the office: a team member in a seat, or the owner with "Lock my phone like the team" on (28 Nov, B3). */
     fun managed(c: Context): Boolean = p(c).getBoolean("member", false)
 
+    /** 28 Nov (T10) "Set by Jahanzaib on the website": the team owner's first name, read from the team (not typed in the app). */
+    fun setBy(): String {
+        val owner = TeamRepo.team.value?.ownerUid
+        val name = TeamRepo.members.value.firstOrNull { it.uid == owner }?.name?.trim()?.substringBefore(' ').orEmpty()
+        return "Set by ${name.ifBlank { "the office" }} on the website"
+    }
+
     @Volatile private var cache: JSONObject? = null
     private fun json(c: Context): JSONObject =
         cache ?: (runCatching { JSONObject(p(c).getString("json", "{}") ?: "{}") }.getOrNull() ?: JSONObject()).also { cache = it }
