@@ -67,7 +67,7 @@
     ["sms", "Text messages", "His own SMS follow-ups on the phone", true],
     ["popupHours", "Can change after-call popup hours", "His “Only in duty hours” switch", true],
     ["quietHours", "Can change quiet hours", "His “Quiet hours” switch", true],
-    ["openPlot", "Can open new plot files", "Shows “New plot file” in his phone", false],
+    ["openPlot", "New plot file button on his phone", "Shows “New plot file” in his phone", false],
     ["seeHealth", "See phone health", "Team › People: each phone's permissions", false],
     ["seeRules", "See Rules", "Settings › Rules: how every rule works", false],
   ];
@@ -84,7 +84,7 @@
   const DEF_APP = {}; RB.APP_SW.forEach((s) => (DEF_APP[s[0]] = s[3]));
   /** v0.50 Portal pages and the tabs inside Team and Settings. App view is On/Off ("none"/"view") with a "how far" scope. */
   RB.TEAM_TABS = [["people", "People"], ["chart", "Chart"], ["desig", "Departments & designations"], ["timetables", "Timetables"]];
-  RB.SET_TABS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"], ["perf", "Team Performance"]];
+  RB.SET_TABS = [["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"], ["docs", "Reading deadline"], ["perf", "Team Performance"]];
   RB.SCOPES = [["own", "Own only"], ["team", "Own + team below"], ["all", "Whole RB"]];
   const DEF_PORTAL = { app: "none", appScope: "own", meetings: "none", team: "none", teamTabs: RB.TEAM_TABS.map((t) => t[0]), docs: "view", settings: "none", plot: "none", settingsTabs: [] };
   /** Access checks made before this moment do not count: the new settings (how far, tab ticks) need one look from the owner. */

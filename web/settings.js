@@ -180,14 +180,14 @@
   }, 700);
   // Left menu (J1): [group, [[tab, label, icon, one line shown under the big name]]]. Only tabs this person may open show.
   const GROUPS = [
-    ["Team work", [["reasons", "Late reasons", "late", "The reasons staff pick on the phone when a task is late. The phones get this list the next time the app opens.<span class=\"phtag\">📱 Used on phones: the late reason list on a task</span>"], ["red", "Red lines", "red", "When a number on the Meetings screens turns red."], ["ranking", "Ranking", "rank", "One fair score and rank for the team."], ["perf", "Team Performance", "chart", "These numbers decide how Team Performance counts and colours. Changes show for everyone at once."]]],
+    ["Team work", [["red", "Red lines", "red", "When a number on the Meetings screens turns red."], ["ranking", "Ranking", "rank", "One fair score and rank for the team."], ["perf", "Team Performance", "chart", "These numbers decide how Team Performance counts and colours. Changes show for everyone at once."]]],
     ["Meetings and reading", [["steps", "Meeting steps", "steps", "The steps of the daily and weekly meeting, in order, with the minutes for each."], ["docs", "Reading deadline", "read", "How many days new people get to finish their reading list."]]],
     ["Office", [["holidays", "Holidays", "cal", "Public holidays and other days the office is closed. Due times in every SOP and dossier days skip these dates. Weekly days off are set per timetable, in Team › Timetables.<span class=\"phtag\">📱 Used on phones: due times, reminders and dossier days skip these dates</span>"]]],
     ["Help", [["rules", "Rules", "rules", "How every rule of the app and the website works, in plain words. Read only. Updated with every new version."], ["log", "Change log", "log", "Every access, chart, seat and offboarding change. Only owners see it and nobody can edit or delete a line."], ["updates", "Updates", "upd", "A new version is published after every change. When one is ready, a bar at the bottom of the screen shows <b>Update</b> and stays until you press it."]]],
     ["My view", [["look", "Appearance", "look", "Your own choice. It follows you to any laptop you sign in on. “Same as device” follows your computer's light or dark setting."]]],
   ];
   /** 28 Nov (B3) Only the owner sees it: his own phone's settings follow the website like the team's. */
-  const ownLock = () => {
+  RB.ownLock = () => {
     const me = RB.isOwner() && RB.seatOfUid(RB.uidOf());
     if (!me) return "";
     const on = me.ownerLock === true;
@@ -204,7 +204,6 @@
     const i = b.parentElement.querySelector("[data-info]"); if (i) i.onclick = (ev) => { ev.stopPropagation(); RB.infoPop(i); };
   };
   RB.sections.settings = {
-    navTop: ownLock,
     // 28 Nov (SETTINGS-REGROUP) Phone app settings (named like the phone's Settings) and Permissions sit first, owners only.
     // 28 Nov (B5, his idea) Left menu has one "Phone app settings" and one "Permissions"; their pages sit in a second menu beside the page.
     groups: (tabs) => [["Phone and access", [[S.phLast || "ph_" + RB.PHONE[0].id, "Phone app settings", "phone", ""], [S.permLast || "acc_team", "Permissions", "people", ""]]]].concat(GROUPS).map(([g, it]) => [g, it.filter((x) => tabs.some((t) => t[0] === x[0])).map(([k, l, ic, d]) => [k, l, RB.lineIcon(ic), d])]).filter((g) => g[1].length),
@@ -232,7 +231,7 @@
         const q = (S.q || "").toLowerCase();
         const list = D.changelog.filter((c) => !q || c.text.toLowerCase().includes(q) || (c.byName || "").toLowerCase().includes(q));
         html = `<div class="card st-card"><div class="subhead"><h3>${list.length} ${list.length === 1 ? "change" : "changes"}</h3></div>
-          ${list.map((c) => `<div class="tlr"><span class="t" style="width:120px">${esc(RB.fmtWhen(c.at))}</span><div><b>${esc(c.text)}</b><p>by ${esc(c.byName || "")}</p></div></div>`).join("") || '<div class="muted">Nothing logged yet.</div>'}</div>`;
+          ${list.map((c) => `<div class="tlr logr"><span class="t" style="width:120px">${esc(RB.fmtWhen(c.at))}</span><div><b>${esc(c.text)}</b><p>by ${esc(c.byName || "")}</p></div></div>`).join("") || '<div class="muted">Nothing logged yet.</div>'}</div>`;
       } else if (tab === "docs") {
         const days = (D.cfg && D.cfg.readingDays) || 7;
         html = `<div class="card st-card">${RB.stField("New people finish their reading in", "Counted from the day he starts in the seat. The phone reminds him before it.", `<input class="num" type="number" min="1" max="60" id="rdays" data-st="rdays" value="${days}" aria-label="Days"><span>days</span>`)}<button class="edit-only st-hidden" id="rsave" data-st-save="1">Save</button></div>`;

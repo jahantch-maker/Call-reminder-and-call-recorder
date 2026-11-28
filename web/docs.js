@@ -72,8 +72,8 @@
       right = `<div class="card" style="flex:1"><div class="subhead"><h3>${esc(p.title)}</h3><div class="sp"></div>${owner ? `<button class="btnt edit-only" data-edit="${esc(p.id)}">Edit</button><button class="btnt edit-only" data-del="${esc(p.id)}">Delete</button>` : ""}</div>
         ${p.summary ? `<div class="mh2">IN SHORT</div><div style="line-height:1.5">${esc(p.summary)}</div>` : ""}
         <div style="margin:12px 0">${p.url ? `<a class="btnp" style="display:inline-block;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${esc(p.url)}">Open full policy</a>` : ""}</div>
-        ${(p.how || []).length ? `<div class="mh2">HOW TO</div>${p.how.map((h, i) => `<div class="docrow" style="padding:8px 0"><span class="tag">${i + 1}</span><div class="w"><b style="font-size:14px">${esc(h)}</b></div></div>`).join("")}` : ""}
-        ${(p.forms || []).length ? `<div class="mh2" style="margin-top:12px">FORMS</div>${p.forms.map((f) => `<div class="docrow" style="padding:8px 0"><div class="w"><b style="font-size:14px">${esc(f.name)}</b></div>${link(f.url)}</div>`).join("")}` : ""}
+        ${(p.how || []).length ? `<div class="mh2">HOW TO</div>${p.how.map((h, i) => `<div class="docrow"><span class="tag">${i + 1}</span><div class="w"><b style="font-size:14px">${esc(h)}</b></div></div>`).join("")}` : ""}
+        ${(p.forms || []).length ? `<div class="mh2" style="margin-top:12px">FORMS</div>${p.forms.map((f) => `<div class="docrow"><div class="w"><b style="font-size:14px">${esc(f.name)}</b></div>${link(f.url)}</div>`).join("")}` : ""}
         ${(p.templates || []).length ? `<div class="mh2" style="margin-top:12px">EMAIL TEMPLATES</div>${p.templates.map((t) => `<div class="card" style="background:#F7F7F5;margin-bottom:8px;padding:12px 14px"><b>${esc(t.name)}</b><div class="sub">To ${esc(t.to || "—")}${t.cc ? " · CC " + esc(t.cc) : ""}</div><div class="sub" style="margin-top:4px"><b>${esc(fill(t.subject, { name: "<name>", designation: "<designation>", date: "<date>" }))}</b></div><div class="sub" style="margin:4px 0 8px">${prettyBody(t)}</div><div class="foot">Fill the [brackets] in Gmail before you send.</div><a class="btnp" style="display:inline-block;text-decoration:none;margin-top:6px" target="_blank" rel="noopener noreferrer" href="${esc(gmailLink(t))}">Open in Gmail</a>${owner ? ` <button class="btnt edit-only" data-tpl="${esc(p.id)}:${esc(t.id)}">Edit template</button>` : ""}</div>`).join("")}` : ""}
         ${owner ? `<button class="btnt edit-only" data-tpl="${esc(p.id)}:new" style="margin-top:8px">+ Email template</button>` : ""}</div>`;
     }
@@ -161,7 +161,11 @@
   }
 
   // ------------------------------------------------------------------ section
+  // 28 Nov (T8) A left menu like Settings instead of the row of tabs; each page keeps its own card title.
+  const DOC_IC = { reading: "read", work: "folder", policies: "rules", sops: "steps", jds: "user", progress: "chart" };
   RB.sections.docs = {
+    noHead: true,
+    groups: (tabs) => [["", tabs.map(([k, l]) => [k, l, RB.lineIcon(DOC_IC[k]), ""])]],
     tabs() {
       const t = [["reading", "My reading list"], ["work", "Work documents"]];
       if (visiblePolicies().length || RB.isOwner()) t.push(["policies", "Policies"]);

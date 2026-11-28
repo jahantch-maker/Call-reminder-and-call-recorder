@@ -460,7 +460,7 @@
       ["portal", "app", "Team Performance", "See scores, tasks, dossier and calendar from phones. Read only. “How far” decides whose.", "On: he can open Team Performance on the website for the people “How far” allows. Off: he can't.", null, null, false, "TEAM PAGES"],
       ["portal", "meetings", "Meetings", "View: minutes of meetings they were in, and their own actions. Edit: runs meetings, adds decisions, notes, actions, closes minutes.", "None: no Meetings page. View: reads minutes of meetings he was in and his own actions. Edit: runs meetings."],
       ["portal", "team", "Team", "View: sees the ticked tabs, changes nothing. Edit: changes things in the ticked tabs (seats, chart, departments). The People list follows “How far”.", "None: no Team page. View: reads the ticked tabs. Edit: changes seats, chart and departments in the ticked tabs. Offboard stays owners only (access is in Settings › Team rules and access)."],
-      ["portal", "plot", "Plot files", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page.", null, null, false, "FILES AND SETTINGS"],
+      ["portal", "plot", "Plot files page on the website", "On: sees every plot file and its steps, writes notes in a step and edits the plot owner details. Steps are done only on the phone.", "On: he can open the Plot files page on this website: sees every plot file, writes notes and edits plot owner details. Off: no Plot files page. Opening a NEW plot file is a different switch: Settings › Phone app settings › New plot file › “New plot file button on his phone”.", null, null, false, "FILES AND SETTINGS"],
       ["portal", "docs", "Documents", "View: own reading list, work documents, policies shared with them. Edit: adds SOPs, job descriptions, policies; sees everyone's reading progress.", "View: his reading list and shared documents. Edit: adds documents and sees everyone's reading."],
       ["portal", "settings", "Settings", "Off for everyone until you turn it on. View: reads the ticked tabs. Edit: changes them.", "None: no Settings page. View: reads the ticked tabs. Edit: changes them."],
       ["app", "seeHealth", "See phone health", "Team › People: each phone's permissions", "On: in Team › People he sees each person's Phone health card (app version, last online, permissions) and the red dot. Owners always see it."],
@@ -526,12 +526,19 @@
       return `${ed() ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="${sec.id}">⧉ Copy this section to…</button></div>` : ""}${sec.note ? `<div class="hint warn st-wide">${esc(sec.note)}</div>` : ""}
       <div class="stcols${parts.length === 1 ? " one" : ""}">${cards}</div>${sec.id === "portal" ? '<div class="st-note">Portal “None” for every section = he can\'t sign in to the portal at all; the app still works. Check for updates and Appearance are always there for everyone who signs in.</div>' : ""}${sec.id === "team" ? '<div class="st-note">Always on for everyone: 📷 photo proof on tasks he gives, 🔒 private tasks, ⏰ his own reminders, tasks, widgets and calendar. Only owners remove someone from RB; staff can only sign out.</div>' : ""}`;
     };
-    const who = mode === "desig" ? `<span class="ty" style="background:${RB.desigColor(S.accDesig)}">${esc(S.accDesig)}</span><b>${esc(S.accDesig)} · defaults</b>`
-      : `<span class="avs" style="background:${RB.desigColor(s.designation)}">${face(s)}</span><b>${esc(RB.holderName(s))}</b>${((t) => `<span class="sub" title="${esc(t)}">${esc(t)}</span>`)(s.designation + (s.dept ? " · " + s.dept : "") + (RB.headOf(s) ? " · head: " + first(RB.holderName(RB.headOf(s))) : ""))}`;
+    // 28 Nov (T3, T6) One picker with the photo inside (no second name beside it), ‹ › step to the previous / next one.
+    const opts = mode === "person"
+      ? seats.map((x) => ({ v: x.id, l: x.name + " · " + x.designation, av: `<span class="avs" style="background:${RB.desigColor(x.designation)}">${face(x)}</span>` }))
+      : desigs.map((d) => ({ v: d.name, l: d.name + (RB.isChecked(d) ? "" : " · unchecked"), av: `<span class="avs" style="background:${RB.desigColor(d.name)}" aria-hidden="true"></span>` }));
+    const curV = mode === "person" ? s && s.id : S.accDesig, ix = Math.max(0, opts.findIndex((o) => o.v === curV)), co = opts[ix] || { l: "—", av: "" };
+    const what = mode === "person" ? "person" : "designation";
+    const picker = `<div class="ppk"><button class="ppstep" data-ppstep="-1" ${ix <= 0 ? "disabled" : ""} aria-label="Previous ${what}" title="Previous ${what}">‹</button>
+      <div class="ppdd"><button class="ppbtn" id="ppbtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Pick a ${what}" title="${esc(co.l)}">${co.av}<span>${esc(co.l)}</span><i aria-hidden="true">▾</i></button>
+      <div class="pplist" role="listbox" hidden>${opts.map((o, i) => `<button role="option" data-ppv="${esc(o.v)}" aria-selected="${i === ix}" class="${i === ix ? "on" : ""}">${o.av}<span>${esc(o.l)}</span></button>`).join("")}</div></div>
+      <button class="ppstep" data-ppstep="1" ${ix >= opts.length - 1 ? "disabled" : ""} aria-label="Next ${what}" title="Next ${what}">›</button></div>`;
     const cur = S.accDesig && RB.desigOf(S.accDesig);
     const bar = `<div class="accbar"><div class="seg"><button data-accmode="desig" class="${mode === "desig" ? "on" : ""}">Designations</button><button data-accmode="person" class="${mode === "person" ? "on" : ""}">People</button></div>
-      ${mode === "person" ? `<select id="accp">${seats.map((x) => `<option value="${esc(x.id)}" ${x.id === s.id ? "selected" : ""}>${esc(x.name)} · ${esc(x.designation)}</option>`).join("")}</select>` : `<select id="accd">${desigs.map((d) => `<option value="${esc(d.name)}" ${d.name === S.accDesig ? "selected" : ""}>${esc(d.name)}${RB.isChecked(d) ? "" : " · unchecked"}</option>`).join("")}</select>`}
-      <div class="accwho">${who}</div><div class="sp"></div>
+      ${picker}<div class="sp"></div>
       ${mode === "desig" && ed() && cur && !RB.isChecked(cur) ? '<button class="btnt edit-only" id="accok" title="Nothing to change here: take it off the Unchecked list">No change needed</button>' : ""}
       ${mode === "person" && can ? '<button class="btnt edit-only" id="accreset">↻ Reset</button>' : ""}
       ${ed() ? '<button class="btnp edit-only" data-acccopy="all">⧉ Copy all…</button>' : ""}</div>
@@ -545,7 +552,8 @@
       return { html: phWrap("ph_" + pg.id, `<div class="ghead"><h2>${esc(pg.title)}</h2><p>${esc(pg.desc)}<span class="phtag">📱 On the phone: Settings › ${esc(pg.title)}</span></p></div>${bar.replace(/<div class="hint">The app owner can do everything[^<]*<\/div>/, "")}${ownHint}
         ${canP ? `<div class="acch"><div class="sp"></div><button class="link edit-only" data-acccopy="ph:${pg.id}">⧉ Copy this section to…</button></div>` : ""}
         <div class="hint warn st-wide phkey"><span><b>🔒 Locked</b> = you set it here, his phone can't change it</span><span><b>📱 His choice</b> = he sets it on his phone</span><span class="sp"></span><span>Click the tag to switch</span></div>
-        <div class="phcards">${pg.cards.map(([h, rows]) => `<div class="card st-card phcard"><h4 class="st-h">${esc(h)}</h4>${rows.map((r) => phRow(r, e, mode, disP, info)).join("")}</div>`).join("")}</div>`), side: "" };
+        <div class="phcards">${pg.cards.map(([h, rows]) => `<div class="card st-card phcard"><h4 class="st-h">${esc(h)}</h4>${rows.map((r) => phRow(r, e, mode, disP, info)).join("")}</div>`).join("")}
+        ${pg.cards.some((c) => c[1].some((r) => r.id === "lateReasons")) ? `<div class="card st-card phcard" id="latereasons"><h4 class="st-h">Late reasons · <span>whole office, the same for every person and designation</span></h4>${RB.meet.lateReasonsHtml()}</div>` : ""}</div>`), side: "" };
     }
     if (!RB.ACC.some((x) => x.id === S.accSec)) S.accSec = RB.ACC[0].id;
     const cs = RB.ACC.find((x) => x.id === S.accSec);
@@ -555,7 +563,7 @@
   const hm = (m) => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
   const PDAYS = ["M", "T", "W", "T", "F", "S", "S"];
   /** Every value key a phone row holds ("set.x", "app.x"), and its lock key. */
-  const phKeys = (r) => r.k === "po" || r.k === "tt" ? [] : r.k === "inv" ? ["app." + r.inv] : r.c === "rem" ? ["set." + r.id + "On", "set." + r.id + "Min", "lock." + (r.l || r.id)] : [(r.g || "set") + "." + r.id].concat(r.k === "lock" ? ["lock." + (r.l || r.id)] : []);
+  const phKeys = (r) => r.k === "po" || r.k === "tt" || r.k === "office" ? [] : r.k === "inv" ? ["app." + r.inv] : r.c === "rem" ? ["set." + r.id + "On", "set." + r.id + "Min", "lock." + (r.l || r.id)] : [(r.g || "set") + "." + r.id].concat(r.k === "lock" ? ["lock." + (r.l || r.id)] : []);
   const phAllKeys = (pg) => Array.from(new Set(pg.cards.flatMap((c) => c[1].flatMap(phKeys))));
   /** One row: name + ⓘ | the value (or what his phone does) | the tag. */
   function phRow(r, e, mode, dis, info) {
@@ -563,6 +571,7 @@
     const chg = mode === "person" && phKeys(r).some((k) => e.changed[k]) ? `<span class="tag chg" title="Different from the designation">✎ changed</span>` : "";
     let state, tag, v;
     if (r.k === "po") { state = "free"; tag = '<span class="ptag po">Phone only</span>'; v = `<span class="pfree">${esc(r.v)}</span>`; }
+    else if (r.k === "office") { state = ""; tag = '<span class="ptag web" title="One list for the whole office">🏢 Whole office</span>'; v = '<a class="link" href="#latereasons" data-latejump="1">Edit the list below ↓</a>'; }
     else if (r.k === "tt") { state = "free"; tag = '<span class="ptag po">Timetable</span>'; v = '<span class="pfree">From his timetable (Team › Timetables)</span>'; }
     else if (r.k === "inv") { const mine = e.app[r.inv] !== false; state = mine ? "free" : ""; tag = `<button class="ptag ${mine ? "fr" : "pl"}" data-pinv="${r.inv}" style="${dis}">${mine ? "📱 His choice" : "🔒 Locked"}</button>`; v = mine ? '<span class="pfree">📱 He sets this on his phone</span>' : "<b>Always on</b>"; }
     else {
@@ -594,7 +603,9 @@
     const items = tab.startsWith("ph_")
       ? RB.PHONE.map((p, i, a) => (i === 0 || a[i - 1].grp !== p.grp ? `<div class="phsub">${esc(p.grp)}</div>` : "") + `<button data-tab="ph_${p.id}" class="${tab === "ph_" + p.id ? "on" : ""}"><span class="mi" style="--t:${p.tone}">${p.ic}</span><span>${esc(p.title)}</span></button>`).join("")
       : RB.ACC.map((x) => `<button data-tab="acc_${x.id}" class="${tab === "acc_" + x.id ? "on" : ""}">${RB.lineIcon(ACC_IC[x.id])}<span>${esc(x.title)}</span></button>`).join("");
-    return `<div class="phwrap"><nav class="phnav" aria-label="${tab.startsWith("ph_") ? "Phone app settings" : "Permissions"}">${items}</nav><div class="phmain">${inner}</div></div>`;
+    // 28 Nov (T2) "Lock my phone like the team" sits on top of the phone menu, same width.
+    const top = tab.startsWith("ph_") && RB.ownLock ? RB.ownLock() : "";
+    return `<div class="phwrap"><div class="phside">${top}<nav class="phnav" aria-label="${tab.startsWith("ph_") ? "Phone app settings" : "Permissions"}">${items}</nav></div><div class="phmain">${inner}</div></div>`;
   }
 
   /** One value of the person or designation on screen: group app / set / portal. Same value as the default = no change kept. */
@@ -952,8 +963,28 @@
       const on = (r, sel, fn) => r && r.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); fn(e, ev); }));
       const both = (sel, fn) => { on(root, sel, fn); on(side, sel, fn); };
       both("[data-dacc]", (e) => { S.accDesig = e.dataset.dacc; S.accMode = "desig"; RB.render(); });
-      const accp = root.querySelector("#accp"); if (accp) accp.onchange = () => { S.accSeat = accp.value; RB.render(); };
-      const accd = root.querySelector("#accd"); if (accd) accd.onchange = () => { S.accDesig = accd.value; RB.render(); };
+      // 28 Nov (T3, T6) The picker: open the list, pick, step with ‹ ›, arrows and Esc on the keyboard.
+      const pick = (v) => { if (S.accMode === "person") S.accSeat = v; else S.accDesig = v; RB.render(); };
+      const pb = root.querySelector("#ppbtn"), pl = root.querySelector(".pplist");
+      if (pb && pl) {
+        const opts = [...pl.querySelectorAll("[data-ppv]")];
+        const close = (focus) => { pl.hidden = true; pb.setAttribute("aria-expanded", "false"); document.removeEventListener("click", away, true); if (focus) pb.focus(); };
+        const away = (ev) => { if (!ev.target.closest(".ppdd")) close(false); };
+        const open = () => { pl.hidden = false; pb.setAttribute("aria-expanded", "true"); const c = pl.querySelector(".on") || opts[0]; if (c) { c.scrollIntoView({ block: "nearest" }); c.focus(); } document.addEventListener("click", away, true); };
+        pb.onclick = () => (pl.hidden ? open() : close(true));
+        pb.onkeydown = (ev) => { if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); open(); } };
+        opts.forEach((o, i) => {
+          o.onclick = () => { close(false); pick(o.dataset.ppv); };
+          o.onkeydown = (ev) => {
+            if (ev.key === "Escape") { ev.preventDefault(); close(true); }
+            else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); const n = opts[i + (ev.key === "ArrowDown" ? 1 : -1)]; if (n) n.focus(); }
+            else if (ev.key === "Tab") close(false);
+          };
+        });
+      }
+      if (root.querySelector("#latereasons")) RB.meet.lateReasonsBind(root.querySelector("#latereasons"));
+      on(root, "[data-latejump]", () => { const c = root.querySelector("#latereasons"); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); });
+      on(root, "[data-ppstep]", (e) => { const o = [...root.querySelectorAll("[data-ppv]")], i = o.findIndex((x) => x.classList.contains("on")) + Number(e.dataset.ppstep); if (o[i]) pick(o[i].dataset.ppv); });
       on(root, "[data-accmode]", (e) => { S.accMode = e.dataset.accmode; RB.render(); });
       both("[data-accun]", () => { S.accUn = !S.accUn; RB.render(); });
       on(root, "[data-tick]", (e) => {

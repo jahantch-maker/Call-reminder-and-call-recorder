@@ -274,17 +274,21 @@
   }
 
   // ------------------------------------------------------------------ settings
+  /** Late reasons editor (28 Nov T7: lives in Settings › Phone app settings › Task rules). */
+  function lateReasonsHtml() {
+    const rc = reasonsCfg(), used = {}; const now = Date.now();
+    items().forEach((x) => (x.reasons || []).forEach((r) => { if (r.at > now - 28 * DAY) used[r.r] = (used[r.r] || 0) + 1; }));
+    // Settings redesign (27 Nov): tinted rows, small grey buttons; on a phone the buttons show only their icon.
+    const btn = (a, ic, l, n) => `<button class="st-b edit-only" data-rr="${a}" aria-label="${l} ${esc(n)}">${RB.lineIcon(ic)}<span>${l}</span></button>`;
+    const col = (k, title) => `<div class="card st-card"><h4 class="st-h">${title}</h4>${rc[k].map((r, i) => `<div class="st-row ${k === "outside" ? "grey" : ""} ${r.retired ? "ret" : ""}"><span class="t">${esc(r.name)}</span><span class="u">${r.retired ? "Retired" : "Used " + (used[r.name] || 0)}</span>${r.retired ? btn(k + ":" + i + ":back", "undo", "Bring back", r.name) : btn(k + ":" + i + ":rename", "pen", "Rename", r.name) + btn(k + ":" + i + ":retire", "bin", "Retire", r.name)}</div>`).join("")}
+      <div class="st-add edit-only"><input id="add_${k}" placeholder="New reason" aria-label="New reason"><button class="btnp" data-radd="${k}">+ Add</button></div></div>`;
+    return `<div class="st-2">${col("own", "Their own · <span>counted in the score</span>")}${col("outside", "Outside · <span>shown grey, not counted</span>")}</div><div class="st-note">Retired reasons leave the phone list but stay on old tasks, so past charts never change. "Other" is always last on the phone and asks for a short note.</div>`;
+  }
   function vSettings(bare) {
     const tabsS = [["reasons", "Late reasons"], ["red", "Red lines"], ["steps", "Meeting steps"], ["ranking", "Ranking"]].map(([k, l]) => `<button data-stab="${k}" class="${S.settingsTab === k ? "on" : ""}">${l}</button>`).join("");
     let body = "";
     if (S.settingsTab === "reasons") {
-      const rc = reasonsCfg(), used = {}; const now = Date.now();
-      items().forEach((x) => (x.reasons || []).forEach((r) => { if (r.at > now - 28 * DAY) used[r.r] = (used[r.r] || 0) + 1; }));
-      // Settings redesign (27 Nov): tinted rows, small grey buttons; on a phone the buttons show only their icon.
-      const btn = (a, ic, l, n) => `<button class="st-b edit-only" data-rr="${a}" aria-label="${l} ${esc(n)}">${RB.lineIcon(ic)}<span>${l}</span></button>`;
-      const col = (k, title) => `<div class="card st-card"><h4 class="st-h">${title}</h4>${rc[k].map((r, i) => `<div class="st-row ${k === "outside" ? "grey" : ""} ${r.retired ? "ret" : ""}"><span class="t">${esc(r.name)}</span><span class="u">${r.retired ? "Retired" : "Used " + (used[r.name] || 0)}</span>${r.retired ? btn(k + ":" + i + ":back", "undo", "Bring back", r.name) : btn(k + ":" + i + ":rename", "pen", "Rename", r.name) + btn(k + ":" + i + ":retire", "bin", "Retire", r.name)}</div>`).join("")}
-        <div class="st-add edit-only"><input id="add_${k}" placeholder="New reason" aria-label="New reason"><button class="btnp" data-radd="${k}">+ Add</button></div></div>`;
-      body = `<div class="st-2">${col("own", "Their own · <span>counted in the score</span>")}${col("outside", "Outside · <span>shown grey, not counted</span>")}</div><div class="st-note">Retired reasons leave the phone list but stay on old tasks, so past charts never change. "Other" is always last on the phone and asks for a short note.</div>`;
+      body = lateReasonsHtml();
     } else if (S.settingsTab === "red") {
       const R = red(), HINT = { overdue: "Tasks past their deadline and still not done. Example: 3 = a person with 3 or more shows red.", late: "Tasks finished after their deadline in the period shown.", moved: "Tasks whose deadline was moved or extended in the period shown.", noDate: "Tasks still waiting for a deadline to be picked.", avgLate: "On average, how many days late a person's late tasks were finished." };
       const row = (k, l) => RB.stField(l, HINT[k], `<input class="num" type="number" min="1" value="${R[k]}" data-red="${k}" data-st="red_${k}" aria-label="${l}">`);
@@ -403,14 +407,7 @@
     const mq = document.getElementById("mq"); if (mq) mq.oninput = () => { S.mq = mq.value; render(); const n = document.getElementById("mq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     // settings
     on("[data-stab]", (e) => { S.settingsTab = e.dataset.stab; render(); });
-    const saveReasons = (rc) => Store.saveConfig("reasons", { own: rc.own, outside: rc.outside, updatedAt: Date.now() }).then(render);
-    on("[data-rr]", (e) => {
-      const [k, i, act] = e.dataset.rr.split(":"), rc = reasonsCfg(), r = rc[k][Number(i)];
-      if (act === "retire") r.retired = true; else if (act === "back") delete r.retired;
-      else if (act === "rename") { const n = prompt("New name", r.name); if (!n || !n.trim()) return; rc[k].push({ name: n.trim() }); r.retired = true; }
-      saveReasons(rc);
-    });
-    on("[data-radd]", (e) => { const k = e.dataset.radd, v = document.getElementById("add_" + k).value.trim(); if (!v) return; const rc = reasonsCfg(); rc[k].push({ name: v }); saveReasons(rc); });
+    reasonsBind(on);
     on("[data-savered]", () => { const r = {}; $app.querySelectorAll("[data-red]").forEach((i) => (r[i.dataset.red] = Math.max(1, Number(i.value) || 1))); Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { red: r })).then(() => RB.stDone()); });
     let stepsDraft = null;
     const draft = () => (stepsDraft = stepsDraft || { daily: stepsFor("daily"), weekly: stepsFor("weekly") });
@@ -422,6 +419,16 @@
     });
     // A step's switch saves at once (Settings redesign J3); typed minutes still wait for the Save bar.
     on("[data-on]", (e) => { const [t, k] = e.dataset.on.split(":"), s = draft(); s[t][Number(k)][2] = !s[t][Number(k)][2]; Store.saveConfig("meeting", Object.assign({}, D.cfg || {}, { steps: s })).then(() => { render(); RB.stSaved(); }); });
+  }
+  function reasonsBind(on) {
+    const saveReasons = (rc) => Store.saveConfig("reasons", { own: rc.own, outside: rc.outside, updatedAt: Date.now() }).then(render);
+    on("[data-rr]", (e) => {
+      const [k, i, act] = e.dataset.rr.split(":"), rc = reasonsCfg(), r = rc[k][Number(i)];
+      if (act === "retire") r.retired = true; else if (act === "back") delete r.retired;
+      else if (act === "rename") { const n = prompt("New name", r.name); if (!n || !n.trim()) return; rc[k].push({ name: n.trim() }); r.retired = true; }
+      saveReasons(rc);
+    });
+    on("[data-radd]", (e) => { const k = e.dataset.radd, v = document.getElementById("add_" + k).value.trim(); if (!v) return; const rc = reasonsCfg(); rc[k].push({ name: v }); saveReasons(rc); });
   }
   // The meeting clock ticks every second without redrawing the page.
   setInterval(() => {
@@ -439,6 +446,8 @@
       return v();
     },
     bind(root) { $app = root; bind(); },
+    lateReasonsHtml,
+    lateReasonsBind(root) { $app = root; reasonsBind((sel, fn) => root.querySelectorAll(sel).forEach((e) => (e.onclick = (ev) => { ev.preventDefault(); fn(e, ev); }))); },
     newAction, openActions, actionStatus, minutesText, fullTimeline, rangeLabel, trendSvg, reasonBars, itemChips, timelineOf, personItems,
   };
 

@@ -29,7 +29,7 @@
 
   RB.PHONE = [
     { id: "newplot", title: "New plot file", grp: "PLOT FILES", ic: "add", tone: "#B08A5A", desc: "Open a file for a new plot owner.", cards: [
-      ["New plot file", [{ id: "openPlot", g: "app", t: "Can open new plot files", c: "sw", k: "web", d: "On: his phone shows “New plot file” in Settings. Off: it is hidden (until set, the owner and whoever does the first step have it)." }]] ] },
+      ["New plot file", [{ id: "openPlot", g: "app", t: "New plot file button on his phone", c: "sw", k: "web", d: "On: his phone shows the “New plot file” button in Settings, so he can open a file for a new plot owner. Off: it is hidden (until set, the owner and whoever does the first step have it). Seeing the Plot files page on this website is a different switch: Settings › Permissions › In the portal › “Plot files page on the website”." }]] ] },
     { id: "appearance", title: "Appearance", grp: "GENERAL", ic: "palette", tone: "#8E7CFF", desc: "Theme, accent colour and size of his phone app.", cards: [
       ["Theme", [{ id: "theme", t: "Theme", c: "seg", o: [[0, "System"], [1, "Light"], [2, "Dark"]] }]],
       ["Accent colour", [{ id: "accent", t: "Accent colour", c: "seg", o: ["Indigo", "Ocean", "Teal", "Violet", "Rose", "Amber"].map((n, i) => [i, n]) }]],
@@ -49,7 +49,9 @@
         { id: "smsMin", t: "Not seen · text him", c: "sel", o: MINS([0, 60, 120, 240]), d: "If the person hasn't opened his task after this many working hours, his phone sends them an SMS. Off: no SMS." },
         { id: "locked", t: "Deadline locked", c: "sw", d: "On: once the person picks a deadline on a task he gave, they can only ask him to extend it. Off: they can change it themselves." },
         { id: "freeExt", t: "Extend without asking", c: "sel", o: [[0, "Never"], [1, "1×"], [2, "2×"], [3, "3×"]], d: "How many times the person may move their own deadline without asking him. Never = always asks." },
-        { id: "notDone", t: "Not done reasons", c: "lines", d: "The quick reasons he picks from when he sends a task back with ↩ Not done yet. One per line." }]],
+        // 28 Nov (T7) Late reasons moved here from Settings › Late reasons: one list for the whole office, edited below the cards.
+        { id: "lateReasons", t: "Late reasons", k: "office", d: "Picked by the person DOING a task, when he moves a deadline, asks for more time or finishes late. One list for the whole office (no Locked / His choice). “Their own” reasons count in his score; “Outside” ones (material, payment, client) don't. They feed the Meetings “Top late reasons” chart. Not the same as Not done reasons." },
+        { id: "notDone", t: "Not done reasons", c: "lines", d: "Picked by the person who GAVE a task, when he sends it back with ↩ Not done yet (for example “Photo missing”). Can differ per designation or person. One per line. Not the same as Late reasons." }]],
       ["Tasks you get", [
         { id: "urgHours", t: "Urgent, no deadline · remind me", c: "sel", o: [1, 2, 3, 4, 6, 8].map((h) => [h, h + " h"]), k: "web", d: "An urgent task he gets with no deadline: the first reminder comes after this many working hours. The task giver is told each time too. Stops as soon as a deadline is set." },
         { id: "urgTimes", t: "Urgent, no deadline · times", c: "sel", o: [1, 2, 3, 4, 5, 6].map((n) => [n, n + "×"]), k: "web", d: "How many reminders in all (same gap each time). If the task never reached his phone, the giver's phone sends him one SMS instead." },
