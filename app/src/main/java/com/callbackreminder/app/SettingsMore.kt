@@ -75,10 +75,9 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                 title = "Quiet hours",
                 subtitle = (if (quiet) "🌙 Automatic ones come ${remember(web) { TeamRules.windowLabel(ctx) }}. Outside that they wait and come as one in the morning " +
                     "(Timeline messages come silently, an @mention still rings). Anything with a set time always comes on time."
-                else "Off: automatic ones come at any time, at night, on your off day and on holidays too.") +
-                    if (quietLocked) "\n🔒 Set by your manager" else ""
+                else "Off: automatic ones come at any time, at night, on your off day and on holidays too.")
             ) {
-                SwitchRow("Quiet hours", quiet || quietLocked) { if (!quietLocked) { quiet = it; TeamRules.setQuietOn(ctx, it) } }
+                LockArea(quietLocked) { SwitchRow("Quiet hours", quiet || quietLocked) { if (!quietLocked) { quiet = it; TeamRules.setQuietOn(ctx, it) } } }
             }
             listOf(
                 "Plot files" to listOf(WebRules.N_PLOT_NEW to "New plot step", WebRules.N_PLOT_DUE to "Step due", WebRules.N_PLOT_HEADS to "Heads-up before due",
@@ -88,18 +87,19 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                     WebRules.N_TIMELINE to "Timeline messages", WebRules.N_MENTION to "@mentions"),
                 "Dossier" to listOf(WebRules.N_DOSSIER to "New dossier task"),
             ).forEach { (group, rows) ->
-                SectionCard(title = group, subtitle = if (WebRules.managed(ctx)) "🔒 Set by your manager" else "The office's defaults") {
+                SectionCard(title = group, subtitle = "The office's defaults") {
+                    val mg = WebRules.managed(ctx)
                     rows.forEachIndexed { i, (key, label) ->
                         if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         val st = remember(web) { WebRules.style(ctx, key) }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        LockArea(mg) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(lk(label), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             Text(
                                 when (st) { WebRules.FULL -> "Full screen"; WebRules.OFF -> "Off"; else -> "Normal" } +
                                     if (key == WebRules.N_PLOT_HEADS && st != WebRules.OFF) " · " + TaskAlarms.beforeLabel(WebRules.int(ctx, "plotHeadsMin")) + " before" else "",
                                 color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp
                             )
-                        }
+                        } }
                     }
                 }
             }
@@ -110,7 +110,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                 if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 val level = tick.let { Notify.kindLevel(ctx, k) }
                 LockArea(rememberLocked("nk_${k.name}")) { Column(Modifier.fillMaxWidth()) {
-                    Text("${k.emoji} ${k.label}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Text(lk("${k.emoji} ${k.label}"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         NotifLevel.values().forEach { l ->
@@ -139,7 +139,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
 @Composable
 private fun NotifRow(t: NotifType, level: NotifLevel, onLevel: (NotifLevel) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Text(t.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        Text(lk(t.title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         Text(t.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
         if (t.locked != null) {
@@ -539,7 +539,7 @@ fun WeeklyOffDayScreen(onBack: () -> Unit) {
     val managed = remember { Seats.managed(ctx) }
 
     SettingsPage(title = "Weekly off day", onBack = onBack) {
-        SectionCard(title = "Your off days", subtitle = if (managed) "Set by your manager (timetable ${Seats.myTimetable(ctx).ifBlank { "not set yet" }}). Company holidays are off too."
+        SectionCard(title = "Your off days", subtitle = if (managed) "${WebRules.setBy()} (timetable ${Seats.myTimetable(ctx).ifBlank { "not set yet" }}). Company holidays are off too."
             else "Pick up to ${OffDays.MAX} days. Untick all if you work every day.") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

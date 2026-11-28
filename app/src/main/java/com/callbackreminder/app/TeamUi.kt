@@ -475,7 +475,7 @@ private fun TeamActive(
             TeamTag("You · ${me.roleLabel}")
         }
         Text(TeamRepo.welcome() ?: (me.name + me.designation.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()), fontWeight = FontWeight.SemiBold)
-        Text("Names, phones, the chart and working hours are set by your manager on the website.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        Text("Names, phones, the chart and working hours are ${WebRules.setBy().replaceFirstChar { it.lowercase() }}.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
     }
 
     TeamHeading("Team")
@@ -549,13 +549,14 @@ fun TaskRulesScreen(onBack: () -> Unit) {
     fun Rule(label: String, value: String, about: String, id: String?, onClick: (() -> Unit)?) {
         // 28 Nov (B5) A row the office keeps "🔒 Locked" on the website is read only here.
         val lk = id == null || remember(web) { WebRules.locked(ctx, id) }
-        Column {
-            RuleRow(if (lk && managed) "🔒 $label" else label, value) { if (onClick != null && !lk) onClick() }
+        // 28 Nov (T10) A locked row is grey with 🔒 after its name; a tap says who set it.
+        LockArea(lk && managed) { Column {
+            RuleRow(label, value) { if (onClick != null && !lk) onClick() }
             Text(about, fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
-        }
+        } }
     }
     SettingsPage(title = "Task rules", onBack = onBack) {
-        if (managed) Text("🔒 = set by your manager on the website. They work even with no internet.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+        if (managed) Text("🔒 Grey rows are ${WebRules.setBy().replaceFirstChar { it.lowercase() }}. The settings work even with no internet.", fontSize = 13.sp, color = cs.onSurfaceVariant)
         TeamHeading("Tasks you give")
         TeamCard {
             Rule("No deadline picked · remind me", TeamRules.label(noDate),
@@ -616,7 +617,7 @@ private fun RuleRow(label: String, value: String, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(lk(label), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }

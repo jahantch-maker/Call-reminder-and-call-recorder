@@ -21,7 +21,7 @@ data class Timetable(val id: String, val name: String, val start: Int, val end: 
 /**
  * The team as the website sets it (locked 23 Nov): seats (the one name, official phone, chart), timetables and the company
  * holidays. Firestore keeps them on the phone, so it all works without internet and refreshes once online. Your own
- * timetable becomes your working hours and weekly off day (read only: "Set by your manager").
+ * timetable becomes your working hours and weekly off day (read only: "Set by <owner> on the website").
  */
 object Seats {
     /** Nobody on a timetable yet: 11 AM - 9 PM, Friday off (same as the website and the cloud). */
