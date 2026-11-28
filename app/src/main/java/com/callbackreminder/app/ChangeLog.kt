@@ -29,6 +29,13 @@ object ChangeLog {
 
     val entries = listOf(
         Entry(
+            "0.63.1", "28 Nov",
+            new = listOf(
+                "Settings › Task rules now also shows the office's Late reasons, right above Not done reasons, with a line on what each one is for",
+            ),
+            fixed = emptyList(),
+        ),
+        Entry(
             "0.63.0", "28 Nov",
             new = listOf(
                 "The office can now set any phone setting from the website: a setting marked 🔒 Locked takes the office's value and shows \"🔒 Set by your manager\"; everything else stays your own choice",

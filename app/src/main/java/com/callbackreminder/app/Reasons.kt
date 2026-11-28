@@ -45,7 +45,7 @@ import org.json.JSONObject
 data class LateReason(val at: Long, val reason: String, val kind: String, val outside: Boolean, val note: String = "")
 
 /**
- * v0.48 The team's late reasons. Only the owner changes them, in the meeting web app (Settings › Late reasons); the
+ * v0.48 The team's late reasons. Only the owner changes them, on the website (Settings › Phone app settings › Task rules › Late reasons); the
  * phones read them from teams/{team}/config/reasons and keep a copy. "Outside" reasons (material, payment, client,
  * weather) show grey in the meeting and don't count against the person.
  */
@@ -256,7 +256,7 @@ fun MeetingShareNotice() {
 
 /**
  * v0.50 Edit the late-reason list from the phone, for a person the portal gave "Edit late-reason list" (and the owner).
- * It is the same list as the portal's Settings › Late reasons: add a reason, retire one, bring it back. A retired reason
+ * It is the same list as the website's Settings › Phone app settings › Task rules › Late reasons: add a reason, retire one, bring it back. A retired reason
  * stays in old reports. The phones of the team read the new list at their next start.
  */
 @Composable

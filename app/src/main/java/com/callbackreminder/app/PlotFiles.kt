@@ -151,7 +151,7 @@ object PlotFiles {
 
     /** The owner, and whoever does the first step (Front Desk), see "New plot file" in Settings. */
     fun canOpen(me: TeamMember?, team: TeamInfo?, sop: Sop?): Boolean =
-        // 27 Nov (S2.11) The website's "Can open new plot files" switch; until set, the owner and whoever does the first step.
+        // 27 Nov (S2.11) The website's "New plot file button on his phone" switch; until set, the owner and whoever does the first step.
         me != null && me.active && me.can("openPlot", team?.ownerUid == me.uid || sop?.first?.any { me.does(it.role) } == true)
 
     /** Who does a step: you when it is your job, else the first active member with that designation, else one who also does it. */

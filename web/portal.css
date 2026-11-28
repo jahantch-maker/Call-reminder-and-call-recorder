@@ -513,5 +513,42 @@ html[data-theme="dark"] .phrow{background:#1F2126;border-left-color:#3A3F55}html
 html[data-theme="dark"] .ptag{background:#1B1C1F;border-color:#9DB8F0;color:#9DB8F0}html[data-theme="dark"] .ptag.fr{border-color:#45474D;color:#A9AAAE}html[data-theme="dark"] .ptag.po,html[data-theme="dark"] .ptag.web{background:none}
 html[data-theme="dark"] .pdays button{background:#2E3035}html[data-theme="dark"] .pdays button.on{background:#F2F2F0;color:#1B1C1F}html[data-theme="dark"] .phrow textarea{background:#1B1C1F;border-color:#303236;color:inherit}
 @media (max-width:1000px){.phwrap{grid-template-columns:1fr}.phnav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px}.phsub{display:none}.phrow{grid-template-columns:1fr;gap:6px}.phrow .pv{justify-content:flex-start}.ptag{justify-self:start}}
-.gnav .ownlock button.accinfo{display:inline-flex;width:18px;height:18px;padding:0;margin:0 0 0 2px;border-radius:50%;background:none;color:var(--onv)}
+.ownlock button.accinfo{display:inline-flex;width:18px;height:18px;padding:0;margin:0 0 0 2px;border-radius:50%;background:none;color:var(--onv)}
 .phrow{min-height:46px;box-sizing:border-box}.phrow .lvl button{padding-top:5px;padding-bottom:5px}.phrow select,.phrow input[type=time]{padding-top:5px;padding-bottom:5px}
+/* 28 Nov (T1) The second menu sits right next to the left menu; the page beside it is centred in the space left over. */
+.gwrap .content>.phwrap{max-width:none;margin:0}
+.phmain{width:100%;max-width:1180px;justify-self:center}
+/* (T2) "Lock my phone like the team" on top of the phone menu, same width; both stay in view while scrolling. */
+.phside{position:sticky;top:0;display:flex;flex-direction:column;gap:10px;min-width:0}.phside .phnav{position:static}.phside .ownlock{margin:0}
+/* (T8) The main left menu sits on the same white card as the second menu. */
+.gnav{align-self:flex-start;max-height:100%;box-sizing:border-box;background:#fff;border-radius:18px;padding:10px 8px}
+.gnav button:hover{background:#F2F2F0}
+html[data-theme="dark"] .gnav{background:#25272B}
+/* (T3, T6) Person / designation picker: photo inside, ‹ › step to the previous / next one. */
+.ppk{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto}
+.ppstep{flex:none;width:32px;height:32px;border-radius:50%;background:#F2F2F0;color:var(--on);font-size:20px;line-height:1;display:grid;place-items:center;padding:0 0 2px}
+.ppstep:hover:not(:disabled){background:#E3ECFA}.ppstep:disabled{opacity:.35;cursor:default}
+.ppdd{position:relative;min-width:0}
+.ppbtn{display:flex;align-items:center;gap:8px;max-width:340px;min-width:0;padding:4px 12px 4px 4px;border:1px solid #E3E3DF;border-radius:20px;background:#fff;color:var(--on);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ppbtn span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ppbtn i{font-style:normal;font-size:11px;color:var(--onv)}
+.ppk .avs{width:28px;height:28px;font-size:12.5px;flex:none}
+.pplist{position:absolute;z-index:30;top:calc(100% + 6px);left:0;width:max(100%,320px);max-height:360px;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 8px 28px #0000002e;padding:6px}
+.pplist button{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border-radius:10px;background:none;color:var(--on);font-size:14px;font-weight:600;text-align:left}
+.pplist button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pplist button:hover,.pplist button:focus-visible{background:#EEF3FB;outline:none}.pplist button.on{background:#DCE7FA;box-shadow:inset 3px 0 0 #1F3A93}
+.ppbtn:focus-visible,.ppstep:focus-visible{outline:2px solid #1F3A93;outline-offset:2px}
+html[data-theme="dark"] .ppbtn,html[data-theme="dark"] .pplist{background:#25272B;border-color:#3A3C42;color:#F2F2F0}html[data-theme="dark"] .pplist button{color:#F2F2F0}
+html[data-theme="dark"] .ppstep{background:#2E3035;color:#F2F2F0}html[data-theme="dark"] .pplist button:hover,html[data-theme="dark"] .pplist button:focus-visible{background:#1F2A3D}html[data-theme="dark"] .pplist button.on{background:#263759}
+@media (max-width:700px){.ppbtn{max-width:calc(100vw - 150px)}.pplist{width:min(320px,calc(100vw - 60px))}}
+/* (T9) Rows inside white cards are their own blue strips, like the Settings rows. */
+.plrow,.docrow,.tlr.logr,.tp-plist .tp-pl{background:#EEF3FB;border-left:3px solid #1F3A93;border-bottom:0;border-radius:10px}
+.plrow{margin-top:6px}.plrow:hover,.plrow:focus-visible{background:#DCE7FA}
+.docrow{padding:10px 12px;margin-top:6px}
+.tlr.logr{padding:8px 12px;margin-bottom:6px}
+.tp-plist{gap:4px}.tp-plist .tp-pl:hover{background:#E3ECFA}.tp-plist .tp-pl.on{background:#DCE7FA;box-shadow:inset 0 0 0 1.5px #1F3A93}
+.tablewrap table{border-collapse:separate;border-spacing:0 6px}
+.tablewrap td{background:#EEF3FB;border-bottom:0}.tablewrap td:first-child{border-left:3px solid #1F3A93;border-radius:10px 0 0 10px}.tablewrap td:last-child{border-radius:0 10px 10px 0}
+.tablewrap tr.click:hover td,.tablewrap tr.sel td{background:#DCE7FA}
+html[data-theme="dark"] .plrow,html[data-theme="dark"] .docrow,html[data-theme="dark"] .tlr.logr,html[data-theme="dark"] .tp-plist .tp-pl,html[data-theme="dark"] .tablewrap td{background:#1F2A3D;border-left-color:#7FA2E8}
+html[data-theme="dark"] .plrow:hover,html[data-theme="dark"] .tp-plist .tp-pl:hover,html[data-theme="dark"] .tp-plist .tp-pl.on,html[data-theme="dark"] .tablewrap tr.click:hover td,html[data-theme="dark"] .tablewrap tr.sel td{background:#263759}
+@media (max-width:1000px){.phside{position:static}}

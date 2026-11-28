@@ -543,6 +543,8 @@ fun TaskRulesScreen(onBack: () -> Unit) {
     var rule by remember { mutableIntStateOf(-1) }
     var reasons by remember(web) { mutableStateOf(TeamRules.notDoneReasons(ctx)) }
     var editReasons by remember { mutableStateOf(false) }
+    val lateOwn by LateReasons.own.collectAsState()
+    val lateOut by LateReasons.outside.collectAsState()
     @Composable
     fun Rule(label: String, value: String, about: String, id: String?, onClick: (() -> Unit)?) {
         // 28 Nov (B5) A row the office keeps "🔒 Locked" on the website is read only here.
@@ -564,8 +566,11 @@ fun TaskRulesScreen(onBack: () -> Unit) {
                 "On: once he sets his deadline he can't change it, he can only ask you to extend it.", "locked") { locked = !locked; TeamRules.setDeadlineLocked(ctx, locked) }
             Rule("Extend without asking", TeamRules.extLabel(freeExt),
                 "How many times he may move his own deadline without asking you.", "freeExt") { rule = 3 }
+            // 28 Nov (T7) Same rows as the website's Task rules: Late reasons (whole office, set on the website) above Not done reasons.
+            Rule("Late reasons", "${lateOwn.size + lateOut.size}",
+                "Picked by the person doing a task when they move a deadline, ask for more time or finish late. One list for the whole office, set on the website.", null, null)
             Rule("Not done reasons", "${reasons.size}",
-                "The quick reasons you pick from when you send a task back with ↩ Not done yet.", "notDone", null)
+                "Picked by the person who gave a task when they send it back with ↩ Not done yet (for example \"Photo missing\").", "notDone", null)
             if (!remember(web) { WebRules.locked(ctx, "notDone") }) TextButton(onClick = { editReasons = true }) { Text("Change reasons") }
         }
         TeamHeading("Tasks you get")
